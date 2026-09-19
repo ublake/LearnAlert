@@ -15,7 +15,9 @@ struct SafariView: UIViewControllerRepresentable {
         configuration.barCollapsingEnabled = true
         let safariVC = SFSafariViewController(url: url, configuration: configuration)
         safariVC.delegate = context.coordinator
-        safariVC.preferredControlTintColor = UIColor(LearnAlertStyle.indigo)
+        if #unavailable(iOS 26.0) {
+            safariVC.preferredControlTintColor = UIColor(LearnAlertStyle.indigo)
+        }
         safariVC.dismissButtonStyle = .done
         return safariVC
     }

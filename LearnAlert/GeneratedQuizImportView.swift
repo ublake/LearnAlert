@@ -49,6 +49,37 @@ struct GeneratedQuizImportView: View {
     @State private var selectedChunkFolderTitle: String?
     @State private var showingOneDocumentAlert = false
     @State private var showingAlreadyCreatedAlert = false
+    @State private var showingDailyLimitAlert = false
+
+    private static let dailyGenerationLimit = 5
+    private static let dailyCountKey = "daily_deck_generation_count"
+    private static let dailyDateKey = "daily_deck_generation_date"
+
+    private static func getTodayDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    private static func getDailyGenerationsCount() -> Int {
+        let today = getTodayDateString()
+        let savedDate = UserDefaults.standard.string(forKey: dailyDateKey)
+        if savedDate != today {
+            UserDefaults.standard.set(today, forKey: dailyDateKey)
+            UserDefaults.standard.set(0, forKey: dailyCountKey)
+            return 0
+        }
+        return UserDefaults.standard.integer(forKey: dailyCountKey)
+    }
+
+    private static func incrementDailyGenerationsCount() {
+        let count = getDailyGenerationsCount()
+        UserDefaults.standard.set(count + 1, forKey: dailyCountKey)
+    }
+
+    private static var isDailyLimitReached: Bool {
+        return getDailyGenerationsCount() >= dailyGenerationLimit
+    }
 
     private var hasProcessedDocument: Bool {
         activeUpload != nil
@@ -181,22 +212,50 @@ struct GeneratedQuizImportView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if isReviewing, generatedDeck != nil {
-                    Button(action: addDeck) {
-                        Label(
-                            savedDeck != nil ? "Deck Added to Library" : (selectedCardIDs.count == 1 ? "Add Deck with 1 Card" : "Add Deck with \(selectedCardIDs.count) Cards"),
-                            systemImage: savedDeck != nil ? "checkmark.circle.fill" : "rectangle.stack.badge.plus"
-                        )
-                        .font(.headline.bold())
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
+                    VStack(spacing: 0) {
+                        Button(action: addDeck) {
+                            HStack(spacing: 8) {
+                                Image(systemName: savedDeck != nil ? "checkmark.circle.fill" : "rectangle.stack.badge.plus")
+                                    .font(.system(size: 16, weight: .bold))
+                                Text(savedDeck != nil ? "Deck Added to Library" : (selectedCardIDs.count == 1 ? "Add Deck with 1 Card" : "Add Deck with \(selectedCardIDs.count) Cards"))
+                                    .font(.custom("Poppins-SemiBold", size: 15))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .foregroundStyle(.white)
+                            .background(
+                                savedDeck != nil
+                                    ? LinearGradient(colors: [Color.green.opacity(0.90), Color.green.opacity(0.75)], startPoint: .leading, endPoint: .trailing)
+                                    : (selectedCardIDs.isEmpty
+                                        ? LinearGradient(colors: [Color.gray.opacity(0.5), Color.gray.opacity(0.4)], startPoint: .leading, endPoint: .trailing)
+                                        : LinearGradient(colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
+                            )
+                            .clipShape(Capsule())
+                            .shadow(
+                                color: savedDeck != nil
+                                    ? Color.green.opacity(0.35)
+                                    : (selectedCardIDs.isEmpty ? Color.clear : LearnAlertStyle.indigo.opacity(0.40)),
+                                radius: 8,
+                                y: 3
+                            )
+                        }
+                        .disabled(selectedCardIDs.isEmpty || showsSavedDeck || isRefining || savedDeck != nil)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
                     }
-                    .foregroundStyle(.white)
-                    .background(savedDeck != nil ? Color.green.opacity(0.8) : (selectedCardIDs.isEmpty ? Color.gray : LearnAlertStyle.indigo))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .disabled(selectedCardIDs.isEmpty || showsSavedDeck || isRefining || savedDeck != nil)
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    .nativeGlass(cornerRadius: 0)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.0),
+                                Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.85),
+                                Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.98)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea(edges: .bottom)
+                    )
                 }
             }
 
@@ -243,6 +302,11 @@ struct GeneratedQuizImportView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("This deck has already been created and added to your library. To generate more cards or create another deck, please start a new chat session.")
+            }
+            .alert("Daily Generation Limit Reached", isPresented: $showingDailyLimitAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("You have reached the daily limit of \(Self.dailyGenerationLimit) AI-generated decks. Please try again tomorrow!")
             }
             .sheet(isPresented: $showingPDFSectionPicker) {
                 if let result = pdfAnalysisResult {
@@ -316,6 +380,10 @@ struct GeneratedQuizImportView: View {
 
     private func generateDeck() {
         guard !isGenerating else { return }
+        if Self.isDailyLimitReached {
+            showingDailyLimitAlert = true
+            return
+        }
         let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveUpload = pendingUpload ?? activeUpload
         guard effectiveUpload != nil || !message.isEmpty else {
@@ -390,6 +458,7 @@ struct GeneratedQuizImportView: View {
                 }
 
                 if let deck = result.deck {
+                    Self.incrementDailyGenerationsCount()
                     assistantMessage = result.assistantMessage
                     generatedDeck = deck
                     selectedCardIDs = Set(deck.cards.map(\.id))
@@ -1256,18 +1325,8 @@ private struct AIWelcomeBubble: View {
             Spacer(minLength: 4)
         }
         .sheet(isPresented: $showingPrivacy) {
-            NavigationStack {
-                PrivacyPolicyView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Done") {
-                                showingPrivacy = false
-                            }
-                            .font(.custom("Poppins-Medium", size: 15))
-                            .foregroundStyle(LearnAlertStyle.indigo)
-                        }
-                    }
-            }
+            SafariView(url: URL(string: "https://learnalertapp.com/privacy-policy")!)
+                .ignoresSafeArea()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

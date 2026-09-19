@@ -307,12 +307,12 @@ public enum PDFOutlineManager {
     // MARK: - STEP 2: Regex Heading Detection
 
     private static func extractFromRegex(doc: PDFDocument) -> [PDFSectionItem] {
-        let pattern = #"^\s*(Módulo|Modulo|Lección|Leccion|Unidad|Capítulo|Capitulo|Tema|Module|Lesson|Unit|Chapter|Section|Part)\s+\d+"#
+        let pattern = #"^\s*(Módulo|Modulo|Lección|Leccion|Unidad|Capítulo|Capitulo|Tema|Module|Lesson|Unit|Chapter|Section|Part)\s+(\d+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return []
         }
 
-        var matchedHeadings: [(title: String, pageIndex: Int)] = []
+        var rawMatches: [(title: String, lessonKey: String, pageIndex: Int)] = []
 
         for pageIndex in 0..<doc.pageCount {
             guard let page = doc.page(at: pageIndex), let pageText = page.string else { continue }
@@ -322,20 +322,43 @@ public enum PDFOutlineManager {
 
             let first3Lines = lines.prefix(3)
             for line in first3Lines {
-                let range = NSRange(location: 0, length: line.utf16.count)
-                if regex.firstMatch(in: line, options: [], range: range) != nil {
-                    matchedHeadings.append((title: line, pageIndex: pageIndex))
+                let nsLine = line as NSString
+                let range = NSRange(location: 0, length: nsLine.length)
+                if let match = regex.firstMatch(in: line, options: [], range: range) {
+                    // Extract normalized key like "lesson-5" to detect repeating running headers
+                    let prefix = nsLine.substring(with: match.range(at: 1)).lowercased()
+                    let number = nsLine.substring(with: match.range(at: 2))
+                    let key = "\(prefix)-\(number)"
+                    rawMatches.append((title: line, lessonKey: key, pageIndex: pageIndex))
                     break
                 }
             }
         }
 
-        guard matchedHeadings.count >= 2 else { return [] }
+        // Deduplicate headings that repeat the same lesson/unit/chapter across multiple pages (e.g. running headers)
+        var deduplicated: [(title: String, pageIndex: Int)] = []
+        for match in rawMatches {
+            if let last = deduplicated.last {
+                // If this heading has the exact same title, or same lesson key as the last heading,
+                // it is a running header or continuation: ignore it so it doesn't fracture the section!
+                let lastKey = rawMatches.last(where: { $0.pageIndex == last.pageIndex })?.lessonKey
+                let isSameKey = (lastKey != nil && lastKey == match.lessonKey)
+                let isSameTitle = (last.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                                   == match.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+
+                if isSameKey || isSameTitle {
+                    continue
+                }
+            }
+            deduplicated.append((title: match.title, pageIndex: match.pageIndex))
+        }
+
+        guard deduplicated.count >= 2 else { return [] }
 
         var sections: [PDFSectionItem] = []
-        for i in 0..<matchedHeadings.count {
-            let current = matchedHeadings[i]
-            let nextStart = (i + 1 < matchedHeadings.count) ? matchedHeadings[i + 1].pageIndex : doc.pageCount
+        for i in 0..<deduplicated.count {
+            let current = deduplicated[i]
+            let nextStart = (i + 1 < deduplicated.count) ? deduplicated[i + 1].pageIndex : doc.pageCount
             let endPage = max(current.pageIndex, nextStart - 1)
             let clampedEnd = min(endPage, doc.pageCount - 1)
             let kind = classifyKind(title: current.title)

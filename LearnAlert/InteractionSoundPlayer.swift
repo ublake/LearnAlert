@@ -14,6 +14,7 @@ final class InteractionSoundPlayer: @unchecked Sendable {
         case skip
         case sentTo = "sentto"
         case receiveFrom = "receivefrom"
+        case oneHourLater = "one-hour-later"
     }
 
     private let audioQueue = DispatchQueue(label: "com.learnalert.audio", qos: .userInteractive)

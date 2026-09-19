@@ -7,6 +7,8 @@
 
 import Foundation
 import Testing
+import UIKit
+import PDFKit
 @testable import LearnAlert
 
 @Suite("Flashcard Spaced Repetition Tests")

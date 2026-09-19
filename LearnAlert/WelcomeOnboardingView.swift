@@ -1,31 +1,44 @@
+import AVKit
+import AVFoundation
 import SwiftUI
 import UserNotifications
 
 struct WelcomeOnboardingView: View {
     @Environment(\.openURL) private var openURL
     @State private var page = 0
+    @State private var tutorialStep = 0
+    @State private var selectedDeckName: String? = nil
+    @State private var isBouncingHint = false
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var isRequestingPermission = false
 
     let completion: () -> Void
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
+            // Full-screen edge-to-edge dark background filling behind Dynamic Island / notch
+            Color(red: 0.08, green: 0.10, blue: 0.17)
+                .ignoresSafeArea()
+
             CoursezyBackground()
+                .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top Progress Bar
-                HStack(spacing: 8) {
-                    Capsule()
-                        .fill(page >= 0 ? LearnAlertStyle.indigo : Color.primary.opacity(0.12))
-                        .frame(height: 4)
-                    Capsule()
-                        .fill(page >= 1 ? LearnAlertStyle.indigo : Color.primary.opacity(0.12))
-                        .frame(height: 4)
+                // Top Progress Bar (Visible during setup, hidden during full-screen lockscreen/meme scenes)
+                if tutorialStep < 2 || page == 0 {
+                    HStack(spacing: 8) {
+                        Capsule()
+                            .fill(page >= 0 ? LearnAlertStyle.indigo : Color.white.opacity(0.18))
+                            .frame(height: 4)
+                        Capsule()
+                            .fill(page >= 1 ? LearnAlertStyle.indigo : Color.white.opacity(0.18))
+                            .frame(height: 4)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+                    .padding(.bottom, 6)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
 
                 if page == 0 {
                     NotificationPermissionIntroPage(
@@ -46,12 +59,13 @@ struct WelcomeOnboardingView: View {
                     ))
                 } else {
                     AlertsTutorialView(
+                        step: $tutorialStep,
+                        selectedDeckName: $selectedDeckName,
                         onBack: {
                             withAnimation(.spring(response: 0.42, dampingFraction: 0.76)) {
                                 page = 0
                             }
-                        },
-                        completion: completion
+                        }
                     )
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .move(edge: .trailing)),
@@ -59,7 +73,78 @@ struct WelcomeOnboardingView: View {
                     ))
                 }
             }
+
+            // Step 3, 4 & 5: Dropdown Notification Replica & Fullscreen Lock Screen Overlay at Root Level (extends to tippy top!)
+            if page == 1 && tutorialStep >= 3 {
+                ZStack(alignment: .top) {
+                    LockScreenBackdropView(isMastered: tutorialStep == 5)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            if tutorialStep == 3 {
+                                withAnimation(.spring(response: 0.44, dampingFraction: 0.74)) {
+                                    tutorialStep = 4
+                                }
+                            }
+                        }
+
+                    if tutorialStep == 5 {
+                        // Step 5: Mastered Card centered on screen with standalone button at bottom
+                        TutorialMasteredView(completion: completion)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.95).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                    } else {
+                        VStack(spacing: 12) {
+                            // Notification Replica (Compact or Expanded)
+                            FakeTutorialNotification(
+                                step: $tutorialStep,
+                                deckTitle: selectedDeckName ?? "Mental Math"
+                            )
+                            .padding(.horizontal, 14)
+                            .padding(.top, 54)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+
+                            if tutorialStep == 3 {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "hand.tap.fill")
+                                        .offset(y: isBouncingHint ? 2 : -2)
+                                    Text("Press and hold notification to expand")
+                                        .font(.custom("Poppins-SemiBold", size: 13))
+                                }
+                                .foregroundStyle(.white)
+                                .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
+                                .padding(.top, 6)
+                                .onAppear {
+                                    withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                                        isBouncingHint = true
+                                    }
+                                }
+                            }
+
+                            Spacer()
+                        }
+                    }
+                }
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(50)
+            }
+
+            // Step 2: SpongeBob "ONE HOUR LATER..." Meme Scene at Root Level (extends to tippy top!)
+            if page == 1 && tutorialStep == 2 {
+                SpongeBobTimeCardView(isActive: tutorialStep == 2) {
+                    InteractionSoundPlayer.shared.play(.receiveFrom)
+                    withAnimation(.spring(response: 0.46, dampingFraction: 0.72)) {
+                        tutorialStep = 3
+                    }
+                }
+                .ignoresSafeArea()
+                .transition(.opacity)
+                .zIndex(100)
+            }
         }
+        .preferredColorScheme(.dark)
         .task {
             await refreshNotificationStatus()
         }
@@ -97,7 +182,7 @@ struct WelcomeOnboardingView: View {
     }
 }
 
-// MARK: - Page 1: Clean, Centered Value Intro & Permission
+// MARK: - Page 1: Video Preview & Clean Simple Intro (Full Height Layout)
 private struct NotificationPermissionIntroPage: View {
     let status: UNAuthorizationStatus
     let isRequesting: Bool
@@ -105,154 +190,217 @@ private struct NotificationPermissionIntroPage: View {
     let openSettings: () -> Void
     let startTutorial: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 20) {
-                // Mini Lock Screen Notification Visual Mock (Clean, realistic Apple lock screen banner)
-                LockScreenNotificationMock()
-                    .padding(.top, 10)
+        VStack(spacing: 12) {
+            // Top Headline & Subheadline above the video
+            VStack(spacing: 4) {
+                Text("Study without opening the app")
+                    .font(.custom("Poppins-SemiBold", size: 22))
+                    .foregroundStyle(Color.white)
+                    .multilineTextAlignment(.center)
 
-                // Headline & Core Proposition
-                VStack(spacing: 8) {
-                    Text("Study without opening an app.")
-                        .font(.custom("Poppins-SemiBold", size: 25))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .multilineTextAlignment(.center)
+                Text("We won’t send you notifications until you specifically schedule a study deck in the app.")
+                    .font(.custom("Poppins-Regular", size: 13))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
 
-                    Text("LearnAlert delivers flashcards as lock screen notifications throughout your day. Just press and hold to answer in two seconds.")
-                        .font(.custom("Poppins-Regular", size: 13.5))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-                        .padding(.horizontal, 10)
-                }
+            // Video Player automatically expands and is centered nicely
+            OnboardingVideoPlayerView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.5), radius: 18, y: 8)
+                .padding(.bottom, 6)
 
-                // Two High-Impact Highlight Pills
-                HStack(spacing: 12) {
+            // Bottom: Notifications status & Action Buttons directly below video
+            VStack(spacing: 10) {
+                if status == .authorized {
                     HStack(spacing: 8) {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(LearnAlertStyle.mint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("2-Second Quizzes")
-                                .font(.custom("Poppins-SemiBold", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                            Text("Answer on lock screen")
-                                .font(.custom("Poppins-Regular", size: 10.5))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(LearnAlertStyle.lime)
+                        Text("Notifications enabled!")
+                            .font(.custom("Poppins-Medium", size: 14))
+                            .foregroundStyle(Color.white)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .settingsGlassSurface(cornerRadius: 14)
+                    .frame(maxWidth: .infinity)
 
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock.badge.checkmark.fill")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(LearnAlertStyle.sky)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Spaced Alerts")
-                                .font(.custom("Poppins-SemiBold", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                            Text("Smart daily intervals")
-                                .font(.custom("Poppins-Regular", size: 10.5))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
+                    Button(action: startTutorial) {
+                        Label("Try the Interactive Demo", systemImage: "arrow.right")
+                            .font(.custom("Poppins-SemiBold", size: 15))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .settingsGlassSurface(cornerRadius: 14)
-                }
-                .padding(.horizontal, 4)
+                    .foregroundStyle(.white)
+                    .background(LearnAlertStyle.indigo)
+                    .clipShape(Capsule())
+                    .shadow(color: LearnAlertStyle.indigo.opacity(0.40), radius: 10, y: 4)
 
-                // Permission Actions
-                VStack(spacing: 12) {
-                    if status == .authorized {
+                } else if status == .denied {
+                    VStack(spacing: 8) {
                         HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(LearnAlertStyle.lime)
-                            Text("Notifications enabled!")
-                                .font(.custom("Poppins-Medium", size: 14))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.orange)
+                            Text("Notifications are disabled in Settings.")
+                                .font(.custom("Poppins-Medium", size: 13))
+                                .foregroundStyle(Color.white)
                         }
+                        .frame(maxWidth: .infinity)
 
-                        Button(action: startTutorial) {
-                            Label("Try the Interactive Demo", systemImage: "arrow.right")
+                        Button(action: openSettings) {
+                            Label("Open iOS Settings", systemImage: "gear")
                                 .font(.custom("Poppins-SemiBold", size: 15))
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 52)
+                                .frame(height: 50)
                         }
                         .foregroundStyle(.white)
                         .background(LearnAlertStyle.indigo)
                         .clipShape(Capsule())
-                        .shadow(color: LearnAlertStyle.indigo.opacity(0.32), radius: 10, y: 4)
+                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 8, y: 4)
 
-                    } else if status == .denied {
-                        VStack(spacing: 10) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(Color.orange)
-                                Text("Notifications are disabled in Settings.")
-                                    .font(.custom("Poppins-Medium", size: 13))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                            }
-
-                            Button(action: openSettings) {
-                                Label("Open iOS Settings", systemImage: "gear")
-                                    .font(.custom("Poppins-SemiBold", size: 15))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
-                            }
-                            .foregroundStyle(.white)
-                            .background(LearnAlertStyle.indigo)
-                            .clipShape(Capsule())
-                            .shadow(color: LearnAlertStyle.indigo.opacity(0.26), radius: 8, y: 4)
-
-                            Button("Continue anyway", action: startTutorial)
-                                .font(.custom("Poppins-Regular", size: 13))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
-                    } else {
-                        VStack(spacing: 9) {
-                            Button(action: requestPermission) {
-                                HStack(spacing: 8) {
-                                    if isRequesting {
-                                        ProgressView().tint(.white)
-                                    } else {
-                                        Image(systemName: "bell.badge.fill")
-                                    }
-                                    Text("Turn on Notifications")
-                                        .font(.custom("Poppins-SemiBold", size: 15))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 52)
-                            }
-                            .foregroundStyle(.white)
-                            .background(LearnAlertStyle.indigo)
-                            .clipShape(Capsule())
-                            .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 10, y: 5)
-                            .disabled(isRequesting)
-
-                            Text("Required to send you flashcard alerts throughout the day.")
-                                .font(.custom("Poppins-Regular", size: 11.5))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                            Button("Maybe Later", action: startTutorial)
-                                .font(.custom("Poppins-Regular", size: 13))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                                .padding(.top, 2)
-                        }
+                        Button("Continue anyway", action: startTutorial)
+                            .font(.custom("Poppins-Regular", size: 13))
+                            .foregroundStyle(Color.white.opacity(0.65))
                     }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    VStack(spacing: 8) {
+                        Button(action: requestPermission) {
+                            HStack(spacing: 8) {
+                                if isRequesting {
+                                    ProgressView().tint(.white)
+                                } else {
+                                    Image(systemName: "bell.badge.fill")
+                                }
+                                Text("Turn on Notifications")
+                                    .font(.custom("Poppins-SemiBold", size: 15))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                        }
+                        .foregroundStyle(.white)
+                        .background(LearnAlertStyle.indigo)
+                        .clipShape(Capsule())
+                        .shadow(color: LearnAlertStyle.indigo.opacity(0.45), radius: 10, y: 5)
+                        .disabled(isRequesting)
+
+                        Button("Maybe Later", action: startTutorial)
+                            .font(.custom("Poppins-Regular", size: 13))
+                            .foregroundStyle(Color.white.opacity(0.65))
+                            .padding(.top, 4)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.top, 4)
-                .padding(.horizontal, 4)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Onboarding Looping Video Player (Aspect Fill / No Letterboxing)
+private struct OnboardingVideoPlayerView: View {
+    @State private var player: AVQueuePlayer?
+    @State private var playerLooper: AVPlayerLooper?
+
+    var body: some View {
+        ZStack {
+            Color.black
+
+            if let player {
+                AVPlayerAspectFillView(player: player)
+                    .allowsHitTesting(false)
+            } else {
+                ProgressView()
+                    .tint(.white)
+            }
+        }
+        .onAppear {
+            setupPlayer()
+        }
+        .onDisappear {
+            player?.pause()
+        }
+    }
+
+    private func setupPlayer() {
+        guard player == nil else {
+            player?.play()
+            return
+        }
+
+        // Search for preview1.mp4 in bundle
+        let url = Bundle.main.url(forResource: "preview1", withExtension: "mp4")
+            ?? Bundle.main.url(forResource: "preview1", withExtension: "mp4", subdirectory: "Videos")
+
+        guard let url else { return }
+
+        let item = AVPlayerItem(url: url)
+        let queuePlayer = AVQueuePlayer(playerItem: item)
+        queuePlayer.isMuted = true
+        let looper = AVPlayerLooper(player: queuePlayer, templateItem: item)
+
+        self.player = queuePlayer
+        self.playerLooper = looper
+        queuePlayer.play()
+    }
+}
+
+// MARK: - UIViewRepresentable to adjust vertical video framing (crop top ~20%, extend to bottom)
+private struct AVPlayerAspectFillView: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PlayerUIView {
+        let view = PlayerUIView()
+        view.playerLayer.player = player
+        return view
+    }
+
+    func updateUIView(_ uiView: PlayerUIView, context: Context) {
+        uiView.playerLayer.player = player
+    }
+
+    class PlayerUIView: UIView {
+        let playerLayer = AVPlayerLayer()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            clipsToBounds = true
+            playerLayer.videoGravity = .resizeAspectFill
+            layer.addSublayer(playerLayer)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let viewWidth = bounds.width
+            let viewHeight = bounds.height
+            guard viewWidth > 0, viewHeight > 0 else { return }
+
+            // Video original aspect ratio is 1320 x 2868 (~1 : 2.173)
+            let videoAspect: CGFloat = 2868.0 / 1320.0
+            let naturalHeight = viewWidth * videoAspect
+
+            // Align the bottom of the video exactly to the bottom of the box,
+            // shifting the video all the way upward so the very bottom is 100% visible.
+            let layerY = viewHeight - naturalHeight
+
+            playerLayer.frame = CGRect(
+                x: 0,
+                y: layerY,
+                width: viewWidth,
+                height: naturalHeight
+            )
         }
     }
 }
@@ -264,40 +412,41 @@ private struct LockScreenNotificationMock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(LearnAlertStyle.indigo)
-                        .frame(width: 22, height: 22)
-                    Text("LA")
-                        .font(.system(size: 8.5, weight: .black))
-                        .foregroundStyle(.white)
-                }
+                Image("AppLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                 Text("LEARNALERT")
                     .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .foregroundStyle(Color.white.opacity(0.85))
 
                 Spacer()
 
                 Text("now")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Mental Math")
                     .font(.custom("Poppins-SemiBold", size: 12))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .foregroundStyle(Color.white.opacity(0.65))
                 Text("Press and hold to answer")
                     .font(.custom("Poppins-Regular", size: 13.5))
-                    .foregroundStyle(Color.primary.opacity(0.9))
+                    .foregroundStyle(Color.white.opacity(0.95))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(red: 0.12, green: 0.15, blue: 0.24).opacity(0.85))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(isGlowPulse ? LearnAlertStyle.indigo.opacity(0.4) : Color.white.opacity(0.4), lineWidth: 1.2)
+                .stroke(isGlowPulse ? LearnAlertStyle.indigo.opacity(0.6) : Color.white.opacity(0.2), lineWidth: 1.2)
         )
         .shadow(color: LearnAlertStyle.indigo.opacity(isGlowPulse ? 0.18 : 0.08), radius: 14, y: 5)
         .onAppear {
@@ -310,14 +459,11 @@ private struct LockScreenNotificationMock: View {
 
 // MARK: - Page 2: Interactive Tutorial with Real Homepage Deck Picker & SpongeBob Meme
 private struct AlertsTutorialView: View {
+    @Binding var step: Int
+    @Binding var selectedDeckName: String?
     let onBack: () -> Void
-    let completion: () -> Void
 
-    // 0 = Select deck, 1 = Deck selected (ready to schedule), 2 = SpongeBob Meme, 3 = Notification dropped, 4 = Notification expanded, 5 = Mastered
-    @State private var step = 0
-    @State private var selectedDeckName: String? = nil
     @State private var selectedDeckCardCount: String? = nil
-    @State private var isBouncingHint = false
 
     private let availableDecks = [
         ("Mental Math", "5 cards"),
@@ -334,17 +480,17 @@ private struct AlertsTutorialView: View {
                         Button(action: onBack) {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                .foregroundStyle(Color.white.opacity(0.8))
                                 .frame(width: 36, height: 36)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
+                                .background(Color.white.opacity(0.12), in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 0.8))
                         }
 
                         Spacer()
 
                         Text("Interactive Tutorial")
                             .font(.custom("Poppins-SemiBold", size: 15))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .foregroundStyle(Color.white)
 
                         Spacer()
 
@@ -352,7 +498,7 @@ private struct AlertsTutorialView: View {
                     }
                     .padding(.top, 4)
 
-                    // Dynamic Guidance Callout
+                    // Dynamic Guidance Callout (Centered & Full Width)
                     HStack(spacing: 12) {
                         Image(systemName: guidanceIcon)
                             .font(.system(size: 17, weight: .semibold))
@@ -360,25 +506,33 @@ private struct AlertsTutorialView: View {
 
                         Text(guidanceText)
                             .font(.custom("Poppins-Medium", size: 13))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .foregroundStyle(Color.white)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Spacer(minLength: 0)
                     }
-                    .padding(13)
-                    .settingsGlassSurface(cornerRadius: 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color(red: 0.12, green: 0.15, blue: 0.24).opacity(0.85))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
                     .animation(.easeInOut(duration: 0.25), value: step)
 
-                    // Real Homepage Alert Control Card Mock
+                    // Real Homepage Alert Control Card Mock (Extended Full Width)
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Alert schedule")
                                     .font(.custom("Poppins-SemiBold", size: 17, relativeTo: .headline))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    .foregroundStyle(Color.white)
                                 Text("Select what deck you want to schedule:")
                                     .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption2))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                                    .foregroundStyle(Color.white.opacity(0.65))
                             }
                             Spacer()
                             ScheduleStatusDot(isActive: step >= 2)
@@ -410,91 +564,32 @@ private struct AlertsTutorialView: View {
                                     .frame(height: 44)
                             }
                             .foregroundStyle(.white)
-                            .background(selectedDeckName == nil ? Color.gray.opacity(0.34) : LearnAlertStyle.indigo)
+                            .background(selectedDeckName == nil ? Color.white.opacity(0.15) : LearnAlertStyle.indigo)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .shadow(color: (selectedDeckName == nil ? Color.clear : LearnAlertStyle.indigo).opacity(0.28), radius: 8, y: 3)
+                            .shadow(color: (selectedDeckName == nil ? Color.clear : LearnAlertStyle.indigo).opacity(0.35), radius: 8, y: 3)
                             .disabled(selectedDeckName == nil || step > 1)
                         }
                     }
+                    .frame(maxWidth: .infinity)
                     .padding(18)
-                    .settingsGlassSurface(cornerRadius: 20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color(red: 0.12, green: 0.15, blue: 0.24).opacity(0.85))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
 
                     Spacer(minLength: 40)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
+                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity)
 
-            // Step 2: SpongeBob "ONE HOUR LATER..." Meme Scene
-            if step == 2 {
-                SpongeBobTimeCardView {
-                    InteractionSoundPlayer.shared.play(.receiveFrom)
-                    withAnimation(.spring(response: 0.46, dampingFraction: 0.72)) {
-                        step = 3
-                    }
-                }
-                .transition(.asymmetric(
-                    insertion: .scale(scale: 0.96).combined(with: .opacity),
-                    removal: .opacity
-                ))
-                .zIndex(20)
-            }
 
-            // Step 3 & 4: Dropdown Notification Replica Overlay
-            if step >= 3 {
-                LockScreenBackdropView(isMastered: step == 5)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .onTapGesture {
-                        if step == 3 {
-                            withAnimation(.spring(response: 0.44, dampingFraction: 0.74)) {
-                                step = 4
-                            }
-                        }
-                    }
-
-                VStack(spacing: 12) {
-                    if step == 5 {
-                        // Step 5: Mastered & Older Notifications Tip
-                        TutorialMasteredCard(completion: completion)
-                            .padding(.horizontal, 18)
-                            .padding(.top, 60)
-                            .transition(.asymmetric(
-                                insertion: .scale(scale: 0.95).combined(with: .opacity),
-                                removal: .opacity
-                            ))
-                    } else {
-                        // Notification Replica (Compact or Expanded)
-                        FakeTutorialNotification(
-                            step: $step,
-                            deckTitle: selectedDeckName ?? "Mental Math"
-                        )
-                        .padding(.horizontal, 14)
-                        .padding(.top, 16)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-
-                        if step == 3 {
-                            HStack(spacing: 6) {
-                                Image(systemName: "hand.tap.fill")
-                                    .offset(y: isBouncingHint ? 2 : -2)
-                                Text("Press and hold notification to expand")
-                                    .font(.custom("Poppins-SemiBold", size: 13))
-                            }
-                            .foregroundStyle(.white)
-                            .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
-                            .padding(.top, 6)
-                            .onAppear {
-                                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                                    isBouncingHint = true
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer()
-                }
-                .zIndex(15)
-            }
         }
     }
 
@@ -537,7 +632,6 @@ private struct AlertsTutorialView: View {
     }
 
     private func handleScheduleAlerts() {
-        InteractionSoundPlayer.shared.play(.scheduledAlerts)
         HapticFeedback.success()
         withAnimation(.easeInOut(duration: 0.35)) {
             step = 2
@@ -560,24 +654,24 @@ private struct TutorialDeckPickerLabel: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(cardCount ?? "Nothing selected")
                     .font(.custom("Poppins-Regular", size: 10, relativeTo: .caption2))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .foregroundStyle(Color.white.opacity(0.60))
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.up.chevron.down")
                 .font(.caption.bold())
-                .foregroundStyle(LearnAlertStyle.textSecondary)
+                .foregroundStyle(Color.white.opacity(0.60))
         }
-        .foregroundStyle(LearnAlertStyle.textPrimary)
+        .foregroundStyle(Color.white)
         .padding(.horizontal, 14)
         .frame(height: 52)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(Color.white.opacity(0.06))
         )
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(selectedDeck == nil ? LearnAlertStyle.indigo.opacity(0.5) : LearnAlertStyle.glassStroke, lineWidth: 1)
+                .stroke(selectedDeck == nil ? LearnAlertStyle.indigo.opacity(0.6) : Color.white.opacity(0.14), lineWidth: 1)
         }
     }
 }
@@ -598,10 +692,12 @@ private struct ScheduleStatusDot: View {
 
 // MARK: - SpongeBob "ONE HOUR LATER..." Time Card Meme
 private struct SpongeBobTimeCardView: View {
+    let isActive: Bool
     let onContinue: () -> Void
     @State private var timeOffset: CGFloat = 0
-    @State private var textScale: CGFloat = 0.85
-    @State private var textOpacity: Double = 0
+    @State private var textScale: CGFloat = 1.0
+    @State private var textOpacity: Double = 1.0
+    @State private var autoDismissTask: Task<Void, Never>? = nil
 
     var body: some View {
         ZStack {
@@ -640,23 +736,29 @@ private struct SpongeBobTimeCardView: View {
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture {
+            autoDismissTask?.cancel()
             onContinue()
         }
-        .task {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
-                textScale = 1.0
-                textOpacity = 1.0
-            }
+        .onAppear {
+            InteractionSoundPlayer.shared.play(.oneHourLater)
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
                 timeOffset = 5
             }
-            try? await Task.sleep(for: .milliseconds(4200))
-            onContinue()
+            autoDismissTask?.cancel()
+            autoDismissTask = Task {
+                try? await Task.sleep(for: .milliseconds(3000))
+                if !Task.isCancelled {
+                    onContinue()
+                }
+            }
+        }
+        .onDisappear {
+            autoDismissTask?.cancel()
         }
     }
 }
 
-// MARK: - Tropical Background Pattern for SpongeBob Meme
+// MARK: - Tropical Background Pattern for SpongeBob Meme (DrawingGroup cached for GPU performance)
 private struct TropicalBackgroundView: View {
     var body: some View {
         ZStack {
@@ -702,6 +804,8 @@ private struct TropicalBackgroundView: View {
                 .opacity(0.32)
             }
         }
+        .drawingGroup()
+        .ignoresSafeArea()
     }
 }
 
@@ -710,18 +814,42 @@ private struct TropicalStamp: View {
 
     var body: some View {
         if isPineapple {
-            VStack(spacing: -3) {
-                HStack(spacing: 2) {
+            VStack(spacing: -5) {
+                // Bunched overlapping pineapple crown leaves radiating from center
+                ZStack(alignment: .bottom) {
+                    // Back layer outer spreading leaves
+                    HStack(spacing: 12) {
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .rotationEffect(.degrees(-42))
+                            .offset(x: 2, y: 3)
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .rotationEffect(.degrees(42))
+                            .offset(x: -2, y: 3)
+                    }
+                    .foregroundStyle(Color(red: 0.28, green: 0.48, blue: 0.12))
+
+                    // Mid layer angled leaves
+                    HStack(spacing: 4) {
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .rotationEffect(.degrees(-20))
+                            .offset(y: 1)
+                        Image(systemName: "leaf.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .rotationEffect(.degrees(20))
+                            .offset(y: 1)
+                    }
+                    .foregroundStyle(Color(red: 0.33, green: 0.55, blue: 0.14))
+
+                    // Center tall upright leaf
                     Image(systemName: "leaf.fill")
-                        .font(.system(size: 15))
-                        .rotationEffect(.degrees(-25))
-                    Image(systemName: "leaf.fill")
-                        .font(.system(size: 18))
-                    Image(systemName: "leaf.fill")
-                        .font(.system(size: 15))
-                        .rotationEffect(.degrees(25))
+                        .font(.system(size: 21, weight: .bold))
+                        .offset(y: -3)
+                        .foregroundStyle(Color(red: 0.38, green: 0.62, blue: 0.16))
                 }
-                .foregroundStyle(Color(red: 0.35, green: 0.58, blue: 0.15))
+                .frame(width: 44, height: 26)
 
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(Color(red: 0.88, green: 0.55, blue: 0.12))
@@ -809,25 +937,21 @@ private struct FakeTutorialNotification: View {
         VStack(spacing: 14) {
             // Notification Top Header Bar
             HStack(spacing: 9) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(LearnAlertStyle.indigo)
-                        .frame(width: 30, height: 30)
-
-                    Text("LA")
-                        .font(.system(size: 11, weight: .black))
-                        .foregroundStyle(.white)
-                }
+                Image("AppLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                 Text("LEARNALERT")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .foregroundStyle(Color.white.opacity(0.85))
 
                 Spacer()
 
                 Text("now")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
 
             if step == 3 {
@@ -835,29 +959,22 @@ private struct FakeTutorialNotification: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(deckTitle)
                         .font(.custom("Poppins-SemiBold", size: 14))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Color.white)
                     Text("Press and hold to answer")
                         .font(.custom("Poppins-Regular", size: 14))
-                        .foregroundStyle(Color.primary.opacity(0.9))
+                        .foregroundStyle(Color.white.opacity(0.9))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 2)
 
-                HStack {
-                    Spacer()
-                    Image(systemName: "chevron.compact.down")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color.secondary.opacity(0.7))
-                    Spacer()
-                }
-                .padding(.top, 2)
+
 
             } else {
                 // Expanded flashcard question & answers view
                 VStack(spacing: 12) {
                     Text(deckQuestion.question)
                         .font(.custom("Poppins-SemiBold", size: 18))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Color.white)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 4)
@@ -879,12 +996,12 @@ private struct FakeTutorialNotification: View {
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
                                 .frame(maxWidth: .infinity)
-                                .foregroundStyle(selectedAnswer == answer ? .white : Color.primary)
+                                .foregroundStyle(selectedAnswer == answer ? .white : Color.white)
                                 .background(answerBackground(answer))
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(selectedAnswer == answer ? Color.clear : Color.primary.opacity(0.10), lineWidth: 1)
+                                        .stroke(selectedAnswer == answer ? Color.clear : Color.white.opacity(0.15), lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -958,10 +1075,10 @@ private struct FakeTutorialNotification: View {
     }
 
     private func answerBackground(_ answer: String) -> Color {
-        guard let selectedAnswer else { return Color.primary.opacity(0.06) }
+        guard let selectedAnswer else { return Color.white.opacity(0.08) }
         if answer == deckQuestion.correctAnswer && selectedAnswer == deckQuestion.correctAnswer { return LearnAlertStyle.lime }
         if answer == selectedAnswer { return LearnAlertStyle.coral }
-        return Color.primary.opacity(0.06)
+        return Color.white.opacity(0.08)
     }
 }
 
@@ -971,16 +1088,21 @@ private struct LockScreenBackdropView: View {
 
     var body: some View {
         ZStack {
-            // Fullscreen material completely obscuring previous setup UI
-            Rectangle()
-                .fill(.ultraThickMaterial)
+            // Fullscreen seamless dark backdrop completely obscuring previous setup UI
+            Color(red: 0.05, green: 0.07, blue: 0.12)
                 .ignoresSafeArea()
 
             if !isMastered {
-                // Dark authentic lock screen ambience covering everything
-                Color(red: 0.05, green: 0.07, blue: 0.12)
-                    .opacity(0.92)
-                    .ignoresSafeArea()
+                // Subtle authentic lock screen depth gradient
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.06, green: 0.08, blue: 0.14),
+                        Color(red: 0.04, green: 0.05, blue: 0.10)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
                 // Lock Screen Clock & Date Watermark
                 VStack(spacing: 4) {
@@ -1011,124 +1133,162 @@ private struct LockScreenBackdropView: View {
     }
 }
 
-// MARK: - Tutorial Completion & Older Notifications Tip (Bright, luminous card)
-private struct TutorialMasteredCard: View {
+// MARK: - Tutorial Completion & Older Notifications Tip (Dark Mode UI with Centered Card and Standalone Bottom Button)
+private struct TutorialMasteredView: View {
     let completion: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
+    @State private var cooldownRemaining: Int = 5
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Glowing Celebration Badge
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [LearnAlertStyle.lime.opacity(0.40), LearnAlertStyle.lime.opacity(0.05)],
-                            center: .center,
-                            startRadius: 5,
-                            endRadius: 46
+        VStack(spacing: 0) {
+            Spacer()
+
+            // Centered "You're All Set!" Content Card
+            VStack(spacing: 20) {
+                // Glowing Celebration Badge
+                ZStack {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [LearnAlertStyle.lime.opacity(0.40), LearnAlertStyle.lime.opacity(0.05)],
+                                center: .center,
+                                startRadius: 5,
+                                endRadius: 46
+                            )
                         )
-                    )
-                    .frame(width: 92, height: 92)
+                        .frame(width: 92, height: 92)
 
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [LearnAlertStyle.lime, LearnAlertStyle.mint],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [LearnAlertStyle.lime, LearnAlertStyle.mint],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .frame(width: 66, height: 66)
-                    .shadow(color: LearnAlertStyle.lime.opacity(0.50), radius: 14, y: 4)
+                        .frame(width: 66, height: 66)
+                        .shadow(color: LearnAlertStyle.lime.opacity(0.50), radius: 14, y: 4)
 
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.white)
-            }
-            .padding(.top, 4)
-
-            VStack(spacing: 8) {
-                Text("You're All Set!")
-                    .font(.custom("Poppins-SemiBold", size: 24))
-                    .foregroundStyle(colorScheme == .dark ? Color.white : LearnAlertStyle.textPrimary)
-
-                Text("You just answered a flashcard without ever leaving your lock screen! (not actually since its a tutorial haha but you get it)")
-                    .font(.custom("Poppins-Regular", size: 14))
-                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.85) : LearnAlertStyle.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.horizontal, 4)
-            }
-
-            // High-contrast Pro Tip Box
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "lightbulb.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.yellow)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Pro Tip for Older Alerts")
-                        .font(.custom("Poppins-SemiBold", size: 13.5))
-                        .foregroundStyle(colorScheme == .dark ? Color.white : LearnAlertStyle.textPrimary)
-
-                    Text("If an alert is in Notification Center, press and hold it anytime — or swipe left and tap View — to expand the flashcard.")
-                        .font(.custom("Poppins-Regular", size: 12))
-                        .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.80) : LearnAlertStyle.textSecondary)
-                        .lineSpacing(2.5)
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.white)
                 }
-                Spacer(minLength: 0)
+                .padding(.top, 4)
+
+                VStack(spacing: 8) {
+                    Text("You're All Set!")
+                        .font(.custom("Poppins-SemiBold", size: 24))
+                        .foregroundStyle(Color.white)
+
+                    Text("You just answered a flashcard without ever leaving your lock screen! (not actually since its a tutorial haha but you get it)")
+                        .font(.custom("Poppins-Regular", size: 14))
+                        .foregroundStyle(Color.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+                        .padding(.horizontal, 4)
+                }
+
+                // High-contrast Pro Tip Box (Extended Full Width)
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.yellow)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pro Tip for Older Alerts")
+                            .font(.custom("Poppins-SemiBold", size: 13.5))
+                            .foregroundStyle(Color.white)
+
+                        Text("If an alert is in Notification Center, press and hold it anytime — or swipe left and tap View — to expand the flashcard.")
+                            .font(.custom("Poppins-Regular", size: 12))
+                            .foregroundStyle(Color.white.opacity(0.80))
+                            .lineSpacing(2.5)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
             }
-            .padding(15)
+            .frame(maxWidth: .infinity)
+            .padding(24)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.primary.opacity(0.04))
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .fill(Color(red: 0.12, green: 0.14, blue: 0.22).opacity(0.96))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.18) : Color.primary.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.40),
+                                Color.white.opacity(0.12)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
             )
+            .shadow(color: Color.black.opacity(0.55), radius: 30, y: 12)
+            .padding(.horizontal, 18)
 
-            // Primary Action Button
+            Spacer()
+
+            // Standalone Action Button at the very bottom of the screen
             Button(action: {
+                guard cooldownRemaining == 0 else { return }
                 InteractionSoundPlayer.shared.play(.selection)
                 HapticFeedback.success()
                 completion()
             }) {
-                Label("Start Learning", systemImage: "sparkles")
-                    .font(.custom("Poppins-SemiBold", size: 16))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                HStack(spacing: 8) {
+                    if cooldownRemaining > 0 {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 15))
+                        Text("Start Learning (\(cooldownRemaining)s)")
+                            .font(.custom("Poppins-SemiBold", size: 15))
+                    } else {
+                        Label("Start Learning", systemImage: "sparkles")
+                            .font(.custom("Poppins-SemiBold", size: 16))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 54)
             }
-            .foregroundStyle(.white)
-            .background(LearnAlertStyle.indigo)
+            .foregroundStyle(cooldownRemaining > 0 ? Color.white.opacity(0.55) : Color.white)
+            .background(
+                cooldownRemaining > 0
+                    ? Color(red: 0.22, green: 0.24, blue: 0.32)
+                    : LearnAlertStyle.indigo
+            )
             .clipShape(Capsule())
-            .shadow(color: LearnAlertStyle.indigo.opacity(0.40), radius: 10, y: 4)
-            .padding(.top, 4)
+            .overlay(
+                Capsule()
+                    .stroke(cooldownRemaining > 0 ? Color.white.opacity(0.12) : Color.clear, lineWidth: 1)
+            )
+            .shadow(
+                color: cooldownRemaining > 0 ? Color.clear : LearnAlertStyle.indigo.opacity(0.40),
+                radius: 10,
+                y: 4
+            )
+            .disabled(cooldownRemaining > 0)
+            .animation(.easeInOut(duration: 0.25), value: cooldownRemaining)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(
-                    colorScheme == .dark
-                    ? Color(red: 0.14, green: 0.16, blue: 0.25).opacity(0.96)
-                    : Color.white.opacity(0.97)
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            colorScheme == .dark ? Color.white.opacity(0.45) : Color.white,
-                            colorScheme == .dark ? Color.white.opacity(0.12) : Color.white.opacity(0.6)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1.5
-                )
-        )
-        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.45 : 0.16), radius: 30, y: 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            while cooldownRemaining > 0 {
+                try? await Task.sleep(for: .seconds(1))
+                cooldownRemaining = max(0, cooldownRemaining - 1)
+            }
+        }
     }
 }

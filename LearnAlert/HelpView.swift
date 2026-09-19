@@ -5,7 +5,6 @@ struct HelpView: View {
     @Query private var decks: [Deck]
     @State private var selectedDeckId = "NONE"
     @State private var showingEmptyDeckAlert = false
-    @State private var showingTutorial = false
 
     private var selectedDeck: Deck? {
         decks.first { $0.id.uuidString == selectedDeckId }
@@ -19,35 +18,6 @@ struct HelpView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HelpIntro()
-
-                    Button {
-                        showingTutorial = true
-                    } label: {
-                        Label("Replay Interactive Tutorial", systemImage: "play.circle.fill")
-                            .font(.custom("Poppins-SemiBold", size: 14))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                    }
-                    .foregroundStyle(.white)
-                    .background(
-                        LinearGradient(
-                            colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    )
-                    .shadow(color: LearnAlertStyle.indigo.opacity(0.25), radius: 8, y: 3)
-                    .fullScreenCover(isPresented: $showingTutorial) {
-                        WelcomeOnboardingView {
-                            showingTutorial = false
-                        }
-                    }
-
                     HelpQuestions()
                     HelpContact()
                     NotificationTestSection(

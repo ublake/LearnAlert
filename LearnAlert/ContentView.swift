@@ -2511,7 +2511,7 @@ struct VolumeSnappingSliderView: View {
     @ObservedObject var engine: StudyEngine
 
     private var totalMinutes: Int {
-        var startMin = engine.startHour * 60 + engine.startMinute
+        let startMin = engine.startHour * 60 + engine.startMinute
         var endMin = engine.endHour * 60 + engine.endMinute
         if endMin <= startMin { endMin += 24 * 60 }
         return max(endMin - startMin, 1)
@@ -3071,6 +3071,7 @@ private struct SystemCheckView: View {
             ("Generate deck endpoint", "v1/decks/generate"),
             ("Refine deck endpoint", "v1/decks/refine")
         ]
+        let apiKey = LearnAlertAPI.apiKey
         return await withTaskGroup(of: (Int, String, String, Bool).self) { group in
             for (index, endpoint) in endpoints.enumerated() {
                 group.addTask {
@@ -3078,7 +3079,7 @@ private struct SystemCheckView: View {
                     let url = endpoint.1.isEmpty ? baseURL : baseURL.appending(path: endpoint.1)
                     var request = URLRequest(url: url, timeoutInterval: 8)
                     request.httpMethod = "HEAD"
-                    if let key = LearnAlertAPI.apiKey {
+                    if let key = apiKey {
                         request.setValue(key, forHTTPHeaderField: "X-API-Key")
                     }
                     do {

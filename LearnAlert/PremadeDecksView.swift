@@ -523,15 +523,42 @@ private struct DiscoverFilterRow: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 9) {
                 ForEach(categories, id: \.self) { category in
-                    Button(category) { selection = category }
-                        .font(compact ? .caption.bold() : .subheadline.bold())
-                        .padding(.horizontal, compact ? 13 : 16)
-                        .padding(.vertical, compact ? 7 : 9)
-                        .foregroundStyle(selection == category ? LearnAlertStyle.indigoDeep : LearnAlertStyle.textPrimary)
-                        .clearGlassSurface(cornerRadius: 18)
-                        .overlay {
-                            if selection == category { Capsule().stroke(LearnAlertStyle.indigo.opacity(0.7), lineWidth: 2) }
-                        }
+                    let isSelected = (selection == category)
+                    Button(category) {
+                        selection = category
+                        InteractionSoundPlayer.shared.play(.selection)
+                    }
+                    .font(compact ? .caption.bold() : .subheadline.bold())
+                    .padding(.horizontal, compact ? 13 : 16)
+                    .padding(.vertical, compact ? 7 : 9)
+                    .foregroundStyle(isSelected ? Color.white : LearnAlertStyle.textPrimary)
+                    .background(
+                        isSelected
+                            ? AnyShapeStyle(
+                                LinearGradient(
+                                    colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            : AnyShapeStyle(LearnAlertStyle.glassTint)
+                    )
+                    .clipShape(Capsule())
+                    .overlay(
+                        Capsule()
+                            .stroke(
+                                isSelected
+                                    ? Color.white.opacity(0.35)
+                                    : LearnAlertStyle.glassStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(
+                        color: isSelected ? LearnAlertStyle.indigo.opacity(0.40) : Color.clear,
+                        radius: 8,
+                        y: 3
+                    )
+                    .animation(.easeInOut(duration: 0.2), value: isSelected)
                 }
             }
             .padding(.horizontal)

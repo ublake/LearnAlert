@@ -700,18 +700,14 @@ public struct PDFSectionPickerSheet: View {
         let doc = self.document
         let pagesToExport = self.selectedPageIndices
 
-        Task.detached(priority: .userInitiated) {
+        Task {
             do {
                 let subsetData = try PDFOutlineManager.createSubset(from: doc, selectedPageIndices: pagesToExport)
-                await MainActor.run {
-                    self.isExporting = false
-                    self.onConfirm(subsetData, formattedSectionName, folderTitle)
-                }
+                self.isExporting = false
+                self.onConfirm(subsetData, formattedSectionName, folderTitle)
             } catch {
-                await MainActor.run {
-                    self.isExporting = false
-                    self.errorMessage = error.localizedDescription
-                }
+                self.isExporting = false
+                self.errorMessage = error.localizedDescription
             }
         }
     }

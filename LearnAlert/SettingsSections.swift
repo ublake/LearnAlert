@@ -463,23 +463,7 @@ struct SettingsPreferencesGroup: View {
                 }
                 .padding(14)
 
-                settingsDivider
 
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "eyes")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Release the Card Gremlins")
-                            .font(.custom("Poppins-Medium", size: 13, relativeTo: .body))
-                        Text("Give your deck stacks tiny faces.")
-                            .font(.custom("Poppins-Regular", size: 10, relativeTo: .caption))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                    }
-                    Spacer()
-                    Toggle("Release the Card Gremlins", isOn: $deckCreaturesHaveFaces)
-                        .labelsHidden()
-                        .tint(LearnAlertStyle.figmaBlue)
-                }
-                .padding(14)
             }
             .foregroundStyle(LearnAlertStyle.textPrimary)
             .settingsGlassSurface(cornerRadius: 18)
@@ -884,9 +868,21 @@ struct WhatsNewView: View {
                         .font(.caption.bold())
                         .foregroundStyle(LearnAlertStyle.textSecondary)
 
+                    // Current release
                     ReleaseNotesEntry(
                         version: "1.0.0",
-                        title: "Release"
+                        title: "Release",
+                        badgeText: "Current Version",
+                        badgeColor: LearnAlertStyle.sky,
+                        isCurrent: true
+                    )
+
+                    // Planned release (matching same clean card style, placed below)
+                    ReleaseNotesEntry(
+                        version: "1.1.0",
+                        detail: "Image support · Improved categories · Advanced progression stats",
+                        badgeText: "Planned",
+                        badgeColor: LearnAlertStyle.mint
                     )
                 }
                 .padding(20)
@@ -900,32 +896,52 @@ struct WhatsNewView: View {
 
 private struct ReleaseNotesEntry: View {
     let version: String
-    let title: LocalizedStringResource
+    var title: LocalizedStringResource? = nil
     var detail: LocalizedStringResource? = nil
+    var badgeText: String? = nil
+    var badgeColor: Color = LearnAlertStyle.sky
+    var isCurrent: Bool = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 13) {
-            SettingsRowIcon(systemName: "app.badge.checkmark.fill")
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 Text(version)
                     .font(.custom("Poppins-SemiBold", size: 16))
+
+                if let badgeText {
+                    Text(badgeText)
+                        .font(.custom("Poppins-SemiBold", size: 10))
+                        .foregroundStyle(badgeColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(badgeColor.opacity(0.14), in: Capsule())
+                }
+
+                Spacer()
+            }
+
+            if let title {
                 Text(title)
                     .font(.custom("Poppins-Medium", size: 13))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
-                if let detail, !detail.key.isEmpty {
-                    Text(detail)
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
-            Spacer()
+
+            if let detail, !detail.key.isEmpty {
+                Text(detail)
+                    .font(.custom("Poppins-Regular", size: 12))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(LearnAlertStyle.textPrimary)
         .coursezyCard(cornerRadius: 16, padding: 14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(isCurrent ? LearnAlertStyle.sky.opacity(0.45) : Color.clear, lineWidth: 1.2)
+        )
     }
 }
-
 
 // MARK: - Feedback View
 struct FeedbackView: View {
