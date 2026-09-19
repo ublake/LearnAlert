@@ -71,6 +71,7 @@ public struct PDFSectionPickerSheet: View {
         self.detectionMethod = detectionMethod
         self.onConfirm = onConfirm
         self.onCancel = onCancel
+        _selectedTab = State(initialValue: sections.isEmpty ? .pages : .sections)
     }
 
     public var body: some View {
@@ -85,9 +86,7 @@ public struct PDFSectionPickerSheet: View {
 
                     // Mode switch: Sections vs Pages
                     Picker("Mode", selection: $selectedTab) {
-                        if !contentSections.isEmpty || !frontMatterSections.isEmpty {
-                            Text(PickerTab.sections.rawValue).tag(PickerTab.sections)
-                        }
+                        Text(PickerTab.sections.rawValue).tag(PickerTab.sections)
                         Text(PickerTab.pages.rawValue).tag(PickerTab.pages)
                     }
                     .pickerStyle(.segmented)
@@ -182,14 +181,32 @@ public struct PDFSectionPickerSheet: View {
 
     private var sectionsListView: some View {
         VStack(spacing: 10) {
-            // Front Matter Dropdown (Closed by default)
-            if !frontMatterSections.isEmpty {
-                frontMatterDropdownView
-            }
+            if contentSections.isEmpty && frontMatterSections.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "bookmark.slash")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                    Text("No Sections Detected")
+                        .font(.custom("Poppins-SemiBold", size: 15))
+                        .foregroundStyle(Color.white)
+                    Text("This document does not contain embedded bookmarks or detected chapters. You can select specific pages using the Pages tab.")
+                        .font(.custom("Poppins-Regular", size: 12))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
+                // Front Matter Dropdown (Closed by default)
+                if !frontMatterSections.isEmpty {
+                    frontMatterDropdownView
+                }
 
-            // Regular Content Sections
-            ForEach(contentSections) { section in
-                sectionRow(for: section)
+                // Regular Content Sections
+                ForEach(contentSections) { section in
+                    sectionRow(for: section)
+                }
             }
         }
     }
