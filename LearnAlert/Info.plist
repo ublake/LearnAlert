@@ -17,5 +17,7 @@
 	<string>LearnAlert uses your selected photos to generate study flashcard decks from notes, diagrams, or study materials.</string>
 	<key>DebugToken</key>
 	<string>$(DEBUG_TOKEN)</string>
+	<key>APIKey</key>
+	<string>$(API_KEY)</string>
 </dict>
 </plist>

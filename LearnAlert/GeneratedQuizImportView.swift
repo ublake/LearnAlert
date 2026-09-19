@@ -42,9 +42,6 @@ struct GeneratedQuizImportView: View {
     @State private var pdfAnalysisResult: PDFOutlineManager.AnalysisResult?
     @State private var pendingPDFTempURL: URL?
     @State private var showingPDFSectionPicker = false
-    @State private var temporarySourceId: String?
-    @State private var temporarySourceKind: String?
-    @State private var temporarySource: GeneratedSource?
     @State private var activeDiagnosticReport: AIDiagnosticReport?
     @State private var failedRequestReport: AIDiagnosticReport?
     @State private var failedRequestMessage: String?
@@ -54,7 +51,7 @@ struct GeneratedQuizImportView: View {
     @State private var showingAlreadyCreatedAlert = false
 
     private var hasProcessedDocument: Bool {
-        activeUpload != nil || temporarySourceId != nil
+        activeUpload != nil
     }
 
     private func resetChatSession() {
@@ -72,9 +69,6 @@ struct GeneratedQuizImportView: View {
         selectedCardIDs = []
         assistantMessage = ""
         errorMessage = nil
-        temporarySourceId = nil
-        temporarySourceKind = nil
-        temporarySource = nil
         activeDiagnosticReport = nil
         failedRequestReport = nil
         failedRequestMessage = nil
@@ -388,9 +382,6 @@ struct GeneratedQuizImportView: View {
                     )
                 }
                 try Task.checkCancellation()
-                temporarySourceId = result.sourceId
-                temporarySourceKind = result.sourceKind
-                temporarySource = result.source
 
                 // 2xx and decoded successfully! Commit user message and assistant reply to chatHistory
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -458,34 +449,19 @@ struct GeneratedQuizImportView: View {
 
         InteractionSoundPlayer.shared.play(.sentTo)
 
-        let backendHistory = temporarySourceId == nil
-            ? Array(chatHistory.dropFirst())
-            : chatHistory
+        let backendHistory = Array(chatHistory.dropFirst())
 
         requestTask = Task {
             defer { isRefining = false }
             do {
-                let result: GeneratedDeckResult
-                if let temporarySourceId, let temporarySourceKind {
-                    result = try await LearnAlertAPI().refineUploadedDeck(
-                        instruction: instruction,
-                        maxCards: defaultMaxCards,
-                        sourceId: temporarySourceId,
-                        sourceKind: temporarySourceKind,
-                        sourceName: temporarySource?.name ?? activeUpload?.name ?? sourceName,
-                        deck: currentDeck,
-                        chatHistory: backendHistory
-                    )
-                } else {
-                    result = try await LearnAlertAPI().refineTextDeck(
-                        instruction: instruction,
-                        maxCards: defaultMaxCards,
-                        sourceName: sourceName,
-                        sourceText: sourceText,
-                        deck: currentDeck,
-                        chatHistory: backendHistory
-                    )
-                }
+                let result = try await LearnAlertAPI().refineTextDeck(
+                    instruction: instruction,
+                    maxCards: defaultMaxCards,
+                    sourceName: sourceName,
+                    sourceText: sourceText,
+                    deck: currentDeck,
+                    chatHistory: backendHistory
+                )
                 try Task.checkCancellation()
 
                 // 2xx and decoded successfully! Commit user message and assistant reply to chatHistory
@@ -704,10 +680,7 @@ struct GeneratedQuizImportView: View {
             deckType: generatedDeck.deckKind,
             orderIndex: decks.count
         )
-        // Store context caching and document provenance for GPT-5.6 Luna
-        deck.sourceId = temporarySourceId
-        deck.sourceKind = temporarySourceKind
-        deck.sourceName = temporarySource?.name ?? activeUpload?.name ?? (sourceName.isEmpty ? nil : sourceName)
+        deck.sourceName = activeUpload?.name ?? (sourceName.isEmpty ? nil : sourceName)
         deck.sourceText = sourceText.isEmpty ? nil : sourceText
         deck.documentCoverageSummary = assistantMessage
         deck.chatHistory = chatHistory

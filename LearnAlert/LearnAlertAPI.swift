@@ -331,9 +331,6 @@ struct GeneratedDeckResult: Sendable {
     let action: String
     let assistantMessage: String
     let deck: GeneratedDeck?
-    let sourceId: String?
-    let sourceKind: String?
-    let source: GeneratedSource?
 }
 
 private struct GenerateTextDeckRequest: Encodable {
@@ -432,6 +429,7 @@ private struct DeckResponse: Decodable {
 enum LearnAlertAPIError: LocalizedError {
     case emptyStudyMaterial
     case invalidMaximumCards
+    case unauthorized(diagnostic: AIDiagnosticReport? = nil)
     case unavailable(diagnostic: AIDiagnosticReport? = nil)
     case serverError(String?, diagnostic: AIDiagnosticReport? = nil)
     case generationFailed(String?, diagnostic: AIDiagnosticReport? = nil)
@@ -443,6 +441,8 @@ enum LearnAlertAPIError: LocalizedError {
             "Add notes or select a file before generating a deck."
         case .invalidMaximumCards:
             "Card count must be between 1 and 500."
+        case .unauthorized:
+            "This version of the app is out of date — please update."
         case .unavailable:
             "LearnAlert’s AI service is unavailable right now. Please try again shortly."
         case .serverError(let message, _):
@@ -456,7 +456,8 @@ enum LearnAlertAPIError: LocalizedError {
 
     var diagnosticReport: AIDiagnosticReport? {
         switch self {
-        case .unavailable(let diag),
+        case .unauthorized(let diag),
+             .unavailable(let diag),
              .serverError(_, let diag),
              .generationFailed(_, let diag),
              .invalidResponse(_, let diag):
@@ -469,6 +470,18 @@ enum LearnAlertAPIError: LocalizedError {
 
 struct LearnAlertAPI: Sendable {
     private let session: URLSession
+
+    static var apiKey: String? {
+        if let key = Bundle.main.object(forInfoDictionaryKey: "APIKey") as? String,
+           !key.isEmpty,
+           !key.hasPrefix("$(") {
+            return key
+        }
+        if let env = ProcessInfo.processInfo.environment["API_KEY"], !env.isEmpty {
+            return env
+        }
+        return nil
+    }
 
     #if DEBUG
     private var debugToken: String? {
@@ -704,6 +717,9 @@ struct LearnAlertAPI: Sendable {
 
     private func perform(_ inputRequest: URLRequest) async throws -> GeneratedDeckResult {
         var request = inputRequest
+        if let key = Self.apiKey {
+            request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
         #if DEBUG
         if let token = debugToken {
             request.setValue(token, forHTTPHeaderField: "X-Debug-Token")
@@ -828,6 +844,26 @@ struct LearnAlertAPI: Sendable {
             }
             #endif
 
+            if httpResponse.statusCode == 401 {
+                let diag = AIDiagnosticReport(
+                    endpoint: endpoint,
+                    requestMethod: request.httpMethod ?? "POST",
+                    httpStatusCode: 401,
+                    httpStatusText: "Unauthorized",
+                    errorCode: (serverCode.isEmpty || serverCode == "HTTP_401") ? "UNAUTHORIZED" : serverCode,
+                    userFriendlySummary: "This version of the app is out of date — please update.",
+                    technicalError: serverMsg,
+                    decodingPath: nil,
+                    decodingExpectedType: nil,
+                    rawPayloadSnippet: rawPayloadStr,
+                    requestPayloadSnippet: requestBodySnippet.map { String($0.prefix(1200)) },
+                    suggestedFix: "Please update LearnAlert from the App Store.",
+                    requestId: extractedRequestId,
+                    errorDetails: extractedDetails
+                )
+                throw LearnAlertAPIError.unauthorized(diagnostic: diag)
+            }
+
             let diag = AIDiagnosticReport(
                 endpoint: endpoint,
                 requestMethod: request.httpMethod ?? "POST",
@@ -902,10 +938,7 @@ struct LearnAlertAPI: Sendable {
         return GeneratedDeckResult(
             action: resolvedAction,
             assistantMessage: payload.assistantMessage ?? (resolvedAction == "chat" ? "How can I help you study?" : "Your deck is ready."),
-            deck: finalDeck,
-            sourceId: payload.sourceId ?? payload.source?.id,
-            sourceKind: payload.sourceKind ?? payload.source?.kind,
-            source: payload.source
+            deck: finalDeck
         )
     }
 

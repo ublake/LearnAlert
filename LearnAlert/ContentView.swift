@@ -1249,6 +1249,9 @@ private enum AIConnectivityCheck {
         var request = URLRequest(url: url, timeoutInterval: 6)
         request.httpMethod = "HEAD"
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        if let key = LearnAlertAPI.apiKey {
+            request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
@@ -3075,6 +3078,9 @@ private struct SystemCheckView: View {
                     let url = endpoint.1.isEmpty ? baseURL : baseURL.appending(path: endpoint.1)
                     var request = URLRequest(url: url, timeoutInterval: 8)
                     request.httpMethod = "HEAD"
+                    if let key = LearnAlertAPI.apiKey {
+                        request.setValue(key, forHTTPHeaderField: "X-API-Key")
+                    }
                     do {
                         let (_, response) = try await URLSession.shared.data(for: request)
                         let status = (response as? HTTPURLResponse)?.statusCode ?? 0

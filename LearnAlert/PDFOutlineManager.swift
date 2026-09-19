@@ -366,6 +366,9 @@ public enum PDFOutlineManager {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let key = LearnAlertAPI.apiKey {
+            request.setValue(key, forHTTPHeaderField: "X-API-Key")
+        }
 
         struct OutlinePayload: Encodable {
             let sourceName: String

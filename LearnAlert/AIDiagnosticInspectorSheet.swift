@@ -267,6 +267,8 @@ struct AIDiagnosticInspectorSheet: View {
     private var statusTitle: String {
         if report.isSuccessStatusWithDecodingError {
             return "Payload Schema Mismatch"
+        } else if report.httpStatusCode == 401 {
+            return "Update Required (401)"
         } else if let code = report.httpStatusCode {
             return "Server Error (\(code))"
         } else {
