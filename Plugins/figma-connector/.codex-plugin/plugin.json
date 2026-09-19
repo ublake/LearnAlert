@@ -1,0 +1,26 @@
+{
+  "name": "figma-connector",
+  "version": "0.1.0",
+  "description": "Connect Codex to Figma's official remote MCP server.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Figma Connector",
+    "shortDescription": "Inspect Figma files and selected design nodes.",
+    "longDescription": "Connects Codex to Figma's official OAuth-enabled remote MCP server so it can inspect authorized design files and selections.",
+    "developerName": "Local connector",
+    "category": "Design",
+    "capabilities": ["Read"],
+    "websiteURL": "https://www.figma.com/",
+    "privacyPolicyURL": "https://www.figma.com/legal/privacy/",
+    "termsOfServiceURL": "https://www.figma.com/legal/tos/",
+    "brandColor": "#A259FF",
+    "defaultPrompt": [
+      "Inspect this Figma selection and summarize its design tokens.",
+      "Translate this Figma component into native SwiftUI."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -223,11 +223,12 @@ public enum PDFOutlineManager {
         let clampedEnd = max(clampedStart, min(end, doc.pageCount - 1))
         for i in clampedStart...clampedEnd {
             if let page = doc.page(at: i), let text = page.string {
-                charCount += text.trimmingCharacters(in: .whitespacesAndNewlines).count
-                if charCount >= 40 { return false }
+                let trimmed = text.components(separatedBy: .whitespacesAndNewlines).filter({ !$0.isEmpty }).joined(separator: " ")
+                charCount += trimmed.count
+                if charCount >= 80 { return false }
             }
         }
-        return charCount < 40
+        return charCount < 80
     }
 
     // MARK: - STEP 1: PDF OutlineRoot Walk
@@ -414,7 +415,15 @@ public enum PDFOutlineManager {
                     end = min(doc.pageCount - 1, max(start, s.endPage - 1))
                 }
 
-                let kind = PDFSectionKind(rawValue: s.kind ?? "") ?? classifyKind(title: s.title)
+                let normalizedKind = (s.kind ?? "").lowercased().replacingOccurrences(of: "-", with: "_")
+                let kind: PDFSectionKind
+                if normalizedKind == "frontmatter" || normalizedKind == "front_matter" || normalizedKind == "cover" || normalizedKind == "toc" {
+                    kind = .frontMatter
+                } else if normalizedKind == "backmatter" || normalizedKind == "back_matter" || normalizedKind == "appendix" {
+                    kind = .backMatter
+                } else {
+                    kind = PDFSectionKind(rawValue: normalizedKind) ?? classifyKind(title: s.title)
+                }
                 let contentless = isRangeContentless(doc: doc, start: start, end: end)
 
                 results.append(
@@ -452,15 +461,17 @@ public enum PDFOutlineManager {
             snippets.append(OutlinePageSnippet(index: i, snippet: snippet))
         }
 
-        // If every snippet comes back empty, the PDF is a scan with no text layer. Run OCR with Vision
+        // If every snippet comes back empty, the PDF is a scan with no text layer. Run OCR with Vision on first few pages
         if !hasAnyText && doc.pageCount > 0 {
-            let maxOcrPages = min(doc.pageCount, 50)
+            let maxOcrPages = min(doc.pageCount, 12)
             var ocrSnippets: [OutlinePageSnippet] = []
             var foundOcrText = false
 
             for i in 0..<maxOcrPages {
                 if let page = doc.page(at: i) {
-                    let recognized = runVisionOCR(page: page)
+                    let recognized = autoreleasepool {
+                        runVisionOCR(page: page)
+                    }
                     let collapsed = recognized.components(separatedBy: .whitespacesAndNewlines)
                         .filter { !$0.isEmpty }
                         .joined(separator: " ")
@@ -482,29 +493,37 @@ public enum PDFOutlineManager {
         let pageRect = page.bounds(for: .mediaBox)
         guard pageRect.width > 0, pageRect.height > 0 else { return "" }
 
-        let scale: CGFloat = 1.5
-        let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            UIColor.white.set()
-            ctx.fill(CGRect(origin: .zero, size: size))
-            ctx.cgContext.scaleBy(x: scale, y: scale)
-            ctx.cgContext.translateBy(x: 0, y: pageRect.size.height)
-            ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-            page.draw(with: .mediaBox, to: ctx.cgContext)
+        // Keep dimensions moderate to avoid massive memory allocations
+        let targetWidth: CGFloat = min(pageRect.width, 600)
+        let scale = targetWidth / pageRect.width
+        let size = CGSize(width: targetWidth, height: pageRect.height * scale)
+
+        return autoreleasepool {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1.0
+            format.opaque = true
+            let renderer = UIGraphicsImageRenderer(size: size, format: format)
+            let image = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(CGRect(origin: .zero, size: size))
+                ctx.cgContext.scaleBy(x: scale, y: scale)
+                ctx.cgContext.translateBy(x: 0, y: pageRect.size.height)
+                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                page.draw(with: .mediaBox, to: ctx.cgContext)
+            }
+
+            guard let cgImage = image.cgImage else { return "" }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .fast
+            request.usesLanguageCorrection = false
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            try? handler.perform([request])
+
+            let lines = request.results?.compactMap {
+                $0.topCandidates(1).first?.string
+            } ?? []
+            return lines.joined(separator: " ")
         }
-
-        guard let cgImage = image.cgImage else { return "" }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .fast
-        request.usesLanguageCorrection = false
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
-
-        let lines = request.results?.compactMap {
-            $0.topCandidates(1).first?.string
-        } ?? []
-        return lines.joined(separator: " ")
     }
 
     // MARK: - Classification Helper
@@ -514,8 +533,10 @@ public enum PDFOutlineManager {
 
         let frontMatterKeywords = [
             "table of contents", "contents", "preface", "foreword",
-            "introduction", "acknowledgement", "copyright", "title page",
-            "prologue", "índice", "prefacio", "introducción", "sumario"
+            "introduction", "acknowledgement", "acknowledgment", "copyright",
+            "title page", "title", "cover", "front matter", "frontmatter",
+            "dedication", "epigraph", "prologue", "credits", "about the author",
+            "publisher", "índice", "prefacio", "introducción", "sumario", "toc"
         ]
         if frontMatterKeywords.contains(where: { lower.contains($0) }) {
             return .frontMatter
@@ -557,7 +578,11 @@ public enum PDFOutlineManager {
         var i = 0
         for pageIndex in selectedPageIndices.sorted() {
             guard let page = doc.page(at: pageIndex) else { continue }
-            subset.insert(page, at: i)
+            if let copy = page.copy() as? PDFPage {
+                subset.insert(copy, at: i)
+            } else {
+                subset.insert(page, at: i)
+            }
             i += 1
         }
         guard let data = subset.dataRepresentation() else {

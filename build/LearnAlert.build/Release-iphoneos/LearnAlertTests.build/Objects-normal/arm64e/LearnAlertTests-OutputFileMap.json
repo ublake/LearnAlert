@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary.swiftconstvalues",
+    "dependencies" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary.d",
+    "diagnostics" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary.dia",
+    "emit-module-dependencies" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary-emit-module.dia",
+    "pch" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests-primary.swiftdeps"
+  },
+  "/Users/blake/Documents/LearnAlert/LearnAlertTests/LearnAlertTests.swift" : {
+    "index-unit-output-path" : "/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests.o",
+    "llvm-bc" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests.bc",
+    "object" : "/Users/blake/Documents/LearnAlert/build/LearnAlert.build/Release-iphoneos/LearnAlertTests.build/Objects-normal/arm64e/LearnAlertTests.o"
+  }
+}
