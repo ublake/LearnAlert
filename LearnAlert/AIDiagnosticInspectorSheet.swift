@@ -320,7 +320,7 @@ struct AIDiagnosticInspectorSheet: View {
         }
     }
 
-    // MARK: - Technical Section
+    // MARK: - Technical Section or Errors
     private var technicalSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             diagnosticCard(
