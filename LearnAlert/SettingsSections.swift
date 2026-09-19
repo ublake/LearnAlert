@@ -482,6 +482,7 @@ struct SettingsPreferencesGroup: View {
 
 struct SettingsSupportGroup: View {
     @State private var activeSafariURL: URL?
+    @State private var showingAIConsentReview = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -532,6 +533,15 @@ struct SettingsSupportGroup: View {
 
                 settingsDivider
 
+                Button {
+                    showingAIConsentReview = true
+                } label: {
+                    SettingsGroupedRow(title: "AI Terms & Data Privacy", systemImage: "sparkles")
+                }
+                .buttonStyle(.plain)
+
+                settingsDivider
+
                 NavigationLink {
                     HelpView()
                 } label: {
@@ -550,6 +560,16 @@ struct SettingsSupportGroup: View {
                 SafariView(url: url)
                     .ignoresSafeArea()
             }
+        }
+        .sheet(isPresented: $showingAIConsentReview) {
+            AIConsentSheet(
+                onAccept: {
+                    showingAIConsentReview = false
+                },
+                onCancel: {
+                    showingAIConsentReview = false
+                }
+            )
         }
     }
 

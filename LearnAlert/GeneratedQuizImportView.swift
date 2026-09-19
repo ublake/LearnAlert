@@ -107,6 +107,8 @@ struct GeneratedQuizImportView: View {
     @State private var spamNotice: String?
     @State private var spamCooldownUntil: Date?
     @State private var spamDetector = SpamDetector()
+    @State private var showingConsentSheet = false
+    @State private var pendingConsentAction: (() -> Void)?
 
     private static let dailyDocumentUploadLimit = 5
     private static let dailyUploadCountKey = "daily_document_upload_count"
@@ -403,6 +405,18 @@ struct GeneratedQuizImportView: View {
                     )
                 }
             }
+            .sheet(isPresented: $showingConsentSheet) {
+                AIConsentSheet(
+                    onAccept: {
+                        let action = pendingConsentAction
+                        pendingConsentAction = nil
+                        action?()
+                    },
+                    onCancel: {
+                        pendingConsentAction = nil
+                    }
+                )
+            }
         }
         .onDisappear { requestTask?.cancel() }
     }
@@ -415,7 +429,28 @@ struct GeneratedQuizImportView: View {
         )
     }
 
+    private func ensureConsent(then action: @escaping () -> Void) {
+        if AIConsentManager.hasConsented {
+            action()
+        } else {
+            pendingConsentAction = action
+            showingConsentSheet = true
+        }
+    }
+
     private func sendMessage() {
+        if savedDeck != nil {
+            showingAlreadyCreatedAlert = true
+            return
+        }
+        guard !isGenerating && !isRefining && !isReadingAttachment else { return }
+
+        ensureConsent {
+            self.executeSendMessage()
+        }
+    }
+
+    private func executeSendMessage() {
         if savedDeck != nil {
             showingAlreadyCreatedAlert = true
             return
@@ -691,6 +726,13 @@ struct GeneratedQuizImportView: View {
             showingOneDocumentAlert = true
             return
         }
+
+        ensureConsent {
+            self.executeImportDocument(url)
+        }
+    }
+
+    private func executeImportDocument(_ url: URL) {
         if let oldTemp = pendingPDFTempURL {
             try? FileManager.default.removeItem(at: oldTemp)
             pendingPDFTempURL = nil
@@ -781,6 +823,13 @@ struct GeneratedQuizImportView: View {
             showingOneDocumentAlert = true
             return
         }
+
+        ensureConsent {
+            self.executeImportPhotos(photos)
+        }
+    }
+
+    private func executeImportPhotos(_ photos: [PhotosPickerItem]) {
         if let oldTemp = pendingPDFTempURL {
             try? FileManager.default.removeItem(at: oldTemp)
             pendingPDFTempURL = nil

@@ -17,6 +17,8 @@ struct DeckAIAssistantSheet: View {
     @State private var failedDiagnosticReport: AIDiagnosticReport?
     @State private var failedErrorMessage: String?
     @State private var pendingUserMessage: DeckChatMessage?
+    @State private var showingConsentSheet: Bool = false
+    @State private var pendingConsentAction: (() -> Void)?
 
     private var hasSourceDocument: Bool {
         deck.sourceId != nil || (deck.sourceText != nil && !(deck.sourceText?.isEmpty ?? true))
@@ -183,6 +185,18 @@ struct DeckAIAssistantSheet: View {
             }
             .sheet(item: $activeDiagnosticReport) { report in
                 AIDiagnosticInspectorSheet(report: report)
+            }
+            .sheet(isPresented: $showingConsentSheet) {
+                AIConsentSheet(
+                    onAccept: {
+                        let action = pendingConsentAction
+                        pendingConsentAction = nil
+                        action?()
+                    },
+                    onCancel: {
+                        pendingConsentAction = nil
+                    }
+                )
             }
         }
         .onAppear {
@@ -406,10 +420,25 @@ struct DeckAIAssistantSheet: View {
         sendUserMessage()
     }
 
+    private func ensureConsent(then action: @escaping () -> Void) {
+        if AIConsentManager.hasConsented {
+            action()
+        } else {
+            pendingConsentAction = action
+            showingConsentSheet = true
+        }
+    }
+
     private func sendUserMessage() {
         let userText = messageInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !userText.isEmpty, !isWorking else { return }
 
+        ensureConsent {
+            self.executeSendUserMessage(userText: userText)
+        }
+    }
+
+    private func executeSendUserMessage(userText: String) {
         let originalInput = messageInput
         messageInput = ""
         isWorking = true
