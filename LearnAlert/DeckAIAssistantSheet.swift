@@ -366,6 +366,11 @@ struct DeckAIAssistantSheet: View {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .stroke(Color.white.opacity(0.22), lineWidth: 1)
             )
+            .onChange(of: messageInput) { _, text in
+                if text.count > 10_000 {
+                    messageInput = String(text.prefix(10_000))
+                }
+            }
 
             Button {
                 sendUserMessage()

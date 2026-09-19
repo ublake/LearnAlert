@@ -11,12 +11,66 @@ private struct PendingSourceUpload: Sendable, Equatable {
     let mimeType: String
 }
 
+private struct SpamDetector {
+    private var requestTimestamps: [Date] = []
+    private var recentMessages: [String] = []
+
+    private let maxRequestsPerShortWindow = 5  // Max 5 in 15 seconds
+    private let shortWindowSeconds: TimeInterval = 15
+    private let maxRequestsPerLongWindow = 12 // Max 12 in 60 seconds
+    private let longWindowSeconds: TimeInterval = 60
+    private let minIntervalSeconds: TimeInterval = 0.8 // Min 800ms between requests
+
+    mutating func evaluate(message: String) -> SpamCheckResult {
+        let now = Date()
+
+        // Clean up old timestamps
+        requestTimestamps.removeAll { now.timeIntervalSince($0) > longWindowSeconds }
+
+        // Check minimum interval between requests
+        if let lastTime = requestTimestamps.last, now.timeIntervalSince(lastTime) < minIntervalSeconds {
+            return .spam(cooldownSeconds: 2, reason: "Too fast")
+        }
+
+        // Check short window burst
+        let shortWindowCount = requestTimestamps.filter { now.timeIntervalSince($0) <= shortWindowSeconds }.count
+        if shortWindowCount >= maxRequestsPerShortWindow {
+            return .spam(cooldownSeconds: 5, reason: "Burst limit")
+        }
+
+        // Check long window
+        if requestTimestamps.count >= maxRequestsPerLongWindow {
+            return .spam(cooldownSeconds: 8, reason: "Volume limit")
+        }
+
+        // Check repeated identical message spam (3 identical in a row)
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !trimmed.isEmpty {
+            recentMessages.append(trimmed)
+            if recentMessages.count > 5 { recentMessages.removeFirst() }
+            let trailingDuplicates = recentMessages.suffix(3)
+            if trailingDuplicates.count == 3 && trailingDuplicates.allSatisfy({ $0 == trimmed }) {
+                return .spam(cooldownSeconds: 4, reason: "Duplicate spam")
+            }
+        }
+
+        // Record this valid request
+        requestTimestamps.append(now)
+        return .allowed
+    }
+
+    enum SpamCheckResult {
+        case allowed
+        case spam(cooldownSeconds: Int, reason: String)
+    }
+}
+
 struct GeneratedQuizImportView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Query private var decks: [Deck]
 
-    private let sourceCharacterLimit = 50_000
+    private let sourceCharacterLimit = 10_000
 
     @State private var sourceText = ""
     @State private var sourceName = "Pasted Notes"
@@ -49,11 +103,14 @@ struct GeneratedQuizImportView: View {
     @State private var selectedChunkFolderTitle: String?
     @State private var showingOneDocumentAlert = false
     @State private var showingAlreadyCreatedAlert = false
-    @State private var showingDailyLimitAlert = false
+    @State private var showingDailyDocumentLimitAlert = false
+    @State private var spamNotice: String?
+    @State private var spamCooldownUntil: Date?
+    @State private var spamDetector = SpamDetector()
 
-    private static let dailyGenerationLimit = 5
-    private static let dailyCountKey = "daily_deck_generation_count"
-    private static let dailyDateKey = "daily_deck_generation_date"
+    private static let dailyDocumentUploadLimit = 5
+    private static let dailyUploadCountKey = "daily_document_upload_count"
+    private static let dailyUploadDateKey = "daily_document_upload_date"
 
     private static func getTodayDateString() -> String {
         let formatter = DateFormatter()
@@ -61,24 +118,24 @@ struct GeneratedQuizImportView: View {
         return formatter.string(from: Date())
     }
 
-    private static func getDailyGenerationsCount() -> Int {
+    private static func getDailyDocumentUploadsCount() -> Int {
         let today = getTodayDateString()
-        let savedDate = UserDefaults.standard.string(forKey: dailyDateKey)
+        let savedDate = UserDefaults.standard.string(forKey: dailyUploadDateKey)
         if savedDate != today {
-            UserDefaults.standard.set(today, forKey: dailyDateKey)
-            UserDefaults.standard.set(0, forKey: dailyCountKey)
+            UserDefaults.standard.set(today, forKey: dailyUploadDateKey)
+            UserDefaults.standard.set(0, forKey: dailyUploadCountKey)
             return 0
         }
-        return UserDefaults.standard.integer(forKey: dailyCountKey)
+        return UserDefaults.standard.integer(forKey: dailyUploadCountKey)
     }
 
-    private static func incrementDailyGenerationsCount() {
-        let count = getDailyGenerationsCount()
-        UserDefaults.standard.set(count + 1, forKey: dailyCountKey)
+    private static func incrementDailyDocumentUploadsCount() {
+        let count = getDailyDocumentUploadsCount()
+        UserDefaults.standard.set(count + 1, forKey: dailyUploadCountKey)
     }
 
-    private static var isDailyLimitReached: Bool {
-        return getDailyGenerationsCount() >= dailyGenerationLimit
+    private static var isDailyDocumentLimitReached: Bool {
+        return getDailyDocumentUploadsCount() >= dailyDocumentUploadLimit
     }
 
     private var hasProcessedDocument: Bool {
@@ -150,17 +207,22 @@ struct GeneratedQuizImportView: View {
                         },
                         isWorking: isGenerating || isRefining,
                         isReadingAttachment: isReadingAttachment,
+                        spamNotice: spamNotice,
                         generatedDeck: generatedDeckBinding,
                         assistantMessage: assistantMessage,
                         chooseDocument: {
-                            if hasProcessedDocument {
+                            if Self.isDailyDocumentLimitReached {
+                                showingDailyDocumentLimitAlert = true
+                            } else if hasProcessedDocument {
                                 showingOneDocumentAlert = true
                             } else {
                                 showingFileImporter = true
                             }
                         },
                         choosePhotos: {
-                            if hasProcessedDocument {
+                            if Self.isDailyDocumentLimitReached {
+                                showingDailyDocumentLimitAlert = true
+                            } else if hasProcessedDocument {
                                 showingOneDocumentAlert = true
                             } else {
                                 showingPhotoPicker = true
@@ -303,10 +365,10 @@ struct GeneratedQuizImportView: View {
             } message: {
                 Text("This deck has already been created and added to your library. To generate more cards or create another deck, please start a new chat session.")
             }
-            .alert("Daily Generation Limit Reached", isPresented: $showingDailyLimitAlert) {
+            .alert("Daily Upload Limit Reached", isPresented: $showingDailyDocumentLimitAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text("You have reached the daily limit of \(Self.dailyGenerationLimit) AI-generated decks. Please try again tomorrow!")
+                Text("You have reached the daily limit of \(Self.dailyDocumentUploadLimit) document and image uploads. You can still paste notes or text (up to 10,000 characters) to create unlimited decks!")
             }
             .sheet(isPresented: $showingPDFSectionPicker) {
                 if let result = pdfAnalysisResult {
@@ -359,10 +421,41 @@ struct GeneratedQuizImportView: View {
             return
         }
         guard !isGenerating && !isRefining && !isReadingAttachment else { return }
+
+        // Spam cooldown check
+        if let cooldown = spamCooldownUntil, Date() < cooldown {
+            let remaining = max(1, Int(ceil(cooldown.timeIntervalSinceNow)))
+            showSpamNotice("Taking a quick breather! 😊 Please wait \(remaining)s.")
+            return
+        }
+
+        // Spam pattern check
+        let check = spamDetector.evaluate(message: chatInput)
+        if case .spam(let cooldownSeconds, _) = check {
+            spamCooldownUntil = Date().addingTimeInterval(TimeInterval(cooldownSeconds))
+            showSpamNotice("Taking a quick breather! 😊 Please wait a few seconds.")
+            return
+        }
+
         if generatedDeck == nil {
             generateDeck()
         } else {
             refineDeck()
+        }
+    }
+
+    private func showSpamNotice(_ text: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            spamNotice = text
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            if spamNotice == text {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    spamNotice = nil
+                }
+            }
         }
     }
 
@@ -380,12 +473,14 @@ struct GeneratedQuizImportView: View {
 
     private func generateDeck() {
         guard !isGenerating else { return }
-        if Self.isDailyLimitReached {
-            showingDailyLimitAlert = true
+        let message = String(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).prefix(10_000))
+        let effectiveUpload = pendingUpload ?? activeUpload
+
+        if effectiveUpload != nil && Self.isDailyDocumentLimitReached {
+            showingDailyDocumentLimitAlert = true
             return
         }
-        let message = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveUpload = pendingUpload ?? activeUpload
+
         guard effectiveUpload != nil || !message.isEmpty else {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 chatHistory.append(DeckChatMessage(
@@ -438,7 +533,7 @@ struct GeneratedQuizImportView: View {
                         chatHistory: currentHistory
                     )
                 } else {
-                    sourceText = sourceText.isEmpty ? message : sourceText
+                    sourceText = String((sourceText.isEmpty ? message : sourceText).prefix(10_000))
                     sourceName = "Pasted Notes"
                     result = try await LearnAlertAPI().generateDeck(
                         text: sourceText,
@@ -458,7 +553,9 @@ struct GeneratedQuizImportView: View {
                 }
 
                 if let deck = result.deck {
-                    Self.incrementDailyGenerationsCount()
+                    if upload != nil {
+                        Self.incrementDailyDocumentUploadsCount()
+                    }
                     assistantMessage = result.assistantMessage
                     generatedDeck = deck
                     selectedCardIDs = Set(deck.cards.map(\.id))
@@ -502,7 +599,7 @@ struct GeneratedQuizImportView: View {
     private func refineDeck() {
         guard !isRefining,
               let currentDeck = generatedDeck else { return }
-        let instruction = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let instruction = String(chatInput.trimmingCharacters(in: .whitespacesAndNewlines).prefix(10_000))
         guard !instruction.isEmpty else { return }
 
         let originalInput = chatInput
@@ -884,6 +981,7 @@ private struct AIImportConversationView: View {
     var onDismissError: (() -> Void)? = nil
     let isWorking: Bool
     let isReadingAttachment: Bool
+    var spamNotice: String? = nil
     let generatedDeck: Binding<GeneratedDeck>?
     let assistantMessage: String
     let chooseDocument: () -> Void
@@ -1052,6 +1150,7 @@ private struct AIImportConversationView: View {
                 pendingUploadName: pendingUploadName,
                 isWorking: isWorking,
                 isReadingAttachment: isReadingAttachment,
+                spamNotice: spamNotice,
                 chooseDocument: chooseDocument,
                 choosePhotos: choosePhotos,
                 removeUpload: removeUpload,
@@ -1063,6 +1162,7 @@ private struct AIImportConversationView: View {
 }
 
 private struct ConversationBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
     let message: DeckChatMessage
     var onSelectSuggestion: ((String) -> Void)? = nil
     var onViewDiagnostics: ((AIDiagnosticReport) -> Void)? = nil
@@ -1079,12 +1179,12 @@ private struct ConversationBubble: View {
                         AIMarkdownText(
                             text: message.displayContent,
                             size: 15,
-                            color: .white,
+                            color: (message.role == "user" || colorScheme == .dark) ? .white : .black,
                             lineSpacing: 2
                         )
                     }
                 }
-                .foregroundStyle(Color.white)
+                .foregroundStyle((message.role == "user" || colorScheme == .dark) ? Color.white : Color.black)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
@@ -1099,8 +1199,8 @@ private struct ConversationBubble: View {
                         : AnyShapeStyle(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.12),
-                                    Color.white.opacity(0.04)
+                                    colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
+                                    colorScheme == .light ? Color.white.opacity(0.60) : Color.white.opacity(0.04)
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -1116,8 +1216,8 @@ private struct ConversationBubble: View {
                                 : AnyShapeStyle(
                                     LinearGradient(
                                         colors: [
-                                            Color.white.opacity(0.28),
-                                            Color.white.opacity(0.08)
+                                            colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.28),
+                                            colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08)
                                         ],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
@@ -1129,7 +1229,7 @@ private struct ConversationBubble: View {
                 .shadow(
                     color: message.role == "user"
                         ? LearnAlertStyle.indigo.opacity(0.30)
-                        : Color.black.opacity(0.15),
+                        : Color.black.opacity(colorScheme == .light ? 0.20 : 0.15),
                     radius: 8,
                     y: 3
                 )
@@ -1211,12 +1311,12 @@ private struct ConversationBubble: View {
                                     .foregroundStyle(LearnAlertStyle.indigo)
                                 Text(suggestion)
                                     .font(.custom("Poppins-Medium", size: 13, relativeTo: .subheadline))
-                                    .foregroundStyle(Color.white.opacity(0.95))
+                                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.95))
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 4)
                                 Image(systemName: "arrow.up.right")
                                     .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(Color.white.opacity(0.40))
+                                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.40) : Color.white.opacity(0.40))
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
@@ -1225,8 +1325,8 @@ private struct ConversationBubble: View {
                                     .fill(
                                         LinearGradient(
                                             colors: [
-                                                LearnAlertStyle.indigo.opacity(0.22),
-                                                Color.white.opacity(0.06)
+                                                LearnAlertStyle.indigo.opacity(colorScheme == .light ? 0.15 : 0.22),
+                                                colorScheme == .light ? Color.white.opacity(0.80) : Color.white.opacity(0.06)
                                             ],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
@@ -1239,7 +1339,7 @@ private struct ConversationBubble: View {
                                         LinearGradient(
                                             colors: [
                                                 LearnAlertStyle.indigo.opacity(0.50),
-                                                Color.white.opacity(0.12)
+                                                colorScheme == .light ? Color.black.opacity(0.10) : Color.white.opacity(0.12)
                                             ],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
@@ -1247,7 +1347,7 @@ private struct ConversationBubble: View {
                                         lineWidth: 1
                                     )
                             )
-                            .shadow(color: Color.black.opacity(0.15), radius: 4, y: 2)
+                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.18 : 0.15), radius: 4, y: 2)
                         }
                         .buttonStyle(AIReviewActionButtonStyle())
                         .disabled(onSelectSuggestion == nil)
@@ -1286,6 +1386,7 @@ private struct SentAttachmentPreview: View {
 }
 
 private struct AIWelcomeBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showingPrivacy = false
 
     var body: some View {
@@ -1302,12 +1403,12 @@ private struct AIWelcomeBubble: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Send notes, text, PDFs, documents, or photos. I’ll build a deck you can review and refine.")
                     .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                    .foregroundStyle(Color.white.opacity(0.92))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.92))
                     .lineSpacing(2)
 
                 Text("Please don’t send sensitive or personal info.")
                     .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                    .foregroundStyle(Color.white.opacity(0.60))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.60))
 
                 Button {
                     showingPrivacy = true
@@ -1333,14 +1434,23 @@ private struct AIWelcomeBubble: View {
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.11),
-                            Color.white.opacity(0.04)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+                    colorScheme == .light
+                        ? LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.80),
+                                Color.white.opacity(0.55)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        : LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.11),
+                                Color.white.opacity(0.04)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                 )
         )
         .overlay(
@@ -1348,8 +1458,8 @@ private struct AIWelcomeBubble: View {
                 .stroke(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(0.28),
-                            Color.white.opacity(0.08)
+                            colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.28),
+                            colorScheme == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
@@ -1357,11 +1467,16 @@ private struct AIWelcomeBubble: View {
                     lineWidth: 1
                 )
         )
-        .shadow(color: Color.black.opacity(0.15), radius: 10, y: 4)
+        .shadow(
+            color: Color.black.opacity(colorScheme == .light ? 0.22 : 0.15),
+            radius: 10,
+            y: 4
+        )
     }
 }
 
 private struct AIProcessingBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1388,8 +1503,8 @@ private struct AIProcessingBubble: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.12),
-                                Color.white.opacity(0.05)
+                                colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
+                                colorScheme == .light ? Color.white.opacity(0.60) : Color.white.opacity(0.05)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1401,8 +1516,8 @@ private struct AIProcessingBubble: View {
                     .stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.30),
-                                Color.white.opacity(0.08)
+                                colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.30),
+                                colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1410,7 +1525,7 @@ private struct AIProcessingBubble: View {
                         lineWidth: 1
                     )
             )
-            .shadow(color: Color.black.opacity(0.15), radius: 8, y: 3)
+            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.20 : 0.15), radius: 8, y: 3)
             Spacer(minLength: 46)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1420,6 +1535,7 @@ private struct AIProcessingBubble: View {
 }
 
 private struct GeneratedDeckReadyBubble: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var deck: GeneratedDeck
     let assistantMessage: String
     var hasAssistantMessages: Bool = false
@@ -1447,12 +1563,12 @@ private struct GeneratedDeckReadyBubble: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(deck.title)
                     .font(.custom("Poppins-SemiBold", size: 14))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                     .lineLimit(1)
 
                 Text("\(deck.cards.count) cards generated")
                     .font(.custom("Poppins-Regular", size: 11))
-                    .foregroundStyle(Color.white.opacity(0.72))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.72))
             }
 
             Spacer(minLength: 8)
@@ -1485,9 +1601,9 @@ private struct GeneratedDeckReadyBubble: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.70))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.70) : Color.white.opacity(0.70))
                     .padding(6)
-                    .background(Color.white.opacity(0.10), in: Circle())
+                    .background(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.10), in: Circle())
             }
             .accessibilityLabel("Expand deck overview")
         }
@@ -1497,7 +1613,10 @@ private struct GeneratedDeckReadyBubble: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.12), Color.white.opacity(0.06)],
+                        colors: [
+                            colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
+                            colorScheme == .light ? Color.white.opacity(0.60) : Color.white.opacity(0.06)
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1505,9 +1624,12 @@ private struct GeneratedDeckReadyBubble: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                .stroke(
+                    colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.20),
+                    lineWidth: 1
+                )
         )
-        .shadow(color: Color.black.opacity(0.15), radius: 8, y: 3)
+        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.20 : 0.15), radius: 8, y: 3)
     }
 
     private var expandedView: some View {
@@ -1521,7 +1643,7 @@ private struct GeneratedDeckReadyBubble: View {
                 } else {
                     Text(deck.title)
                         .font(.custom("Poppins-SemiBold", size: 16))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                         .lineLimit(1)
                 }
 
@@ -1540,9 +1662,9 @@ private struct GeneratedDeckReadyBubble: View {
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.70))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.70) : Color.white.opacity(0.70))
                         .padding(6)
-                        .background(Color.white.opacity(0.10), in: Circle())
+                        .background(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.10), in: Circle())
                 }
                 .accessibilityLabel("Collapse deck overview")
             }
@@ -1559,10 +1681,10 @@ private struct GeneratedDeckReadyBubble: View {
                 if !deck.subject.isEmpty {
                     Text(deck.subject)
                         .font(.custom("Poppins-Medium", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.80))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.80) : Color.white.opacity(0.80))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.10), in: Capsule())
+                        .background(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.10), in: Capsule())
                 }
             }
 
@@ -1571,7 +1693,7 @@ private struct GeneratedDeckReadyBubble: View {
                 AIMarkdownText(
                     text: deck.summary,
                     size: 13,
-                    color: Color.white.opacity(0.88),
+                    color: colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.88),
                     lineSpacing: 2
                 )
             } else if !hasAssistantMessages && !assistantMessage.isEmpty {
@@ -1583,12 +1705,12 @@ private struct GeneratedDeckReadyBubble: View {
                     AIMarkdownText(
                         text: assistantMessage,
                         size: 13,
-                        color: Color.white.opacity(0.90),
+                        color: colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.90),
                         lineSpacing: 2
                     )
                 }
                 .padding(10)
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                .background(colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             }
 
             // Cards Preview List with Numbers
@@ -1597,13 +1719,13 @@ private struct GeneratedDeckReadyBubble: View {
                     HStack {
                         Text("Cards (\(deck.cards.count))")
                             .font(.custom("Poppins-SemiBold", size: 12))
-                            .foregroundStyle(Color.white.opacity(0.80))
+                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.85) : Color.white.opacity(0.80))
 
                         Spacer()
 
                         Text("Numbered for chat edits")
                             .font(.custom("Poppins-Regular", size: 10))
-                            .foregroundStyle(Color.white.opacity(0.50))
+                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.50) : Color.white.opacity(0.50))
                     }
 
                     ScrollView {
@@ -1620,18 +1742,26 @@ private struct GeneratedDeckReadyBubble: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(card.prompt)
                                             .font(.custom("Poppins-Medium", size: 12))
-                                            .foregroundStyle(Color.white.opacity(0.95))
+                                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.92) : Color.white.opacity(0.95))
                                             .lineLimit(2)
 
                                         Text(cardTypeTitle(for: card.type))
                                             .font(.custom("Poppins-Regular", size: 10))
-                                            .foregroundStyle(Color.white.opacity(0.55))
+                                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.55) : Color.white.opacity(0.55))
                                     }
                                     Spacer(minLength: 0)
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                                .background(
+                                    colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.06),
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.clear, lineWidth: 1)
+                                )
+                                .shadow(color: colorScheme == .light ? Color.black.opacity(0.06) : Color.clear, radius: 3, y: 1)
                             }
                         }
                     }
@@ -1666,7 +1796,10 @@ private struct GeneratedDeckReadyBubble: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.12), Color.white.opacity(0.05)],
+                        colors: [
+                            colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
+                            colorScheme == .light ? Color.white.opacity(0.65) : Color.white.opacity(0.05)
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1676,14 +1809,17 @@ private struct GeneratedDeckReadyBubble: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(
                     LinearGradient(
-                        colors: [Color.white.opacity(0.28), Color.white.opacity(0.08)],
+                        colors: [
+                            colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.28),
+                            colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08)
+                        ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
                     lineWidth: 1
                 )
         )
-        .shadow(color: Color.black.opacity(0.18), radius: 10, y: 4)
+        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.20 : 0.18), radius: 10, y: 4)
     }
 
     private func cardTypeTitle(for type: GeneratedCardType) -> String {
@@ -1706,11 +1842,16 @@ private struct AIReviewActionButtonStyle: ButtonStyle {
 }
 
 private struct SourceComposer: View {
+    private static let maxCharacterLimit = 10_000
+
+    @Environment(\.colorScheme) private var colorScheme
+
     @Binding var messageText: String
     var hasGeneratedDeck: Bool = false
     let pendingUploadName: String?
     let isWorking: Bool
     let isReadingAttachment: Bool
+    var spamNotice: String? = nil
     let chooseDocument: () -> Void
     let choosePhotos: () -> Void
     let removeUpload: () -> Void
@@ -1718,11 +1859,43 @@ private struct SourceComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let spamNotice {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(LearnAlertStyle.indigo)
+                    Text(spamNotice)
+                        .font(.custom("Poppins-Medium", size: 12))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.88) : .white)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    colorScheme == .light
+                        ? Color.white.opacity(0.95)
+                        : Color(red: 0.14, green: 0.14, blue: 0.22),
+                    in: Capsule()
+                )
+                .overlay(Capsule().stroke(LearnAlertStyle.indigo.opacity(0.4), lineWidth: 1))
+                .shadow(color: colorScheme == .light ? Color.black.opacity(0.18) : Color.clear, radius: 8, y: 3)
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            if messageText.count >= 8_000 {
+                HStack {
+                    Spacer()
+                    Text("\(messageText.count.formatted()) / \(Self.maxCharacterLimit.formatted()) characters")
+                        .font(.custom("Poppins-Medium", size: 11))
+                        .foregroundStyle(messageText.count >= Self.maxCharacterLimit ? Color.orange : (colorScheme == .light ? Color.black.opacity(0.65) : Color.white.opacity(0.6)))
+                }
+                .padding(.horizontal, 6)
+            }
+
             if let pendingUploadName {
                 HStack {
                     Label(pendingUploadName, systemImage: "paperclip")
                         .font(.caption)
-                        .foregroundStyle(Color.white.opacity(0.90))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.90) : Color.white.opacity(0.90))
                         .lineLimit(1)
                     Spacer()
                     Button("Remove", role: .destructive, action: removeUpload)
@@ -1731,8 +1904,9 @@ private struct SourceComposer: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 38)
-                .background(Color.white.opacity(0.12), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1))
+                .background(colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12), in: Capsule())
+                .overlay(Capsule().stroke(colorScheme == .light ? Color.black.opacity(0.14) : Color.white.opacity(0.22), lineWidth: 1))
+                .shadow(color: colorScheme == .light ? Color.black.opacity(0.16) : Color.clear, radius: 6, y: 2)
             }
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -1742,41 +1916,62 @@ private struct SourceComposer: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                         .frame(width: 44, height: 44)
                         .liquidGlassCircle(interactive: true)
+                        .shadow(
+                            color: colorScheme == .light ? Color.black.opacity(0.25) : Color.clear,
+                            radius: 10,
+                            y: 4
+                        )
                 }
                 .accessibilityLabel("Add notes attachment")
 
                 TextField(
                     "",
                     text: $messageText,
-                    prompt: Text(hasGeneratedDeck ? "Ask a question or refine deck..." : "What are you studying?").foregroundStyle(Color.white.opacity(0.55)),
+                    prompt: Text(hasGeneratedDeck ? "Ask a question or refine deck..." : "What are you studying?")
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.45) : Color.white.opacity(0.55)),
                     axis: .vertical
                 )
                 .lineLimit(1...8)
                 .font(.custom("Poppins-Regular", size: 15))
-                .foregroundStyle(.white)
-                .tint(.white)
+                .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
+                .tint(colorScheme == .light ? LearnAlertStyle.indigo : Color.white)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
                 .liquidGlassInput(cornerRadius: 22)
+                .shadow(
+                    color: colorScheme == .light ? Color.black.opacity(0.20) : Color.clear,
+                    radius: 10,
+                    y: 4
+                )
                 .onChange(of: messageText) { _, text in
-                    if text.count > 50_000 {
-                        messageText = String(text.prefix(50_000))
+                    if text.count > Self.maxCharacterLimit {
+                        messageText = String(text.prefix(Self.maxCharacterLimit))
                     }
                 }
 
                 Button(action: send) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(canSend ? Color.white : Color.white.opacity(0.35))
+                        .foregroundStyle(
+                            canSend
+                                ? Color.white
+                                : (colorScheme == .light ? Color.black.opacity(0.40) : Color.white.opacity(0.35))
+                        )
                         .frame(width: 44, height: 44)
                         .liquidGlassCircle(
                             interactive: canSend,
                             tint: canSend ? LearnAlertStyle.indigo : nil
                         )
-                        .shadow(color: canSend ? LearnAlertStyle.indigo.opacity(0.35) : .clear, radius: 9, y: 4)
+                        .shadow(
+                            color: colorScheme == .light
+                                ? (canSend ? LearnAlertStyle.indigo.opacity(0.45) : Color.black.opacity(0.25))
+                                : (canSend ? LearnAlertStyle.indigo.opacity(0.35) : Color.clear),
+                            radius: 10,
+                            y: 4
+                        )
                 }
                 .disabled(!canSend)
                 .accessibilityLabel("Generate deck")

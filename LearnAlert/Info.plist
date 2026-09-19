@@ -2,22 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>APIKey</key>
+	<string>$(API_KEY)</string>
+	<key>DebugToken</key>
+	<string>$(DEBUG_TOKEN)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Poppins-Regular.ttf</string>
 		<string>Poppins-SemiBold.ttf</string>
 	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>LearnAlert uses your selected photos to generate study flashcard decks from notes, diagrams, or study materials.</string>
-	<key>DebugToken</key>
-	<string>$(DEBUG_TOKEN)</string>
-	<key>APIKey</key>
-	<string>$(API_KEY)</string>
 </dict>
 </plist>

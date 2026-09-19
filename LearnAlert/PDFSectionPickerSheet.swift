@@ -2,6 +2,7 @@ import SwiftUI
 import PDFKit
 
 public struct PDFSectionPickerSheet: View {
+    @Environment(\.colorScheme) private var colorScheme
     public let document: PDFDocument
     public let sections: [PDFSectionItem]
     public let sourceName: String
@@ -121,7 +122,7 @@ public struct PDFSectionPickerSheet: View {
                         onCancel()
                     }
                     .font(.custom("Poppins-Medium", size: 14))
-                    .foregroundStyle(Color.white.opacity(0.8))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.8) : Color.white.opacity(0.8))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !selectedPageIndices.isEmpty {
@@ -129,7 +130,7 @@ public struct PDFSectionPickerSheet: View {
                             clearAllSelections()
                         }
                         .font(.custom("Poppins-Medium", size: 13))
-                        .foregroundStyle(Color.white.opacity(0.7))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.7) : Color.white.opacity(0.7))
                     }
                 }
             }
@@ -153,17 +154,17 @@ public struct PDFSectionPickerSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(sourceName)
                     .font(.custom("Poppins-SemiBold", size: 14))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
                     Text("\(document.pageCount) total pages")
                         .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
 
                     Text("•")
                         .font(.system(size: 8))
-                        .foregroundStyle(Color.white.opacity(0.3))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.3) : Color.white.opacity(0.3))
 
                     Text(detectionMethod.rawValue)
                         .font(.custom("Poppins-Medium", size: 10))
@@ -174,7 +175,7 @@ public struct PDFSectionPickerSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.04))
+        .background(colorScheme == .light ? Color.black.opacity(0.03) : Color.white.opacity(0.04))
     }
 
     // MARK: - Sections List View with Horizontal Thumbnail Preview
@@ -185,13 +186,13 @@ public struct PDFSectionPickerSheet: View {
                 VStack(spacing: 12) {
                     Image(systemName: "bookmark.slash")
                         .font(.system(size: 32))
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.4) : Color.white.opacity(0.4))
                     Text("No Sections Detected")
                         .font(.custom("Poppins-SemiBold", size: 15))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                     Text("This document does not contain embedded bookmarks or detected chapters. You can select specific pages using the Pages tab.")
                         .font(.custom("Poppins-Regular", size: 12))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }
@@ -213,6 +214,19 @@ public struct PDFSectionPickerSheet: View {
 
     private func sectionRow(for section: PDFSectionItem) -> some View {
         let isSelected = selectedSectionIDs.contains(section.id)
+        let rowBackground: Color = isSelected
+            ? (colorScheme == .light ? Color.white.opacity(0.92) : Color.white.opacity(0.08))
+            : (colorScheme == .light ? Color.white.opacity(0.65) : Color.white.opacity(0.03))
+        let rowStrokeColor: Color = isSelected
+            ? LearnAlertStyle.indigo.opacity(0.4)
+            : (colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.06))
+        let pageCountColor: Color = section.pageCount > maxPageLimit
+            ? Color.orange
+            : (colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
+        let checkmarkColor: Color = isSelected
+            ? LearnAlertStyle.indigo
+            : (colorScheme == .light ? Color.black.opacity(0.35) : Color.white.opacity(0.35))
+
         return VStack(alignment: .leading, spacing: 8) {
             Button {
                 toggleSection(section)
@@ -220,13 +234,13 @@ public struct PDFSectionPickerSheet: View {
                 HStack(alignment: .center, spacing: 10) {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(isSelected ? LearnAlertStyle.indigo : Color.white.opacity(0.35))
+                        .foregroundStyle(checkmarkColor)
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(section.title)
                                 .font(.custom("Poppins-SemiBold", size: 14))
-                                .foregroundStyle(Color.white)
+                                .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
                                 .lineLimit(1)
 
                             Spacer()
@@ -238,20 +252,20 @@ public struct PDFSectionPickerSheet: View {
                             if section.startPageIndex == section.endPageIndex {
                                 Text("Page \(section.startPageIndex + 1)")
                                     .font(.custom("Poppins-Regular", size: 11))
-                                    .foregroundStyle(Color.white.opacity(0.6))
+                                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
                             } else {
                                 Text("Pages \(section.startPageIndex + 1)–\(section.endPageIndex + 1)")
                                     .font(.custom("Poppins-Regular", size: 11))
-                                    .foregroundStyle(Color.white.opacity(0.6))
+                                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
                             }
 
                             Text("•")
                                 .font(.system(size: 8))
-                                .foregroundStyle(Color.white.opacity(0.3))
+                                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.3) : Color.white.opacity(0.3))
 
                             Text("\(section.pageCount) \(section.pageCount == 1 ? "page" : "pages")")
                                 .font(.custom("Poppins-Medium", size: 11))
-                                .foregroundStyle(section.pageCount > maxPageLimit ? Color.orange : Color.white.opacity(0.6))
+                                .foregroundStyle(pageCountColor)
                         }
                     }
                 }
@@ -277,12 +291,13 @@ public struct PDFSectionPickerSheet: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Color.white.opacity(0.08) : Color.white.opacity(0.03))
+        .background(rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSelected ? LearnAlertStyle.indigo.opacity(0.4) : Color.white.opacity(0.06), lineWidth: 1)
+                .stroke(rowStrokeColor, lineWidth: 1)
         )
+        .shadow(color: colorScheme == .light ? Color.black.opacity(0.06) : Color.clear, radius: 4, y: 1)
     }
 
     // MARK: - Front Matter Dropdown (Closed by Default)
@@ -297,29 +312,29 @@ public struct PDFSectionPickerSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: "eye.slash.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.45) : Color.white.opacity(0.45))
 
                     Text("Front Matter")
                         .font(.custom("Poppins-Medium", size: 13))
-                        .foregroundStyle(Color.white.opacity(0.8))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.85) : Color.white.opacity(0.8))
 
                     Text("(\(frontMatterSections.count) \(frontMatterSections.count == 1 ? "section" : "sections"))")
                         .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.45) : Color.white.opacity(0.45))
 
                     Spacer()
 
                     Image(systemName: isFrontMatterExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.5) : Color.white.opacity(0.5))
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.04))
+                .background(colorScheme == .light ? Color.white.opacity(0.70) : Color.white.opacity(0.04))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.06), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -337,6 +352,13 @@ public struct PDFSectionPickerSheet: View {
 
     private func frontMatterSectionRow(for section: PDFSectionItem) -> some View {
         let isSelected = selectedSectionIDs.contains(section.id)
+        let checkmarkColor: Color = isSelected
+            ? LearnAlertStyle.indigo
+            : (colorScheme == .light ? Color.black.opacity(0.3) : Color.white.opacity(0.3))
+        let rowStrokeColor: Color = isSelected
+            ? LearnAlertStyle.indigo.opacity(0.3)
+            : (colorScheme == .light ? Color.black.opacity(0.06) : Color.white.opacity(0.05))
+        let rowBgColor: Color = colorScheme == .light ? Color.white.opacity(0.65) : Color.white.opacity(0.025)
 
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -345,23 +367,23 @@ public struct PDFSectionPickerSheet: View {
                 } label: {
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(isSelected ? LearnAlertStyle.indigo : Color.white.opacity(0.3))
+                        .foregroundStyle(checkmarkColor)
                 }
                 .buttonStyle(.plain)
 
                 Text(section.title)
                     .font(.custom("Poppins-Medium", size: 12))
-                    .foregroundStyle(Color.white.opacity(0.75))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.80) : Color.white.opacity(0.75))
                     .lineLimit(1)
 
                 if section.startPageIndex == section.endPageIndex {
                     Text("\(section.startPageIndex + 1)")
                         .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.50) : Color.white.opacity(0.45))
                 } else {
                     Text("\(section.startPageIndex + 1)–\(section.endPageIndex + 1)")
                         .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.45))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.50) : Color.white.opacity(0.45))
                 }
 
                 Spacer()
@@ -388,11 +410,11 @@ public struct PDFSectionPickerSheet: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
-        .background(Color.white.opacity(0.025))
+        .background(rowBgColor)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? LearnAlertStyle.indigo.opacity(0.3) : Color.white.opacity(0.05), lineWidth: 1)
+                .stroke(rowStrokeColor, lineWidth: 1)
         )
     }
 
@@ -452,7 +474,7 @@ public struct PDFSectionPickerSheet: View {
                     .foregroundStyle(LearnAlertStyle.indigo)
                 Text("Select Range:")
                     .font(.custom("Poppins-Medium", size: 12))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.85) : Color.white.opacity(0.85))
             }
 
             TextField("From", text: $customRangeStartText)
@@ -460,28 +482,28 @@ public struct PDFSectionPickerSheet: View {
                 .font(.custom("Poppins-SemiBold", size: 12))
                 .multilineTextAlignment(.center)
                 .frame(width: 48, height: 32)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(colorScheme == .light ? Color.white : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(colorScheme == .light ? Color.black.opacity(0.15) : Color.white.opacity(0.12), lineWidth: 1)
                 )
-                .foregroundStyle(.white)
+                .foregroundStyle(colorScheme == .light ? Color.black : .white)
 
             Text("–")
                 .font(.custom("Poppins-Regular", size: 12))
-                .foregroundStyle(Color.white.opacity(0.4))
+                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.4) : Color.white.opacity(0.4))
 
             TextField("To", text: $customRangeEndText)
                 .keyboardType(.numberPad)
                 .font(.custom("Poppins-SemiBold", size: 12))
                 .multilineTextAlignment(.center)
                 .frame(width: 48, height: 32)
-                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(colorScheme == .light ? Color.white : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .stroke(colorScheme == .light ? Color.black.opacity(0.15) : Color.white.opacity(0.12), lineWidth: 1)
                 )
-                .foregroundStyle(.white)
+                .foregroundStyle(colorScheme == .light ? Color.black : .white)
 
             Button("Select") {
                 applyTypedRange()
@@ -500,17 +522,17 @@ public struct PDFSectionPickerSheet: View {
                     clearAllSelections()
                 }
                 .font(.custom("Poppins-Medium", size: 11))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.55) : Color.white.opacity(0.55))
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.04))
+        .background(colorScheme == .light ? Color.white.opacity(0.75) : Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.07), lineWidth: 1)
         )
     }
 
@@ -541,7 +563,7 @@ public struct PDFSectionPickerSheet: View {
                     HStack(spacing: 6) {
                         Text("\(selectedPageIndices.count) / \(maxPageLimit) Pages")
                             .font(.custom("Poppins-SemiBold", size: 14))
-                            .foregroundStyle(Color.white)
+                            .foregroundStyle(colorScheme == .light ? Color.black : Color.white)
 
                         if selectedPageIndices.count >= maxPageLimit {
                             Text("Max")
@@ -556,7 +578,7 @@ public struct PDFSectionPickerSheet: View {
 
                     Text("Selected for AI flashcards")
                         .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.6) : Color.white.opacity(0.6))
                 }
 
                 Spacer()

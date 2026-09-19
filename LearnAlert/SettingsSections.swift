@@ -481,6 +481,8 @@ struct SettingsPreferencesGroup: View {
 }
 
 struct SettingsSupportGroup: View {
+    @State private var activeSafariURL: URL?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("INFORMATION")
@@ -512,19 +514,21 @@ struct SettingsSupportGroup: View {
 
                 settingsDivider
 
-                NavigationLink {
-                    TermsOfServiceView()
+                Button {
+                    activeSafariURL = URL(string: "https://learnalertapp.com/terms")
                 } label: {
                     SettingsGroupedRow(title: "Terms and Conditions", systemImage: "doc.text.fill")
                 }
+                .buttonStyle(.plain)
 
                 settingsDivider
 
-                NavigationLink {
-                    PrivacyPolicyView()
+                Button {
+                    activeSafariURL = URL(string: "https://learnalertapp.com/privacy-policy")
                 } label: {
                     SettingsGroupedRow(title: "Privacy Policy", systemImage: "lock.shield.fill")
                 }
+                .buttonStyle(.plain)
 
                 settingsDivider
 
@@ -538,6 +542,15 @@ struct SettingsSupportGroup: View {
             .settingsGlassSurface(cornerRadius: 18)
         }
         .padding(.horizontal)
+        .sheet(isPresented: Binding(
+            get: { activeSafariURL != nil },
+            set: { if !$0 { activeSafariURL = nil } }
+        )) {
+            if let url = activeSafariURL {
+                SafariView(url: url)
+                    .ignoresSafeArea()
+            }
+        }
     }
 
     private var settingsDivider: some View {
@@ -860,7 +873,8 @@ struct ManageMyDataView: View {
 struct WhatsNewView: View {
     var body: some View {
         ZStack {
-            CoursezyBackground()
+            LearnAlertStyle.courseCanvas
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -876,14 +890,6 @@ struct WhatsNewView: View {
                         badgeColor: LearnAlertStyle.sky,
                         isCurrent: true
                     )
-
-                    // Planned release (matching same clean card style, placed below)
-                    ReleaseNotesEntry(
-                        version: "1.1.0",
-                        detail: "Image support · Improved categories · Advanced progression stats",
-                        badgeText: "Planned",
-                        badgeColor: LearnAlertStyle.mint
-                    )
                 }
                 .padding(20)
                 .padding(.bottom, 30)
@@ -891,6 +897,7 @@ struct WhatsNewView: View {
         }
         .navigationTitle("What’s New")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
     }
 }
 
@@ -935,7 +942,8 @@ private struct ReleaseNotesEntry: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(LearnAlertStyle.textPrimary)
-        .coursezyCard(cornerRadius: 16, padding: 14)
+        .padding(14)
+        .settingsGlassSurface(cornerRadius: 16)
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(isCurrent ? LearnAlertStyle.sky.opacity(0.45) : Color.clear, lineWidth: 1.2)
@@ -947,43 +955,36 @@ private struct ReleaseNotesEntry: View {
 struct FeedbackView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.colorScheme) private var colorScheme
     @State private var feedbackText = ""
 
     var body: some View {
         ZStack {
-            // Darkened, calm, sleek background
-            LinearGradient(
-                colors: [
-                    Color(red: 0.07, green: 0.08, blue: 0.12),
-                    Color(red: 0.10, green: 0.11, blue: 0.17)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            LearnAlertStyle.courseCanvas
+                .ignoresSafeArea()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("SHARE YOUR THOUGHTS")
                             .font(.caption.bold())
-                            .foregroundStyle(Color.white.opacity(0.65))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
 
                         Text("We would love to hear your ideas, feedback, or any issues you encounter. Your input directly shapes upcoming updates.")
                             .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                            .foregroundStyle(Color.white.opacity(0.92))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("YOUR MESSAGE")
                             .font(.caption.bold())
-                            .foregroundStyle(Color.white.opacity(0.65))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
 
                         ZStack(alignment: .topLeading) {
                             if feedbackText.isEmpty {
                                 Text("Tell us what is on your mind...")
                                     .font(.custom("Poppins-Regular", size: 14))
-                                    .foregroundStyle(Color.white.opacity(0.38))
+                                    .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.7))
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 14)
                                     .allowsHitTesting(false)
@@ -992,16 +993,11 @@ struct FeedbackView: View {
                             TextEditor(text: $feedbackText)
                                 .scrollContentBackground(.hidden)
                                 .font(.custom("Poppins-Regular", size: 14))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(LearnAlertStyle.textPrimary)
                                 .padding(12)
                                 .frame(minHeight: 150)
                         }
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                        )
+                        .settingsGlassSurface(cornerRadius: 16)
                     }
 
                     Button(action: sendEmail) {
@@ -1019,7 +1015,7 @@ struct FeedbackView: View {
                     VStack(spacing: 6) {
                         Text("Or email us at:")
                             .font(.custom("Poppins-Medium", size: 14, relativeTo: .subheadline))
-                            .foregroundStyle(Color.white.opacity(0.65))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
 
                         Link(destination: URL(string: "mailto:contact@learnalertapp.com")!) {
                             HStack(spacing: 6) {
@@ -1031,7 +1027,7 @@ struct FeedbackView: View {
                                     .minimumScaleFactor(0.70)
                                     .allowsTightening(true)
                             }
-                            .foregroundStyle(LearnAlertStyle.cyan)
+                            .foregroundStyle(colorScheme == .light ? LearnAlertStyle.figmaBlue : LearnAlertStyle.cyan)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -1043,7 +1039,7 @@ struct FeedbackView: View {
         }
         .navigationTitle("Send Feedback")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
     }
 
     private func sendEmail() {
