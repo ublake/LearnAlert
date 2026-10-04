@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import AVKit
+import AVFoundation
 
 enum LearnAlertStyle {
     // Core palette sampled from the LearnAlert visual direction.
@@ -50,282 +52,90 @@ struct CoursezyBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: colorScheme == .dark
-                    ? [
-                        Color(red: 0.16, green: 0.34, blue: 0.43),
-                        Color(red: 0.20, green: 0.27, blue: 0.50),
-                        Color(red: 0.31, green: 0.20, blue: 0.52)
-                    ]
-                    : [
-                        Color(red: 0.70, green: 0.88, blue: 0.89),
-                        Color(red: 0.75, green: 0.84, blue: 0.91),
-                        Color(red: 0.84, green: 0.81, blue: 0.93)
-                    ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Circle()
-                .fill(Color.white.opacity(0.38))
-                .frame(width: 320, height: 320)
-                .blur(radius: 54)
-                .offset(x: 170, y: -330)
-            Circle()
-                .fill(LearnAlertStyle.aqua.opacity(0.24))
-                .frame(width: 300, height: 300)
-                .blur(radius: 58)
-                .offset(x: -170, y: 330)
-        }
-        .ignoresSafeArea()
+        LearnAlertStyle.courseCanvas
+            .ignoresSafeArea()
     }
 }
 
+// MARK: - LearnAlert Logo Mark
+struct LearnAlertLogoMark: View {
+    var body: some View {
+        Image("LearnAlertLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 36, height: 36)
+    }
+}
+
+// MARK: - App Section Header
 struct AppSectionHeader: View {
-    let title: LocalizedStringResource
-    let subtitle: LocalizedStringResource
-    @State private var isVisible = false
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.custom("Poppins-SemiBold", size: 28, relativeTo: .largeTitle))
+                .font(.custom("Poppins-SemiBold", size: 24, relativeTo: .title))
                 .foregroundStyle(LearnAlertStyle.textPrimary)
-            Text(subtitle)
-                .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .opacity(isVisible ? 1 : 0)
-        .offset(y: isVisible ? 0 : 7)
-        .task {
-            withAnimation(.easeOut(duration: 0.46)) { isVisible = true }
-        }
-    }
-}
 
-enum DeckColorPalette {
-    static let colors = [
-        "#3B82C4", "#6557C9", "#2A9D8F", "#C05A78", "#B8793E", "#397A68",
-        "#7654A8", "#287D9B", "#B55245", "#4F70B8", "#8B5E83", "#3D8A59",
-        "#A45C40", "#5369A5", "#2F8B83", "#9B6541", "#5B67B3", "#AA526B",
-        "#31758D", "#6C7140", "#7A529C", "#3E8068", "#A35E34", "#496FA3"
-    ]
-
-    private static let remainingKey = "remainingAutomaticDeckColors"
-
-    static func suggestedColor(existingColors: [String]) -> String {
-        preparedColors(existingColors: existingColors).first ?? colors[0]
-    }
-
-    static func takeNextColor(existingColors: [String]) -> String {
-        var remaining = preparedColors(existingColors: existingColors)
-        let selected = remaining.removeFirst()
-        UserDefaults.standard.set(remaining, forKey: remainingKey)
-        return selected
-    }
-
-    private static func preparedColors(existingColors: [String]) -> [String] {
-        var remaining = (UserDefaults.standard.stringArray(forKey: remainingKey) ?? [])
-            .filter(colors.contains)
-        if remaining.isEmpty {
-            remaining = colors.shuffled()
-        }
-
-        let used = Set(existingColors.map { $0.uppercased() })
-        if let unusedIndex = remaining.firstIndex(where: { !used.contains($0.uppercased()) }) {
-            let unused = remaining.remove(at: unusedIndex)
-            remaining.insert(unused, at: 0)
-        } else if used.count < colors.count {
-            let unusedColors = colors.filter { !used.contains($0.uppercased()) }
-            if let selected = unusedColors.randomElement() {
-                remaining.removeAll { $0.caseInsensitiveCompare(selected) == .orderedSame }
-                remaining.insert(selected, at: 0)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
             }
         }
-        UserDefaults.standard.set(remaining, forKey: remainingKey)
-        return remaining
     }
 }
 
-struct LearnAlertBackground: View {
-    var emphasized = false
 
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: emphasized
-                    ? [Color(red: 0.17, green: 0.31, blue: 0.47), Color(red: 0.28, green: 0.24, blue: 0.68), Color(red: 0.10, green: 0.43, blue: 0.48)]
-                    : [Color(red: 0.20, green: 0.63, blue: 0.59), Color(red: 0.22, green: 0.42, blue: 0.68), Color(red: 0.20, green: 0.18, blue: 0.68)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-
-            Circle()
-                .fill(Color(red: 0.12, green: 0.61, blue: 0.53).opacity(emphasized ? 0.58 : 0.82))
-                .frame(width: 360, height: 360)
-                .blur(radius: 58)
-                .offset(x: -170, y: -290)
-
-            Circle()
-                .fill(Color(red: 0.12, green: 0.48, blue: 0.66).opacity(emphasized ? 0.48 : 0.72))
-                .frame(width: 330, height: 330)
-                .blur(radius: 62)
-                .offset(x: 190, y: -70)
-
-            Circle()
-                .fill(Color(red: 0.12, green: 0.64, blue: 0.45).opacity(emphasized ? 0.34 : 0.54))
-                .frame(width: 290, height: 290)
-                .blur(radius: 64)
-                .offset(x: -150, y: 270)
-
-            Circle()
-                .fill(Color(red: 0.27, green: 0.31, blue: 0.73).opacity(0.72))
-                .frame(width: 350, height: 350)
-                .blur(radius: 68)
-                .offset(x: 180, y: 430)
-
-            Capsule()
-                .fill(Color(red: 0.17, green: 0.53, blue: 0.62).opacity(0.34))
-                .frame(width: 410, height: 105)
-                .rotationEffect(.degrees(-24))
-                .blur(radius: 24)
-                .offset(x: 115, y: -235)
-
-            RoundedRectangle(cornerRadius: 72, style: .continuous)
-                .fill(Color(red: 0.29, green: 0.22, blue: 0.70).opacity(0.34))
-                .frame(width: 310, height: 180)
-                .rotationEffect(.degrees(18))
-                .blur(radius: 34)
-                .offset(x: -170, y: 80)
-
-            Circle()
-                .fill(Color(red: 0.14, green: 0.55, blue: 0.43).opacity(0.32))
-                .frame(width: 150, height: 150)
-                .blur(radius: 20)
-                .offset(x: 125, y: 245)
-
-            ContourLines()
-                .stroke(
-                    Color.white.opacity(emphasized ? 0.09 : 0.12),
-                    lineWidth: 1
-                )
-                .ignoresSafeArea()
-        }
-        .ignoresSafeArea()
-    }
-}
-
-struct ContourBackdrop: Shape {
-    func path(in rect: CGRect) -> Path {
-        ContourLines().path(in: rect)
-    }
-}
-
-private struct ContourLines: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let centers = [
-            CGPoint(x: rect.maxX + 15, y: rect.minY + 75),
-            CGPoint(x: rect.minX - 20, y: rect.maxY - 50),
-            CGPoint(x: rect.midX + 35, y: rect.midY - 40)
-        ]
-
-        for center in centers {
-            for radius in stride(from: CGFloat(42), through: CGFloat(250), by: 28) {
-                path.addEllipse(
-                    in: CGRect(
-                        x: center.x - radius,
-                        y: center.y - radius,
-                        width: radius * 2,
-                        height: radius * 2
-                    )
-                )
-            }
-        }
-        return path
-    }
-}
-
+// MARK: - View Modifiers
 struct EditorialSurface: ViewModifier {
-    var padding: CGFloat = 16
+    let padding: CGFloat
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .frostedSurface(cornerRadius: 20)
+            .background(LearnAlertStyle.courseSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline.opacity(0.5), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
     }
 }
 
 extension View {
-    @ViewBuilder
     func clearGlassSurface(cornerRadius: CGFloat = 20) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            self
-                .background(.ultraThinMaterial, in: shape)
-                .background(Color.white.opacity(0.06), in: shape)
-                .overlay(shape.stroke(Color.white.opacity(0.22), lineWidth: 0.75))
-        }
+        self
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.32), Color.white.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.18), radius: 14, y: 5)
+    }
+
+    func liquidGlassInput(cornerRadius: CGFloat = 22) -> some View {
+        self
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(LearnAlertStyle.courseSurface.opacity(0.85), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(LearnAlertStyle.glassStroke, lineWidth: 1)
+            )
     }
 
     func lightModeGlassElevation(cornerRadius: CGFloat = 20) -> some View {
         modifier(LightModeGlassElevation(cornerRadius: cornerRadius))
-    }
-
-    @ViewBuilder
-    func settingsGlassSurface(cornerRadius: CGFloat = 18) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            self
-                .background(Color.white.opacity(0.05), in: shape)
-                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-                .shadow(color: LearnAlertStyle.figmaBlue.opacity(0.07), radius: 12, y: 6)
-        } else {
-            self
-                .background(.regularMaterial, in: shape)
-                .background(Color.white.opacity(0.28), in: shape)
-                .overlay(shape.stroke(Color.white.opacity(0.45), lineWidth: 0.75))
-                .shadow(color: LearnAlertStyle.figmaBlue.opacity(0.07), radius: 12, y: 6)
-        }
-    }
-
-    @ViewBuilder
-    func liquidGlassInput(cornerRadius: CGFloat = 22) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            self
-                .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
-                .overlay(
-                    shape
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.38), Color.white.opacity(0.12)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-        } else {
-            self
-                .background(.ultraThinMaterial, in: shape)
-                .background(Color.white.opacity(0.06), in: shape)
-                .overlay(
-                    shape
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.40), Color.white.opacity(0.12)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-        }
     }
 
     @ViewBuilder
@@ -385,6 +195,10 @@ extension View {
         frostedSurface(cornerRadius: cornerRadius)
     }
 
+    func settingsGlassSurface(cornerRadius: CGFloat = 18) -> some View {
+        frostedSurface(cornerRadius: cornerRadius)
+    }
+
     func solidDarkSurface(cornerRadius: CGFloat = 10) -> some View {
         background(LearnAlertStyle.solidPanel)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -418,6 +232,16 @@ extension View {
     }
 }
 
+struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 private struct LightModeGlassElevation: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     let cornerRadius: CGFloat
@@ -439,11 +263,44 @@ private struct LightModeGlassElevation: ViewModifier {
     }
 }
 
-private extension Color {
+extension Color {
     static func adaptive(light: UIColor, dark: UIColor) -> Color {
         Color(UIColor { traits in
             traits.userInterfaceStyle == .dark ? dark : light
         })
+    }
+
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+
+    func toHex() -> String? {
+        let uic = UIColor(self)
+        guard let components = uic.cgColor.components, components.count >= 3 else { return nil }
+        let r = Float(components[0])
+        let g = Float(components[1])
+        let b = Float(components[2])
+        return String(format: "#%02lX%02lX%02lX", lroundf(r * 255), lroundf(g * 255), lroundf(b * 255))
     }
 }
 
@@ -583,6 +440,12 @@ enum HapticFeedback {
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
+    }
+
+    static func selection() {
+        let generator = UISelectionFeedbackGenerator()
+        generator.prepare()
+        generator.selectionChanged()
     }
 }
 

@@ -1,10 +1,14 @@
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 struct HelpView: View {
     @Query private var decks: [Deck]
+    @Environment(\.openURL) private var openURL
     @State private var selectedDeckId = "NONE"
     @State private var showingEmptyDeckAlert = false
+    @State private var showingPermissionAlert = false
+    @State private var testScheduledSuccess = false
 
     private var selectedDeck: Deck? {
         decks.first { $0.id.uuidString == selectedDeckId }
@@ -23,6 +27,7 @@ struct HelpView: View {
                     NotificationTestSection(
                         decks: decks,
                         selectedDeckId: $selectedDeckId,
+                        testScheduledSuccess: testScheduledSuccess,
                         testNotification: testNotification
                     )
                 }
@@ -38,6 +43,16 @@ struct HelpView: View {
         } message: {
             Text("Add at least one card to this deck before testing a notification.")
         }
+        .alert("Notifications Not Allowed", isPresented: $showingPermissionAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("LearnAlert needs notification permissions to send you flashcard alerts. Please allow Notifications in your iPhone Settings.")
+        }
     }
 
     private func testNotification() {
@@ -45,7 +60,48 @@ struct HelpView: View {
             showingEmptyDeckAlert = true
             return
         }
+
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    triggerTestCard(card)
+
+                case .notDetermined:
+                    Task { @MainActor in
+                        let granted = await NotificationManager.shared.requestPermission()
+                        if granted {
+                            triggerTestCard(card)
+                        } else {
+                            HapticFeedback.warning()
+                            showingPermissionAlert = true
+                        }
+                    }
+
+                case .denied:
+                    HapticFeedback.warning()
+                    showingPermissionAlert = true
+
+                @unknown default:
+                    HapticFeedback.warning()
+                    showingPermissionAlert = true
+                }
+            }
+        }
+    }
+
+    private func triggerTestCard(_ card: Flashcard) {
         NotificationManager.shared.scheduleRealCard(card, at: Date().addingTimeInterval(3), progress: "Test")
+        HapticFeedback.success()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            testScheduledSuccess = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation {
+                testScheduledSuccess = false
+            }
+        }
     }
 }
 
@@ -208,6 +264,7 @@ private struct HelpContact: View {
 private struct NotificationTestSection: View {
     let decks: [Deck]
     @Binding var selectedDeckId: String
+    let testScheduledSuccess: Bool
     let testNotification: () -> Void
 
     private var selectedDeckName: String {
@@ -253,10 +310,19 @@ private struct NotificationTestSection: View {
             }
 
             Button(action: testNotification) {
-                Label("Try Notification", systemImage: "bell.and.waves.left.and.right.fill")
-                    .font(.custom("Poppins-SemiBold", size: 14))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                HStack(spacing: 8) {
+                    if testScheduledSuccess {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.green)
+                        Text("Alert Sent in 3s!")
+                    } else {
+                        Image(systemName: "bell.and.waves.left.and.right.fill")
+                        Text("Try Notification")
+                    }
+                }
+                .font(.custom("Poppins-SemiBold", size: 14))
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
             }
             .foregroundStyle(.white)
             .background(
@@ -264,7 +330,9 @@ private struct NotificationTestSection: View {
                     ? AnyShapeStyle(Color.gray.opacity(0.35))
                     : AnyShapeStyle(
                         LinearGradient(
-                            colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
+                            colors: testScheduledSuccess
+                                ? [Color.green.opacity(0.85), Color.green]
+                                : [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -276,7 +344,7 @@ private struct NotificationTestSection: View {
                     .stroke(selectedDeckId == "NONE" ? Color.clear : Color.white.opacity(0.2), lineWidth: 1)
             )
             .shadow(
-                color: selectedDeckId == "NONE" ? Color.clear : LearnAlertStyle.indigo.opacity(0.25),
+                color: selectedDeckId == "NONE" ? Color.clear : (testScheduledSuccess ? Color.green.opacity(0.3) : LearnAlertStyle.indigo.opacity(0.25)),
                 radius: 8,
                 y: 3
             )

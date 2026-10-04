@@ -184,16 +184,7 @@ struct GeneratedQuizImportView: View {
                     GeneratedDeckReviewContent(
                         deck: deckBinding,
                         selectedCardIDs: $selectedCardIDs,
-                        assistantMessage: assistantMessage,
-                        isDeckSaved: savedDeck != nil,
-                        saveDeck: addDeck,
-                        backToChat: {
-                            if savedDeck != nil {
-                                showingAlreadyCreatedAlert = true
-                            } else {
-                                isShowingReview = false
-                            }
-                        }
+                        assistantMessage: assistantMessage
                     )
                 } else {
                     AIImportConversationView(
@@ -500,7 +491,6 @@ struct GeneratedQuizImportView: View {
             return
         }
         guard !isGenerating && !isRefining && !isReadingAttachment else { return }
-        InteractionSoundPlayer.shared.play(.selection)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         chatInput = suggestion
         sendMessage()
@@ -915,7 +905,7 @@ struct GeneratedQuizImportView: View {
                 options: options,
                 correctAnswer: correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines),
                 hint: card.hint.trimmingCharacters(in: .whitespacesAndNewlines),
-                cardType: FlashcardType(rawValue: card.type.rawValue),
+                cardType: FlashcardType(rawValue: card.type.rawValue) ?? .multipleChoice,
                 matchingLeftItems: card.matchingPairs?.map(\.left) ?? [],
                 matchingRightItems: card.matchingPairs?.map(\.right) ?? [],
                 sourceLocator: card.sourceLocator.isEmpty ? nil : card.sourceLocator,
@@ -1048,7 +1038,7 @@ private struct AIImportConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 14) {
-                        AIWelcomeBubble()
+                        AIWelcomeBubble(isCondensed: !messages.isEmpty || pendingUserMessage != nil)
                         ForEach(messages) { message in
                             ConversationBubble(
                                 message: message,
@@ -1437,149 +1427,229 @@ private struct SentAttachmentPreview: View {
 private struct AIWelcomeBubble: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var showingPrivacy = false
+    let isCondensed: Bool
+    @State private var isManuallyExpanded: Bool = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(LearnAlertStyle.indigo.opacity(0.20))
-                    .frame(width: 34, height: 34)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(LearnAlertStyle.indigo)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Send notes, text, PDFs, documents, or photos. I’ll build a deck you can review and refine.")
-                    .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.92))
-                    .lineSpacing(2)
-
-                Text("Please don’t send sensitive or personal info.")
-                    .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.60))
-
+        Group {
+            if isCondensed && !isManuallyExpanded {
                 Button {
-                    showingPrivacy = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lock.shield.fill")
-                        Text("How LearnAlert processes your data")
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                        isManuallyExpanded = true
                     }
-                    .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption2))
-                    .foregroundStyle(LearnAlertStyle.indigo)
-                    .underline()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(LearnAlertStyle.indigo)
+
+                        Text("AI Guidelines & Privacy Notice")
+                            .font(.custom("Poppins-Medium", size: 12))
+                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.75) : Color.white.opacity(0.85))
+
+                        Spacer()
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.4) : Color.white.opacity(0.4))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(colorScheme == .light ? Color.white.opacity(0.75) : Color.white.opacity(0.08))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.12), lineWidth: 1)
+                    )
                 }
                 .buttonStyle(.plain)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(LearnAlertStyle.indigo.opacity(0.20))
+                                .frame(width: 34, height: 34)
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(LearnAlertStyle.indigo)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Send notes, text, PDFs, documents, or photos. I’ll build a deck you can review and refine.")
+                                .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
+                                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.88) : Color.white.opacity(0.92))
+                                .lineSpacing(2)
+
+                            Text("Please don’t send sensitive or personal info.")
+                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
+                                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.60) : Color.white.opacity(0.60))
+
+                            Button {
+                                showingPrivacy = true
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "lock.shield.fill")
+                                    Text("How LearnAlert processes your data")
+                                }
+                                .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption2))
+                                .foregroundStyle(LearnAlertStyle.indigo)
+                                .underline()
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 4)
+
+                        if isCondensed && isManuallyExpanded {
+                            Button {
+                                withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                                    isManuallyExpanded = false
+                                }
+                            } label: {
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.4) : Color.white.opacity(0.4))
+                                    .padding(4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .sheet(isPresented: $showingPrivacy) {
+                    SafariView(url: URL(string: "https://learnalertapp.com/privacy-policy")!)
+                        .ignoresSafeArea()
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(
+                            colorScheme == .light
+                                ? LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.80),
+                                        Color.white.opacity(0.55)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                : LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.11),
+                                        Color.white.opacity(0.04)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                        )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.28),
+                                    colorScheme == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .light ? 0.22 : 0.15),
+                    radius: 10,
+                    y: 4
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            Spacer(minLength: 4)
         }
-        .sheet(isPresented: $showingPrivacy) {
-            SafariView(url: URL(string: "https://learnalertapp.com/privacy-policy")!)
-                .ignoresSafeArea()
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(
-                    colorScheme == .light
-                        ? LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.80),
-                                Color.white.opacity(0.55)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        : LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.11),
-                                Color.white.opacity(0.04)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.28),
-                            colorScheme == .light ? Color.black.opacity(0.05) : Color.white.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-        )
-        .shadow(
-            color: Color.black.opacity(colorScheme == .light ? 0.22 : 0.15),
-            radius: 10,
-            y: 4
-        )
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: isCondensed)
+        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: isManuallyExpanded)
     }
 }
 
 private struct AIProcessingBubble: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showExtendedTimeNotice: Bool = false
 
     var body: some View {
-        HStack {
-            TimelineView(.periodic(from: .now, by: 0.4)) { context in
-                let activeDot = reduceMotion
-                    ? 2
-                    : Int(context.date.timeIntervalSinceReferenceDate / 0.4) % 3
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TimelineView(.periodic(from: .now, by: 0.4)) { context in
+                    let activeDot = reduceMotion
+                        ? 2
+                        : Int(context.date.timeIntervalSinceReferenceDate / 0.4) % 3
 
-                HStack(spacing: 6) {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .fill(LearnAlertStyle.indigo)
-                            .frame(width: 8, height: 8)
-                            .opacity(index <= activeDot ? 1 : 0.28)
+                    HStack(spacing: 6) {
+                        ForEach(0..<3, id: \.self) { index in
+                            Circle()
+                                .fill(LearnAlertStyle.indigo)
+                                .frame(width: 8, height: 8)
+                                .opacity(index <= activeDot ? 1 : 0.28)
+                        }
                     }
+                    .frame(width: 38, height: 24)
                 }
-                .frame(width: 38, height: 24)
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 11)
-            .background(
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
-                                colorScheme == .light ? Color.white.opacity(0.60) : Color.white.opacity(0.05)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                .padding(.horizontal, 18)
+                .padding(.vertical, 11)
+                .background(
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12),
+                                    colorScheme == .light ? Color.white.opacity(0.60) : Color.white.opacity(0.05)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-            )
-            .overlay(
-                Capsule()
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.30),
-                                colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.20 : 0.15), radius: 8, y: 3)
-            Spacer(minLength: 46)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    colorScheme == .light ? Color.black.opacity(0.12) : Color.white.opacity(0.30),
+                                    colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .light ? 0.20 : 0.15), radius: 8, y: 3)
+                Spacer(minLength: 46)
+            }
+
+            if showExtendedTimeNotice {
+                HStack(spacing: 5) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Deck generation can take up to 30 seconds in some cases")
+                        .font(.custom("Poppins-Regular", size: 11))
+                }
+                .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.52) : Color.white.opacity(0.55))
+                .padding(.leading, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("LearnAlert AI is responding")
+        .task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            withAnimation(.easeInOut(duration: 0.35)) {
+                showExtendedTimeNotice = true
+            }
+        }
     }
 }
 
@@ -1873,6 +1943,7 @@ private struct GeneratedDeckReadyBubble: View {
 
     private func cardTypeTitle(for type: GeneratedCardType) -> String {
         switch type {
+        case .vocabulary: return "Vocabulary"
         case .matching: return "Matching Pairs"
         case .tapReveal: return "Tap Reveal"
         case .fillBlank: return "Fill in the Blank"
@@ -2042,9 +2113,6 @@ private struct GeneratedDeckReviewContent: View {
     @Binding var deck: GeneratedDeck
     @Binding var selectedCardIDs: Set<String>
     let assistantMessage: String
-    var isDeckSaved: Bool = false
-    let saveDeck: () -> Void
-    let backToChat: () -> Void
 
     var body: some View {
         ScrollView {
@@ -2062,48 +2130,10 @@ private struct GeneratedDeckReviewContent: View {
                         }
                     }
                 }
-
-                // Review Footer
-                VStack(spacing: 12) {
-                    Button(action: saveDeck) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            Text(isDeckSaved ? "Deck Added to Library" : "Save Deck (\(deck.cards.count) Cards)")
-                                .font(.custom("Poppins-SemiBold", size: 16))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
-                        .background(
-                            isDeckSaved
-                                ? LinearGradient(colors: [Color.green.opacity(0.85), Color.green.opacity(0.70)], startPoint: .leading, endPoint: .trailing)
-                                : LinearGradient(colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)], startPoint: .leading, endPoint: .trailing)
-                        )
-                        .clipShape(Capsule())
-                        .shadow(color: isDeckSaved ? Color.green.opacity(0.35) : LearnAlertStyle.indigo.opacity(0.35), radius: 10, y: 4)
-                    }
-                    .disabled(isDeckSaved)
-
-                    Button(action: backToChat) {
-                        HStack(spacing: 6) {
-                            Image(systemName: isDeckSaved ? "plus.bubble.fill" : "sparkles")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(isDeckSaved ? "Start New AI Chat" : "Ask AI to Refine or Add More Cards")
-                                .font(.custom("Poppins-Medium", size: 14))
-                        }
-                        .foregroundStyle(LearnAlertStyle.indigo)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(Capsule())
-                    }
-                }
-                .padding(.top, 10)
             }
             .padding(.horizontal)
             .padding(.top, 14)
-            .padding(.bottom, 36)
+            .padding(.bottom, 90)
         }
     }
 }
@@ -2167,6 +2197,7 @@ private struct GeneratedCardReviewRow: View {
 
     private var cardTypeTitle: String {
         switch card.type {
+        case .vocabulary: return "Vocabulary"
         case .matching: return "Matching Pairs"
         case .tapReveal: return "Tap Reveal"
         case .fillBlank: return "Fill in the Blank"
@@ -2176,6 +2207,7 @@ private struct GeneratedCardReviewRow: View {
 
     private var cardTypeIcon: String {
         switch card.type {
+        case .vocabulary: return "character.book.closed.fill"
         case .matching: return "arrow.left.arrow.right"
         case .tapReveal: return "hand.tap"
         case .fillBlank: return "character.cursor.ibeam"

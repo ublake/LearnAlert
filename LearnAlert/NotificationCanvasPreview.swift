@@ -142,38 +142,45 @@ struct NotificationCanvasView: View {
         ScrollView {
             VStack(spacing: 18) {
                 // Header
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.stack.fill")
-                            .font(.caption.bold())
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
-                        Text("SPANISH")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(textColorSecondary)
+                        Text("Spanish")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(textColorPrimary)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .canvasLiquidGlass(cornerRadius: 10, isLight: isLight)
-
-                    Text("3/17")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(textColorSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .canvasLiquidGlass(cornerRadius: 10, isLight: isLight)
+                    .padding(.top, 4)
 
                     Spacer()
 
-                    Button {
-                        withAnimation(.snappy) {
-                            showingControls.toggle()
+                    HStack(spacing: 8) {
+                        if selectedAnswer == nil {
+                            Button {
+                                withAnimation(.spring) {
+                                    showingHint.toggle()
+                                }
+                            } label: {
+                                Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Color.orange)
+                                    .frame(width: 36, height: 36)
+                                    .canvasLiquidGlass(cornerRadius: 18, tint: Color.orange.opacity(0.12), isLight: isLight)
+                            }
                         }
-                    } label: {
-                        Image(systemName: showingControls ? "xmark" : "gearshape.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(textColorPrimary)
-                            .frame(width: 36, height: 36)
-                            .canvasLiquidGlass(cornerRadius: 18, isLight: isLight)
+
+                        Button {
+                            withAnimation(.snappy) {
+                                showingControls.toggle()
+                            }
+                        } label: {
+                            Image(systemName: showingControls ? "xmark" : "gearshape.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(textColorPrimary)
+                                .frame(width: 36, height: 36)
+                                .canvasLiquidGlass(cornerRadius: 18, isLight: isLight)
+                        }
                     }
                 }
 
@@ -182,6 +189,7 @@ struct NotificationCanvasView: View {
                         Label("Notification Controls", systemImage: "slider.horizontal.3")
                             .font(.headline.bold())
                             .foregroundStyle(textColorPrimary)
+
                         Label("Change mini-session deck", systemImage: "rectangle.stack.fill")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(textColorPrimary)
@@ -189,6 +197,7 @@ struct NotificationCanvasView: View {
                             .padding(12)
                             .background(isLight ? Color.white.opacity(0.60) : Color.white.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
                         Label("Stop scheduled notifications", systemImage: "bell.slash.fill")
                             .font(.subheadline.weight(.medium))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -251,36 +260,6 @@ struct NotificationCanvasView: View {
                     }
                 }
 
-                if selectedAnswer == nil {
-                    HStack(spacing: 12) {
-                        Button {
-                            withAnimation(.spring) {
-                                showingHint.toggle()
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
-                                Text(showingHint ? "Hide Hint" : "Hint").fontWeight(.bold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .foregroundStyle(Color.orange)
-                            .canvasLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.10), isLight: isLight)
-                        }
-
-                        Button(action: {}) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "forward.fill")
-                                Text("Skip").fontWeight(.bold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 11)
-                            .foregroundStyle(textColorSecondary)
-                            .canvasLiquidGlass(cornerRadius: 12, isLight: isLight)
-                        }
-                    }
-                }
-
                 if showingHint {
                     Text("This greeting is commonly used before noon.")
                         .font(.subheadline.italic())
@@ -288,6 +267,30 @@ struct NotificationCanvasView: View {
                         .padding(12)
                         .frame(maxWidth: .infinity)
                         .canvasLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.08), isLight: isLight)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                if selectedAnswer == nil {
+                    HStack(alignment: .center) {
+                        Color.clear
+                            .frame(width: 36, height: 1)
+
+                        Spacer()
+
+                        Text("3/17")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(textColorSecondary)
+
+                        Spacer()
+
+                        Button(action: {}) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(textColorSecondary)
+                                .frame(width: 36, height: 32)
+                                .canvasLiquidGlass(cornerRadius: 10, isLight: isLight)
+                        }
+                    }
                 }
 
                 if selectedAnswer != nil {
@@ -330,27 +333,7 @@ struct NotificationCanvasView: View {
                     .transition(.opacity)
                 }
 
-                // BOTTOM RIGHT: Continue in App button
-                HStack {
-                    Spacer()
-                    Button {} label: {
-                        HStack(spacing: 5) {
-                            Text("Continue in App")
-                                .font(.system(size: 12, weight: .semibold))
-                            Image(systemName: "arrow.up.forward.app.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(isLight ? Color(red: 0.12, green: 0.48, blue: 0.96) : Color(red: 0.35, green: 0.70, blue: 1.0))
-                        .canvasLiquidGlass(
-                            cornerRadius: 10,
-                            tint: isLight ? Color.white.opacity(0.65) : Color.white.opacity(0.08),
-                            isLight: isLight
-                        )
-                    }
-                }
-                .padding(.top, 2)
+
             }
             .padding(18)
         }

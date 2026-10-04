@@ -70,6 +70,8 @@ struct DeckStudyView: View {
                     matchingRightItems: card.matchingRightItems,
                     correctAnswer: card.correctAnswer,
                     hint: card.hint,
+                    promptImageName: card.promptImageName,
+                    optionImageNames: card.optionImageNames,
                     cardNumber: cardIndex + 1,
                     cardCount: studyQueue.count,
                     correctCount: correctCount,
@@ -152,6 +154,13 @@ struct DeckStudyView: View {
     }
 
     private func submitAndAdvance(_ card: Flashcard) {
+        if card.cardType == .vocabulary {
+            card.processAnswer(isCorrect: true)
+            correctCount += 1
+            try? context.save()
+            advance()
+            return
+        }
         guard isGraded else { return }
         advance()
     }
@@ -212,6 +221,8 @@ private struct QuizSessionView: View {
     let matchingRightItems: [String]
     let correctAnswer: String
     let hint: String
+    var promptImageName: String? = nil
+    var optionImageNames: [String] = []
     let cardNumber: Int
     let cardCount: Int
     let correctCount: Int
@@ -227,7 +238,7 @@ private struct QuizSessionView: View {
     let onContinue: () -> Void
     let onClose: () -> Void
 
-    private var canContinue: Bool { isGraded }
+    private var canContinue: Bool { cardType == .vocabulary || isGraded }
     private var actionTitle: LocalizedStringKey { cardNumber >= cardCount ? "FINISH" : "CONTINUE" }
 
     var body: some View {
@@ -241,16 +252,33 @@ private struct QuizSessionView: View {
                 .padding(.top, 16)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let promptImg = promptImageName, !promptImg.isEmpty,
+                       let uiImage = CardImageStore.loadImage(named: promptImg) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .stroke(QuizTheme.border, lineWidth: 1)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+
                     Text(question)
                         .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
                         .foregroundStyle(QuizTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
 
                     switch cardType {
+                    case .vocabulary:
+                        QuizVocabularyCard(definition: correctAnswer)
                     case .multipleChoice:
                         QuizOptions(
                             options: options,
+                            optionImageNames: optionImageNames,
                             selectedAnswer: selectedAnswer,
                             correctAnswer: correctAnswer,
                             isGraded: isGraded,
@@ -275,13 +303,15 @@ private struct QuizSessionView: View {
                         )
                     }
 
-                    QuizUtilityControls(
-                        hint: hint,
-                        showingHint: showingHint,
-                        isGraded: isGraded,
-                        onToggleHint: onToggleHint,
-                        onSkip: onSkip
-                    )
+                    if cardType != .vocabulary {
+                        QuizUtilityControls(
+                            hint: hint,
+                            showingHint: showingHint,
+                            isGraded: isGraded,
+                            onToggleHint: onToggleHint,
+                            onSkip: onSkip
+                        )
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 38)
@@ -357,6 +387,7 @@ private struct QuizProgress: View {
 
 private struct QuizOptions: View {
     let options: [String]
+    var optionImageNames: [String] = []
     let selectedAnswer: String?
     let correctAnswer: String
     let isGraded: Bool
@@ -365,12 +396,14 @@ private struct QuizOptions: View {
     var body: some View {
         VStack(spacing: 12) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                let optImgName = (optionImageNames.indices.contains(index) && !optionImageNames[index].isEmpty) ? optionImageNames[index] : nil
                 Button {
                     onSelect(option)
                 } label: {
                     QuizOptionRow(
                         letter: String(UnicodeScalar(65 + index) ?? "A"),
                         option: option,
+                        imageName: optImgName,
                         isSelected: selectedAnswer == option,
                         isCorrect: option == correctAnswer,
                         isGraded: isGraded
@@ -386,6 +419,7 @@ private struct QuizOptions: View {
 private struct QuizOptionRow: View {
     let letter: String
     let option: String
+    var imageName: String? = nil
     let isSelected: Bool
     let isCorrect: Bool
     let isGraded: Bool
@@ -438,6 +472,8 @@ private struct QuizOptionRow: View {
     }
 
     var body: some View {
+        let optUIImage = CardImageStore.loadImage(named: imageName)
+
         HStack(spacing: 16) {
             ZStack {
                 Circle()
@@ -467,6 +503,18 @@ private struct QuizOptionRow: View {
                         .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .body))
                         .foregroundStyle(QuizTheme.ink)
                 }
+            }
+
+            if let optUIImage {
+                Image(uiImage: optUIImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
             }
 
             Text(option)
@@ -926,4 +974,35 @@ private enum QuizTheme {
             ? UIColor(white: 1.0, alpha: 0.08)
             : UIColor(white: 0.0, alpha: 0.04)
     })
+}
+
+private struct QuizVocabularyCard: View {
+    let definition: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "character.book.closed.fill")
+                    .font(.caption.bold())
+                    .foregroundStyle(LearnAlertStyle.cyan)
+                Text("DEFINITION")
+                    .font(.custom("Poppins-Bold", size: 11))
+                    .foregroundStyle(LearnAlertStyle.cyan)
+            }
+
+            Text(definition)
+                .font(.custom("Poppins-Medium", size: 16, relativeTo: .body))
+                .foregroundStyle(QuizTheme.ink)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(QuizTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(QuizTheme.border, lineWidth: 1)
+        )
+    }
 }

@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 
 enum GeneratedCardType: String, Codable, CaseIterable, Sendable {
+    case vocabulary = "vocabulary"
     case tapReveal = "tap_reveal"
     case multipleChoice = "multiple_choice"
     case matching = "matching"
@@ -15,6 +16,8 @@ enum GeneratedCardType: String, Codable, CaseIterable, Sendable {
             .replacingOccurrences(of: " ", with: "_")
 
         switch normalized {
+        case "vocabulary", "vocab", "definition", "term":
+            self = .vocabulary
         case "tap_reveal", "tapreveal", "reveal", "flashcard", "card":
             self = .tapReveal
         case "multiple_choice", "multiplechoice", "quiz", "mcq":
@@ -964,6 +967,9 @@ struct LearnAlertAPI: Sendable {
             guard !card.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             var c = card
             switch c.type {
+            case .vocabulary:
+                guard !c.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                return c
             case .tapReveal:
                 guard !c.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return c

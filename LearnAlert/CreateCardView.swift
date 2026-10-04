@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import SwiftData
 
@@ -20,6 +21,15 @@ struct CreateCardView: View {
     @State private var hint = ""
     @State private var selectedSectionId = "NONE"
 
+    // Image Support
+    @State private var promptImage: UIImage?
+    @State private var promptPhotoPickerItem: PhotosPickerItem?
+    @State private var promptImageName: String?
+
+    @State private var optionImages: [UIImage?] = [nil, nil, nil, nil]
+    @State private var optionPhotoPickerItems: [PhotosPickerItem?] = [nil, nil, nil, nil]
+    @State private var optionImageNames: [String] = []
+
     private var selectedSection: DeckSection? {
         guard let id = UUID(uuidString: selectedSectionId) else { return nil }
         return deck.sections.first { $0.id == id }
@@ -36,10 +46,7 @@ struct CreateCardView: View {
     private var isFormValid: Bool {
         guard let selectedType else { return false }
         switch selectedType {
-        case .tapReveal:
-            return !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                   !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .fillBlank:
+        case .vocabulary, .tapReveal, .fillBlank:
             return !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                    !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .multipleChoice:
@@ -71,6 +78,7 @@ struct CreateCardView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
+                        .font(.custom("Poppins-Regular", size: 15))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
                 if selectedType != nil && cardToEdit == nil {
@@ -85,21 +93,46 @@ struct CreateCardView: View {
             }
             .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
             .onAppear(perform: setupData)
+            .onChange(of: promptPhotoPickerItem) { _, newItem in
+                Task {
+                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                       let uiImage = UIImage(data: data) {
+                        await MainActor.run {
+                            self.promptImage = uiImage
+                        }
+                    }
+                }
+            }
+            .onChange(of: optionPhotoPickerItems) { _, newItems in
+                for (index, item) in newItems.enumerated() {
+                    if let item {
+                        Task {
+                            if let data = try? await item.loadTransferable(type: Data.self),
+                               let uiImage = UIImage(data: data) {
+                                await MainActor.run {
+                                    if index < self.optionImages.count {
+                                        self.optionImages[index] = uiImage
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     // MARK: - Type Picker
     private var typePicker: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Select Card Type")
-                        .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
+                        .font(.custom("Poppins-SemiBold", size: 20, relativeTo: .title2))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Choose how learners interact with this card during daily study and alert notifications.")
+                    Text("Choose how this card will appear in alerts & study.")
                         .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .lineSpacing(2)
                 }
                 .padding(.top, 4)
 
@@ -107,40 +140,46 @@ struct CreateCardView: View {
                     Button {
                         selectType(type)
                     } label: {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 14) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(typeColor(type).opacity(0.15))
-                                    .frame(width: 48, height: 48)
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(typeColor(type).opacity(0.14))
+                                    .frame(width: 44, height: 44)
                                 Image(systemName: type.icon)
-                                    .font(.title3)
+                                    .font(.system(size: 18, weight: .semibold))
                                     .foregroundStyle(typeColor(type))
                             }
 
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 HStack {
                                     Text(type.title)
-                                        .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
+                                        .font(.custom("Poppins-SemiBold", size: 15))
                                         .foregroundStyle(LearnAlertStyle.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.right")
-                                        .font(.caption.bold())
-                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
                                 }
                                 Text(typeDescription(type))
-                                    .font(.custom("Poppins-Regular", size: 12, relativeTo: .caption))
+                                    .font(.custom("Poppins-Regular", size: 12))
                                     .foregroundStyle(LearnAlertStyle.textSecondary)
                                     .multilineTextAlignment(.leading)
-                                    .lineSpacing(1.5)
+                                    .lineLimit(2)
                             }
                         }
-                        .padding(16)
-                        .settingsGlassSurface(cornerRadius: 18)
+                        .padding(14)
+                        .background(LearnAlertStyle.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 
@@ -156,34 +195,29 @@ struct CreateCardView: View {
     // MARK: - Card Editor
     private var editor: some View {
         ScrollView {
-            VStack(spacing: 18) {
-                // Header badge showing currently active card type
+            VStack(spacing: 16) {
+                // Sleek Type Banner (Without duplicate switch button)
                 if let selectedType {
                     HStack(spacing: 8) {
                         Image(systemName: selectedType.icon)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(typeColor(selectedType))
-                        Text(selectedType.title.uppercased())
-                            .font(.custom("Poppins-SemiBold", size: 11))
+                        Text(selectedType.title)
+                            .font(.custom("Poppins-SemiBold", size: 12))
                             .foregroundStyle(typeColor(selectedType))
-                        Spacer()
-                        if cardToEdit == nil {
-                            Button("Switch") {
-                                withAnimation(.snappy) { self.selectedType = nil }
-                            }
-                            .font(.custom("Poppins-Medium", size: 12))
-                            .foregroundStyle(LearnAlertStyle.indigo)
-                        }
+                            .lineLimit(1)
                     }
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 7)
                     .background(typeColor(selectedType).opacity(0.08))
                     .clipShape(Capsule())
                     .overlay(Capsule().stroke(typeColor(selectedType).opacity(0.2), lineWidth: 1))
                 }
 
-                // Main Content Form
+                // Core Form Content
                 switch selectedType {
+                case .vocabulary:
+                    vocabularyEditor
                 case .multipleChoice:
                     multipleChoiceEditor
                 case .tapReveal:
@@ -196,58 +230,64 @@ struct CreateCardView: View {
                     EmptyView()
                 }
 
-                // Hint section
-                formCard("HINT (OPTIONAL)") {
+                // Hint (Optional - Hidden for Vocabulary)
+                if selectedType != .vocabulary {
                     VStack(alignment: .leading, spacing: 8) {
-                        TextField("A small clue to help jog memory...", text: $hint, axis: .vertical)
-                            .lineLimit(2...3)
+                        Text("HINT (OPTIONAL)")
+                            .font(.custom("Poppins-SemiBold", size: 11))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                        TextField("A small clue...", text: $hint, axis: .vertical)
+                            .lineLimit(1...2)
                             .font(.custom("Poppins-Regular", size: 14))
                             .foregroundStyle(LearnAlertStyle.textPrimary)
                             .glassCardField()
-                        Text("Appears when the learner taps \"Hint\" in study or notification.")
-                            .font(.custom("Poppins-Regular", size: 11))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
                     }
+                    .padding(14)
+                    .background(LearnAlertStyle.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+                    )
                 }
 
-                // Category Section
+                // Category Section (Optional)
                 if !deck.sections.isEmpty {
-                    formCard("CATEGORY (OPTIONAL)") {
+                    HStack {
+                        Text("Category")
+                            .font(.custom("Poppins-Medium", size: 13))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                        Spacer()
                         Picker("Category", selection: $selectedSectionId) {
-                            Text("No Category").tag("NONE")
+                            Text("None").tag("NONE")
                             ForEach(deck.sections.sorted { $0.orderIndex < $1.orderIndex }) { section in
                                 Text(section.name).tag(section.id.uuidString)
                             }
                         }
                         .pickerStyle(.menu)
                         .tint(LearnAlertStyle.indigo)
-                        .padding(.vertical, 4)
                     }
-                }
-
-                // Live Preview Card
-                formCard("LIVE PREVIEW") {
-                    CardLiveMiniPreview(
-                        type: selectedType ?? .multipleChoice,
-                        question: effectiveQuestion.isEmpty ? "Question prompt will appear here" : effectiveQuestion,
-                        answer: answer.isEmpty ? "Answer..." : answer,
-                        options: Array(options.prefix(visibleOptionCount)),
-                        correctOptionIndex: correctOptionIndex,
-                        matchingLeft: Array(matchingLeft.prefix(visiblePairCount)),
-                        matchingRight: Array(matchingRight.prefix(visiblePairCount)),
-                        hint: hint
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(LearnAlertStyle.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(LearnAlertStyle.hairline, lineWidth: 1)
                     )
                 }
 
-                // Save Button
+                // Primary Action Button
                 Button(action: saveCard) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
                         Text(cardToEdit == nil ? "Save Card" : "Update Card")
+                            .font(.custom("Poppins-SemiBold", size: 15))
                     }
-                    .font(.custom("Poppins-SemiBold", size: 15))
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(height: 48)
                 }
                 .foregroundStyle(.white)
                 .background(
@@ -259,219 +299,309 @@ struct CreateCardView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        : AnyShapeStyle(Color.gray.opacity(0.3))
+                        : AnyShapeStyle(Color.gray.opacity(0.25))
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(isFormValid ? Color.white.opacity(0.25) : Color.clear, lineWidth: 1)
-                )
                 .shadow(
-                    color: isFormValid ? LearnAlertStyle.indigo.opacity(0.3) : Color.clear,
-                    radius: 10,
-                    y: 4
+                    color: isFormValid ? LearnAlertStyle.indigo.opacity(0.25) : Color.clear,
+                    radius: 8,
+                    y: 3
                 )
                 .disabled(!isFormValid)
-                .padding(.top, 6)
+                .padding(.top, 4)
             }
-            .padding(20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
+    }
+
+    // MARK: - Vocabulary Editor
+    private var vocabularyEditor: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PromptInputField(
+                title: "TERM",
+                placeholder: "Term or word",
+                text: $question,
+                axis: .vertical,
+                lineLimit: 1...2,
+                promptImage: $promptImage,
+                promptImageName: $promptImageName,
+                promptPhotoPickerItem: $promptPhotoPickerItem
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("DEFINITION")
+                    .font(.custom("Poppins-SemiBold", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                TextField("Definition or explanation", text: $answer, axis: .vertical)
+                    .lineLimit(2...4)
+                    .font(.custom("Poppins-Regular", size: 14))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .glassCardField()
+            }
+        }
+        .padding(16)
+        .background(LearnAlertStyle.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+        )
     }
 
     // MARK: - Multiple Choice Editor
     private var multipleChoiceEditor: some View {
-        VStack(spacing: 16) {
-            formCard("QUESTION") {
-                TextField("e.g. What is the powerhouse of the cell?", text: $question, axis: .vertical)
-                    .lineLimit(2...4)
-                    .font(.custom("Poppins-Medium", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .glassCardField()
+        VStack(spacing: 14) {
+            // Question Field with embedded prompt photo picker
+            VStack(alignment: .leading, spacing: 6) {
+                PromptInputField(
+                    title: "QUESTION",
+                    placeholder: "Question prompt",
+                    text: $question,
+                    axis: .vertical,
+                    lineLimit: 1...3,
+                    promptImage: $promptImage,
+                    promptImageName: $promptImageName,
+                    promptPhotoPickerItem: $promptPhotoPickerItem
+                )
             }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
 
-            formCard("QUIZ CHOICES") {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("Number of options")
-                            .font(.custom("Poppins-Medium", size: 13))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                        Spacer()
-                        HStack(spacing: 6) {
-                            ForEach(2...4, id: \.self) { count in
-                                Button {
-                                    withAnimation(.snappy) {
-                                        visibleOptionCount = count
-                                        if correctOptionIndex >= count { correctOptionIndex = 0 }
-                                    }
-                                } label: {
-                                    Text("\(count) Choices")
-                                        .font(.custom("Poppins-SemiBold", size: 12))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(visibleOptionCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
-                                        .foregroundStyle(visibleOptionCount == count ? Color.white : LearnAlertStyle.textPrimary)
-                                        .clipShape(Capsule())
+            // Choices Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("CHOICES")
+                        .font(.custom("Poppins-SemiBold", size: 11))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                    Spacer()
+
+                    // Compact segmented pills (never wraps on mini)
+                    HStack(spacing: 4) {
+                        ForEach(2...4, id: \.self) { count in
+                            Button {
+                                withAnimation(.snappy) {
+                                    visibleOptionCount = count
+                                    if correctOptionIndex >= count { correctOptionIndex = 0 }
                                 }
+                            } label: {
+                                Text("\(count)")
+                                    .font(.custom("Poppins-SemiBold", size: 12))
+                                    .frame(width: 28, height: 26)
+                                    .background(visibleOptionCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
+                                    .foregroundStyle(visibleOptionCount == count ? Color.white : LearnAlertStyle.textPrimary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                             }
+                            .buttonStyle(.plain)
                         }
-                    }
-
-                    VStack(spacing: 10) {
-                        ForEach(0..<visibleOptionCount, id: \.self) { index in
-                            HStack(spacing: 10) {
-                                Button {
-                                    correctOptionIndex = index
-                                } label: {
-                                    Image(systemName: correctOptionIndex == index ? "checkmark.circle.fill" : "circle")
-                                        .font(.title3)
-                                        .foregroundStyle(correctOptionIndex == index ? Color.green : LearnAlertStyle.textSecondary)
-                                }
-                                .buttonStyle(.plain)
-
-                                TextField("Option \(index + 1)", text: $options[index])
-                                    .font(.custom("Poppins-Medium", size: 14))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    .glassCardField()
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(Color.green)
-                        Text("Tap the circle beside the correct answer.")
-                            .font(.custom("Poppins-Regular", size: 11))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
                     }
                 }
+
+                VStack(spacing: 8) {
+                    ForEach(0..<visibleOptionCount, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            Button {
+                                correctOptionIndex = index
+                            } label: {
+                                Image(systemName: correctOptionIndex == index ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(correctOptionIndex == index ? Color.green : LearnAlertStyle.textSecondary.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+
+                            TextField("Choice \(index + 1)", text: $options[index])
+                                .font(.custom("Poppins-Medium", size: 14))
+                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                                .glassCardField()
+
+                            PhotosPicker(
+                                selection: Binding(
+                                    get: { optionPhotoPickerItems[index] },
+                                    set: { optionPhotoPickerItems[index] = $0 }
+                                ),
+                                matching: .images,
+                                photoLibrary: .shared()
+                            ) {
+                                if let optImg = optionImages[index] {
+                                    Image(uiImage: optImg)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 36, height: 36)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                .stroke(LearnAlertStyle.indigo, lineWidth: 1.5)
+                                        )
+                                } else {
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                        .frame(width: 36, height: 36)
+                                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            if optionImages[index] != nil {
+                                Button {
+                                    optionImages[index] = nil
+                                    optionPhotoPickerItems[index] = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Color.red.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                Text("Tap the circle next to the correct answer.")
+                    .font(.custom("Poppins-Regular", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
             }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
         }
     }
 
     // MARK: - Tap to Reveal Editor
     private var tapRevealEditor: some View {
-        VStack(spacing: 16) {
-            formCard("FRONT OF CARD (PROMPT)") {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("e.g. Mitochondria, or \"What is photosynthesis?\"", text: $question, axis: .vertical)
-                        .lineLimit(2...4)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .glassCardField()
-                    Text("The question or term shown first.")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            PromptInputField(
+                title: "FRONT (PROMPT)",
+                placeholder: "Question or prompt",
+                text: $question,
+                axis: .vertical,
+                lineLimit: 1...3,
+                promptImage: $promptImage,
+                promptImageName: $promptImageName,
+                promptPhotoPickerItem: $promptPhotoPickerItem
+            )
 
-            formCard("BACK OF CARD (REVEALED ANSWER)") {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("e.g. The powerhouse of the cell that generates ATP.", text: $answer, axis: .vertical)
-                        .lineLimit(2...5)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .glassCardField()
-                    Text("Shown when the learner taps to reveal.")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                Text("BACK (REVEALED ANSWER)")
+                    .font(.custom("Poppins-SemiBold", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                TextField("Answer revealed on tap", text: $answer, axis: .vertical)
+                    .lineLimit(2...4)
+                    .font(.custom("Poppins-Regular", size: 14))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .glassCardField()
             }
         }
+        .padding(16)
+        .background(LearnAlertStyle.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+        )
     }
 
-    // MARK: - Match Pairs Editor
+    // MARK: - Match Pairs Editor (Responsive for iPhone mini)
     private var matchingEditor: some View {
-        VStack(spacing: 16) {
-            formCard("PROMPT (AUTO-FILLED)") {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("Match the correct pairs", text: $question)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .glassCardField()
-                    Text("Auto-filled as \"Match the correct pairs\". You can leave this as-is or specify custom instructions (e.g. \"Match Spanish verbs to English\").")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .lineSpacing(1.5)
-                }
+        VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                PromptInputField(
+                    title: "PROMPT",
+                    placeholder: "Match the correct pairs",
+                    text: $question,
+                    axis: .horizontal,
+                    lineLimit: 1...1,
+                    promptImage: $promptImage,
+                    promptImageName: $promptImageName,
+                    promptPhotoPickerItem: $promptPhotoPickerItem
+                )
             }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
 
-            formCard("MATCHING PAIRS") {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Text("Number of pairs")
-                            .font(.custom("Poppins-Medium", size: 13))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                        Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("PAIRS")
+                        .font(.custom("Poppins-SemiBold", size: 11))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                    Spacer()
+
+                    // Compact segmented pills (never wraps on mini)
+                    HStack(spacing: 4) {
+                        ForEach(2...4, id: \.self) { count in
+                            Button {
+                                withAnimation(.snappy) { visiblePairCount = count }
+                            } label: {
+                                Text("\(count)")
+                                    .font(.custom("Poppins-SemiBold", size: 12))
+                                    .frame(width: 28, height: 26)
+                                    .background(visiblePairCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
+                                    .foregroundStyle(visiblePairCount == count ? Color.white : LearnAlertStyle.textPrimary)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                VStack(spacing: 8) {
+                    ForEach(0..<visiblePairCount, id: \.self) { index in
                         HStack(spacing: 6) {
-                            ForEach(2...4, id: \.self) { count in
-                                Button {
-                                    withAnimation(.snappy) { visiblePairCount = count }
-                                } label: {
-                                    Text("\(count) Pairs")
-                                        .font(.custom("Poppins-SemiBold", size: 12))
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(visiblePairCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
-                                        .foregroundStyle(visiblePairCount == count ? Color.white : LearnAlertStyle.textPrimary)
-                                        .clipShape(Capsule())
-                                }
-                            }
+                            TextField("Left item", text: $matchingLeft[index])
+                                .font(.custom("Poppins-Medium", size: 13))
+                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                                .glassCardField()
+
+                            Image(systemName: "arrow.left.arrow.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(LearnAlertStyle.indigo)
+                                .frame(width: 18)
+
+                            TextField("Match", text: $matchingRight[index])
+                                .font(.custom("Poppins-Medium", size: 13))
+                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                                .glassCardField()
                         }
                     }
-
-                    VStack(spacing: 10) {
-                        ForEach(0..<visiblePairCount, id: \.self) { index in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("PAIR \(index + 1)")
-                                    .font(.custom("Poppins-SemiBold", size: 10))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                                HStack(spacing: 8) {
-                                    TextField("Left item (e.g. Bonjour)", text: $matchingLeft[index])
-                                        .font(.custom("Poppins-Medium", size: 13))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                        .glassCardField()
-
-                                    Image(systemName: "arrow.left.arrow.right")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(LearnAlertStyle.indigo)
-
-                                    TextField("Right match (e.g. Hello)", text: $matchingRight[index])
-                                        .font(.custom("Poppins-Medium", size: 13))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                        .glassCardField()
-                                }
-                            }
-                            .padding(10)
-                            .background(Color.primary.opacity(0.03))
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(LearnAlertStyle.hairline.opacity(0.25), lineWidth: 0.75)
-                            )
-                        }
-                    }
-
-                    Text("During study, right-hand items are shuffled. Learners match them by tapping or dragging.")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
             }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
         }
     }
 
     // MARK: - Fill in the Blank Editor
     private var fillBlankEditor: some View {
-        VStack(spacing: 16) {
-            formCard("PROMPT WITH BLANK") {
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("e.g. The capital of France is ___.", text: $question, axis: .vertical)
-                        .lineLimit(2...4)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .glassCardField()
-
+        VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("SENTENCE")
+                        .font(.custom("Poppins-SemiBold", size: 11))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                    Spacer()
                     Button {
                         if !question.contains("___") {
                             if question.isEmpty {
@@ -481,46 +611,59 @@ struct CreateCardView: View {
                             }
                         }
                     } label: {
-                        Label("Insert Blank (___)", systemImage: "plus.square.dashed")
-                            .font(.custom("Poppins-SemiBold", size: 12))
+                        Label("Insert Blank", systemImage: "plus.square.dashed")
+                            .font(.custom("Poppins-SemiBold", size: 11))
                             .foregroundStyle(LearnAlertStyle.indigo)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(LearnAlertStyle.indigo.opacity(0.12))
-                            .clipShape(Capsule())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(LearnAlertStyle.indigo.opacity(0.1), in: Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
-            }
 
-            formCard("TARGET ANSWER") {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField("e.g. Paris", text: $answer)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .glassCardField()
-                    Text("The exact word or phrase that fills the blank. Evaluation is case-insensitive.")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
+                PromptInputField(
+                    title: "",
+                    placeholder: "Sentence with a ___ blank",
+                    text: $question,
+                    axis: .vertical,
+                    lineLimit: 2...3,
+                    promptImage: $promptImage,
+                    promptImageName: $promptImageName,
+                    promptPhotoPickerItem: $promptPhotoPickerItem
+                )
             }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TARGET ANSWER")
+                    .font(.custom("Poppins-SemiBold", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                TextField("Word that fills the blank", text: $answer)
+                    .font(.custom("Poppins-Medium", size: 14))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .glassCardField()
+            }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
         }
     }
 
-    // MARK: - Helper Views & Methods
-    private func formCard<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.caption.bold())
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-            content()
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .settingsGlassSurface(cornerRadius: 18)
-    }
-
+    // MARK: - Helper Methods
     private func typeColor(_ type: FlashcardType) -> Color {
         switch type {
+        case .vocabulary: LearnAlertStyle.cyan
         case .multipleChoice: LearnAlertStyle.indigo
         case .tapReveal: LearnAlertStyle.aqua
         case .matching: Color.purple
@@ -530,10 +673,11 @@ struct CreateCardView: View {
 
     private func typeDescription(_ type: FlashcardType) -> String {
         switch type {
-        case .multipleChoice: "Choose the correct answer from 2–4 options with instant grading."
-        case .tapReveal: "Classic active-recall flashcard. Ponder the answer, then tap to reveal."
-        case .matching: "Connect corresponding terms and definitions by tapping or dragging."
-        case .fillBlank: "Type the missing keyword into the sentence. Case-insensitive."
+        case .vocabulary: "Key term & definition flashcard."
+        case .multipleChoice: "Quiz question with 2–4 choices."
+        case .tapReveal: "Active recall card: prompt & answer."
+        case .matching: "Connect corresponding word pairs."
+        case .fillBlank: "Type the missing word in the sentence."
         }
     }
 
@@ -544,6 +688,19 @@ struct CreateCardView: View {
         answer = card.correctAnswer
         hint = card.hint
         selectedSectionId = card.section?.id.uuidString ?? "NONE"
+
+        promptImageName = card.promptImageName
+        if let pName = card.promptImageName {
+            promptImage = CardImageStore.loadImage(named: pName)
+        }
+
+        optionImageNames = card.optionImageNames
+        for (idx, optName) in card.optionImageNames.enumerated() where idx < 4 {
+            if !optName.isEmpty {
+                optionImages[idx] = CardImageStore.loadImage(named: optName)
+            }
+        }
+
         if card.cardType == .multipleChoice {
             visibleOptionCount = min(4, max(2, card.options.count))
             for (index, option) in card.options.prefix(4).enumerated() { options[index] = option }
@@ -571,6 +728,32 @@ struct CreateCardView: View {
             ? matchingRight.prefix(visiblePairCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             : []
 
+        // Process prompt image
+        var finalPromptImageName: String? = promptImageName
+        if let promptImage {
+            finalPromptImageName = CardImageStore.saveImage(promptImage, name: promptImageName)
+        } else if cardToEdit?.promptImageName != nil {
+            CardImageStore.deleteImage(named: cardToEdit?.promptImageName)
+            finalPromptImageName = nil
+        }
+
+        // Process option images
+        var finalOptionImageNames: [String] = []
+        if selectedType == .multipleChoice {
+            for index in 0..<visibleOptionCount {
+                if let optImg = optionImages[index] {
+                    let existingName = (index < optionImageNames.count) ? optionImageNames[index] : nil
+                    if let saved = CardImageStore.saveImage(optImg, name: existingName) {
+                        finalOptionImageNames.append(saved)
+                    } else {
+                        finalOptionImageNames.append("")
+                    }
+                } else {
+                    finalOptionImageNames.append("")
+                }
+            }
+        }
+
         let card = cardToEdit ?? Flashcard(
             question: finalQuestion,
             options: finalOptions,
@@ -578,7 +761,9 @@ struct CreateCardView: View {
             hint: hint.trimmingCharacters(in: .whitespacesAndNewlines),
             cardType: selectedType,
             matchingLeftItems: left,
-            matchingRightItems: right
+            matchingRightItems: right,
+            promptImageName: finalPromptImageName,
+            optionImageNames: finalOptionImageNames
         )
         card.question = finalQuestion
         card.options = finalOptions
@@ -587,6 +772,8 @@ struct CreateCardView: View {
         card.cardType = selectedType
         card.matchingLeftItems = left
         card.matchingRightItems = right
+        card.promptImageName = finalPromptImageName
+        card.optionImageNames = finalOptionImageNames
         card.section = selectedSection
         if cardToEdit == nil { deck.cards.append(card) }
         try? context.save()
@@ -594,118 +781,99 @@ struct CreateCardView: View {
     }
 }
 
-// MARK: - Mini Live Preview in Card Editor
-private struct CardLiveMiniPreview: View {
-    let type: FlashcardType
-    let question: String
-    let answer: String
-    let options: [String]
-    let correctOptionIndex: Int
-    let matchingLeft: [String]
-    let matchingRight: [String]
-    let hint: String
+// MARK: - Prompt Input Field with Embedded Photo Picker
+private struct PromptInputField: View {
+    var title: String = ""
+    let placeholder: String
+    @Binding var text: String
+    var axis: Axis = .vertical
+    var lineLimit: ClosedRange<Int> = 1...3
+    @Binding var promptImage: UIImage?
+    @Binding var promptImageName: String?
+    @Binding var promptPhotoPickerItem: PhotosPickerItem?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(question)
-                .font(.custom("Poppins-SemiBold", size: 14))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-
-            switch type {
-            case .multipleChoice:
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(options.enumerated()), id: \.offset) { idx, opt in
-                        HStack(spacing: 8) {
-                            Image(systemName: idx == correctOptionIndex ? "checkmark.circle.fill" : "circle")
-                                .font(.caption)
-                                .foregroundStyle(idx == correctOptionIndex ? Color.green : LearnAlertStyle.textSecondary)
-                            Text(opt.isEmpty ? "Choice \(idx + 1)" : opt)
-                                .font(.custom("Poppins-Regular", size: 12))
-                                .foregroundStyle(idx == correctOptionIndex ? Color.green : LearnAlertStyle.textPrimary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(idx == correctOptionIndex ? Color.green.opacity(0.1) : Color.primary.opacity(0.03))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-
-            case .tapReveal:
-                HStack(spacing: 8) {
-                    Image(systemName: "eye.fill")
-                        .font(.caption)
-                        .foregroundStyle(LearnAlertStyle.aqua)
-                    Text("Answer: \(answer)")
-                        .font(.custom("Poppins-Medium", size: 13))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LearnAlertStyle.aqua.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            case .matching:
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(0..<matchingLeft.count, id: \.self) { idx in
-                        let l = matchingLeft[idx]
-                        let r = matchingRight.indices.contains(idx) ? matchingRight[idx] : ""
-                        HStack(spacing: 8) {
-                            Text(l.isEmpty ? "Item \(idx + 1)" : l)
-                                .font(.custom("Poppins-Medium", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.primary.opacity(0.04))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-
-                            Image(systemName: "arrow.left.arrow.right")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(LearnAlertStyle.indigo)
-
-                            Text(r.isEmpty ? "Match \(idx + 1)" : r)
-                                .font(.custom("Poppins-Medium", size: 12))
-                                .foregroundStyle(Color.purple)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.purple.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        }
-                    }
-                }
-
-            case .fillBlank:
-                HStack(spacing: 8) {
-                    Image(systemName: "text.cursor")
-                        .font(.caption)
-                        .foregroundStyle(Color.orange)
-                    Text("Target: \(answer)")
-                        .font(.custom("Poppins-Medium", size: 13))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                }
-                .padding(10)
-                .background(Color.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+        VStack(alignment: .leading, spacing: 6) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.custom("Poppins-SemiBold", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
             }
 
-            if !hint.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "lightbulb.fill")
-                        .font(.caption2)
-                        .foregroundStyle(Color.yellow)
-                    Text(hint)
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
+            VStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
+                    TextField(placeholder, text: $text, axis: axis)
+                        .lineLimit(lineLimit)
+                        .font(.custom("Poppins-Medium", size: 15))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+
+                    // Embedded Image Attachment Button / Thumbnail
+                    PhotosPicker(
+                        selection: $promptPhotoPickerItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        if let promptImage {
+                            Image(uiImage: promptImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(LearnAlertStyle.indigo, lineWidth: 1.5)
+                                )
+                        } else {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if promptImage != nil {
+                        Button {
+                            promptImage = nil
+                            promptImageName = nil
+                            promptPhotoPickerItem = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.red.opacity(0.75))
+                                .frame(width: 20, height: 32)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(.top, 2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(LearnAlertStyle.hairline.opacity(0.35), lineWidth: 0.75)
+                )
+
+                // Inline Preview Strip when image is selected
+                if let promptImage {
+                    HStack(spacing: 8) {
+                        Image(uiImage: promptImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxHeight: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(LearnAlertStyle.hairline.opacity(0.4), lineWidth: 0.75)
+                            )
+                        Spacer()
+                    }
+                    .padding(.top, 2)
+                }
             }
         }
-        .padding(12)
-        .background(Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(LearnAlertStyle.hairline.opacity(0.2), lineWidth: 0.75)
-        )
     }
 }
 
@@ -713,13 +881,13 @@ private struct CardLiveMiniPreview: View {
 private extension View {
     func glassCardField() -> some View {
         self
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline.opacity(0.3), lineWidth: 0.75)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline.opacity(0.35), lineWidth: 0.75)
             )
     }
 }

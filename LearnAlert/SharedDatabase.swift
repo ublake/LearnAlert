@@ -5,18 +5,20 @@
 //  Created by Blake Miller on 2/19/26.
 //
 
-
 import Foundation
 import SwiftData
+import Combine
 
 @MainActor
-class SharedDatabase {
+class SharedDatabase: ObservableObject {
     static let shared = SharedDatabase()
 
     static let appGroupIdentifier = "group.com.learnalert.shared"
     static let cloudKitContainerIdentifier = "iCloud.com.learnalert.app"
     
     let container: ModelContainer
+    @Published var isUsingTemporaryStorage: Bool = false
+    @Published var storageErrorMessage: String? = nil
     
     private init() {
         // 1. Point to the App Group folder, or fallback gracefully to Application Support
@@ -45,19 +47,26 @@ class SharedDatabase {
         do {
             // 4. Initialize the container with our Models (with CloudKit sync)
             container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: configuration)
+            isUsingTemporaryStorage = false
         } catch {
-            // If CloudKit initialization fails (e.g. simulator without iCloud credentials), fallback gracefully to local container
+            // If CloudKit initialization fails (e.g. simulator without iCloud credentials), fallback to local SQLite container
             let fallbackConfiguration = ModelConfiguration(
                 url: databaseURL,
                 cloudKitDatabase: .none
             )
             if let fallbackContainer = try? ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: fallbackConfiguration) {
                 container = fallbackContainer
+                isUsingTemporaryStorage = false
             } else if let memoryContainer = try? ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
+                // In-memory fallback: explicit flag to warn the user
                 container = memoryContainer
+                isUsingTemporaryStorage = true
+                storageErrorMessage = "LearnAlert is running in temporary memory mode. Flashcards may not persist between app launches."
             } else {
                 // Absolute fallback
                 container = try! ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                isUsingTemporaryStorage = true
+                storageErrorMessage = "LearnAlert could not access persistent storage. Changes will only last for this session."
             }
         }
     }

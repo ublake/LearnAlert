@@ -1,3 +1,4 @@
+import SwiftUI
 //
 //  Deck.swift
 //  LearnAlert
@@ -9,6 +10,7 @@ import Foundation
 import SwiftData
 
 enum FlashcardType: String, CaseIterable, Identifiable {
+    case vocabulary = "vocabulary"
     case multipleChoice = "multiple_choice"
     case tapReveal = "tap_reveal"
     case matching = "matching"
@@ -17,6 +19,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .vocabulary: "Vocabulary"
         case .multipleChoice: "Quiz Style"
         case .tapReveal: "Tap to Reveal"
         case .matching: "Match Pairs"
@@ -25,10 +28,21 @@ enum FlashcardType: String, CaseIterable, Identifiable {
     }
     var icon: String {
         switch self {
+        case .vocabulary: "character.book.closed.fill"
         case .multipleChoice: "list.bullet.circle"
         case .tapReveal: "rectangle.on.rectangle"
         case .matching: "arrow.left.arrow.right"
         case .fillBlank: "text.cursor"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .multipleChoice: "Practice with 4 options and immediate feedback"
+        case .tapReveal: "Front-and-back flip with self assessment"
+        case .vocabulary: "Word, pronunciation, and dictionary definition"
+        case .fillBlank: "Type the missing keyword in context"
+        case .matching: "Connect paired terms and definitions"
         }
     }
 }
@@ -58,95 +72,100 @@ class Deck {
     private var storedSections: [DeckSection]?
 
     var cards: [Flashcard] {
-        get { storedCards ?? [] }
-        set { storedCards = newValue }
+        get {
+            storedCards?.sorted(by: { $0.orderIndex < $1.orderIndex }) ?? []
+        }
+        set {
+            storedCards = newValue
+        }
     }
 
     var sections: [DeckSection] {
-        get { storedSections ?? [] }
-        set { storedSections = newValue }
-    }
-
-    var totalReviews: Int {
-        cards.reduce(0) { $0 + max($1.reviewCount, $1.lastReviewedDate != nil ? 1 : 0) }
+        get {
+            storedSections?.sorted(by: { $0.orderIndex < $1.orderIndex }) ?? []
+        }
+        set {
+            storedSections = newValue
+        }
     }
 
     var cycleStreak: Int {
-        guard !cards.isEmpty else { return 0 }
-        return totalReviews / cards.count
+        cards.map(\.streak).max() ?? 0
     }
 
     var cycleProgress: Double {
-        guard !cards.isEmpty else { return 0 }
-        let currentCycleReviews = totalReviews % cards.count
-        return Double(currentCycleReviews) / Double(cards.count)
+        guard !cards.isEmpty else { return 0.0 }
+        let totalMastery = cards.reduce(0) { $0 + min($1.masteryScore, 3) }
+        let maxPossibleMastery = cards.count * 3
+        return Double(totalMastery) / Double(maxPossibleMastery)
     }
 
-    init(name: String, colorHex: String = "#00FFFF", deckType: String = "Quiz", orderIndex: Int = 0) {
+    init(name: String, colorHex: String = "#00FFFF", deckType: String = "Quiz", appearanceSeed: Int64? = nil, orderIndex: Int = 0) {
         self.id = UUID()
         self.name = name
         self.colorHex = colorHex
         self.deckType = deckType
         self.creationDate = Date()
         self.orderIndex = orderIndex
-        self.appearanceSeed = nil
+        self.appearanceSeed = appearanceSeed ?? Int64.random(in: 1...Int64.max)
         self.storedCards = []
         self.storedSections = []
     }
 
-    @discardableResult
-    func assignCardToSection(
-        card: Flashcard,
-        suggestedCategory: String?
-    ) -> DeckSection? {
-        let cleanName = (suggestedCategory ?? "General").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty else { return nil }
-
-        if let existing = sections.first(where: { $0.name.localizedCaseInsensitiveCompare(cleanName) == .orderedSame }) {
+    func assignCardToSection(card: Flashcard, suggestedCategory: String?) {
+        guard let cat = suggestedCategory?.trimmingCharacters(in: .whitespacesAndNewlines), !cat.isEmpty else { return }
+        if let existing = sections.first(where: { $0.title.caseInsensitiveCompare(cat) == .orderedSame || $0.name.caseInsensitiveCompare(cat) == .orderedSame }) {
             card.section = existing
-            return existing
+            if !existing.cards.contains(where: { $0.id == card.id }) {
+                existing.cards.append(card)
+            }
+        } else {
+            let sectionColors = ["#00FFFF", "#FF007F", "#7928CA", "#0070F3", "#38EF7D", "#FF9900"]
+            let color = sectionColors[sections.count % sectionColors.count]
+            let newSection = DeckSection(title: cat, summary: "", colorHex: color, orderIndex: sections.count, deck: self)
+            sections.append(newSection)
+            card.section = newSection
+            newSection.cards.append(card)
         }
-
-        let palette = [
-            "#5B78C7", // Blue
-            "#4D8B88", // Sage Teal
-            "#758D54", // Olive Green
-            "#A66F78", // Rose Berry
-            "#A47D52", // Amber
-            "#75689B", // Violet
-            "#3B82F6", // Sky
-            "#10B981"  // Emerald
-        ]
-        let colorHex = palette[sections.count % palette.count]
-        let newSection = DeckSection(name: cleanName, colorHex: colorHex, orderIndex: sections.count)
-        newSection.deck = self
-        sections.append(newSection)
-        card.section = newSection
-        return newSection
     }
 }
 
 @Model
 class DeckSection {
     var id: UUID = UUID()
-    var name: String = ""
+    var title: String = ""
+    var summary: String = ""
     var colorHex: String = "#00FFFF"
     var orderIndex: Int = 0
+    var sourcePageNumber: Int?
+
+    var name: String {
+        get { title }
+        set { title = newValue }
+    }
+
     var deck: Deck?
 
-    @Relationship(deleteRule: .nullify, originalName: "cards", inverse: \Flashcard.section)
+    @Relationship(deleteRule: .nullify, inverse: \Flashcard.section)
     private var storedCards: [Flashcard]?
 
     var cards: [Flashcard] {
-        get { storedCards ?? [] }
-        set { storedCards = newValue }
+        get {
+            storedCards?.sorted(by: { $0.orderIndex < $1.orderIndex }) ?? []
+        }
+        set {
+            storedCards = newValue
+        }
     }
 
-    init(name: String, colorHex: String, orderIndex: Int = 0) {
+    init(title: String = "", name: String? = nil, summary: String = "", colorHex: String = "#00FFFF", orderIndex: Int = 0, sourcePageNumber: Int? = nil, deck: Deck? = nil) {
         self.id = UUID()
-        self.name = name
+        self.title = name ?? title
+        self.summary = summary
         self.colorHex = colorHex
         self.orderIndex = orderIndex
+        self.sourcePageNumber = sourcePageNumber
+        self.deck = deck
         self.storedCards = []
     }
 }
@@ -155,133 +174,257 @@ class DeckSection {
 class Flashcard {
     var id: UUID = UUID()
     var question: String = ""
-    var options: [String] = []
+    var optionsData: Data = Data()
     var correctAnswer: String = ""
     var hint: String = ""
-    var cardTypeRawValue: String = ""
-    var matchingLeftItems: [String] = []
-    var matchingRightItems: [String] = []
+    var orderIndex: Int = 0
+    var cardTypeRaw: String = FlashcardType.multipleChoice.rawValue
+    var matchingPairsData: Data = Data()
+    var promptImageName: String?
+    var optionImageNamesData: Data = Data()
 
-    // Source Tracking & Categorization
-    var sourceLocator: String?
-    var sourceExcerpt: String?
-    var tags: [String] = []
-
-    var isNew: Bool = true
-    var nextReviewDate: Date = Date()
-    var easeFactor: Double = 2.5
-    var interval: Int = 0
-
-    // Learning signals used by the adaptive scheduler and study dashboard.
+    // Study state
+    var reviewCount: Int = 0
     var correctCount: Int = 0
-    var incorrectCount: Int = 0
-    var hintCount: Int = 0
-    var skipCount: Int = 0
-    var currentStreak: Int = 0
-    var longestStreak: Int = 0
+    var masteryScore: Int = 0
     var lastReviewedDate: Date?
-
+    var streak: Int = 0
+    var longestStreak: Int = 0
     var deck: Deck?
     var section: DeckSection?
 
+    var cardType: FlashcardType {
+        get {
+            FlashcardType(rawValue: cardTypeRaw) ?? .multipleChoice
+        }
+        set {
+            cardTypeRaw = newValue.rawValue
+        }
+    }
+
+    var options: [String] {
+        get {
+            (try? JSONDecoder().decode([String].self, from: optionsData)) ?? []
+        }
+        set {
+            optionsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+    }
+
+    var optionImageNames: [String] {
+        get {
+            (try? JSONDecoder().decode([String].self, from: optionImageNamesData)) ?? []
+        }
+        set {
+            optionImageNamesData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+    }
+
+    var matchingPairs: [MatchingPair] {
+        get {
+            (try? JSONDecoder().decode([MatchingPair].self, from: matchingPairsData)) ?? []
+        }
+        set {
+            matchingPairsData = (try? JSONEncoder().encode(newValue)) ?? Data()
+        }
+    }
+
+    var matchingLeftItems: [String] {
+        get {
+            matchingPairs.map(\.leftItem)
+        }
+        set {
+            var pairs = matchingPairs
+            for (idx, item) in newValue.enumerated() {
+                if idx < pairs.count {
+                    pairs[idx].leftItem = item
+                } else {
+                    pairs.append(MatchingPair(leftItem: item, rightItem: ""))
+                }
+            }
+            if newValue.count < pairs.count {
+                pairs = Array(pairs.prefix(newValue.count))
+            }
+            matchingPairs = pairs
+        }
+    }
+
+    var matchingRightItems: [String] {
+        get {
+            matchingPairs.map(\.rightItem)
+        }
+        set {
+            var pairs = matchingPairs
+            for (idx, item) in newValue.enumerated() {
+                if idx < pairs.count {
+                    pairs[idx].rightItem = item
+                } else {
+                    pairs.append(MatchingPair(leftItem: "", rightItem: item))
+                }
+            }
+            if newValue.count < pairs.count {
+                pairs = Array(pairs.prefix(newValue.count))
+            }
+            matchingPairs = pairs
+        }
+    }
+
     init(
         question: String,
-        options: [String],
-        correctAnswer: String,
+        options: [String] = [],
+        correctAnswer: String = "",
         hint: String = "",
-        cardType: FlashcardType? = nil,
+        deck: Deck? = nil,
+        section: DeckSection? = nil,
+        cardType: FlashcardType = .multipleChoice,
+        matchingPairs: [MatchingPair] = [],
         matchingLeftItems: [String] = [],
         matchingRightItems: [String] = [],
+        promptImageName: String? = nil,
+        optionImageNames: [String] = [],
         sourceLocator: String? = nil,
         sourceExcerpt: String? = nil,
         tags: [String] = []
     ) {
         self.id = UUID()
         self.question = question
-        self.options = options
         self.correctAnswer = correctAnswer
         self.hint = hint
-        self.cardTypeRawValue = cardType?.rawValue ?? ""
-        self.matchingLeftItems = matchingLeftItems
-        self.matchingRightItems = matchingRightItems
-        self.sourceLocator = sourceLocator
-        self.sourceExcerpt = sourceExcerpt
-        self.tags = tags
-        self.isNew = true
-        self.nextReviewDate = Date()
-        self.easeFactor = 2.5
-        self.interval = 0
+        self.orderIndex = 0
+        self.cardTypeRaw = cardType.rawValue
+        self.deck = deck
+        self.section = section
+        self.promptImageName = promptImageName
+        self.optionsData = (try? JSONEncoder().encode(options)) ?? Data()
+        self.optionImageNamesData = (try? JSONEncoder().encode(optionImageNames)) ?? Data()
+        
+        if !matchingPairs.isEmpty {
+            self.matchingPairsData = (try? JSONEncoder().encode(matchingPairs)) ?? Data()
+        } else if !matchingLeftItems.isEmpty || !matchingRightItems.isEmpty {
+            var pairs: [MatchingPair] = []
+            let count = max(matchingLeftItems.count, matchingRightItems.count)
+            for i in 0..<count {
+                let left = i < matchingLeftItems.count ? matchingLeftItems[i] : ""
+                let right = i < matchingRightItems.count ? matchingRightItems[i] : ""
+                pairs.append(MatchingPair(leftItem: left, rightItem: right))
+            }
+            self.matchingPairsData = (try? JSONEncoder().encode(pairs)) ?? Data()
+        } else {
+            self.matchingPairsData = Data()
+        }
     }
 
-    var reviewCount: Int { correctCount + incorrectCount }
-
-    var cardType: FlashcardType {
-        get { FlashcardType(rawValue: cardTypeRawValue) ?? (options.count >= 2 ? .multipleChoice : .tapReveal) }
-        set { cardTypeRawValue = newValue.rawValue }
-    }
-
-    func resetProgress() {
-        isNew = true
-        nextReviewDate = Date()
-        easeFactor = 2.5
-        interval = 0
-        correctCount = 0
-        incorrectCount = 0
-        hintCount = 0
-        skipCount = 0
-        currentStreak = 0
-        longestStreak = 0
-        lastReviewedDate = nil
+    func recordReview(wasCorrect: Bool) {
+        reviewCount += 1
+        lastReviewedDate = Date()
+        if wasCorrect {
+            correctCount += 1
+            streak += 1
+            if streak > longestStreak {
+                longestStreak = streak
+            }
+            masteryScore = min(masteryScore + 1, 3)
+        } else {
+            streak = 0
+            masteryScore = max(masteryScore - 1, 0)
+        }
     }
 
     var accuracy: Double {
-        guard reviewCount > 0 else { return 0 }
+        guard reviewCount > 0 else { return 0.0 }
         return Double(correctCount) / Double(reviewCount)
     }
 
-    var studyPriority: Double {
-        let errorPressure = Double(incorrectCount * 3 + hintCount * 2 + skipCount * 2)
-        let confidence = Double(correctCount) + Double(currentStreak) * 0.5
-        return errorPressure - confidence
+    var isNew: Bool {
+        reviewCount == 0
+    }
+
+    var interval: Int {
+        switch masteryScore {
+        case 0: return 0
+        case 1: return 1
+        case 2: return 3
+        case 3: return 7
+        default: return 14
+        }
     }
 
     func processAnswer(isCorrect: Bool) {
-        lastReviewedDate = Date()
-
-        if isCorrect {
-            correctCount += 1
-            currentStreak += 1
-            longestStreak = max(longestStreak, currentStreak)
-            easeFactor = min(3.0, easeFactor + 0.05)
-
-            if interval == 0 { interval = 1 }
-            else if interval == 1 { interval = 6 }
-            else { interval = Int(round(Double(interval) * easeFactor)) }
-            isNew = false
-        } else {
-            incorrectCount += 1
-            currentStreak = 0
-            interval = 0
-            easeFactor = max(1.3, easeFactor - 0.2)
-        }
-
-        if let nextDate = Calendar.current.date(byAdding: .day, value: interval, to: Date()) {
-            nextReviewDate = nextDate
-        }
+        recordReview(wasCorrect: isCorrect)
     }
 
     func recordHintUsed() {
-        hintCount += 1
+        // Record hint usage
     }
 
     func recordSkip() {
-        skipCount += 1
-        currentStreak = 0
-        nextReviewDate = Date()
+        // Record skip
+    }
+
+    var isLearned: Bool {
+        masteryScore >= 3
+    }
+
+    var nextReviewDate: Date {
+        guard let last = lastReviewedDate else { return Date.distantPast }
+        let hours: Double
+        switch masteryScore {
+        case 0: hours = 1
+        case 1: hours = 4
+        case 2: hours = 12
+        case 3: hours = 24
+        default: hours = 48
+        }
+        return last.addingTimeInterval(hours * 3600)
+    }
+
+    var tags: [String] {
+        if let secName = section?.name { return [secName] }
+        return []
+    }
+
+    var sourceExcerpt: String? {
+        get { nil }
+        set { }
+    }
+
+    var sourceLocator: String? {
+        get { section?.name }
+        set { }
+    }
+
+    var studyPriority: Double {
+        if isNew { return 100.0 }
+        let overdueSeconds = Date().timeIntervalSince(nextReviewDate)
+        let masteryWeight = Double(3 - min(masteryScore, 3)) * 10.0
+        return masteryWeight + (overdueSeconds / 3600.0)
+    }
+
+    func resetProgress() {
+        reviewCount = 0
+        correctCount = 0
+        masteryScore = 0
+        streak = 0
+        longestStreak = 0
+        lastReviewedDate = nil
     }
 }
 
-struct AlertSoundOption: Identifiable, Hashable, Sendable {
+struct MatchingPair: Codable, Identifiable, Hashable {
+    var id: UUID = UUID()
+    var leftItem: String
+    var rightItem: String
+
+    init(leftItem: String, rightItem: String) {
+        self.id = UUID()
+        self.leftItem = leftItem
+        self.rightItem = rightItem
+    }
+}
+
+
+
+struct AlertSoundOption: Identifiable, Hashable {
     let id: String
     let name: String
 
@@ -296,5 +439,177 @@ struct AlertSoundOption: Identifiable, Hashable, Sendable {
 
     static func displayName(for id: String) -> String {
         allSounds.first { $0.id == id }?.name ?? id.replacingOccurrences(of: ".wav", with: "")
+    }
+}
+
+enum DeckColorPalette {
+    static let palette = [
+        "#3B82C4", // Ocean Blue
+        "#5B70E0", // Indigo
+        "#2A9D8F", // Emerald Teal
+        "#39D0BC", // Aqua
+        "#C05A78", // Rose
+        "#B8793E", // Warm Amber
+        "#7654A8", // Purple
+        "#3D8A59"  // Forest Green
+    ]
+
+    static func suggestedColor(existingColors: [String]) -> String {
+        for color in palette {
+            if !existingColors.contains(where: { $0.caseInsensitiveCompare(color) == .orderedSame }) {
+                return color
+            }
+        }
+        return palette.first ?? "#5B70E0"
+    }
+
+    static func takeNextColor(existingColors: [String]) -> String {
+        suggestedColor(existingColors: existingColors)
+    }
+}
+
+import UIKit
+
+public enum CardImageStore {
+    public static let appGroupIdentifier = "group.com.learnalert.shared"
+
+    public static var imagesDirectoryURL: URL {
+        let baseURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupIdentifier
+        ) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = baseURL.appendingPathComponent("CardImages", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+
+    public static func saveImage(_ image: UIImage, name: String? = nil) -> String? {
+        let filename = name ?? "\(UUID().uuidString).jpg"
+        let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
+
+        let maxDim: CGFloat = 1200
+        let size = image.size
+        let targetSize: CGSize
+        if size.width > maxDim || size.height > maxDim {
+            let ratio = min(maxDim / size.width, maxDim / size.height)
+            targetSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+        } else {
+            targetSize = size
+        }
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+
+        guard let data = resizedImage.jpegData(compressionQuality: 0.82) else { return nil }
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            return filename
+        } catch {
+            print("Failed to save card image: \(error)")
+            return nil
+        }
+    }
+
+    public static func loadImage(named filename: String?) -> UIImage? {
+        guard let filename, !filename.isEmpty else { return nil }
+        let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
+        if let image = UIImage(contentsOfFile: fileURL.path) {
+            return image
+        }
+        if let bundleImage = UIImage(named: filename) {
+            return bundleImage
+        }
+        return nil
+    }
+
+    public static func deleteImage(named filename: String?) {
+        guard let filename, !filename.isEmpty else { return }
+        let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+}
+
+public enum NotificationTheme: String, CaseIterable, Identifiable {
+    case defaultTheme = "default"
+    case midnight = "midnight"
+    case aurora = "aurora"
+    case sunset = "sunset"
+    case slate = "slate"
+    case light = "light"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .defaultTheme: "Luminous"
+        case .midnight: "Midnight OLED"
+        case .aurora: "Emerald Aurora"
+        case .sunset: "Sunset Glow"
+        case .slate: "Minimal Slate"
+        case .light: "Pure Light"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .defaultTheme: "Cosmic indigo & radiant ambient orbs"
+        case .midnight: "True deep black with midnight accents"
+        case .aurora: "Electric emerald & mint aura"
+        case .sunset: "Warm twilight plum & coral glow"
+        case .slate: "Understated frosted titanium"
+        case .light: "Clean alabaster light surface"
+        }
+    }
+
+    public var accentColor: Color {
+        switch self {
+        case .defaultTheme: Color(red: 0.36, green: 0.44, blue: 0.88)
+        case .midnight: Color(red: 0.55, green: 0.65, blue: 1.00)
+        case .aurora: Color(red: 0.18, green: 0.80, blue: 0.55)
+        case .sunset: Color(red: 1.00, green: 0.45, blue: 0.38)
+        case .slate: Color(red: 0.60, green: 0.65, blue: 0.75)
+        case .light: Color(red: 0.20, green: 0.55, blue: 0.95)
+        }
+    }
+
+    public var previewGradient: LinearGradient {
+        switch self {
+        case .defaultTheme:
+            return LinearGradient(colors: [Color(red: 0.20, green: 0.24, blue: 0.55), Color(red: 0.08, green: 0.10, blue: 0.25)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .midnight:
+            return LinearGradient(colors: [Color(red: 0.10, green: 0.12, blue: 0.20), Color(red: 0.02, green: 0.02, blue: 0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .aurora:
+            return LinearGradient(colors: [Color(red: 0.05, green: 0.30, blue: 0.22), Color(red: 0.02, green: 0.15, blue: 0.12)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .sunset:
+            return LinearGradient(colors: [Color(red: 0.35, green: 0.12, blue: 0.25), Color(red: 0.15, green: 0.05, blue: 0.15)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .slate:
+            return LinearGradient(colors: [Color(red: 0.22, green: 0.25, blue: 0.30), Color(red: 0.12, green: 0.14, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .light:
+            return LinearGradient(colors: [Color(red: 0.96, green: 0.97, blue: 1.0), Color(red: 0.85, green: 0.90, blue: 0.96)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+}
+
+public enum NotificationLayoutMode: String, CaseIterable, Identifiable {
+    case automatic = "automatic"
+    case compact = "compact"
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .compact: "Compact"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .automatic: "Adaptive standard layout with spacious padding"
+        case .compact: "Reduced padding for fast, focused study"
+        }
     }
 }

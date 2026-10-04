@@ -6,6 +6,8 @@
 	<string>$(API_KEY)</string>
 	<key>DebugToken</key>
 	<string>$(DEBUG_TOKEN)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.5</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Poppins-Regular.ttf</string>

@@ -59,13 +59,24 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
     
     private func setupCategories() {
+        let continueAction = UNNotificationAction(
+            identifier: "CONTINUE_IN_APP",
+            title: "Continue in App",
+            options: [.foreground]
+        )
         let revealCategory = UNNotificationCategory(
             identifier: "FLASHCARD_REVEAL",
+            actions: [continueAction],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+        let testCategory = UNNotificationCategory(
+            identifier: "FLASHCARD_TEST",
             actions: [],
             intentIdentifiers: [],
             options: [.customDismissAction]
         )
-        UNUserNotificationCenter.current().setNotificationCategories([revealCategory])
+        UNUserNotificationCenter.current().setNotificationCategories([revealCategory, testCategory])
     }
     
     func scheduleRealCard(_ card: Flashcard, at date: Date, progress: String) {
@@ -74,7 +85,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let deckType = card.cardType.title
         
         content.title = "LearnAlert: \(deckName)"
-        content.body = "Press and hold to answer"
+        content.body = card.cardType == .vocabulary ? "Press and hold to review" : "Press and hold to answer"
         content.categoryIdentifier = "FLASHCARD_REVEAL"
         
         // NEW: Custom Sound Engine!
@@ -99,7 +110,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "correctAnswer": card.correctAnswer,
             "hint": card.hint,
             "matchingLeftItems": card.matchingLeftItems,
-            "matchingRightItems": card.matchingRightItems
+            "matchingRightItems": card.matchingRightItems,
+            "promptImageName": card.promptImageName ?? "",
+            "optionImageNames": card.optionImageNames
         ]
         
         let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
@@ -110,9 +123,108 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             if let error = error { print("Error scheduling: \(error)") }
         }
     }
+
+    func scheduleRealCardAsync(_ card: Flashcard, at date: Date, progress: String) async throws {
+        let content = UNMutableNotificationContent()
+        let deckName = card.deck?.name ?? "Daily Review"
+        let deckType = card.cardType.title
+
+        content.title = "LearnAlert: \(deckName)"
+        content.body = card.cardType == .vocabulary ? "Press and hold to review" : "Press and hold to answer"
+        content.categoryIdentifier = "FLASHCARD_REVEAL"
+
+        let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"
+        if savedSound == "Default" {
+            content.sound = .default
+        } else {
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(savedSound))
+        }
+
+        content.userInfo = [
+            "cardId": card.id.uuidString,
+            "deckId": card.deck?.id.uuidString ?? "",
+            "deckName": deckName,
+            "deckType": deckType,
+            "isRandom": false,
+            "progress": progress,
+            "question": card.question,
+            "cardType": card.cardType.rawValue,
+            "options": card.options,
+            "correctAnswer": card.correctAnswer,
+            "hint": card.hint,
+            "matchingLeftItems": card.matchingLeftItems,
+            "matchingRightItems": card.matchingRightItems,
+            "promptImageName": card.promptImageName ?? "",
+            "optionImageNames": card.optionImageNames
+        ]
+
+        let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDateComponents, repeats: false)
+        let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
+
+        try await UNUserNotificationCenter.current().add(request)
+    }
     
+    func scheduleTutorialAlert(
+        deckTitle: String,
+        question: String,
+        options: [String],
+        correctAnswer: String,
+        hint: String,
+        cardId: UUID = UUID(),
+        deckId: UUID = UUID(),
+        delay: TimeInterval = 0.8
+    ) {
+        setupCategories()
+        let content = UNMutableNotificationContent()
+        content.title = "LearnAlert: \(deckTitle)"
+        content.body = "Press and hold to answer"
+        content.categoryIdentifier = "FLASHCARD_TEST"
+
+        let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"
+        if savedSound == "Default" {
+            content.sound = .default
+        } else {
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(savedSound))
+        }
+
+        content.userInfo = [
+            "cardId": cardId.uuidString,
+            "deckId": deckId.uuidString,
+            "deckName": deckTitle,
+            "deckType": "Quiz",
+            "isRandom": false,
+            "isTutorial": true,
+            "progress": "Tutorial \u{2022} Card 1",
+            "question": question,
+            "cardType": "multiple_choice",
+            "options": options,
+            "correctAnswer": correctAnswer,
+            "hint": hint,
+            "matchingLeftItems": [String](),
+            "matchingRightItems": [String]()
+        ]
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 0.5), repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "tutorial_\(cardId.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error scheduling tutorial alert: \(error)")
+            }
+        }
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound])
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound, .list, .badge])
+        } else {
+            completionHandler([.alert, .sound, .badge])
+        }
     }
 
     func userNotificationCenter(
@@ -130,9 +242,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             let fromNotificationUI = defaults?.bool(forKey: "handoffFromNotificationUI") ?? false
             let hasHandoffDeck = defaults?.string(forKey: "handoffDeckId") != nil
 
-            if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            if response.actionIdentifier == "CONTINUE_IN_APP" {
+                self.shouldShowNotificationOpeningTip = false
+                if hasHandoffDeck {
+                    defaults?.removeObject(forKey: "handoffFromNotificationUI")
+                    self.consumePendingStudyHandoff()
+                } else if let deckString = userInfo["deckId"] as? String,
+                          let cardString = userInfo["cardId"] as? String,
+                          let deckId = UUID(uuidString: deckString),
+                          let cardId = UUID(uuidString: cardString) {
+                    self.pendingStudyHandoff = StudyHandoff(
+                        deckId: deckId,
+                        cardId: cardId,
+                        selectedAnswer: nil,
+                        wasCorrect: nil,
+                        wasGraded: false,
+                        wasHintVisible: false
+                    )
+                } else {
+                    self.consumePendingStudyHandoff()
+                }
+            } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 if fromNotificationUI || hasHandoffDeck {
-                    // Intentionally opened from inside the notification extension ("Continue in App" / "Open App")
                     defaults?.removeObject(forKey: "handoffFromNotificationUI")
                     self.shouldShowNotificationOpeningTip = false
                     self.consumePendingStudyHandoff()

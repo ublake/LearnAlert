@@ -24,6 +24,8 @@ private struct NotificationSessionCard {
     let hint: String
     let matchingLeftItems: [String]
     let matchingRightItems: [String]
+    var promptImageName: String? = nil
+    var optionImageNames: [String] = []
 }
 
 private struct NotificationDeckChoice: Identifiable {
@@ -80,7 +82,10 @@ struct FlashcardNotificationView: View {
     var hint: String
     var matchingLeftItems: [String] = []
     var matchingRightItems: [String] = []
+    var promptImageName: String? = nil
+    var optionImageNames: [String] = []
     var previewMode = false
+    var isTutorial = false
     var openApp: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
@@ -111,7 +116,17 @@ struct FlashcardNotificationView: View {
     @State private var learningCount: Int = 0
     @State private var masteredCount: Int = 0
 
-    // MARK: - Appearance Dynamics
+    private var cardProgressionText: String {
+        if progress.contains("/") {
+            return progress
+        }
+        if !progress.isEmpty && progress != "-" && !progress.lowercased().contains("tutorial") {
+            return progress
+        }
+        return "\(completedCount + 1)/10"
+    }
+
+    // MARK: - Appearance & Customization Dynamics
     private var effectiveColorScheme: ColorScheme {
         let mode = UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "appearanceMode") ?? "system"
         if mode == "light" { return .light }
@@ -119,7 +134,19 @@ struct FlashcardNotificationView: View {
         return systemColorScheme
     }
 
-    private var isLight: Bool { effectiveColorScheme == .light }
+    private var customTheme: String {
+        UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "notificationCustomTheme") ?? "default"
+    }
+
+    private var isCompactLayout: Bool {
+        let layout = UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "notificationCustomLayout") ?? "automatic"
+        return layout == "compact"
+    }
+
+    private var isLight: Bool {
+        if customTheme == "light" { return true }
+        return effectiveColorScheme == .light
+    }
 
     private var textColorPrimary: Color {
         isLight ? Color(red: 0.10, green: 0.13, blue: 0.24) : Color.white
@@ -142,6 +169,12 @@ struct FlashcardNotificationView: View {
     private var activeHint: String { sessionCard?.hint ?? hint }
     private var activeMatchingLeftItems: [String] { sessionCard?.matchingLeftItems ?? matchingLeftItems }
     private var activeMatchingRightItems: [String] { sessionCard?.matchingRightItems ?? matchingRightItems }
+    private var activePromptImageName: String? { sessionCard?.promptImageName ?? promptImageName }
+    private var activeOptionImageNames: [String] { sessionCard?.optionImageNames ?? optionImageNames }
+
+    private var isAppOpen: Bool {
+        UserDefaults(suiteName: "group.com.learnalert.shared")?.bool(forKey: "isAppInForeground") ?? false
+    }
 
     private var notificationControls: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -149,36 +182,56 @@ struct FlashcardNotificationView: View {
                 .font(.headline.bold())
                 .foregroundStyle(textColorPrimary)
 
+            // Change Active Deck in Mini-Session
             if !availableDecks.isEmpty {
                 Menu {
                     ForEach(availableDecks) { deck in
                         Button(deck.name) {
                             loadNextCard(from: deck.id)
-                            statusMessage = "Studying \(deck.name)"
                             showingControls = false
                         }
                     }
                 } label: {
-                    Label("Change mini-session deck", systemImage: "rectangle.stack.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(textColorPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(isLight ? Color.white.opacity(0.60) : Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    HStack(spacing: 10) {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Change mini-session deck")
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(textColorPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(
+                        isLight
+                            ? Color.white.opacity(0.60)
+                            : Color.white.opacity(0.08)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }
 
+            // Stop Scheduled Alerts
             Button(role: .destructive) {
                 stopScheduledAlerts()
+                showingControls = false
             } label: {
-                Label("Stop scheduled notifications", systemImage: "bell.slash.fill")
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color.red.opacity(isLight ? 0.12 : 0.20))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                HStack(spacing: 10) {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Stop scheduled notifications")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                }
+                .foregroundStyle(Color.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.red.opacity(isLight ? 0.12 : 0.20))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            .buttonStyle(.plain)
 
             if let statusMessage {
                 Text(statusMessage)
@@ -193,42 +246,49 @@ struct FlashcardNotificationView: View {
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
-            VStack(spacing: 18) {
-                // Header Bar: Deck Name, Progress, Controls
-                HStack(spacing: 10) {
+            VStack(spacing: isCompactLayout ? 10 : 18) {
+                // Header Bar: Deck Name, Hint, Controls
+                HStack(alignment: .top, spacing: 8) {
                     HStack(spacing: 6) {
                         Image(systemName: "rectangle.stack.fill")
-                            .font(.caption.bold())
+                            .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
                             .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
-                        Text(activeDeckName.uppercased())
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(textColorSecondary)
+                        Text(activeDeckName)
+                            .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
+                            .foregroundStyle(textColorPrimary)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
-
-                    if !progress.isEmpty && progress != "-" {
-                        Text(progress)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(textColorSecondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
-                    }
+                    .padding(.top, 4)
 
                     Spacer()
 
-                    Button {
-                        withAnimation(.snappy) { showingControls.toggle() }
-                    } label: {
-                        Image(systemName: showingControls ? "xmark" : "gearshape.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(textColorPrimary)
-                            .frame(width: 36, height: 36)
-                            .notificationLiquidGlass(cornerRadius: 18, isLight: isLight)
+                    HStack(spacing: 8) {
+                        if !activeHint.isEmpty && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
+                            Button {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                    showingHint.toggle()
+                                    if showingHint { recordHintUsed() }
+                                }
+                            } label: {
+                                Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
+                                    .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                                    .foregroundStyle(Color.orange)
+                                    .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
+                                    .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, tint: Color.orange.opacity(0.12), isLight: isLight)
+                            }
+                            .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
+                        }
+
+                        Button {
+                            withAnimation(.snappy) { showingControls.toggle() }
+                        } label: {
+                            Image(systemName: showingControls ? "xmark" : "gearshape.fill")
+                                .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                                .foregroundStyle(textColorPrimary)
+                                .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
+                                .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, isLight: isLight)
+                        }
+                        .accessibilityLabel(showingControls ? "Close controls" : "Study controls")
                     }
-                    .accessibilityLabel(showingControls ? "Close controls" : "Study controls")
                 }
 
                 if showingControls {
@@ -236,239 +296,274 @@ struct FlashcardNotificationView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                // Question Box
+                // Question Box & Prompt Image
                 if activeCardType != "matching" {
-                    Text(activeQuestion)
-                        .font(.system(size: 18, weight: .bold))
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(textColorPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                        .padding(.horizontal, 18)
-                        .notificationLiquidGlass(cornerRadius: 20, isLight: isLight)
+                    VStack(spacing: 12) {
+                        if let promptImg = activePromptImageName, !promptImg.isEmpty,
+                           let uiImage = CardImageStore.loadImage(named: promptImg) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 180)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .shadow(color: Color.black.opacity(0.12), radius: 6, y: 3)
+                        }
+
+                        Text(activeQuestion)
+                            .font(.system(size: isCompactLayout ? 16 : 18, weight: .bold))
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(textColorPrimary)
+                            .lineSpacing(3)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .padding(.vertical, isCompactLayout ? 12 : 20)
+                    .padding(.horizontal, isCompactLayout ? 14 : 18)
+                    .notificationLiquidGlass(cornerRadius: 20, isLight: isLight)
                 }
 
-                // Dynamic Engine Interaction
-                if isSkipped {
-                    VStack(spacing: 12) {
-                        Image(systemName: "forward.fill")
-                            .font(.largeTitle)
-                            .foregroundStyle(textColorSecondary)
-                        Text("Skipped")
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(textColorSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .notificationLiquidGlass(cornerRadius: 16, isLight: isLight)
-                    .transition(.scale.combined(with: .opacity))
-                } else {
-                    if activeCardType == "multiple_choice" {
-                        VStack(spacing: 11) {
-                            ForEach(activeOptions, id: \.self) { option in
-                                if selectedAnswer == nil || option == activeCorrectAnswer || option == selectedAnswer {
-                                    Button(action: {
-                                        guard selectedAnswer == nil else { return }
-                                        withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
-                                            selectedAnswer = option
-                                        }
-                                        gradeCard(isCorrect: option == activeCorrectAnswer)
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            Text(option)
-                                                .font(.system(size: 15, weight: .semibold))
-                                                .multilineTextAlignment(.leading)
-                                                .foregroundStyle(optionTextColor(for: option))
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-
-                                            if selectedAnswer != nil {
-                                                if option == activeCorrectAnswer {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .font(.system(size: 18, weight: .bold))
-                                                        .foregroundStyle(Color.green)
-                                                } else if option == selectedAnswer {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .font(.system(size: 18, weight: .bold))
-                                                        .foregroundStyle(Color.red)
-                                                }
-                                            }
-                                        }
-                                        .padding(.vertical, 15)
-                                        .padding(.horizontal, 18)
-                                        .notificationLiquidGlass(
-                                            cornerRadius: 16,
-                                            tint: optionGlassTint(for: option),
-                                            isLight: isLight,
-                                            customBorderColor: optionBorderColor(for: option)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(selectedAnswer != nil)
-                                    .transition(.scale.combined(with: .opacity))
-                                }
-                            }
-                        }
-                    } else if activeCardType == "fill_blank" {
-                        VStack(spacing: 12) {
-                            TextField("Type your answer", text: $typedAnswer)
-                                .id("fill_blank_field")
-                                .font(.system(size: 16, weight: .medium))
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .focused($isAnswerFieldFocused)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    checkFillBlankAnswer()
-                                }
-                                .padding(14)
+                // Card Type Presentation: Matching Pairs
+                if activeCardType == "matching" {
+                    VStack(spacing: 14) {
+                        if !activeQuestion.isEmpty {
+                            Text(activeQuestion)
+                                .font(.system(size: 15, weight: .semibold))
+                                .multilineTextAlignment(.leading)
                                 .foregroundStyle(textColorPrimary)
-                                .notificationLiquidGlass(
-                                    cornerRadius: 14,
-                                    tint: isGraded ? (lastAnswerWasCorrect == true ? Color.green.opacity(0.15) : Color.red.opacity(0.15)) : nil,
-                                    isLight: isLight
-                                )
-                                .disabled(isGraded)
-
-                            if isGraded {
-                                Label(
-                                    lastAnswerWasCorrect == true ? "Correct" : "Incorrect · Answer: \(activeCorrectAnswer)",
-                                    systemImage: lastAnswerWasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill"
-                                )
-                                .font(.subheadline.bold())
-                                .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
-                            } else {
-                                Button {
-                                    checkFillBlankAnswer()
-                                } label: {
-                                    Text("Check Answer")
-                                        .font(.headline.bold())
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 14)
-                                        .foregroundStyle(.white)
-                                        .background(
-                                            LinearGradient(
-                                                colors: [Color(red: 0.12, green: 0.50, blue: 0.98), Color(red: 0.20, green: 0.68, blue: 0.96)],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                }
-                                .disabled(typedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 4)
                         }
-                    } else if activeCardType == "matching" {
-                        VStack(spacing: 12) {
-                            Text("Tap a term, then tap its match")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(textColorSecondary)
 
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(spacing: 8) {
-                                    ForEach(activeMatchingLeftItems, id: \.self) { item in
-                                        Button(item) { selectedMatchingLeft = item }
-                                            .font(.caption.bold())
+                        HStack(alignment: .top, spacing: 10) {
+                            // Left column (terms)
+                            VStack(spacing: 8) {
+                                ForEach(activeMatchingLeftItems, id: \.self) { item in
+                                    let isMatched = isCorrectlyMatched(item)
+                                    let isSelected = selectedMatchingLeft == item
+                                    Button {
+                                        guard !isMatched else { return }
+                                        withAnimation(.snappy) {
+                                            selectedMatchingLeft = isSelected ? nil : item
+                                        }
+                                    } label: {
+                                        Text(item)
+                                            .font(.system(size: 13, weight: .semibold))
                                             .foregroundStyle(textColorPrimary)
-                                            .frame(maxWidth: .infinity, minHeight: 44)
+                                            .multilineTextAlignment(.center)
+                                            .padding(10)
+                                            .frame(maxWidth: .infinity, minHeight: 48)
                                             .notificationLiquidGlass(
                                                 cornerRadius: 12,
                                                 tint: matchingLeftTint(item),
                                                 isLight: isLight,
                                                 customBorderColor: matchingLeftBorder(item)
                                             )
-                                            .disabled(isGraded || isCorrectlyMatched(item))
                                     }
-                                }
-
-                                VStack(spacing: 8) {
-                                    ForEach(activeMatchingRightItems.reversed(), id: \.self) { match in
-                                        Button {
-                                            guard let selectedMatchingLeft else { return }
-                                            matchingAssignments = matchingAssignments.filter { $0.value != selectedMatchingLeft }
-                                            matchingAssignments[match] = selectedMatchingLeft
-                                            let isCorrect = isCorrectMatch(left: selectedMatchingLeft, right: match)
-                                            matchingResults[match] = isCorrect
-                                            hadMatchingMistake = hadMatchingMistake || !isCorrect
-                                            self.selectedMatchingLeft = nil
-                                            let completedCorrectly = activeMatchingRightItems.allSatisfy { target in
-                                                if target == match { return isCorrect }
-                                                return matchingResults[target] == true
-                                            }
-                                            if completedCorrectly {
-                                                gradeCard(isCorrect: !hadMatchingMistake && isCorrect)
-                                            }
-                                        } label: {
-                                            VStack(spacing: 2) {
-                                                Text(match)
-                                                    .font(.caption.bold())
-                                                    .foregroundStyle(textColorPrimary)
-                                                if let term = matchingAssignments[match] {
-                                                    Text(term)
-                                                        .font(.caption2.bold())
-                                                        .foregroundStyle(matchingResults[match] == true ? Color.green : Color.red)
-                                                }
-                                            }
-                                            .frame(maxWidth: .infinity, minHeight: 44)
-                                            .notificationLiquidGlass(
-                                                cornerRadius: 12,
-                                                tint: matchingRightTint(match),
-                                                isLight: isLight,
-                                                customBorderColor: matchingRightBorder(match)
-                                            )
-                                        }
-                                        .disabled(isGraded || matchingResults[match] == true || selectedMatchingLeft == nil)
-                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(isMatched || isGraded)
                                 }
                             }
 
-                            if matchingResults.values.contains(false), !isGraded {
-                                Button {
-                                    let incorrectTargets = matchingResults.filter { !$0.value }.map(\.key)
-                                    incorrectTargets.forEach {
-                                        matchingAssignments.removeValue(forKey: $0)
-                                        matchingResults.removeValue(forKey: $0)
+                            // Right column (definitions/targets)
+                            VStack(spacing: 8) {
+                                ForEach(activeMatchingRightItems, id: \.self) { target in
+                                    let assignedTerm = matchingAssignments[target]
+                                    let isCorrect = matchingResults[target] == true
+                                    Button {
+                                        guard let left = selectedMatchingLeft else { return }
+                                        let matchCorrect = isCorrectMatch(left: left, right: target)
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                                            matchingAssignments[target] = left
+                                            matchingResults[target] = matchCorrect
+                                            selectedMatchingLeft = nil
+                                            if !matchCorrect {
+                                                hadMatchingMistake = true
+                                                NotificationFeedbackSoundPlayer.shared.play(named: "incorrect")
+                                            } else {
+                                                NotificationFeedbackSoundPlayer.shared.play(named: "correct")
+                                            }
+                                            if matchingAssignments.count == activeMatchingRightItems.count &&
+                                                matchingResults.values.allSatisfy({ $0 }) {
+                                                gradeCard(isCorrect: !hadMatchingMistake)
+                                            }
+                                        }
+                                    } label: {
+                                        VStack(spacing: 2) {
+                                            Text(target)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundStyle(textColorPrimary)
+                                                .lineLimit(2)
+                                                .minimumScaleFactor(0.8)
+                                            if let assigned = assignedTerm {
+                                                Text("→ \(assigned)")
+                                                    .font(.system(size: 10, weight: .bold))
+                                                    .foregroundStyle(isCorrect ? Color.green : Color.red)
+                                            }
+                                        }
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity, minHeight: 48)
+                                        .notificationLiquidGlass(
+                                            cornerRadius: 12,
+                                            tint: matchingRightTint(target),
+                                            isLight: isLight,
+                                            customBorderColor: matchingRightBorder(target)
+                                        )
                                     }
-                                    selectedMatchingLeft = nil
-                                } label: {
-                                    Label("Try Again", systemImage: "arrow.counterclockwise")
-                                        .font(.subheadline.bold())
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .foregroundStyle(Color.red)
-                                        .notificationLiquidGlass(cornerRadius: 12, tint: Color.red.opacity(0.12), isLight: isLight)
+                                    .buttonStyle(.plain)
+                                    .disabled(matchingAssignments[target] != nil && matchingResults[target] == true || selectedMatchingLeft == nil || isGraded)
                                 }
                             }
                         }
-                    } else {
-                        // Tap to Reveal
+
+                        if hadMatchingMistake && !isGraded {
+                            Button {
+                                withAnimation(.snappy) {
+                                    matchingAssignments.removeAll()
+                                    matchingResults.removeAll()
+                                    selectedMatchingLeft = nil
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.counterclockwise")
+                                    Text("Reset Mismatches")
+                                }
+                                .font(.caption.bold())
+                                .foregroundStyle(textColorSecondary)
+                                .padding(.vertical, 6)
+                                .padding(.horizontal, 12)
+                                .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                // Card Type Presentation: Fill in the Blank
+                else if activeCardType == "fill_blank" {
+                    VStack(spacing: 14) {
+                        HStack(spacing: 10) {
+                            TextField("Type your answer...", text: $typedAnswer)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(textColorPrimary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
+                                .focused($isAnswerFieldFocused)
+                                .id("fill_blank_field")
+                                .submitLabel(.done)
+                                .onSubmit { checkFillBlankAnswer() }
+                                .disabled(isGraded)
+
+                            Button {
+                                checkFillBlankAnswer()
+                            } label: {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
+                            }
+                            .disabled(typedAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isGraded)
+                        }
+
+                        if isGraded {
+                            HStack(spacing: 8) {
+                                Image(systemName: lastAnswerWasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
+                                Text(lastAnswerWasCorrect == true ? "Correct!" : "Correct answer: \(activeCorrectAnswer)")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity)
+                            .notificationLiquidGlass(cornerRadius: 12, tint: (lastAnswerWasCorrect == true ? Color.green : Color.red).opacity(0.15), isLight: isLight)
+                        }
+                    }
+                }
+
+                // Card Type Presentation: Multiple Choice Options
+                else if !activeOptions.isEmpty && activeCardType != "tap_reveal" {
+                    VStack(spacing: 11) {
+                        ForEach(Array(activeOptions.enumerated()), id: \.offset) { index, option in
+                            Button {
+                                guard selectedAnswer == nil else { return }
+                                isAnswerFieldFocused = false
+                                withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
+                                    selectedAnswer = option
+                                    let correct = (option == activeCorrectAnswer)
+                                    gradeCard(isCorrect: correct)
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    if activeOptionImageNames.indices.contains(index),
+                                       let optImg = CardImageStore.loadImage(named: activeOptionImageNames[index]) {
+                                        Image(uiImage: optImg)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 44, height: 44)
+                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    }
+
+                                    Text(option)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .multilineTextAlignment(.leading)
+                                        .foregroundStyle(optionTextColor(for: option))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    if selectedAnswer != nil {
+                                        if option == activeCorrectAnswer {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 18, weight: .bold))
+                                                .foregroundStyle(Color.green)
+                                        } else if option == selectedAnswer {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 18, weight: .bold))
+                                                .foregroundStyle(Color.red)
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 15)
+                                .padding(.horizontal, 18)
+                                .notificationLiquidGlass(
+                                    cornerRadius: 16,
+                                    tint: optionGlassTint(for: option),
+                                    isLight: isLight,
+                                    customBorderColor: optionBorderColor(for: option)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(selectedAnswer != nil)
+                        }
+                    }
+                }
+
+                // Card Type Presentation: Tap to Reveal
+                else if activeCardType == "tap_reveal" || activeOptions.isEmpty {
+                    VStack(spacing: 12) {
                         if !isRevealed {
                             Button {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.75)) {
                                     isRevealed = true
-                                    showingHint = false
                                 }
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "hand.tap.fill")
                                     Text("Tap to Reveal")
-                                        .font(.headline.bold())
+                                        .font(.headline.weight(.semibold))
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, 18)
                                 .foregroundStyle(textColorPrimary)
                                 .notificationLiquidGlass(cornerRadius: 16, isLight: isLight)
                             }
+                            .buttonStyle(.plain)
                         } else {
-                            VStack(spacing: 16) {
+                            VStack(spacing: 14) {
                                 Text(activeCorrectAnswer)
                                     .font(.title3.bold())
-                                    .foregroundStyle(Color(red: 0.10, green: 0.65, blue: 0.90))
+                                    .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
                                     .multilineTextAlignment(.center)
-                                    .padding(.vertical, 14)
+                                    .padding(.vertical, 18)
                                     .padding(.horizontal, 16)
                                     .frame(maxWidth: .infinity)
-                                    .notificationLiquidGlass(cornerRadius: 14, tint: Color.cyan.opacity(0.12), isLight: isLight)
+                                    .notificationLiquidGlass(cornerRadius: 16, tint: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.12), isLight: isLight)
 
                                 if !isGraded {
                                     HStack(spacing: 12) {
@@ -479,12 +574,13 @@ struct FlashcardNotificationView: View {
                                                 Image(systemName: "xmark")
                                                 Text("Missed It")
                                             }
-                                            .font(.headline.bold())
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 13)
+                                            .font(.headline.weight(.bold))
                                             .foregroundStyle(Color.red)
-                                            .notificationLiquidGlass(cornerRadius: 12, tint: Color.red.opacity(0.14), isLight: isLight)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .notificationLiquidGlass(cornerRadius: 14, tint: Color.red.opacity(0.16), isLight: isLight)
                                         }
+                                        .buttonStyle(.plain)
 
                                         Button {
                                             gradeReveal(correct: true)
@@ -493,72 +589,65 @@ struct FlashcardNotificationView: View {
                                                 Image(systemName: "checkmark")
                                                 Text("Knew It!")
                                             }
-                                            .font(.headline.bold())
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 13)
+                                            .font(.headline.weight(.bold))
                                             .foregroundStyle(Color.green)
-                                            .notificationLiquidGlass(cornerRadius: 12, tint: Color.green.opacity(0.14), isLight: isLight)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .notificationLiquidGlass(cornerRadius: 14, tint: Color.green.opacity(0.16), isLight: isLight)
                                         }
+                                        .buttonStyle(.plain)
                                     }
-                                    .transition(.scale.combined(with: .opacity))
                                 }
                             }
                         }
-                    }
-
-                    // HINT AND SKIP CONTROLS
-                    if !isGraded && !isSkipped {
-                        VStack(spacing: 12) {
-                            HStack(spacing: 12) {
-                                if !activeHint.isEmpty {
-                                    Button {
-                                        if !showingHint { recordHintUsed() }
-                                        withAnimation(.spring) { showingHint.toggle() }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
-                                            Text(showingHint ? "Hide Hint" : "Hint").fontWeight(.bold)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 11)
-                                        .foregroundStyle(Color.orange)
-                                        .notificationLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.10), isLight: isLight)
-                                    }
-                                }
-
-                                Button {
-                                    recordSkipAndAdvance()
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "forward.fill")
-                                        Text("Skip").fontWeight(.bold)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 11)
-                                    .foregroundStyle(textColorSecondary)
-                                    .notificationLiquidGlass(cornerRadius: 12, isLight: isLight)
-                                }
-                            }
-
-                            if showingHint {
-                                Text(activeHint)
-                                    .font(.subheadline.italic())
-                                    .foregroundStyle(Color.orange)
-                                    .padding(12)
-                                    .frame(maxWidth: .infinity)
-                                    .notificationLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.08), isLight: isLight)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                        }
-                        .transition(.opacity)
                     }
                 }
 
-                // POST-GRADE STATS & UNRESTRICTED STUDY FLOW
+                if showingHint && !activeHint.isEmpty {
+                    Text(activeHint)
+                        .font(.subheadline.italic())
+                        .foregroundStyle(Color.orange)
+                        .padding(12)
+                        .frame(maxWidth: .infinity)
+                        .notificationLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.08), isLight: isLight)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                // Card Progression Fraction & Skip Button (Aligned right)
+                if selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
+                    HStack(alignment: .center) {
+                        Color.clear
+                            .frame(width: isCompactLayout ? 36 : 40, height: 1)
+
+                        Spacer()
+
+                        if !cardProgressionText.isEmpty {
+                            Text(cardProgressionText)
+                                .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(textColorSecondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            recordSkipAndAdvance()
+                        } label: {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                                .foregroundStyle(textColorSecondary)
+                                .frame(width: isCompactLayout ? 36 : 40, height: isCompactLayout ? 32 : 36)
+                                .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Skip")
+                    }
+                }
+
+                // Post-Answer Study Stats & Next Card
                 if isGraded {
                     VStack(spacing: 14) {
                         HStack(spacing: 10) {
-                            NotificationStat(title: "New", value: unlearnedCount, icon: "sparkles", isLight: isLight)
+                            NotificationStat(title: "Unlearned", value: unlearnedCount, icon: "sparkles", isLight: isLight)
                             NotificationStat(title: "Learning", value: learningCount, icon: "brain.head.profile", isLight: isLight)
                             NotificationStat(title: "Mastered", value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
                         }
@@ -588,38 +677,12 @@ struct FlashcardNotificationView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.35), radius: 8, y: 3)
                         }
+                        .buttonStyle(.plain)
                     }
                     .transition(.opacity)
                 }
-
-                // BOTTOM RIGHT: Continue in App button
-                HStack {
-                    Spacer()
-
-                    Button {
-                        isAnswerFieldFocused = false
-                        persistStudyHandoff()
-                        openApp()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text("Continue in App")
-                                .font(.system(size: 12, weight: .semibold))
-                            Image(systemName: "arrow.up.forward.app.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(isLight ? Color(red: 0.12, green: 0.48, blue: 0.96) : Color(red: 0.35, green: 0.70, blue: 1.0))
-                        .notificationLiquidGlass(
-                            cornerRadius: 10,
-                            tint: isLight ? Color.white.opacity(0.65) : Color.white.opacity(0.08),
-                            isLight: isLight
-                        )
-                    }
-                }
-                .padding(.top, 2)
             }
-            .padding(18)
+            .padding(isCompactLayout ? 12 : 18)
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(
@@ -631,7 +694,7 @@ struct FlashcardNotificationView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .frame(maxWidth: .infinity, alignment: .top)
-        .background(NotificationBackdrop(isLight: isLight))
+        .background(NotificationBackdrop(theme: customTheme, isLight: isLight))
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onPreferenceChange(NotificationContentHeightKey.self) { height in
             if height > 50 {
@@ -650,7 +713,20 @@ struct FlashcardNotificationView: View {
             seenCardIds.insert(activeCardId)
             if !previewMode {
                 loadAvailableDecks()
+                persistStudyHandoff()
             }
+        }
+        .onChange(of: activeCardId) { _, _ in
+            if !previewMode { persistStudyHandoff() }
+        }
+        .onChange(of: selectedAnswer) { _, _ in
+            if !previewMode { persistStudyHandoff() }
+        }
+        .onChange(of: isGraded) { _, _ in
+            if !previewMode { persistStudyHandoff() }
+        }
+        .onChange(of: showingHint) { _, _ in
+            if !previewMode { persistStudyHandoff() }
         }
     }
 
@@ -688,13 +764,15 @@ struct FlashcardNotificationView: View {
 
     private func matchingLeftTint(_ item: String) -> Color? {
         if selectedMatchingLeft == item { return Color.cyan.opacity(0.30) }
-        guard let target = matchingAssignments.first(where: { $0.value == item })?.key,              let result = matchingResults[target] else { return nil }
+        guard let target = matchingAssignments.first(where: { $0.value == item })?.key,
+              let result = matchingResults[target] else { return nil }
         return result ? Color.green.opacity(0.24) : Color.red.opacity(0.24)
     }
 
     private func matchingLeftBorder(_ item: String) -> Color? {
         if selectedMatchingLeft == item { return Color.cyan.opacity(0.85) }
-        guard let target = matchingAssignments.first(where: { $0.value == item })?.key,              let result = matchingResults[target] else { return nil }
+        guard let target = matchingAssignments.first(where: { $0.value == item })?.key,
+              let result = matchingResults[target] else { return nil }
         return result ? Color.green.opacity(0.9) : Color.red.opacity(0.9)
     }
 
@@ -810,7 +888,9 @@ struct FlashcardNotificationView: View {
                 correctAnswer: cardToStudy.correctAnswer,
                 hint: cardToStudy.hint,
                 matchingLeftItems: cardToStudy.matchingLeftItems,
-                matchingRightItems: cardToStudy.matchingRightItems
+                matchingRightItems: cardToStudy.matchingRightItems,
+                promptImageName: cardToStudy.promptImageName,
+                optionImageNames: cardToStudy.optionImageNames
             )
             selectedAnswer = nil
             lastAnswerWasCorrect = nil
@@ -847,6 +927,15 @@ struct FlashcardNotificationView: View {
         isAnswerFieldFocused = false
         NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect")
         lastAnswerWasCorrect = isCorrect
+
+        if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {
+            defaults.set(Date().timeIntervalSince1970, forKey: "lastNotificationAnsweredTimestamp")
+            defaults.set(isCorrect, forKey: "lastNotificationWasCorrect")
+            defaults.set(activeCardId, forKey: "lastNotificationCardId")
+            defaults.set(true, forKey: "lastNotificationWasGraded")
+            defaults.synchronize()
+        }
+
         if previewMode {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                 unlearnedCount = 5
@@ -881,6 +970,15 @@ struct FlashcardNotificationView: View {
                     self.isGraded = true
                     self.showingHint = false
                 }
+
+                let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+                let stopCondition = sharedDefaults?.string(forKey: "extensionStopCondition") ?? "Until Deck Learnt"
+                if stopCondition == "Until Deck Learnt" {
+                    let allLearned = deck.cards.allSatisfy { $0.isLearned || $0.interval >= 6 }
+                    if allLearned {
+                        stopScheduledAlerts()
+                    }
+                }
             }
         }
     }
@@ -894,7 +992,7 @@ struct FlashcardNotificationView: View {
         defaults.set(lastAnswerWasCorrect, forKey: "handoffWasCorrect")
         defaults.set(isGraded, forKey: "handoffWasGraded")
         defaults.set(showingHint, forKey: "handoffHintVisible")
-        // REQUEST 8: Mark handoff originated from notification UI
+        // Mark handoff originated from notification UI
         defaults.set(true, forKey: "handoffFromNotificationUI")
         defaults.set(Date().timeIntervalSince1970, forKey: "handoffTimestamp")
         defaults.synchronize()
@@ -938,75 +1036,209 @@ private struct NotificationStat: View {
 
 // MARK: - Dynamic Liquid Glass Backdrop
 private struct NotificationBackdrop: View {
+    var theme: String = "default"
     var isLight: Bool
 
     var body: some View {
         ZStack {
             if isLight {
-                // Crisp luminous frosted light aesthetic
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.93, green: 0.96, blue: 1.0),
-                        Color(red: 0.88, green: 0.93, blue: 0.98),
-                        Color(red: 0.93, green: 0.90, blue: 0.99)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                switch theme {
+                case "default":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.93, green: 0.96, blue: 1.0),
+                            Color(red: 0.88, green: 0.93, blue: 0.98),
+                            Color(red: 0.93, green: 0.90, blue: 0.99)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.95).opacity(0.20))
+                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.90, green: 0.35, blue: 0.65).opacity(0.14))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
 
-                Circle()
-                    .fill(Color(red: 0.20, green: 0.72, blue: 0.95).opacity(0.20))
-                    .frame(width: 260, height: 260)
-                    .blur(radius: 46)
-                    .offset(x: 140, y: -180)
+                case "midnight":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.95, green: 0.96, blue: 0.98),
+                            Color(red: 0.90, green: 0.92, blue: 0.95),
+                            Color(red: 0.86, green: 0.89, blue: 0.93)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.15, green: 0.25, blue: 0.45).opacity(0.10))
+                        .frame(width: 260, height: 260).blur(radius: 40).offset(x: 130, y: -160)
 
-                Circle()
-                    .fill(Color(red: 0.90, green: 0.35, blue: 0.65).opacity(0.14))
-                    .frame(width: 240, height: 240)
-                    .blur(radius: 50)
-                    .offset(x: -140, y: 200)
+                case "aurora":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.90, green: 0.98, blue: 0.95),
+                            Color(red: 0.86, green: 0.95, blue: 0.92),
+                            Color(red: 0.92, green: 0.96, blue: 0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.15, green: 0.85, blue: 0.55).opacity(0.18))
+                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.10, green: 0.65, blue: 0.85).opacity(0.14))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
 
-                ForEach(0..<5, id: \.self) { index in
-                    Circle()
-                        .stroke(Color(red: 0.15, green: 0.45, blue: 0.85).opacity(0.05), lineWidth: 1)
-                        .frame(
-                            width: CGFloat(110 + index * 42),
-                            height: CGFloat(110 + index * 42)
-                        )
-                        .offset(x: 140, y: -160)
+                case "sunset":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.98, green: 0.92, blue: 0.93),
+                            Color(red: 0.96, green: 0.88, blue: 0.92),
+                            Color(red: 0.98, green: 0.93, blue: 0.88)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.95, green: 0.40, blue: 0.35).opacity(0.16))
+                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.85, green: 0.25, blue: 0.60).opacity(0.14))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
+
+                case "slate":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.94, green: 0.95, blue: 0.97),
+                            Color(red: 0.90, green: 0.91, blue: 0.94),
+                            Color(red: 0.88, green: 0.89, blue: 0.92)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+
+                case "light":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.97, green: 0.98, blue: 1.0),
+                            Color(red: 0.90, green: 0.93, blue: 0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.20, green: 0.65, blue: 0.98).opacity(0.14))
+                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
+
+                default:
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.93, green: 0.96, blue: 1.0),
+                            Color(red: 0.88, green: 0.93, blue: 0.98),
+                            Color(red: 0.93, green: 0.90, blue: 0.99)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 }
             } else {
-                // Deep twilight & vibrant neon liquid glass aesthetic
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.07, green: 0.09, blue: 0.20),
-                        Color(red: 0.14, green: 0.11, blue: 0.28),
-                        Color(red: 0.06, green: 0.18, blue: 0.28)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                switch theme {
+                case "default":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.07, green: 0.09, blue: 0.20),
+                            Color(red: 0.14, green: 0.11, blue: 0.28),
+                            Color(red: 0.06, green: 0.18, blue: 0.28)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.10, green: 0.72, blue: 0.95).opacity(0.28))
+                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.90, green: 0.25, blue: 0.65).opacity(0.22))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
+                    ForEach(0..<6, id: \.self) { index in
+                        Circle().stroke(Color.white.opacity(0.06), lineWidth: 1)
+                            .frame(width: CGFloat(110 + index * 42), height: CGFloat(110 + index * 42))
+                            .offset(x: 140, y: -160)
+                    }
 
-                Circle()
-                    .fill(Color(red: 0.10, green: 0.72, blue: 0.95).opacity(0.28))
-                    .frame(width: 260, height: 260)
-                    .blur(radius: 46)
-                    .offset(x: 140, y: -180)
+                case "midnight":
+                    Color(red: 0.02, green: 0.03, blue: 0.05)
+                    Circle().fill(Color(red: 0.20, green: 0.35, blue: 0.70).opacity(0.15))
+                        .frame(width: 280, height: 280).blur(radius: 60).offset(x: 120, y: -180)
+                    Circle().fill(Color(red: 0.15, green: 0.25, blue: 0.50).opacity(0.12))
+                        .frame(width: 240, height: 240).blur(radius: 60).offset(x: -120, y: 180)
 
-                Circle()
-                    .fill(Color(red: 0.90, green: 0.25, blue: 0.65).opacity(0.22))
-                    .frame(width: 240, height: 240)
-                    .blur(radius: 50)
-                    .offset(x: -140, y: 200)
+                case "aurora":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.03, green: 0.10, blue: 0.14),
+                            Color(red: 0.04, green: 0.18, blue: 0.18),
+                            Color(red: 0.03, green: 0.09, blue: 0.16)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.10, green: 0.85, blue: 0.55).opacity(0.25))
+                        .frame(width: 260, height: 260).blur(radius: 48).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.08, green: 0.65, blue: 0.85).opacity(0.22))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
+                    ForEach(0..<5, id: \.self) { index in
+                        Circle().stroke(Color(red: 0.20, green: 0.90, blue: 0.60).opacity(0.06), lineWidth: 1)
+                            .frame(width: CGFloat(110 + index * 42), height: CGFloat(110 + index * 42))
+                            .offset(x: 140, y: -160)
+                    }
 
-                ForEach(0..<6, id: \.self) { index in
-                    Circle()
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        .frame(
-                            width: CGFloat(110 + index * 42),
-                            height: CGFloat(110 + index * 42)
-                        )
-                        .offset(x: 140, y: -160)
+                case "sunset":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.14, green: 0.05, blue: 0.18),
+                            Color(red: 0.24, green: 0.08, blue: 0.20),
+                            Color(red: 0.12, green: 0.04, blue: 0.14)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.95, green: 0.40, blue: 0.30).opacity(0.25))
+                        .frame(width: 260, height: 260).blur(radius: 48).offset(x: 140, y: -180)
+                    Circle().fill(Color(red: 0.80, green: 0.20, blue: 0.55).opacity(0.22))
+                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
+                    ForEach(0..<5, id: \.self) { index in
+                        Circle().stroke(Color(red: 0.95, green: 0.45, blue: 0.35).opacity(0.06), lineWidth: 1)
+                            .frame(width: CGFloat(110 + index * 42), height: CGFloat(110 + index * 42))
+                            .offset(x: 140, y: -160)
+                    }
+
+                case "slate":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.08, green: 0.09, blue: 0.12),
+                            Color(red: 0.12, green: 0.14, blue: 0.18),
+                            Color(red: 0.09, green: 0.10, blue: 0.13)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color.white.opacity(0.04))
+                        .frame(width: 260, height: 260).blur(radius: 40).offset(x: 120, y: -160)
+
+                case "light":
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.95, green: 0.96, blue: 0.98),
+                            Color(red: 0.88, green: 0.91, blue: 0.96)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Circle().fill(Color(red: 0.20, green: 0.60, blue: 0.98).opacity(0.12))
+                        .frame(width: 260, height: 260).blur(radius: 45).offset(x: 140, y: -180)
+
+                default:
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.07, green: 0.09, blue: 0.20),
+                            Color(red: 0.14, green: 0.11, blue: 0.28),
+                            Color(red: 0.06, green: 0.18, blue: 0.28)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 }
             }
         }
@@ -1060,120 +1292,99 @@ private extension View {
     }
 }
 
-// MARK: - Notification Content Extension UIViewController
+// MARK: - View Controller LifeCycle
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
-    var hostingController: UIHostingController<FlashcardNotificationView>?
-    private var isKeyboardActive = false
+
+    private var hostingController: UIHostingController<FlashcardNotificationView>?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
-
-        let swiftUIView = FlashcardNotificationView(
-            cardId: "",
-            deckId: "",
-            deckName: "Loading...",
-            deckType: "Quiz",
-            cardType: "multiple_choice",
-            isRandom: false,
-            progress: "-",
-            question: "...",
-            options: ["...", "...", "...", "..."],
-            correctAnswer: "...",
-            hint: "",
-            openApp: { [weak self] in
-                self?.extensionContext?.performNotificationDefaultAction()
-            },
-            onContentHeightChange: { [weak self] height in
-                self?.updatePreferredContentHeight(height)
-            }
-        )
-        let hc = UIHostingController(rootView: swiftUIView)
-        hc.view.translatesAutoresizingMaskIntoConstraints = false
-        hc.view.backgroundColor = .clear
-
-        self.addChild(hc)
-        self.view.addSubview(hc.view)
-        hc.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            hc.view.topAnchor.constraint(equalTo: view.topAnchor),
-            hc.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            hc.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            hc.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-        ])
-
-        self.hostingController = hc
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    @objc private func keyboardWillShow() {
-        isKeyboardActive = true
-    }
-
-    @objc private func keyboardWillHide() {
-        isKeyboardActive = false
-    }
-
-    private func updatePreferredContentHeight(_ height: CGFloat) {
-        guard !isKeyboardActive else { return }
-        var safeWidth = view.bounds.width
-        if safeWidth <= 0 {
-            safeWidth = view.window?.windowScene?.screen.bounds.width ?? 350
-        }
-        let targetHeight = max(height, 360)
-        if abs(preferredContentSize.height - targetHeight) > 2 {
-            preferredContentSize = CGSize(width: safeWidth, height: targetHeight)
-        }
     }
 
     func didReceive(_ notification: UNNotification) {
-        let userInfo = notification.request.content.userInfo
+        let content = notification.request.content
+        let userInfo = content.userInfo
+
         let cardId = userInfo["cardId"] as? String ?? ""
         let deckId = userInfo["deckId"] as? String ?? ""
         let deckName = userInfo["deckName"] as? String ?? "Deck"
         let deckType = userInfo["deckType"] as? String ?? "Quiz"
         let cardType = userInfo["cardType"] as? String ?? ""
-        let isRandom = userInfo["isRandom"] as? Bool ?? true
-        let progress = userInfo["progress"] as? String ?? ""
-        let question = userInfo["question"] as? String ?? "Error"
+        let isRandom = userInfo["isRandom"] as? Bool ?? false
+        let progress = userInfo["progress"] as? String ?? "-"
+        let question = userInfo["question"] as? String ?? content.body
         let options = userInfo["options"] as? [String] ?? []
-        let correctAnswer = userInfo["correctAnswer"] as? String ?? "Error"
+        let correctAnswer = userInfo["correctAnswer"] as? String ?? ""
         let hint = userInfo["hint"] as? String ?? ""
         let matchingLeftItems = userInfo["matchingLeftItems"] as? [String] ?? []
         let matchingRightItems = userInfo["matchingRightItems"] as? [String] ?? []
+        let promptImageName = userInfo["promptImageName"] as? String
+        let optionImageNames = userInfo["optionImageNames"] as? [String] ?? []
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.hostingController?.rootView = FlashcardNotificationView(
-                cardId: cardId,
-                deckId: deckId,
-                deckName: deckName,
-                deckType: deckType,
-                cardType: cardType,
-                isRandom: isRandom,
-                progress: progress,
-                question: question,
-                options: options,
-                correctAnswer: correctAnswer,
-                hint: hint,
-                matchingLeftItems: matchingLeftItems,
-                matchingRightItems: matchingRightItems,
-                openApp: { [weak self] in
-                    self?.extensionContext?.performNotificationDefaultAction()
-                },
-                onContentHeightChange: { [weak self] height in
-                    self?.updatePreferredContentHeight(height)
+        let isTutorial = userInfo["isTutorial"] as? Bool ?? false
+        if isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" {
+            self.extensionContext?.notificationActions = []
+        }
+
+        let swiftUIView = FlashcardNotificationView(
+            cardId: cardId,
+            deckId: deckId,
+            deckName: deckName,
+            deckType: deckType,
+            cardType: cardType,
+            isRandom: isRandom,
+            progress: progress,
+            question: question,
+            options: options,
+            correctAnswer: correctAnswer,
+            hint: hint,
+            matchingLeftItems: matchingLeftItems,
+            matchingRightItems: matchingRightItems,
+            promptImageName: promptImageName,
+            optionImageNames: optionImageNames,
+            isTutorial: isTutorial,
+            openApp: { [weak self] in
+                self?.openHostApp(deckId: deckId)
+            },
+            onContentHeightChange: { [weak self] newHeight in
+                guard let self = self else { return }
+                let targetSize = CGSize(width: self.view.bounds.width, height: newHeight)
+                if abs(self.preferredContentSize.height - newHeight) > 2 {
+                    self.preferredContentSize = targetSize
                 }
-            )
+            }
+        )
 
-            self.hostingController?.view.setNeedsLayout()
-            self.hostingController?.view.layoutIfNeeded()
+        if let existing = hostingController {
+            existing.rootView = swiftUIView
+        } else {
+            let hosting = UIHostingController(rootView: swiftUIView)
+            hosting.view.backgroundColor = .clear
+            addChild(hosting)
+            view.addSubview(hosting.view)
+            hosting.view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
+                hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+                hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+            ])
+            hosting.didMove(toParent: self)
+            self.hostingController = hosting
+        }
+    }
+
+    private func openHostApp(deckId: String) {
+        if let url = URL(string: "learnalert://deck/\(deckId)") {
+            var responder: UIResponder? = self
+            while responder != nil {
+                if let application = responder as? UIApplication {
+                    application.open(url, options: [:], completionHandler: nil)
+                    return
+                }
+                responder = responder?.next
+            }
+            extensionContext?.performNotificationDefaultAction()
         }
     }
 }

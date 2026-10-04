@@ -560,7 +560,7 @@ struct DeckAIAssistantSheet: View {
                                 options: options,
                                 correctAnswer: cleanAnswer,
                                 hint: cleanHint,
-                                cardType: FlashcardType(rawValue: card.type.rawValue),
+                                cardType: FlashcardType(rawValue: card.type.rawValue) ?? .multipleChoice,
                                 matchingLeftItems: card.matchingPairs?.map(\.left) ?? [],
                                 matchingRightItems: card.matchingPairs?.map(\.right) ?? [],
                                 sourceLocator: card.sourceLocator.isEmpty ? nil : card.sourceLocator,

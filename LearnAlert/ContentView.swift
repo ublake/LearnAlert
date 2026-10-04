@@ -43,7 +43,7 @@ struct ContentView: View {
                             showingCreateDeck: $showingCreateDeck
                         )
                     case 1: PremadeDecksView()
-                    case 2: AlertsDashboardView()
+                    case 2: NotificationCustomizeView()
                     case 3: AppSettingsView()
                     default:
                         HomeLibraryView(
@@ -134,7 +134,6 @@ private struct NotificationOpeningTip: View {
                 .onTapGesture(perform: dismiss)
 
             VStack(spacing: 20) {
-                // Header
                 HStack(alignment: .top, spacing: 14) {
                     ZStack {
                         Circle()
@@ -176,327 +175,138 @@ private struct NotificationOpeningTip: View {
                     .accessibilityLabel("Close notification tip")
                 }
 
-                // Interactive Comparison Cards
                 VStack(spacing: 12) {
-                    // Card 1: Recommended Gesture (Pull Down / Long Press)
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Label("RECOMMENDED", systemImage: "sparkles")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Color.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.green.opacity(0.14), in: Capsule())
-
-                            Spacer()
-
-                            Text("Studies in Alert")
-                                .font(.custom("Poppins-SemiBold", size: 12))
-                                .foregroundStyle(Color.green)
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.orange.opacity(0.15))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "hand.tap.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.orange)
                         }
 
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.green.opacity(0.12))
-                                    .frame(width: 46, height: 46)
-                                Image(systemName: "arrow.down.to.line.compact")
-                                    .font(.system(size: 22, weight: .bold))
-                                    .foregroundStyle(Color.green)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Pull Down or Press & Hold")
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("Tapping alert")
                                     .font(.custom("Poppins-SemiBold", size: 14))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
-                                Text("Expands the card into a live quiz. Answer questions directly without opening the app!")
-                                    .font(.custom("Poppins-Regular", size: 12))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("Opens App")
+                                    .font(.custom("Poppins-Medium", size: 10))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
+                                    .foregroundStyle(.orange)
                             }
+                            Text("Opens the full in-app study session.")
+                                .font(.custom("Poppins-Regular", size: 12))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
                         }
+                        Spacer()
                     }
                     .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.green.opacity(0.06))
-                    )
+                    .background(LearnAlertStyle.courseSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.green.opacity(0.24), lineWidth: 1)
+                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
                     )
 
-                    // Card 2: Quick Tap
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("QUICK TAP")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.primary.opacity(0.06), in: Capsule())
-
-                            Spacer()
-
-                            Text("Opens App")
-                                .font(.custom("Poppins-Medium", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(LearnAlertStyle.indigo.opacity(0.18))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "hand.draw.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(LearnAlertStyle.sky)
                         }
 
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.primary.opacity(0.06))
-                                    .frame(width: 46, height: 46)
-                                Image(systemName: "hand.tap.fill")
-                                    .font(.system(size: 20, weight: .medium))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Tap the Banner Directly")
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("Swipe down / Press & Hold")
                                     .font(.custom("Poppins-SemiBold", size: 14))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
-                                Text("Launches LearnAlert into your study session so you can edit, manage, and review.")
-                                    .font(.custom("Poppins-Regular", size: 12))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                Text("Recommended")
+                                    .font(.custom("Poppins-Medium", size: 10))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(LearnAlertStyle.indigo.opacity(0.18), in: Capsule())
+                                    .foregroundStyle(LearnAlertStyle.sky)
                             }
+                            Text("Expands the quiz card without opening the app!")
+                                .font(.custom("Poppins-Regular", size: 12))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
                         }
+                        Spacer()
                     }
                     .padding(14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color.primary.opacity(0.03))
-                    )
+                    .background(LearnAlertStyle.courseSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(LearnAlertStyle.hairline.opacity(0.35), lineWidth: 1)
+                            .stroke(LearnAlertStyle.indigo.opacity(0.4), lineWidth: 1.2)
                     )
                 }
 
-                // Action Button
                 Button(action: dismiss) {
-                    Text("Got It, Thanks!")
+                    Text("Got It!")
                         .font(.custom("Poppins-SemiBold", size: 15))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
                         .foregroundStyle(.white)
-                        .background(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.12, green: 0.50, blue: 0.98),
-                                    Color(red: 0.20, green: 0.68, blue: 0.96)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.30), radius: 10, y: 4)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(LearnAlertStyle.indigo)
+                        .clipShape(Capsule())
+                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 8, y: 4)
                 }
-                .buttonStyle(.plain)
             }
             .padding(20)
-            .frame(maxWidth: 390)
             .background(LearnAlertStyle.courseSurface)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline.opacity(0.4), lineWidth: 1)
+                    .stroke(LearnAlertStyle.hairline.opacity(0.3), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 32, y: 16)
-            .padding(20)
+            .shadow(color: Color.black.opacity(0.3), radius: 24, y: 12)
+            .padding(.horizontal, 24)
         }
     }
 }
 
-private struct LearnAlertLogoMark: View {
-    var body: some View {
-        Image("LearnAlertLogo")
-            .resizable()
-            .scaledToFit()
-            .frame(width: 44, height: 44, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("LearnAlert logo")
-    }
-}
-
-private struct LearnAlertWordmark: View {
-    var body: some View {
-        OutlinedLearnAlertText()
-            .frame(height: 24)
-            .fixedSize(horizontal: true, vertical: false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("LearnAlert")
-    }
-}
-
-private struct OutlinedLearnAlertText: UIViewRepresentable {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    func makeUIView(context: Context) -> UILabel {
-        let label = UILabel()
-        label.backgroundColor = .clear
-        label.isAccessibilityElement = false
-        label.adjustsFontForContentSizeCategory = true
-        label.setContentHuggingPriority(.required, for: .horizontal)
-        label.setContentCompressionResistancePriority(.required, for: .horizontal)
-        return label
-    }
-
-    func updateUIView(_ label: UILabel, context: Context) {
-        let baseFont = UIFont.systemFont(ofSize: 17, weight: .black)
-        let font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: baseFont)
-        let wordmark = NSMutableAttributedString(
-            string: "LearnAlert",
-            attributes: [
-                .font: font,
-                .foregroundColor: UIColor.clear,
-                .strokeWidth: 7.0,
-                .kern: -0.35
-            ]
-        )
-        wordmark.addAttribute(
-            .strokeColor,
-            value: UIColor(LearnAlertStyle.figmaBlue),
-            range: NSRange(location: 0, length: 5)
-        )
-        wordmark.addAttribute(
-            .strokeColor,
-            value: colorScheme == .dark
-                ? UIColor.white.withAlphaComponent(0.58)
-                : UIColor.black.withAlphaComponent(0.42),
-            range: NSRange(location: 5, length: 5)
-        )
-        label.attributedText = wordmark
-        label.sizeToFit()
-        _ = dynamicTypeSize
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
-        let size = uiView.sizeThatFits(
-            CGSize(width: proposal.width ?? .greatestFiniteMagnitude, height: proposal.height ?? .greatestFiniteMagnitude)
-        )
-        return CGSize(width: ceil(size.width), height: ceil(size.height))
-    }
-}
-
-// MARK: - Home Search
-struct HomeSearchControl: View {
+// MARK: - LearnAlert Custom Header
+struct CoursezyHeaderView: View {
     @Binding var searchText: String
-    @Binding var isSearching: Bool
-
-    @ViewBuilder
-    var body: some View {
-        if #available(iOS 26.0, *) {
-            LiquidHomeSearchControl(searchText: $searchText, isSearching: $isSearching)
-        } else {
-            LegacyHomeSearchControl(searchText: $searchText, isSearching: $isSearching)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-private struct LiquidHomeSearchControl: View {
-    @Binding var searchText: String
-    @Binding var isSearching: Bool
-    @FocusState private var searchIsFocused: Bool
+    @Binding var searchIsFocused: Bool
 
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 4) {
-                Spacer(minLength: 0)
+        HStack(spacing: 12) {
+            LearnAlertLogoMark()
 
-                HStack(spacing: 10) {
-                    if isSearching {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(LearnAlertStyle.indigo)
-                            .transition(.opacity)
-
-                        TextField("Search decks", text: $searchText)
-                            .focused($searchIsFocused)
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                            .tint(.white)
-                            .transition(.opacity)
-
-                        Button(action: closeSearch) {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.headline)
-                                .foregroundStyle(.white.opacity(0.82))
-                        }
-                        .accessibilityLabel("Close search")
-                        .transition(.opacity)
-                    } else {
-                        Button(action: openSearch) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.headline.bold())
-                                .foregroundStyle(.white)
-                                .frame(width: 48, height: 48)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Search decks")
-                    }
-                }
-                .padding(.horizontal, isSearching ? 15 : 0)
-                .frame(width: isSearching ? geometry.size.width : 48, height: 48)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .animation(.spring(duration: 0.5, bounce: 0.22), value: isSearching)
-            }
-        }
-        .frame(height: 48)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
-    }
-
-    private func openSearch() {
-        withAnimation(.spring(duration: 0.5, bounce: 0.22)) {
-            isSearching = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(360))
-            searchIsFocused = true
-        }
-    }
-
-    private func closeSearch() {
-        searchText = ""
-        searchIsFocused = false
-        withAnimation(.spring(duration: 0.5, bounce: 0.22)) {
-            isSearching = false
-        }
-    }
-}
-
-private struct LegacyHomeSearchControl: View {
-    @Binding var searchText: String
-    @Binding var isSearching: Bool
-    @FocusState private var searchIsFocused: Bool
-
-    var body: some View {
-        HStack {
             Spacer()
-            if isSearching {
-                HStack(spacing: 10) {
+
+            if searchIsFocused {
+                HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                    TextField("Search decks", text: $searchText)
-                        .focused($searchIsFocused)
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .font(.footnote)
+                    TextField("Search decks...", text: $searchText)
+                        .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
                     Button {
-                        searchText = ""
                         searchIsFocused = false
-                        withAnimation(.spring) { isSearching = false }
+                        searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
                     }
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 15)
-                .frame(maxWidth: 330, minHeight: 48)
-                .nativeGlass(cornerRadius: 24)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(LearnAlertStyle.courseSurface)
+                .clipShape(Capsule())
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 Button {
-                    withAnimation(.spring) { isSearching = true }
                     searchIsFocused = true
                 } label: {
                     Image(systemName: "magnifyingglass")
@@ -519,12 +329,13 @@ struct LiquidTabBar: View {
     @Binding var tabDragOffset: CGFloat
     let createDeck: () -> Void
     let importWithAI: () -> Void
+    @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
     @Namespace private var selectionNamespace
     @State private var showingCreationActions = false
     
     var body: some View {
         ZStack(alignment: .bottom) {
-            if showingCreationActions {
+            if showingCreationActions && homeTutorialStep == 0 {
                 creationAction(title: "Import with AI", systemImage: "sparkles") {
                     InteractionSoundPlayer.shared.play(.click)
                     showingCreationActions = false
@@ -542,32 +353,40 @@ struct LiquidTabBar: View {
                 .transition(.offset(y: 72))
             }
 
-            HStack(spacing: 10) {
-                HStack {
-                TabBarItem(icon: "rectangle.stack.fill", title: "Home", tab: 0, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                TabBarItem(icon: "books.vertical.fill", title: "Discover", tab: 1, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                TabBarItem(icon: "chart.bar.fill", title: "Progress", tab: 2, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                TabBarItem(icon: "gearshape.fill", title: "Settings", tab: 3, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
+            HStack(spacing: 8) {
+                HStack(spacing: 2) {
+                    TabBarItem(icon: "rectangle.stack.fill", title: "Home", tab: 0, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
+                    TabBarItem(icon: "books.vertical.fill", title: "Discover", tab: 1, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
+                    TabBarItem(icon: "slider.horizontal.3", title: "Customize", tab: 2, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
+                    TabBarItem(icon: "gearshape.fill", title: "Settings", tab: 3, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
                 }
-                .padding(5)
+                .padding(4)
                 .background(.ultraThinMaterial, in: Capsule())
                 .background(LearnAlertStyle.glassTint, in: Capsule())
                 .overlay(Capsule().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
+                .disabled(homeTutorialStep > 0)
+                .opacity(homeTutorialStep > 0 ? 0.30 : 1.0)
 
-                Button {
-                    withAnimation(.spring(duration: 0.42, bounce: 0.16)) {
-                        showingCreationActions.toggle()
+                if selectedTab != 2 {
+                    Button {
+                        guard homeTutorialStep == 0 else { return }
+                        withAnimation(.spring(duration: 0.42, bounce: 0.16)) {
+                            showingCreationActions.toggle()
+                        }
+                    } label: {
+                        Image(systemName: showingCreationActions ? "xmark" : "plus")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .frame(width: 50, height: 50)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .background(LearnAlertStyle.glassTint, in: Circle())
+                            .overlay(Circle().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
                     }
-                } label: {
-                    Image(systemName: showingCreationActions ? "xmark" : "plus")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .frame(width: 54, height: 54)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .background(LearnAlertStyle.glassTint, in: Circle())
-                        .overlay(Circle().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
+                    .disabled(homeTutorialStep > 0)
+                    .opacity(homeTutorialStep > 0 ? 0.30 : 1.0)
+                    .accessibilityLabel("New deck options")
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .accessibilityLabel("New deck options")
             }
             .zIndex(1)
         }
@@ -575,8 +394,12 @@ struct LiquidTabBar: View {
         .offset(x: tabDragOffset)
         .gesture(
             DragGesture()
-                .onChanged { value in tabDragOffset = value.translation.width / 3 }
+                .onChanged { value in
+                    guard homeTutorialStep == 0 else { return }
+                    tabDragOffset = value.translation.width / 3
+                }
                 .onEnded { value in
+                    guard homeTutorialStep == 0 else { return }
                     let threshold: CGFloat = 40
                     if value.translation.width > threshold && selectedTab > 0 {
                         selectedTab -= 1
@@ -588,7 +411,7 @@ struct LiquidTabBar: View {
                     }
                 }
         )
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 14)
         .padding(.bottom, 5)
         .animation(.spring(response: 0.36, dampingFraction: 0.68, blendDuration: 0.12), value: selectedTab)
     }
@@ -698,8 +521,8 @@ struct TabBarItem: View {
                 )
             )
             .shadow(color: (colorScheme == .light ? LearnAlertStyle.indigo.opacity(0.16) : Color.black.opacity(0.35)), radius: 7, x: 0, y: 2)
-            .padding(.horizontal, 1)
-            .padding(.vertical, 1)
+            .padding(.horizontal, 0)
+            .padding(.vertical, 0)
     }
 }
 
@@ -707,18 +530,28 @@ struct TabBarItem: View {
 struct HomeLibraryView: View {
     @Query(sort: \Deck.orderIndex) private var decks: [Deck]
     @Environment(\.modelContext) private var context
+    @ObservedObject private var sharedDB = SharedDatabase.shared
     @State private var draggedDeck: Deck?
     @State private var isSearchExpanded = false
     @State private var showingAIComposer = false
     @State private var showingAlertSettings = false
     @State private var showingDeckRequirementAlert = false
-    @State private var showingNotificationsDisabledAlert = false
+    @State private var showingNotificationPermissionPrompt = false
+    @State private var pendingDeckToSchedule: Deck?
+    @State private var pendingFromDeckCard = false
     @Environment(\.openURL) private var openURL
-    @State private var scheduleCelebrationTrigger = 0
+    struct CelebrationEvent: Equatable {
+        let id = UUID()
+        let timestamp = Date()
+    }
+    @State private var scheduleCelebrationEvent: CelebrationEvent?
     @State private var deckPendingDeletion: Deck?
     @State private var homeAlertMessage: String?
     @AppStorage("hasSeenQuickScheduleSwitchTip") private var hasSeenQuickScheduleSwitchTip = false
     @State private var showingQuickScheduleTipToast = false
+    @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
+    @AppStorage("tutorialDeckId") private var tutorialDeckId: String = ""
+    @State private var liveTutorialStartTime: TimeInterval = 0
     @Binding var searchText: String
     @Binding var selectedTab: Int
     @Binding var showingCreateDeck: Bool
@@ -727,39 +560,105 @@ struct HomeLibraryView: View {
     @AppStorage("targetDeckId") private var targetDeckId: String = "ALL"
     @ObservedObject private var engine = StudyEngine.shared
     
+    private var activeTutorialDeck: Deck? {
+        if !tutorialDeckId.isEmpty, let deck = decks.first(where: { $0.id.uuidString == tutorialDeckId }) {
+            return deck
+        }
+        if !targetDeckId.isEmpty && targetDeckId != "ALL", let deck = decks.first(where: { $0.id.uuidString == targetDeckId }) {
+            return deck
+        }
+        return decks.first
+    }
+    
     var filteredDecks: [Deck] {
-        if searchText.isEmpty { return decks }
-        return decks.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        var list = searchText.isEmpty ? decks : decks.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        
+        // During tutorial, automatically place the user-selected starter deck at the top so it is immediately visible without scrolling
+        if homeTutorialStep > 0, let tutDeck = activeTutorialDeck {
+            if let index = list.firstIndex(where: { $0.id == tutDeck.id }) {
+                let deck = list.remove(at: index)
+                list.insert(deck, at: 0)
+            }
+        }
+        return list
     }
     
     var body: some View {
         ZStack {
             HomeWallpaperBackground()
 
-            ScheduleLightBurst(trigger: scheduleCelebrationTrigger)
+            ScheduleLightBurst(event: scheduleCelebrationEvent)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    ZStack {
-                        HStack(spacing: 12) {
-                            LearnAlertLogoMark()
-
-                            if isSearchExpanded {
-                            HStack(spacing: 10) {
-                                Image(systemName: "magnifyingglass")
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                                TextField("Search your decks", text: $searchText)
-                                    .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    .submitLabel(.search)
+                    if sharedDB.isUsingTemporaryStorage {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color.orange)
+                                .font(.system(size: 16))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Storage Notice")
+                                    .font(.custom("Poppins-SemiBold", size: 13))
+                                    .foregroundStyle(.white)
+                                Text(sharedDB.storageErrorMessage ?? "Running in temporary memory mode. Flashcards may not persist between app restarts.")
+                                    .font(.custom("Poppins-Regular", size: 11))
+                                    .foregroundStyle(.white.opacity(0.8))
                             }
-                            .padding(.horizontal, 14)
-                            .frame(height: 48)
-                            .background(LearnAlertStyle.courseSurface)
-                            .clipShape(Capsule())
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                        .padding(12)
+                        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                        )
+                        .padding(.horizontal, 2)
+                    }
+                    HStack(spacing: 12) {
+                        LearnAlertLogoMark()
+
+                        Spacer()
+
+                        if homeTutorialStep > 0 {
+                            Button {
+                                withAnimation(.snappy) {
+                                    homeTutorialStep = 0
+                                }
+                            } label: {
+                                Text("Skip Tour")
+                                    .font(.custom("Poppins-Medium", size: 14, relativeTo: .body))
+                                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .transition(.opacity)
+                        } else {
+                            if isSearchExpanded {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                    TextField("Search your decks", text: $searchText)
+                                        .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
+                                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                                        .submitLabel(.search)
+                                }
+                                .padding(.horizontal, 14)
+                                .frame(height: 48)
+                                .background(LearnAlertStyle.courseSurface)
+                                .clipShape(Capsule())
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
                             } else {
-                                Spacer()
+                                NavigationLink {
+                                    ProgressDashboardView()
+                                } label: {
+                                    Image(systemName: "chart.bar.fill")
+                                        .font(.headline)
+                                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                                        .frame(width: 48, height: 48)
+                                        .background(LearnAlertStyle.courseSurface)
+                                        .clipShape(Capsule())
+                                }
+                                .accessibilityLabel("View progress statistics")
                             }
 
                             Button {
@@ -777,7 +676,6 @@ struct HomeLibraryView: View {
                             }
                             .accessibilityLabel(isSearchExpanded ? "Close deck search" : "Search decks")
                         }
-
                     }
                     .padding(.horizontal, 20)
 
@@ -785,6 +683,7 @@ struct HomeLibraryView: View {
                         decks: decks,
                         engine: engine,
                         targetDeckId: $targetDeckId,
+                        homeTutorialStep: homeTutorialStep,
                         showSettings: { showingAlertSettings = true },
                         showDeckRequirement: {
                             withAnimation(.snappy) { showingDeckRequirementAlert = true }
@@ -792,6 +691,9 @@ struct HomeLibraryView: View {
                         schedule: { quickSchedule($0, fromDeckCard: false) }
                     )
                     .padding(.horizontal, 20)
+                    .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
+                    .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
+                    .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
 
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
@@ -816,24 +718,97 @@ struct HomeLibraryView: View {
                             LazyVStack(spacing: 12) {
                                 ForEach(filteredDecks) { deck in
                                     let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
+                                    let isHighlightedInTour = homeTutorialStep == 1 && (deck.id == activeTutorialDeck?.id)
+                                    let isOtherDeckInStep1 = homeTutorialStep == 1 && !isHighlightedInTour
+
                                     HomeStudyCard(
                                         deck: deck,
                                         isTargeted: isTargeted,
+                                        isTutorialHighlighted: isHighlightedInTour,
+                                        isTutorialActive: homeTutorialStep > 0,
+                                        onTapped: {
+                                            if homeTutorialStep == 1 && isHighlightedInTour {
+                                                homeTutorialStep = 2
+                                            }
+                                        },
                                         schedule: { quickSchedule(deck, fromDeckCard: true) },
                                         shuffleAppearance: { shuffleAppearance(for: deck) },
                                         delete: { deckPendingDeletion = deck }
                                     )
+                                    .opacity(isOtherDeckInStep1 ? 0.18 : 1.0)
+                                    .blur(radius: isOtherDeckInStep1 ? 2.0 : 0)
+                                    .allowsHitTesting(homeTutorialStep == 0 || isHighlightedInTour)
                                 }
                             }
                             .padding(.horizontal, 20)
                         }
                     }
+                    .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
+                    .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
+                    .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
+
                     Spacer().frame(height: 210)
                 }
                 .padding(.top, 22)
             }
             .blur(radius: showingDeckRequirementAlert ? 3 : 0)
             .animation(.easeInOut(duration: 0.25), value: showingDeckRequirementAlert)
+
+            // Step 4: Live Test Alert Banner (Centered with upward arrow)
+            if homeTutorialStep == 4 {
+                VStack(spacing: 16) {
+                    Spacer()
+
+                    HandDrawnUpwardArrowView()
+
+                    LiveTestAlertFloatingBanner(
+                        deckName: decks.first(where: { $0.id.uuidString == targetDeckId })?.name ?? "Starter Deck",
+                        onResend: {
+                            sendTutorialTestAlert()
+                        },
+                        onComplete: {
+                            HapticFeedback.success()
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                homeTutorialStep = 5
+                            }
+                        },
+                        onDismiss: {
+                            withAnimation(.snappy) {
+                                homeTutorialStep = 0
+                            }
+                        }
+                    )
+                    .padding(.horizontal, 20)
+
+                    Spacer()
+                }
+                .transition(.scale(scale: 0.94).combined(with: .opacity))
+                .zIndex(30)
+            }
+
+            // Step 5: Walkthrough Celebration Banner
+            if homeTutorialStep == 5 {
+                VStack {
+                    TutorialCompletedBanner {
+                        withAnimation(.snappy) {
+                            homeTutorialStep = 0
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(30)
+                .task {
+                    try? await Task.sleep(nanoseconds: 3_500_000_000)
+                    withAnimation(.snappy) {
+                        if homeTutorialStep == 5 {
+                            homeTutorialStep = 0
+                        }
+                    }
+                }
+            }
 
             if showingDeckRequirementAlert {
                 DeckRequirementAlert(
@@ -870,6 +845,60 @@ struct HomeLibraryView: View {
                     removal: .move(edge: .bottom).combined(with: .opacity)
                 ))
                 .zIndex(25)
+            }
+
+            if showingNotificationPermissionPrompt {
+                NotificationPermissionPromptModal(
+                    targetDeckName: pendingDeckToSchedule?.name ?? "your deck",
+                    onAllow: {
+                        withAnimation(.snappy) {
+                            showingNotificationPermissionPrompt = false
+                        }
+                        if let deck = pendingDeckToSchedule {
+                            applySchedule(for: deck, fromDeckCard: pendingFromDeckCard)
+                            pendingDeckToSchedule = nil
+                        }
+                    },
+                    onStudyInAppOnly: {
+                        withAnimation(.snappy) {
+                            showingNotificationPermissionPrompt = false
+                        }
+                        pendingDeckToSchedule = nil
+                        if homeTutorialStep == 3 {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                homeTutorialStep = 0
+                            }
+                        }
+                    },
+                    onOpenSettings: {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(40)
+            }
+        }
+        .task(id: homeTutorialStep) {
+            guard homeTutorialStep == 4 else { return }
+            let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+            defaults?.set(false, forKey: "lastNotificationWasGraded")
+
+            while homeTutorialStep == 4 && !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                defaults?.synchronize()
+                let wasGraded = defaults?.bool(forKey: "lastNotificationWasGraded") ?? false
+                let answeredTime = defaults?.double(forKey: "lastNotificationAnsweredTimestamp") ?? 0
+
+                if wasGraded && answeredTime >= (liveTutorialStartTime - 1.5) {
+                    HapticFeedback.success()
+                    defaults?.set(false, forKey: "lastNotificationWasGraded")
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                        homeTutorialStep = 5
+                    }
+                    break
+                }
             }
         }
         .task(id: showingQuickScheduleTipToast) {
@@ -924,16 +953,23 @@ struct HomeLibraryView: View {
         } message: {
             Text(homeAlertMessage ?? "")
         }
-        .alert("Notifications Disabled", isPresented: $showingNotificationsDisabledAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    openURL(url)
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("LearnAlert needs notification permissions to deliver your scheduled flashcard alerts throughout the day. Please enable them in iOS Settings.")
-        }
+    }
+
+    private func sendTutorialTestAlert() {
+        guard let deck = decks.first(where: { $0.id.uuidString == targetDeckId }) ?? decks.first,
+              let card = deck.cards.first else { return }
+
+        liveTutorialStartTime = Date().timeIntervalSince1970
+        NotificationManager.shared.scheduleTutorialAlert(
+            deckTitle: deck.name,
+            question: card.question,
+            options: card.options,
+            correctAnswer: card.correctAnswer,
+            hint: card.hint,
+            cardId: card.id,
+            deckId: deck.id,
+            delay: 0.6
+        )
     }
 
     private func quickSchedule(_ deck: Deck, fromDeckCard: Bool = false) {
@@ -948,17 +984,13 @@ struct HomeLibraryView: View {
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
                 applySchedule(for: deck, fromDeckCard: fromDeckCard)
-            case .notDetermined:
-                let granted = await NotificationManager.shared.requestPermission()
-                if granted {
-                    applySchedule(for: deck, fromDeckCard: fromDeckCard)
-                } else {
-                    HapticFeedback.warning()
-                    showingNotificationsDisabledAlert = true
+            case .notDetermined, .denied:
+                // Halt actual notifications until permission is allowed!
+                pendingDeckToSchedule = deck
+                pendingFromDeckCard = fromDeckCard
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    showingNotificationPermissionPrompt = true
                 }
-            case .denied:
-                HapticFeedback.warning()
-                showingNotificationsDisabledAlert = true
             @unknown default:
                 applySchedule(for: deck, fromDeckCard: fromDeckCard)
             }
@@ -972,15 +1004,31 @@ struct HomeLibraryView: View {
             return
         }
         targetDeckId = deck.id.uuidString
-        InteractionSoundPlayer.shared.play(.scheduledAlerts)
-        HapticFeedback.success()
-        scheduleCelebrationTrigger += 1
-        engine.startAlerts(for: deck)
 
-        if fromDeckCard && !hasSeenQuickScheduleSwitchTip {
-            hasSeenQuickScheduleSwitchTip = true
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-                showingQuickScheduleTipToast = true
+        if homeTutorialStep == 3 {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                homeTutorialStep = 4
+            }
+            sendTutorialTestAlert()
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                _ = try await engine.startAlerts(for: deck)
+                InteractionSoundPlayer.shared.play(.scheduledAlerts)
+                HapticFeedback.success()
+                scheduleCelebrationEvent = CelebrationEvent()
+
+                if fromDeckCard && !hasSeenQuickScheduleSwitchTip {
+                    hasSeenQuickScheduleSwitchTip = true
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                        showingQuickScheduleTipToast = true
+                    }
+                }
+            } catch {
+                HapticFeedback.warning()
+                homeAlertMessage = error.localizedDescription
             }
         }
     }
@@ -1007,7 +1055,6 @@ struct HomeLibraryView: View {
         return deck.cards.count
     }
 }
-
 
 private struct EmptyLibraryCard: View {
     let isSearching: Bool
@@ -1077,17 +1124,18 @@ private struct EmptyLibraryCard: View {
 private struct HomeWallpaperBackground: View {
     var body: some View {
         LearnAlertStyle.courseCanvas
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
 private struct ScheduleLightBurst: View {
-    let trigger: Int
+    let event: HomeLibraryView.CelebrationEvent?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var celebrationStart: Date?
+    @State private var handledEventId: UUID?
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: celebrationStart == nil || reduceMotion)) { timeline in
@@ -1110,7 +1158,6 @@ private struct ScheduleLightBurst: View {
                         let launchDuration: Double = 0.58
                         let burstDuration: Double = 1.95
 
-                        // Phase 1: Rocket Ascending
                         if localTime < launchDuration {
                             let launchProgress = CGFloat(localTime / launchDuration)
                             let eased = 1 - pow(1 - launchProgress, 2.2)
@@ -1120,7 +1167,6 @@ private struct ScheduleLightBurst: View {
                                 y: start.y + (firework.burst.y - start.y) * eased
                             )
 
-                            // Rocket trailing embers
                             for emberIndex in 0..<20 {
                                 let trailOffset = CGFloat(emberIndex) * 0.015
                                 let trailProgress = max(0, launchProgress - trailOffset)
@@ -1138,27 +1184,20 @@ private struct ScheduleLightBurst: View {
                                 )
                             }
 
-                            // Glowing rocket head
                             context.fill(Path(ellipseIn: CGRect(x: head.x - 7, y: head.y - 7, width: 14, height: 14)), with: .color(firework.color.opacity(0.35)))
                             context.fill(Path(ellipseIn: CGRect(x: head.x - 3, y: head.y - 3, width: 6, height: 6)), with: .color(Color.white))
                             continue
                         }
 
-                        // Phase 2: Burst & Sparks Falling / Shrinking / Extinguishing
                         let burstTime = localTime - launchDuration
                         guard burstTime < burstDuration else { continue }
 
                         let burstProgress = CGFloat(burstTime / burstDuration)
-                        // Smooth fade curve that reaches zero before the end
                         let fade = pow(max(0, 1.0 - burstProgress), 1.5)
-                        // Shrink curve
                         let shrink = max(0.0, 1.0 - burstProgress * 0.88)
-                        // Downward gravity acceleration - sparks fall like real falling embers
                         let gravity = 190.0 * pow(burstProgress, 1.65)
-                        // Drag deceleration
                         let dragDecay = 1.0 - exp(-CGFloat(burstTime) * 2.8)
 
-                        // Central flash immediately after explosion
                         if burstTime < 0.12 {
                             let flashAlpha = max(0, 1.0 - burstTime / 0.12) * 0.75
                             let flashRadius = CGFloat(burstTime / 0.12) * 24.0
@@ -1191,35 +1230,24 @@ private struct ScheduleLightBurst: View {
                                 y: firework.burst.y + sin(angle) * prevTravel * radialVariation + prevGravity
                             )
 
-                            // Sparkling flicker as embers cool
                             let flicker = 0.72 + 0.28 * sin(CGFloat(particleIndex * 17) + CGFloat(burstTime * 22))
                             let particleAlpha = Double(fade * flicker)
 
-                            // Streak trail - correctly fades out with particleAlpha!
                             var trail = Path()
                             trail.move(to: previous)
                             trail.addLine(to: position)
                             context.stroke(
                                 trail,
-                                with: .linearGradient(
-                                    Gradient(colors: [
-                                        firework.color.opacity(0.0),
-                                        firework.color.opacity(particleAlpha * 0.80)
-                                    ]),
-                                    startPoint: previous,
-                                    endPoint: position
-                                ),
-                                style: StrokeStyle(lineWidth: max(0.5, (particleIndex.isMultiple(of: 4) ? 2.4 : 1.4) * shrink), lineCap: .round)
+                                with: .color(firework.color.opacity(particleAlpha * 0.55)),
+                                lineWidth: max(0.8, 1.8 * shrink)
                             )
 
-                            // Glowing core spark
-                            let coreSize: CGFloat = (particleIndex.isMultiple(of: 5) ? 2.6 : 1.6) * shrink
+                            let coreSize = max(1.0, 3.8 * shrink)
                             context.fill(
-                                Path(ellipseIn: CGRect(x: position.x - coreSize, y: position.y - coreSize, width: coreSize * 2, height: coreSize * 2)),
-                                with: .color(Color.white.opacity(particleAlpha))
+                                Path(ellipseIn: CGRect(x: position.x - coreSize/2, y: position.y - coreSize/2, width: coreSize, height: coreSize)),
+                                with: .color(firework.color.opacity(particleAlpha))
                             )
 
-                            // Soft colored glow around each spark
                             let glowSize = coreSize * 2.0
                             context.fill(
                                 Path(ellipseIn: CGRect(x: position.x - glowSize, y: position.y - glowSize, width: glowSize * 2, height: glowSize * 2)),
@@ -1234,11 +1262,21 @@ private struct ScheduleLightBurst: View {
         .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .task(id: trigger) {
-            guard trigger > 0 else { return }
-            celebrationStart = .now
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 800 : 3_200))
+        .onAppear {
+            handledEventId = event?.id
+        }
+        .onDisappear {
             celebrationStart = nil
+        }
+        .onChange(of: event) { _, newEvent in
+            guard let newEvent, newEvent.id != handledEventId else { return }
+            handledEventId = newEvent.id
+            guard abs(newEvent.timestamp.timeIntervalSinceNow) < 1.5 else { return }
+            celebrationStart = .now
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(reduceMotion ? 800 : 3_200))
+                celebrationStart = nil
+            }
         }
     }
 }
@@ -1266,35 +1304,87 @@ private struct HomeAlertSetupCard: View {
     let decks: [Deck]
     @ObservedObject var engine: StudyEngine
     @Binding var targetDeckId: String
+    var homeTutorialStep: Int = 0
     let showSettings: () -> Void
     let showDeckRequirement: () -> Void
     let schedule: (Deck) -> Void
+    @State private var pulseScheduleButton = false
+
     private var selectedDeck: Deck? {
-        decks.first { $0.id.uuidString == targetDeckId && $0.cards.count > 5 }
+        if let deck = decks.first(where: { $0.id.uuidString == targetDeckId && $0.cards.count >= 2 }) {
+            return deck
+        }
+        return schedulableDecks.first
     }
 
     private var schedulableDecks: [Deck] {
-        decks.filter { $0.cards.count > 5 }
+        decks.filter { $0.cards.count >= 2 }
     }
 
     var body: some View {
-        Group {
-            if engine.isActive {
-                activeContent
-                    .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
-            } else {
-                setupContent
-                    .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+        VStack(alignment: .leading, spacing: 8) {
+            if homeTutorialStep == 3 {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Step 3 of 3: Tap Schedule Alerts to try a live alert")
+                        .font(.custom("Poppins-SemiBold", size: 11))
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(
+                    LinearGradient(
+                        colors: [LearnAlertStyle.indigo, LearnAlertStyle.sky],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: Capsule()
+                )
+                .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 6, y: 2)
+                .transition(.opacity.combined(with: .scale))
+            }
+
+            Group {
+                if engine.isActive {
+                    activeContent
+                        .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                } else {
+                    setupContent
+                        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+                }
+            }
+            .padding(16)
+            .clearGlassSurface(cornerRadius: 20)
+            .overlay {
+                if homeTutorialStep == 3 {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(LearnAlertStyle.sky, lineWidth: 2)
+                        .shadow(color: LearnAlertStyle.sky.opacity(0.5), radius: 10)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                ScheduleStatusDot(isActive: engine.isActive)
+                    .padding(16)
             }
         }
-        .padding(16)
-        .clearGlassSurface(cornerRadius: 20)
-        .lightModeGlassElevation(cornerRadius: 20)
-        .overlay(alignment: .topTrailing) {
-            ScheduleStatusDot(isActive: engine.isActive)
-                .padding(16)
-        }
         .animation(.spring(response: 0.48, dampingFraction: 0.84), value: engine.isActive)
+        .onAppear {
+            if homeTutorialStep == 3 {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    pulseScheduleButton = true
+                }
+            }
+        }
+        .onChange(of: homeTutorialStep) { _, newStep in
+            if newStep == 3 {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    pulseScheduleButton = true
+                }
+            }
+        }
     }
 
     private var setupContent: some View {
@@ -1320,43 +1410,54 @@ private struct HomeAlertSetupCard: View {
                     Menu {
                         ForEach(schedulableDecks) { deck in
                             Button(deck.name) {
-                                InteractionSoundPlayer.shared.play(.selection)
                                 targetDeckId = deck.id.uuidString
                             }
                         }
                     } label: {
                         DeckPickerLabel(selectedDeck: selectedDeck)
                     }
+                    .disabled(homeTutorialStep == 3)
                 }
             }
             .overlay { DeckSelectionHintBorder(isVisible: !schedulableDecks.isEmpty && selectedDeck == nil) }
+
+
 
             HStack(spacing: 10) {
                 Button {
                     guard let selectedDeck else { return }
                     schedule(selectedDeck)
                 } label: {
-                    Label("Schedule Alerts", systemImage: "bell.badge.fill")
-                        .font(.custom("Poppins-SemiBold", size: 12, relativeTo: .caption))
+                    Label(homeTutorialStep == 3 ? "Try Test Alert" : "Schedule Alerts", systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
+                        .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .caption))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .frame(height: 46)
                 }
                 .foregroundStyle(.white)
                 .background(selectedDeck == nil ? Color.gray.opacity(0.34) : LearnAlertStyle.indigo)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(homeTutorialStep == 3 ? LearnAlertStyle.sky : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
+                        .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.sky.opacity(0.85) : Color.clear, radius: 8)
+                )
+                .scaleEffect(homeTutorialStep == 3 && pulseScheduleButton ? 1.025 : 1.0)
                 .disabled(selectedDeck == nil)
 
                 Button(action: showSettings) {
                     Image(systemName: "slider.horizontal.3")
                         .font(.headline)
-                        .frame(width: 44, height: 44)
-                        .background(.clear)
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .frame(width: 44, height: 46)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(LearnAlertStyle.glassStroke, lineWidth: 1)
+                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                .disabled(homeTutorialStep > 0)
+                .opacity(homeTutorialStep > 0 ? 0.35 : 1.0)
                 .accessibilityLabel("Edit alert settings")
             }
         }
@@ -1441,8 +1542,12 @@ private struct DeckPickerLabel: View {
         .foregroundStyle(LearnAlertStyle.textPrimary)
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
-        .background(LearnAlertStyle.courseCanvas)
+        .background(Color.white.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
@@ -1508,23 +1613,19 @@ private struct DeckSelectionHintBorder: View {
                     return
                 }
                 while !Task.isCancelled {
-                    // Smooth pulse in (neon / shiny ring highlight)
                     withAnimation(.easeInOut(duration: 1.2)) {
                         glowOpacity = 0.80
                     }
                     try? await Task.sleep(nanoseconds: 1_200_000_000)
 
-                    // Gentle fade down
                     withAnimation(.easeInOut(duration: 1.4)) {
                         glowOpacity = 0.15
                     }
                     try? await Task.sleep(nanoseconds: 1_400_000_000)
 
-                    // Fade to rest
                     withAnimation(.easeInOut(duration: 0.8)) {
                         glowOpacity = 0.0
                     }
-                    // Less frequent: resting interval between pulses
                     try? await Task.sleep(nanoseconds: 4_000_000_000)
                 }
             }
@@ -1557,7 +1658,7 @@ private struct DeckRequirementAlert: View {
                         .font(.custom("Poppins-SemiBold", size: 17, relativeTo: .headline))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                         .multilineTextAlignment(.center)
-                    Text("Create a deck with more than 5 cards, add cards to an existing deck, or find one on Discover.")
+                    Text("Create a deck with at least 2 cards, or pick one on Discover.")
                         .font(.custom("Poppins-Regular", size: 12, relativeTo: .subheadline))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                         .multilineTextAlignment(.center)
@@ -1729,116 +1830,176 @@ private struct AlertTimelineTrack: View {
 private struct HomeStudyCard: View {
     let deck: Deck
     let isTargeted: Bool
+    var isTutorialHighlighted: Bool = false
+    var isTutorialActive: Bool = false
+    var onTapped: (() -> Void)? = nil
     let schedule: () -> Void
     let shuffleAppearance: () -> Void
     let delete: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @State private var pulseGlow = false
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            NavigationLink(destination: DeckDetailView(deck: deck)) {
-                HStack(spacing: 16) {
-                    DeckCreatureView(
-                        stableID: deck.id,
-                        appearanceSeed: deck.appearanceSeed,
-                        cardCount: deck.cards.count
-                    )
-                    .frame(width: 96, height: 88)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(deck.name)
-                            .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-
-                        Text("\(deck.deckType) · \(deck.cards.count) cards")
-                            .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                        Spacer(minLength: 0)
-
-                        HStack(spacing: 6) {
-                            if deck.cycleStreak > 0 {
-                                HStack(spacing: 2) {
-                                    Text("🔥")
-                                        .font(.system(size: 11))
-                                    Text("\(deck.cycleStreak)")
-                                        .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                                        .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
-                                        .monospacedDigit()
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.14), in: Capsule())
-                            } else {
-                                Image(systemName: "chart.bar.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(progressColor)
-                            }
-
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule()
-                                        .fill(LearnAlertStyle.textSecondary.opacity(0.18))
-                                        .frame(height: 4)
-
-                                    Capsule()
-                                        .fill(progressColor)
-                                        .frame(
-                                            width: max(geo.size.width * CGFloat(deck.cycleProgress), deck.cycleProgress > 0 ? 4 : 0),
-                                            height: 4
-                                        )
-                                }
-                                .frame(maxHeight: .infinity, alignment: .center)
-                            }
-                            .frame(width: 44, height: 12)
-
-                            Text(deck.cycleProgress, format: .percent.precision(.fractionLength(0)))
-                                .monospacedDigit()
-                                .foregroundStyle(progressColor)
-
-                            Spacer()
-                        }
-                        .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption))
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            if isTutorialHighlighted {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("Step 1 of 3: Tap here to explore flashcards")
+                        .font(.custom("Poppins-SemiBold", size: 11))
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 10, weight: .bold))
                 }
-                .padding(11)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(
+                    LinearGradient(
+                        colors: [LearnAlertStyle.indigo, LearnAlertStyle.sky],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: Capsule()
+                )
+                .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 6, y: 2)
+                .scaleEffect(pulseGlow ? 1.03 : 0.98)
+                .transition(.opacity.combined(with: .scale))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open \(deck.name), \(deck.cards.count) cards")
 
-            Button(action: schedule) {
-                Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
-                    .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
-                    .frame(width: 44, height: 40)
+            ZStack(alignment: .bottomTrailing) {
+                NavigationLink(destination: DeckDetailView(deck: deck)) {
+                    HStack(spacing: 16) {
+                        DeckCreatureView(
+                            stableID: deck.id,
+                            appearanceSeed: deck.appearanceSeed,
+                            cardCount: deck.cards.count
+                        )
+                        .frame(width: 96, height: 88)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(deck.name)
+                                .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
+                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+
+                            Text("\(deck.deckType) · \(deck.cards.count) cards")
+                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                            Spacer(minLength: 0)
+
+                            HStack(spacing: 6) {
+                                if deck.cycleStreak > 0 {
+                                    HStack(spacing: 2) {
+                                        Text("🔥")
+                                            .font(.system(size: 11))
+                                        Text("\(deck.cycleStreak)")
+                                            .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
+                                            .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
+                                            .monospacedDigit()
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.orange.opacity(0.14), in: Capsule())
+                                } else {
+                                    Image(systemName: "chart.bar.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(progressColor)
+                                }
+
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(LearnAlertStyle.textSecondary.opacity(0.18))
+                                            .frame(height: 4)
+
+                                        Capsule()
+                                            .fill(progressColor)
+                                            .frame(
+                                                width: max(geo.size.width * CGFloat(deck.cycleProgress), deck.cycleProgress > 0 ? 4 : 0),
+                                                height: 4
+                                            )
+                                    }
+                                    .frame(maxHeight: .infinity, alignment: .center)
+                                }
+                                .frame(width: 44, height: 12)
+
+                                Text(deck.cycleProgress, format: .percent.precision(.fractionLength(0)))
+                                    .monospacedDigit()
+                                    .foregroundStyle(progressColor)
+
+                                Spacer()
+                            }
+                            .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+                    }
+                    .padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded {
+                    onTapped?()
+                })
+                .accessibilityLabel("Open \(deck.name), \(deck.cards.count) cards")
+
+                Button(action: {
+                    if !isTutorialActive {
+                        schedule()
+                    }
+                }) {
+                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
+                        .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
+                        .frame(width: 44, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 9)
+                .padding(.bottom, 7)
+                .disabled(isTutorialActive)
+                .opacity(isTutorialActive ? 0.35 : 1.0)
+                .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
             }
-            .buttonStyle(.plain)
-            .padding(.trailing, 9)
-            .padding(.bottom, 7)
-            .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
-        }
-        .background(LearnAlertStyle.courseSurface)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(colorScheme == .light ? LearnAlertStyle.hairline.opacity(0.58) : Color.clear, lineWidth: 0.9)
-        }
-        .shadow(
-            color: colorScheme == .light ? LearnAlertStyle.indigoDeep.opacity(0.11) : LearnAlertStyle.indigoDeep.opacity(0.06),
-            radius: 14,
-            y: 7
-        )
-        .contextMenu {
-            Button(action: shuffleAppearance) {
-                Label("Shuffle Appearance", systemImage: "shuffle")
+            .background(LearnAlertStyle.courseSurface)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(
+                        isTutorialHighlighted ? LearnAlertStyle.sky : (colorScheme == .light ? LearnAlertStyle.hairline.opacity(0.58) : Color.clear),
+                        lineWidth: isTutorialHighlighted ? 2.5 : 0.9
+                    )
+                    .shadow(color: isTutorialHighlighted ? LearnAlertStyle.sky.opacity(0.75) : Color.clear, radius: 10)
             }
-            Button(role: .destructive, action: delete) { Label("Delete", systemImage: "trash") }
+            .shadow(
+                color: colorScheme == .light ? LearnAlertStyle.indigoDeep.opacity(0.11) : LearnAlertStyle.indigoDeep.opacity(0.06),
+                radius: 14,
+                y: 7
+            )
+            .contextMenu {
+                if !isTutorialActive {
+                    Button(action: shuffleAppearance) {
+                        Label("Shuffle Appearance", systemImage: "shuffle")
+                    }
+                    Button(role: .destructive, action: delete) { Label("Delete", systemImage: "trash") }
+                }
+            }
+        }
+        .onAppear {
+            if isTutorialHighlighted {
+                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                    pulseGlow = true
+                }
+            }
+        }
+        .onChange(of: isTutorialHighlighted) { _, highlighted in
+            if highlighted {
+                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                    pulseGlow = true
+                }
+            }
         }
     }
 
@@ -1867,259 +2028,267 @@ private struct HomeStudyCard: View {
             }
         }
     }
-
-    private func iconForType(_ type: String) -> String {
-        switch type {
-        case "Quiz": return "checkmark.rectangle.stack.fill"
-        case "Vocabulary": return "text.book.closed.fill"
-        case "True / False": return "switch.2"
-        default: return "rectangle.stack.fill"
-        }
-    }
 }
 
-private struct HomeCommandPanel: View {
-    let createDeck: () -> Void
-    let openAIComposer: () -> Void
-    let isScheduled: Bool
-    let deckName: String
-    let scheduledDates: [Date]
-    let totalCardCount: Int
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                HomeCommandButton(title: "Create Deck", icon: "rectangle.stack.badge.plus", color: LearnAlertStyle.indigo, action: createDeck)
-                    .frame(width: 105)
-                Divider().frame(height: 58)
-                HomeCommandButton(
-                    title: "Paste notes or upload documents",
-                    icon: "sparkles.rectangle.stack.fill",
-                    color: Color(red: 0.88, green: 0.12, blue: 0.62),
-                    action: openAIComposer
-                )
-                .frame(maxWidth: .infinity)
-                .layoutPriority(1)
-            }
-            .padding(.vertical, 14)
-
-            Rectangle()
-                .fill(Color.white.opacity(0.34))
-                .frame(height: 0.5)
-
-            ScheduleProgressStrip(
-                isScheduled: isScheduled,
-                deckName: deckName,
-                scheduledDates: scheduledDates,
-                totalCardCount: totalCardCount
-            )
-        }
-        .nativeGlass(cornerRadius: 12)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.32), lineWidth: 1))
-    }
-}
-
-private struct ScheduleProgressStrip: View {
-    let isScheduled: Bool
-    let deckName: String
-    let scheduledDates: [Date]
-    let totalCardCount: Int
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            if isScheduled, !scheduledDates.isEmpty, totalCardCount > 0 {
-                scheduledContent(at: timeline.date)
-            } else {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(Color.yellow)
-                        .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("No active schedule")
-                            .font(.custom("Poppins-Medium", size: 12, relativeTo: .subheadline))
-                        Text("Select a deck below when you’re ready.")
-                            .font(.custom("Poppins-Regular", size: 10, relativeTo: .caption2))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-                .padding(.vertical, 3)
-            }
-        }
-    }
-
-    private func scheduledContent(at date: Date) -> some View {
-        let orderedDates = scheduledDates.sorted()
-        let deliveredCount = min(orderedDates.filter { $0 <= date }.count, totalCardCount)
-        let progress = Double(deliveredCount) / Double(totalCardCount)
-        let interval = notificationInterval(for: orderedDates)
-        let estimatedDuration = interval * Double(max(totalCardCount - 1, 0))
-
-        return VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "bell.badge.fill")
-                    .foregroundStyle(LearnAlertStyle.indigo)
-                Text(deckName)
-                    .font(.caption.bold())
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                Text("About \(estimatedDuration.formattedDuration)")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-            }
-
-            ProgressView(value: progress)
-                .tint(LearnAlertStyle.indigo)
-                .scaleEffect(x: 1, y: 0.7)
-        }
-        .foregroundStyle(LearnAlertStyle.textPrimary)
-        .padding(.horizontal, 14)
-        .frame(height: 58)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(deckName), \(deliveredCount) of \(totalCardCount) notifications delivered, estimated duration \(estimatedDuration.formattedDuration)")
-    }
-
-    private func notificationInterval(for dates: [Date]) -> TimeInterval {
-        guard dates.count > 1 else { return 60 * 60 }
-        return max(dates[1].timeIntervalSince(dates[0]), 60)
-    }
-}
-
-private extension TimeInterval {
-    var formattedDuration: String {
-        let totalMinutes = max(Int((self / 60).rounded()), 1)
-        let days = totalMinutes / (24 * 60)
-        let hours = (totalMinutes % (24 * 60)) / 60
-        let minutes = totalMinutes % 60
-        if days > 0 { return hours > 0 ? "\(days)d \(hours)h" : "\(days)d" }
-        if hours > 0 { return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h" }
-        return "\(minutes)m"
-    }
-}
-
-private struct HomeCommandButton: View {
+// MARK: - Guided Walkthrough Top & Floating Banners
+private struct TutorialStepTopBanner: View {
+    let stepNumber: Int
+    let totalSteps: Int
     let title: String
+    let subtitle: String
     let icon: String
-    let color: Color
-    let action: () -> Void
+    let onSkip: () -> Void
 
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.title2.bold())
-                    .foregroundStyle(color)
-                Text(title)
-                    .font(.caption.bold())
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Tab 2: Alerts Dashboard
-struct AlertsDashboardView: View {
-    @Query(sort: \Deck.creationDate) private var decks: [Deck]
-    @ObservedObject private var engine = StudyEngine.shared
-
-    private var cards: [Flashcard] { decks.flatMap(\.cards) }
-    private var reviewCount: Int { cards.reduce(0) { $0 + $1.reviewCount } }
-    private var correctCount: Int { cards.reduce(0) { $0 + $1.correctCount } }
-    private var accuracy: Int { reviewCount == 0 ? 0 : Int((Double(correctCount) / Double(reviewCount) * 100).rounded()) }
-    private var longestStreak: Int { cards.map(\.longestStreak).max() ?? 0 }
-    private var studiedDeckCount: Int { decks.filter { $0.cards.contains { $0.reviewCount > 0 } }.count }
-    private var firstStudyDate: Date? { cards.compactMap(\.lastReviewedDate).min() }
-    
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                AppSectionHeader(
-                    title: "Progress",
-                    subtitle: "From your first deck to every in-app study session."
-                )
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                    ProgressStatCard(title: "Answers", value: "\(reviewCount)", icon: "checkmark.circle.fill", color: LearnAlertStyle.sky)
-                    ProgressStatCard(title: "Accuracy", value: reviewCount == 0 ? "—" : "\(accuracy)%", icon: "scope", color: LearnAlertStyle.sky)
-                    ProgressStatCard(title: "Best streak", value: "\(longestStreak)", icon: "flame.fill", color: LearnAlertStyle.sky)
-                    ProgressStatCard(title: "Decks studied", value: "\(studiedDeckCount)", icon: "rectangle.stack.fill", color: LearnAlertStyle.sky)
-                }
-                .padding(.horizontal, 24)
-
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("LEARNING JOURNEY")
-                        .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                        .tracking(1.1)
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    ProgressMilestone(icon: "rectangle.stack.badge.plus", title: "First deck created", detail: decks.first?.creationDate.formatted(date: .abbreviated, time: .omitted) ?? "Not yet")
-                    ProgressMilestone(icon: "bell.badge.fill", title: "Alert learning", detail: engine.isActive ? "Active · \(engine.activeDeckName)" : "No active schedule")
-                    ProgressMilestone(icon: "play.circle.fill", title: "In-app studying", detail: firstStudyDate?.formatted(date: .abbreviated, time: .shortened) ?? "No sessions yet")
-                }
-                .padding(18)
-                .clearGlassSurface(cornerRadius: 20)
-                .lightModeGlassElevation(cornerRadius: 20)
-                .padding(.horizontal, 24)
-
-                Spacer().frame(height: 120)
-            }
-            .padding(.top, 22)
-        }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-    }
-}
-
-private struct ProgressStatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-            Text(value)
-                .font(.custom("Poppins-SemiBold", size: 24, relativeTo: .title))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-            Text(title)
-                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(15)
-        .clearGlassSurface(cornerRadius: 18)
-        .lightModeGlassElevation(cornerRadius: 18)
-    }
-}
-
-private struct ProgressMilestone: View {
-    let icon: String
-    let title: String
-    let detail: String
+    @State private var pulse = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(LearnAlertStyle.sky)
-                .frame(width: 34, height: 34)
-                .clearGlassSurface(cornerRadius: 17)
-                .lightModeGlassElevation(cornerRadius: 17)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.custom("Poppins-Medium", size: 13, relativeTo: .subheadline))
-                Text(detail).font(.custom("Poppins-Regular", size: 11, relativeTo: .caption)).foregroundStyle(LearnAlertStyle.textSecondary)
+            ZStack {
+                Circle()
+                    .fill(LearnAlertStyle.indigo.opacity(0.18))
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(LearnAlertStyle.sky)
+                    .scaleEffect(pulse ? 1.12 : 0.95)
             }
-            .foregroundStyle(LearnAlertStyle.textPrimary)
-            Spacer()
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("STEP \(stepNumber) OF \(totalSteps)")
+                        .font(.custom("Poppins-SemiBold", size: 10))
+                        .foregroundStyle(LearnAlertStyle.sky)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(LearnAlertStyle.sky.opacity(0.14), in: Capsule())
+
+                    Spacer()
+
+                    Button(action: onSkip) {
+                        Text("Skip Tour")
+                            .font(.custom("Poppins-Medium", size: 11))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text(title)
+                    .font(.custom("Poppins-SemiBold", size: 13))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+
+                Text(subtitle)
+                    .font(.custom("Poppins-Regular", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+        }
+        .padding(14)
+        .background(LearnAlertStyle.courseSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [LearnAlertStyle.sky, LearnAlertStyle.indigo.opacity(0.6)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+        )
+        .shadow(color: LearnAlertStyle.sky.opacity(0.24), radius: 12, y: 5)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
         }
     }
 }
 
+// MARK: - Hand Drawn Upward Arrow & Tutorial Banners
+private struct HandDrawnUpwardArrowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        // Curvy hand-drawn stem from bottom to top
+        let start = CGPoint(x: rect.midX + 8, y: rect.maxY)
+        let control1 = CGPoint(x: rect.midX + 18, y: rect.midY + 12)
+        let control2 = CGPoint(x: rect.midX - 14, y: rect.midY - 8)
+        let end = CGPoint(x: rect.midX, y: rect.minY + 3)
+
+        path.move(to: start)
+        path.addCurve(to: end, control1: control1, control2: control2)
+
+        // Left wing of arrow head
+        path.move(to: CGPoint(x: end.x - 10, y: end.y + 12))
+        path.addQuadCurve(to: end, control: CGPoint(x: end.x - 4, y: end.y + 4))
+
+        // Right wing of arrow head
+        path.move(to: CGPoint(x: end.x + 9, y: end.y + 13))
+        path.addQuadCurve(to: end, control: CGPoint(x: end.x + 4, y: end.y + 4))
+
+        return path
+    }
+}
+
+private struct HandDrawnUpwardArrowView: View {
+    @State private var bounce = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HandDrawnUpwardArrowShape()
+                .stroke(
+                    LinearGradient(
+                        colors: [LearnAlertStyle.sky, LearnAlertStyle.indigo],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+                )
+                .frame(width: 44, height: 52)
+                .offset(y: bounce ? -8 : 3)
+                .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 8)
+
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .bold))
+                Text("Notification sent above!")
+                    .font(.custom("Poppins-SemiBold", size: 12))
+            }
+            .foregroundStyle(LearnAlertStyle.sky)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(LearnAlertStyle.sky.opacity(0.14), in: Capsule())
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                bounce = true
+            }
+        }
+    }
+}
+
+private struct LiveTestAlertFloatingBanner: View {
+    let deckName: String
+    let onResend: () -> Void
+    let onComplete: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LearnAlertStyle.sky.opacity(0.2))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: "bell.badge.waveform.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(LearnAlertStyle.sky)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Real Notification Sent!")
+                        .font(.custom("Poppins-SemiBold", size: 14))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                    Text("Swipe down or press & hold the banner above to answer the quiz live.")
+                        .font(.custom("Poppins-Regular", size: 12))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                }
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .frame(width: 26, height: 26)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onResend) {
+                    Label("Resend Alert", systemImage: "arrow.counterclockwise")
+                        .font(.custom("Poppins-Medium", size: 12))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.primary.opacity(0.08))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button(action: onComplete) {
+                    Label("I Answered It", systemImage: "checkmark.circle.fill")
+                        .font(.custom("Poppins-SemiBold", size: 12))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(LearnAlertStyle.indigo)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 6, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .background(LearnAlertStyle.courseSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(LearnAlertStyle.sky.opacity(0.5), lineWidth: 1.2)
+        )
+        .shadow(color: LearnAlertStyle.sky.opacity(0.20), radius: 14, y: 6)
+    }
+}
+
+private struct TutorialCompletedBanner: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LearnAlertStyle.lime.opacity(0.2))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(LearnAlertStyle.lime)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("🎉 You're all set!")
+                    .font(.custom("Poppins-SemiBold", size: 14))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                Text("You've scheduled your alerts. Quizzes will arrive directly in your notifications.")
+                    .font(.custom("Poppins-Regular", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+
+            Spacer()
+
+            Button(action: onDismiss) {
+                Text("Done")
+                    .font(.custom("Poppins-SemiBold", size: 12))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(LearnAlertStyle.indigo)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(LearnAlertStyle.courseSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(LearnAlertStyle.lime.opacity(0.4), lineWidth: 1)
+        )
+        .shadow(color: LearnAlertStyle.lime.opacity(0.2), radius: 12, y: 5)
+    }
+}
 private struct AlertsInfoControl: View {
     @State private var isExpanded = false
 
@@ -2913,15 +3082,7 @@ struct AppSettingsView: View {
 
 }
 
-struct ActivityShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
-}
 
 private struct SystemCheckItem: Identifiable, Sendable {
     enum State: Sendable {
@@ -3115,25 +3276,7 @@ private struct SystemCheckView: View {
     }
 }
 
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0; Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default: (a, r, g, b) = (1, 1, 1, 0)
-        }
-        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue:  Double(b) / 255, opacity: Double(a) / 255)
-    }
-    func toHex() -> String? {
-        let uic = UIColor(self); guard let components = uic.cgColor.components, components.count >= 3 else { return nil }
-        let r = Float(components[0]); let g = Float(components[1]); let b = Float(components[2])
-        return String(format: "#%02lX%02lX%02lX", lroundf(r * 255), lroundf(g * 255), lroundf(b * 255))
-    }
-}
+
 
 
 // MARK: - Quick Schedule Tip Popup

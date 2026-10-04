@@ -1,3 +1,4 @@
+import MessageUI
 import SwiftUI
 import SwiftData
 import UserNotifications
@@ -971,12 +972,80 @@ private struct ReleaseNotesEntry: View {
     }
 }
 
+// MARK: - Mail Composer Representable
+struct MailComposeView: UIViewControllerRepresentable {
+    let recipient: String
+    let subject: String
+    let body: String
+    let onFinish: (MFMailComposeResult) -> Void
+
+    class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+        let parent: MailComposeView
+
+        init(parent: MailComposeView) {
+            self.parent = parent
+        }
+
+        func mailComposeController(
+            _ controller: MFMailComposeViewController,
+            didFinishWith result: MFMailComposeResult,
+            error: Error?
+        ) {
+            controller.dismiss(animated: true) {
+                self.parent.onFinish(result)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> MFMailComposeViewController {
+        let composer = MFMailComposeViewController()
+        composer.mailComposeDelegate = context.coordinator
+        composer.setToRecipients([recipient])
+        composer.setSubject(subject)
+        composer.setMessageBody(body, isHTML: false)
+        return composer
+    }
+
+    func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
+}
+
 // MARK: - Feedback View
 struct FeedbackView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
     @State private var feedbackText = ""
+    @State private var showingInAppMail = false
+    @State private var showingFallbackOptions = false
+    @State private var copiedMessage = false
+    @State private var copiedEmail = false
+    @State private var sentSuccessAlert = false
+
+    private let supportEmail = "contact@learnalertapp.com"
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
+
+    private var formattedEmailBody: String {
+        let deviceModel = UIDevice.current.model
+        let sysVersion = UIDevice.current.systemVersion
+        let userContent = feedbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return """
+        \(userContent.isEmpty ? "[Please describe your thoughts or issue here]" : userContent)
+
+        ---
+        App: LearnAlert v\(appVersion) (\(buildNumber))
+        Device: \(deviceModel), iOS \(sysVersion)
+        """
+    }
 
     var body: some View {
         ZStack {
@@ -1020,35 +1089,110 @@ struct FeedbackView: View {
                         .settingsGlassSurface(cornerRadius: 16)
                     }
 
-                    Button(action: sendEmail) {
-                        Label("Send Feedback", systemImage: "paperplane.fill")
-                            .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .body))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                    // Main Action: Continue to email
+                    Button(action: handleContinueToEmail) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "envelope.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                            Text("Continue to email")
+                                .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .body))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(LearnAlertStyle.indigo)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 10, y: 4)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .background(LearnAlertStyle.indigo)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 10, y: 4)
 
+                    // Fallback Options if email client is unavailable
+                    if showingFallbackOptions {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundStyle(LearnAlertStyle.indigo)
+                                Text("No Email App Found")
+                                    .font(.custom("Poppins-SemiBold", size: 13))
+                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                            }
+
+                            Text("We couldn’t open an email composer automatically. Your message is safely kept above. You can copy your message and support email below to send via your webmail or preferred client:")
+                                .font(.custom("Poppins-Regular", size: 12))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                .lineSpacing(2)
+
+                            HStack(spacing: 10) {
+                                Button {
+                                    UIPasteboard.general.string = formattedEmailBody
+                                    withAnimation(.snappy) { copiedMessage = true }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        withAnimation(.snappy) { copiedMessage = false }
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: copiedMessage ? "checkmark" : "doc.on.doc")
+                                            .font(.system(size: 11, weight: .semibold))
+                                        Text(copiedMessage ? "Copied!" : "Copy message")
+                                            .font(.custom("Poppins-Medium", size: 12))
+                                    }
+                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 38)
+                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    UIPasteboard.general.string = supportEmail
+                                    withAnimation(.snappy) { copiedEmail = true }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        withAnimation(.snappy) { copiedEmail = false }
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: copiedEmail ? "checkmark" : "envelope")
+                                            .font(.system(size: 11, weight: .semibold))
+                                        Text(copiedEmail ? "Copied!" : "Copy support email")
+                                            .font(.custom("Poppins-Medium", size: 12))
+                                    }
+                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 38)
+                                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(14)
+                        .settingsGlassSurface(cornerRadius: 14)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
+                    // Direct Support Email Link
                     VStack(spacing: 6) {
-                        Text("Or email us at:")
-                            .font(.custom("Poppins-Medium", size: 14, relativeTo: .subheadline))
+                        Text("Or email us directly at:")
+                            .font(.custom("Poppins-Medium", size: 13, relativeTo: .subheadline))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
 
-                        Link(destination: URL(string: "mailto:contact@learnalertapp.com")!) {
+                        Button {
+                            UIPasteboard.general.string = supportEmail
+                            withAnimation(.snappy) { copiedEmail = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation(.snappy) { copiedEmail = false }
+                            }
+                        } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: "envelope.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text("contact@learnalertapp.com")
-                                    .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .body))
+                                Image(systemName: copiedEmail ? "checkmark.circle.fill" : "envelope.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text(copiedEmail ? "Email Copied to Clipboard!" : supportEmail)
+                                    .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .body))
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.70)
-                                    .allowsTightening(true)
                             }
                             .foregroundStyle(colorScheme == .light ? LearnAlertStyle.figmaBlue : LearnAlertStyle.cyan)
                         }
+                        .buttonStyle(.plain)
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 10)
@@ -1060,20 +1204,56 @@ struct FeedbackView: View {
         .navigationTitle("Send Feedback")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
+        .sheet(isPresented: $showingInAppMail) {
+            MailComposeView(
+                recipient: supportEmail,
+                subject: "LearnAlert User Feedback",
+                body: formattedEmailBody,
+                onFinish: { result in
+                    if result == .sent {
+                        feedbackText = ""
+                        sentSuccessAlert = true
+                    }
+                }
+            )
+        }
+        .alert("Feedback Sent", isPresented: $sentSuccessAlert) {
+            Button("Done") { dismiss() }
+        } message: {
+            Text("Thank you for your feedback! It helps us improve LearnAlert.")
+        }
     }
 
-    private func sendEmail() {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    private func handleContinueToEmail() {
+        // 1. Check if Apple’s in-app mail composer is available on device
+        if MFMailComposeViewController.canSendMail() {
+            showingInAppMail = true
+            return
+        }
+
+        // 2. Otherwise, attempt to open the system default email app via mailto
         let subject = "LearnAlert User Feedback"
-        let body = feedbackText.isEmpty
-            ? "\n\n---\nApp Version: \(version)"
-            : "\(feedbackText)\n\n---\nApp Version: \(version)"
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = supportEmail
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: formattedEmailBody)
+        ]
 
-        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "LearnAlert%20Feedback"
-        let encodedBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-
-        if let url = URL(string: "mailto:contact@learnalertapp.com?subject=\(encodedSubject)&body=\(encodedBody)") {
-            openURL(url)
+        if let mailtoURL = components.url, UIApplication.shared.canOpenURL(mailtoURL) {
+            UIApplication.shared.open(mailtoURL, options: [:]) { success in
+                if !success {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                        showingFallbackOptions = true
+                    }
+                }
+            }
+        } else {
+            // 3. If that fails, show clear fallback UI with Copy message & Copy support email
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                showingFallbackOptions = true
+            }
         }
     }
 }
