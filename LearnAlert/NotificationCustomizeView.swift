@@ -33,28 +33,25 @@ struct NotificationCustomizeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 24) {
                 headerSection
+                studioBanner
+                previewSection
                 cardTypeSelectorSection
                 layoutSection
                 themeSection
-                previewSection
                 testSection
                 footnoteSection
-
-                Spacer().frame(height: 120)
             }
-            .padding(.top, 14)
+            .padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 128)
+            .frame(maxWidth: 700).frame(maxWidth: .infinity)
         }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .sheet(isPresented: $showingCardTypeSheet) {
-            cardTypePickerSheet
-        }
+        .background(StudyStudioStyle.canvas.ignoresSafeArea())
+        .tint(StudyStudioStyle.violet)
+        .sheet(isPresented: $showingCardTypeSheet) { cardTypePickerSheet }
         .alert("Notifications Not Allowed", isPresented: $showingPermissionAlert) {
             Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    openURL(url)
-                }
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -62,80 +59,75 @@ struct NotificationCustomizeView: View {
         }
     }
 
-    // MARK: - Header Section
     private var headerSection: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Customize")
-                    .font(.custom("Poppins-Bold", size: 30, relativeTo: .largeTitle))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                Text("Make your study notifications yours.")
-                    .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                Text("Customize").font(StudyStudioStyle.title(30)).foregroundStyle(StudyStudioStyle.ink)
+                Text("Make every study moment yours.").font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
-            Spacer()
-
+            Spacer(minLength: 0)
             Button(action: resetToDefault) {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.caption2.bold())
-                    Text("Reset")
-                        .font(.custom("Poppins-Medium", size: 12))
-                }
-                .foregroundStyle(isDefaultSettings ? LearnAlertStyle.textSecondary.opacity(0.35) : LearnAlertStyle.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(isDefaultSettings ? 0.02 : 0.06), in: Capsule())
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 20, weight: .medium))
+                    .frame(width: 48, height: 48)
+                    .background(StudyStudioStyle.field, in: Circle())
             }
             .disabled(isDefaultSettings)
             .accessibilityLabel("Reset appearance to default")
         }
-        .padding(.horizontal, 20)
     }
 
-    // MARK: - 1. Preview Card Type Selector
-    private var cardTypeSelectorSection: some View {
-        Button {
-            showingCardTypeSheet = true
-            HapticFeedback.selection()
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(LearnAlertStyle.indigo.opacity(0.12))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: previewCardType.icon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(LearnAlertStyle.indigo)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Preview card type")
-                        .font(.custom("Poppins-Regular", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    Text(previewCardType.title)
-                        .font(.custom("Poppins-SemiBold", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+    private var studioBanner: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("YOUR NOTIFICATION STUDIO").font(StudyStudioStyle.heading(10)).tracking(1)
+                Text("A little more you.").font(StudyStudioStyle.title(23))
+                Text("Choose a look. Try a card. Keep learning, your way.").font(StudyStudioStyle.body(13))
+                    .foregroundStyle(.white.opacity(0.90))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
+            Spacer(minLength: 0)
+            Image(systemName: "bell.badge")
+                .font(.system(size: 42, weight: .regular))
+                .frame(width: 80, height: 88)
+                .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 24))
+                .rotationEffect(.degrees(8))
+                .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 20)
-        .accessibilityLabel("Preview card type: \(previewCardType.title)")
+        .foregroundStyle(.white).padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudyStudioStyle.violet, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private var cardTypeSelectorSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeading("Choose your card", detail: "Preview only")
+            Button {
+                showingCardTypeSheet = true
+                HapticFeedback.selection()
+            } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: previewCardType.icon).font(.system(size: 24))
+                        .frame(width: 48, height: 48)
+                        .background(StudyStudioStyle.violet.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                        .foregroundStyle(StudyStudioStyle.violet)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(previewCardType.title).font(StudyStudioStyle.heading(16)).foregroundStyle(StudyStudioStyle.ink)
+                        Text("Explore all five card formats").font(StudyStudioStyle.body(12)).foregroundStyle(StudyStudioStyle.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.down").foregroundStyle(StudyStudioStyle.secondary)
+                }
+                .padding(16).background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
+            }.buttonStyle(.plain)
+            .accessibilityLabel("Preview card type: \(previewCardType.title)")
+        }
+    }
+
+    private func sectionHeading(_ title: String, detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
+            Spacer(minLength: 8)
+            Text(detail).font(StudyStudioStyle.body(11)).foregroundStyle(StudyStudioStyle.secondary)
+        }
     }
 
     // MARK: - Card Type Picker Sheet
@@ -145,7 +137,7 @@ struct NotificationCustomizeView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Select a card format to preview how it appears in rich notifications. This only changes the preview example.")
                         .font(.custom("Poppins-Regular", size: 13))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .foregroundStyle(StudyStudioStyle.secondary)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
 
@@ -161,20 +153,20 @@ struct NotificationCustomizeView: View {
                                 HStack(spacing: 14) {
                                     ZStack {
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(previewCardType == type ? LearnAlertStyle.indigo.opacity(0.15) : Color.primary.opacity(0.05))
+                                            .fill(previewCardType == type ? StudyStudioStyle.violet.opacity(0.15) : Color.primary.opacity(0.05))
                                             .frame(width: 40, height: 40)
                                         Image(systemName: type.icon)
                                             .font(.system(size: 16, weight: .semibold))
-                                            .foregroundStyle(previewCardType == type ? LearnAlertStyle.indigo : LearnAlertStyle.textSecondary)
+                                            .foregroundStyle(previewCardType == type ? StudyStudioStyle.violet : StudyStudioStyle.secondary)
                                     }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(type.title)
                                             .font(.custom("Poppins-SemiBold", size: 15))
-                                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                                            .foregroundStyle(StudyStudioStyle.ink)
                                         Text(type.subtitle)
                                             .font(.custom("Poppins-Regular", size: 12))
-                                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                                            .foregroundStyle(StudyStudioStyle.secondary)
                                             .lineLimit(2)
                                     }
 
@@ -183,16 +175,16 @@ struct NotificationCustomizeView: View {
                                     if previewCardType == type {
                                         Image(systemName: "checkmark")
                                             .font(.system(size: 14, weight: .bold))
-                                            .foregroundStyle(LearnAlertStyle.indigo)
+                                            .foregroundStyle(StudyStudioStyle.violet)
                                     }
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 12)
-                                .background(previewCardType == type ? LearnAlertStyle.indigo.opacity(0.08) : LearnAlertStyle.surface)
+                                .background(previewCardType == type ? StudyStudioStyle.violet.opacity(0.08) : StudyStudioStyle.field)
                                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .stroke(previewCardType == type ? LearnAlertStyle.indigo.opacity(0.5) : LearnAlertStyle.hairline, lineWidth: 1)
+                                        .stroke(previewCardType == type ? StudyStudioStyle.violet.opacity(0.5) : StudyStudioStyle.hairline, lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -202,7 +194,7 @@ struct NotificationCustomizeView: View {
                 }
                 .padding(.bottom, 24)
             }
-            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+            .background(StudyStudioStyle.canvas.ignoresSafeArea())
             .navigationTitle("Preview Card Type")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -211,7 +203,7 @@ struct NotificationCustomizeView: View {
                         showingCardTypeSheet = false
                     }
                     .font(.custom("Poppins-SemiBold", size: 14))
-                    .foregroundStyle(LearnAlertStyle.indigo)
+                    .foregroundStyle(StudyStudioStyle.violet)
                 }
             }
         }
@@ -219,207 +211,103 @@ struct NotificationCustomizeView: View {
         .presentationDragIndicator(.visible)
     }
 
-    // MARK: - 2. Layout Section
     private var layoutSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("LAYOUT")
-                    .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                    .tracking(1.1)
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                Spacer()
-                Text(currentLayout.title)
-                    .font(.custom("Poppins-Medium", size: 12))
-                    .foregroundStyle(LearnAlertStyle.indigo)
-            }
-
-            HStack(spacing: 8) {
-                ForEach(NotificationLayoutMode.allCases) { mode in
-                    Button {
-                        withAnimation(.snappy) {
-                            storedLayoutRaw = mode.rawValue
-                        }
-                        HapticFeedback.selection()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: mode == .automatic ? "aspectratio.fill" : "arrow.down.right.and.arrow.up.left")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(mode.title)
-                                .font(.custom("Poppins-Medium", size: 13))
-                        }
-                        .foregroundStyle(currentLayout == mode ? Color.white : LearnAlertStyle.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 38)
-                        .background(
-                            currentLayout == mode
-                                ? AnyShapeStyle(LearnAlertStyle.indigo)
-                                : AnyShapeStyle(Color.primary.opacity(0.04))
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(4)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-
-            Text("Automatic matches standard notification spacing, while Compact condenses vertical padding for faster study.")
-                .font(.custom("Poppins-Regular", size: 11))
-                .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.85))
-                .padding(.horizontal, 4)
-        }
-        .padding(.horizontal, 20)
-    }
-
-    // MARK: - 3. Background Section
-    private var themeSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("BACKGROUND")
-                    .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                    .tracking(1.1)
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                Spacer()
-                Text(currentTheme.title)
-                    .font(.custom("Poppins-Medium", size: 12))
-                    .foregroundStyle(LearnAlertStyle.indigo)
-            }
-
-            HStack(spacing: 8) {
-                ForEach(NotificationTheme.allCases) { theme in
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            storedThemeRaw = theme.rawValue
-                        }
-                        HapticFeedback.selection()
-                    } label: {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(theme.previewGradient)
-                                .frame(height: 46)
-
-                            if currentTheme == theme {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color.white, lineWidth: 2.2)
-                                    .shadow(color: Color.black.opacity(0.35), radius: 3)
-
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(theme == .light ? Color.black : Color.white)
-                            } else {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(theme.title)
-                }
-            }
-            .padding(6)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-        }
-        .padding(.horizontal, 20)
-    }
-
-    // MARK: - 4. Live Notification Preview Section
-    private var previewSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("LIVE NOTIFICATION PREVIEW")
-                .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                .tracking(1.1)
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-                .padding(.horizontal, 20)
-
-            NotificationSimulatedContainer(
-                theme: currentTheme,
-                layout: currentLayout,
-                cardType: previewCardType,
-                isLight: isLight
-            )
-            .padding(.horizontal, 20)
-        }
-    }
-
-    // MARK: - 5. Test on Device Section
-    private var testSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("TEST ON DEVICE")
-                .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                .tracking(1.1)
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-
-            Button(action: sendTestNotification) {
-                HStack(spacing: 10) {
-                    if testScheduledSuccess {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
-                        Text("Alert Sent in 3s!")
-                            .font(.custom("Poppins-SemiBold", size: 14))
-                            .foregroundStyle(.white)
-                    } else {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
-                        Text("Send Test Notification")
-                            .font(.custom("Poppins-SemiBold", size: 14))
-                            .foregroundStyle(.white)
-                    }
+            sectionHeading("Find your fit", detail: "Layout")
+            VStack(spacing: 12) {
+                ForEach(NotificationLayoutMode.allCases) { mode in
+                    let selected = currentLayout == mode
+                    Button {
+                        withAnimation(.snappy) { storedLayoutRaw = mode.rawValue }
+                        HapticFeedback.selection()
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: mode == .automatic ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                                .font(.system(size: 25)).frame(width: 44)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(mode.title).font(StudyStudioStyle.heading(16))
+                                Text(mode == .automatic ? "Room to read, space to think." : "Less space. The same learning.")
+                                    .font(StudyStudioStyle.body(12)).foregroundStyle(selected ? .white.opacity(0.88) : StudyStudioStyle.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                        }
+                        .foregroundStyle(selected ? .white : StudyStudioStyle.ink)
+                        .padding(20).frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+                        .background(selected ? StudyStudioStyle.violet : StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
+                    }.buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(
-                    LinearGradient(
-                        colors: testScheduledSuccess
-                            ? [Color.green.opacity(0.9), Color.green]
-                            : [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(
-                    color: testScheduledSuccess ? Color.green.opacity(0.3) : LearnAlertStyle.indigo.opacity(0.3),
-                    radius: 8,
-                    y: 3
-                )
             }
+            Text("Automatic uses standard notification spacing. Compact reduces vertical padding.")
+                .font(StudyStudioStyle.body(12)).foregroundStyle(StudyStudioStyle.secondary)
         }
-        .padding(18)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-        .padding(.horizontal, 20)
     }
 
-    // MARK: - 6. Footnote Section
-    private var footnoteSection: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "info.circle")
-                .font(.caption)
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-                .padding(.top, 1)
-            Text("These settings change your expanded notifications. Touch and hold a notification to see your design.")
-                .font(.custom("Poppins-Regular", size: 12))
-                .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.85))
-                .lineSpacing(2)
+    private var themeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeading("Set the mood", detail: currentTheme.title)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 12)], spacing: 12) {
+                ForEach(NotificationTheme.allCases) { theme in
+                    let selected = currentTheme == theme
+                    Button {
+                        withAnimation(.snappy) { storedThemeRaw = theme.rawValue }
+                        HapticFeedback.selection()
+                    } label: {
+                        VStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(theme.previewGradient)
+                                .frame(height: 72)
+                                .overlay {
+                                    if selected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .font(.system(size: 24))
+                                            .foregroundStyle(theme == .light ? Color(hex: "#514996") : .white)
+                                    }
+                                }
+                                .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? StudyStudioStyle.violet : StudyStudioStyle.secondary.opacity(0.18), lineWidth: selected ? 3 : 1))
+                            Text(theme.title).font(StudyStudioStyle.heading(11))
+                                .foregroundStyle(selected ? StudyStudioStyle.violet : StudyStudioStyle.secondary)
+                        }
+                        .padding(4)
+                    }.buttonStyle(.plain)
+                    .accessibilityLabel(theme.title)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
         }
-        .padding(.horizontal, 24)
+    }
+
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeading("Your next study alert", detail: "Interactive preview")
+            NotificationSimulatedContainer(theme: currentTheme, layout: currentLayout, cardType: previewCardType, isLight: isLight)
+            Text("Tap an answer, reveal a hint, or try a new card format below.")
+                .font(StudyStudioStyle.body(12)).foregroundStyle(StudyStudioStyle.secondary)
+        }
+    }
+
+    private var testSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeading("Give it a try", detail: "On your device")
+            Text("See your design where it belongs: in a real study notification.")
+                .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
+            Button(action: sendTestNotification) {
+                Label(testScheduledSuccess ? "Alert arrives in 3 seconds" : "Send Test Notification",
+                      systemImage: testScheduledSuccess ? "checkmark.circle.fill" : "bell.badge")
+                    .font(StudyStudioStyle.heading(14))
+                    .foregroundStyle(.white).frame(maxWidth: .infinity, minHeight: 56)
+                    .background(testScheduledSuccess ? StudyStudioStyle.teal : StudyStudioStyle.violet, in: RoundedRectangle(cornerRadius: 18))
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private var footnoteSection: some View {
+        Label("These settings change your expanded notifications. Touch and hold a notification to see your design.", systemImage: "hand.tap")
+            .font(StudyStudioStyle.body(12)).foregroundStyle(StudyStudioStyle.secondary)
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private func resetToDefault() {

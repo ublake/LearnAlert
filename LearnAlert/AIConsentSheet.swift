@@ -48,7 +48,7 @@ struct AIConsentSheet: View {
                                     .font(.custom("Poppins-SemiBold", size: 21))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
 
-                                Text("LearnAlert uses artificial intelligence (OpenAI) to generate flashcards and summarize your study materials.")
+                                Text("LearnAlert uses artificial intelligence to generate flashcards and summarize your study materials.")
                                     .font(.custom("Poppins-Regular", size: 13))
                                     .foregroundStyle(LearnAlertStyle.textSecondary)
                                     .lineSpacing(2)

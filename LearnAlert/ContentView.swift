@@ -87,6 +87,9 @@ struct ContentView: View {
                 guard handoff != nil else { return }
                 selectedTab = 0
             }
+            .navigationDestination(item: $notificationManager.pendingCourseHandoff) { handoff in
+                if let course = CourseCurriculumCatalog.course(for: handoff.id) { CoursePathView(course: course, initialCheckpointSectionId: handoff.sectionId) }
+            }
             .navigationDestination(item: $notificationManager.pendingStudyHandoff) { handoff in
                 if let deck = decks.first(where: { $0.id == handoff.deckId }) {
                     DeckStudyView(
@@ -528,9 +531,13 @@ struct TabBarItem: View {
 
 // MARK: - Tab 1: Home Library
 struct HomeLibraryView: View {
-    @Query(sort: \Deck.orderIndex) private var decks: [Deck]
+    @Query(sort: \Deck.orderIndex) private var allDecks: [Deck]
     @Environment(\.modelContext) private var context
     @ObservedObject private var sharedDB = SharedDatabase.shared
+    @ObservedObject private var progressManager = CourseProgressManager.shared
+    @ObservedObject private var engine = StudyEngine.shared
+    @Environment(\.openURL) private var openURL
+
     @State private var draggedDeck: Deck?
     @State private var isSearchExpanded = false
     @State private var showingAIComposer = false
@@ -539,50 +546,496 @@ struct HomeLibraryView: View {
     @State private var showingNotificationPermissionPrompt = false
     @State private var pendingDeckToSchedule: Deck?
     @State private var pendingFromDeckCard = false
-    @Environment(\.openURL) private var openURL
+    @State private var scheduleCelebrationEvent: CelebrationEvent?
+    @State private var deckPendingDeletion: Deck?
+    @State private var homeAlertMessage: String?
+    @State private var showingQuickScheduleTipToast = false
+    @State private var showingPinnedReorderSheet = false
+    @State private var selectedLessonForStudy: CourseLesson?
+    @State private var selectedCourseForStudy: CourseDefinition?
+    @State private var selectedCourseForOverview: CourseDefinition?
+    @State private var coursePendingUnenroll: CourseDefinition?
+
+    @AppStorage("hasSeenQuickScheduleSwitchTip") private var hasSeenQuickScheduleSwitchTip = false
+    @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
+    @AppStorage("tutorialDeckId") private var tutorialDeckId: String = ""
+    @AppStorage("targetDeckId") private var targetDeckId: String = "ALL"
+    @State private var liveTutorialStartTime: TimeInterval = 0
+
+    @Binding var searchText: String
+    @Binding var selectedTab: Int
+    @Binding var showingCreateDeck: Bool
+
     struct CelebrationEvent: Equatable {
         let id = UUID()
         let timestamp = Date()
     }
-    @State private var scheduleCelebrationEvent: CelebrationEvent?
-    @State private var deckPendingDeletion: Deck?
-    @State private var homeAlertMessage: String?
-    @AppStorage("hasSeenQuickScheduleSwitchTip") private var hasSeenQuickScheduleSwitchTip = false
-    @State private var showingQuickScheduleTipToast = false
-    @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
-    @AppStorage("tutorialDeckId") private var tutorialDeckId: String = ""
-    @State private var liveTutorialStartTime: TimeInterval = 0
-    @Binding var searchText: String
-    @Binding var selectedTab: Int
-    @Binding var showingCreateDeck: Bool
-    let columns = [GridItem(.flexible())]
-    
-    @AppStorage("targetDeckId") private var targetDeckId: String = "ALL"
-    @ObservedObject private var engine = StudyEngine.shared
-    
-    private var activeTutorialDeck: Deck? {
-        if !tutorialDeckId.isEmpty, let deck = decks.first(where: { $0.id.uuidString == tutorialDeckId }) {
-            return deck
-        }
-        if !targetDeckId.isEmpty && targetDeckId != "ALL", let deck = decks.first(where: { $0.id.uuidString == targetDeckId }) {
-            return deck
-        }
-        return decks.first
+
+    private var ordinaryDecks: [Deck] {
+        allDecks.filter { $0.deckType != "Course" }
     }
-    
-    var filteredDecks: [Deck] {
-        var list = searchText.isEmpty ? decks : decks.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-        
-        // During tutorial, automatically place the user-selected starter deck at the top so it is immediately visible without scrolling
-        if homeTutorialStep > 0, let tutDeck = activeTutorialDeck {
-            if let index = list.firstIndex(where: { $0.id == tutDeck.id }) {
-                let deck = list.remove(at: index)
-                list.insert(deck, at: 0)
+
+    private var enrolledCourses: [CourseDefinition] {
+        progressManager.allEnrolledCourses
+    }
+
+    private enum HomeLibraryItem: Identifiable, Equatable {
+        case course(CourseDefinition)
+        case deck(Deck)
+
+        var id: String {
+            switch self {
+            case .course(let course): return "course:\(course.id)"
+            case .deck(let deck): return "deck:\(deck.id.uuidString)"
             }
         }
-        return list
     }
-    
+
+    private var pinnedItems: [HomeLibraryItem] {
+        progressManager.pinnedItemIds.compactMap { itemId -> HomeLibraryItem? in
+            if itemId.hasPrefix("course:") {
+                let courseId = String(itemId.dropFirst("course:".count))
+                if let course = enrolledCourses.first(where: { $0.id == courseId }) {
+                    return .course(course)
+                }
+            } else if itemId.hasPrefix("deck:") {
+                let deckId = String(itemId.dropFirst("deck:".count))
+                if let deck = ordinaryDecks.first(where: { $0.id.uuidString == deckId }) {
+                    return .deck(deck)
+                }
+            }
+            return nil
+        }
+    }
+
+    private var unpinnedCourses: [CourseDefinition] {
+        let list = enrolledCourses.filter { !progressManager.isCoursePinned(courseId: $0.id) }
+        if searchText.isEmpty { return list }
+        return list.filter {
+            $0.title.localizedCaseInsensitiveContains(searchText) ||
+            $0.language.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var unpinnedDecks: [Deck] {
+        let list = ordinaryDecks.filter { !progressManager.isDeckPinned(deckId: $0.id) }
+        var result = searchText.isEmpty ? list : list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+
+        if homeTutorialStep > 0, let tutDeck = activeTutorialDeck {
+            if let index = result.firstIndex(where: { $0.id == tutDeck.id }) {
+                let deck = result.remove(at: index)
+                result.insert(deck, at: 0)
+            }
+        }
+        return result
+    }
+
+    private var activeTutorialDeck: Deck? {
+        if !tutorialDeckId.isEmpty, let deck = ordinaryDecks.first(where: { $0.id.uuidString == tutorialDeckId }) {
+            return deck
+        }
+        if !targetDeckId.isEmpty && targetDeckId != "ALL", let deck = ordinaryDecks.first(where: { $0.id.uuidString == targetDeckId }) {
+            return deck
+        }
+        return ordinaryDecks.first
+    }
+
+    @ViewBuilder
+    private var storageNoticeView: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.orange)
+                .font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Storage Notice")
+                    .font(.custom("Poppins-SemiBold", size: 13))
+                    .foregroundStyle(.white)
+                Text(sharedDB.storageErrorMessage ?? "Running in temporary memory mode. Flashcards may not persist between app restarts.")
+                    .font(.custom("Poppins-Regular", size: 11))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 2)
+    }
+
+    @ViewBuilder
+    private var headerBarView: some View {
+        HStack(spacing: 12) {
+            LearnAlertLogoMark()
+
+            Spacer()
+
+            if homeTutorialStep > 0 {
+                Button {
+                    withAnimation(.snappy) {
+                        homeTutorialStep = 0
+                    }
+                } label: {
+                    Text("Skip Tour")
+                        .font(.custom("Poppins-Medium", size: 14, relativeTo: .body))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            } else {
+                if isSearchExpanded {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                        TextField("Search your decks", text: $searchText)
+                            .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .submitLabel(.search)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 48)
+                    .background(LearnAlertStyle.courseSurface)
+                    .clipShape(Capsule())
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    NavigationLink {
+                        ProgressDashboardView()
+                    } label: {
+                        Image(systemName: "chart.bar.fill")
+                            .font(.headline)
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .frame(width: 48, height: 48)
+                            .background(LearnAlertStyle.courseSurface)
+                            .clipShape(Capsule())
+                    }
+                    .accessibilityLabel("View progress statistics")
+                }
+
+                Button {
+                    withAnimation(.snappy) {
+                        isSearchExpanded.toggle()
+                        if !isSearchExpanded { searchText = "" }
+                    }
+                } label: {
+                    Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
+                        .font(.headline)
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .frame(width: 48, height: 48)
+                        .background(LearnAlertStyle.courseSurface)
+                        .clipShape(Capsule())
+                }
+                .accessibilityLabel(isSearchExpanded ? "Close deck search" : "Search decks")
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+
+    @ViewBuilder
+    private var alertSetupSection: some View {
+        HomeAlertSetupCard(
+            decks: ordinaryDecks,
+            engine: engine,
+            targetDeckId: $targetDeckId,
+            homeTutorialStep: homeTutorialStep,
+            showSettings: { showingAlertSettings = true },
+            showDeckRequirement: {
+                withAnimation(.snappy) { showingDeckRequirementAlert = true }
+            },
+            schedule: { quickSchedule($0, fromDeckCard: false) }
+        )
+        .padding(.horizontal, 20)
+        .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
+        .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
+        .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
+    }
+
+    @ViewBuilder
+    private var pinnedSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Pinned")
+                    .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+
+                Spacer()
+
+                if pinnedItems.count > 1 {
+                    Button {
+                        showingPinnedReorderSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Reorder")
+                                .font(.custom("Poppins-Medium", size: 12))
+                        }
+                        .foregroundStyle(LearnAlertStyle.sky)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+
+            LazyVStack(spacing: 12) {
+                ForEach(pinnedItems) { item in
+                    switch item {
+                    case .course(let course):
+                        let isTargeted = engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId
+                        HomeCourseCard(
+                            course: course,
+                            isPinned: true,
+                            isTargeted: isTargeted,
+                            onContinue: {
+                                resumeCourse(course)
+                            },
+                            onOpenOverview: {
+                                selectedCourseForOverview = course
+                            },
+                            schedule: {
+                                scheduleCourse(course)
+                            },
+                            togglePin: {
+                                progressManager.togglePin(id: "course:\(course.id)")
+                            },
+                            unenroll: {
+                                coursePendingUnenroll = course
+                            }
+                        )
+                    case .deck(let deck):
+                        let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
+                        HomeStudyCard(
+                            deck: deck,
+                            isPinned: true,
+                            isTargeted: isTargeted,
+                            isTutorialHighlighted: false,
+                            isTutorialActive: homeTutorialStep > 0,
+                            onTapped: nil,
+                            schedule: { quickSchedule(deck, fromDeckCard: true) },
+                            togglePin: { progressManager.togglePin(id: "deck:\(deck.id.uuidString)") },
+                            shuffleAppearance: { shuffleAppearance(for: deck) },
+                            delete: { deckPendingDeletion = deck }
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    @ViewBuilder
+    private var librarySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Your library")
+                    .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                Spacer()
+                let totalCount = unpinnedCourses.count + unpinnedDecks.count
+                Text("\(totalCount) \(totalCount == 1 ? "item" : "items")")
+                    .font(.custom("Poppins-Regular", size: 12, relativeTo: .caption))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+            .padding(.horizontal, 20)
+
+            if unpinnedCourses.isEmpty && unpinnedDecks.isEmpty && pinnedItems.isEmpty {
+                EmptyLibraryCard(
+                    isSearching: !searchText.isEmpty,
+                    onCreateDeck: { showingCreateDeck = true },
+                    onBrowseDiscover: { selectedTab = 1 }
+                )
+                .padding(.horizontal, 20)
+            } else {
+                LazyVStack(spacing: 12) {
+                    // Unpinned Courses
+                    ForEach(unpinnedCourses) { course in
+                        let isTargeted = engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId
+                        HomeCourseCard(
+                            course: course,
+                            isPinned: false,
+                            isTargeted: isTargeted,
+                            onContinue: {
+                                resumeCourse(course)
+                            },
+                            onOpenOverview: {
+                                selectedCourseForOverview = course
+                            },
+                            schedule: {
+                                scheduleCourse(course)
+                            },
+                            togglePin: {
+                                progressManager.togglePin(id: "course:\(course.id)")
+                            },
+                            unenroll: {
+                                coursePendingUnenroll = course
+                            }
+                        )
+                    }
+
+                    // Unpinned Decks
+                    ForEach(unpinnedDecks) { deck in
+                        let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
+                        let isHighlightedInTour = homeTutorialStep == 1 && (deck.id == activeTutorialDeck?.id)
+                        let isOtherDeckInStep1 = homeTutorialStep == 1 && !isHighlightedInTour
+
+                        HomeStudyCard(
+                            deck: deck,
+                            isPinned: false,
+                            isTargeted: isTargeted,
+                            isTutorialHighlighted: isHighlightedInTour,
+                            isTutorialActive: homeTutorialStep > 0,
+                            onTapped: {
+                                if homeTutorialStep == 1 && isHighlightedInTour {
+                                    homeTutorialStep = 2
+                                }
+                            },
+                            schedule: { quickSchedule(deck, fromDeckCard: true) },
+                            togglePin: { progressManager.togglePin(id: "deck:\(deck.id.uuidString)") },
+                            shuffleAppearance: { shuffleAppearance(for: deck) },
+                            delete: { deckPendingDeletion = deck }
+                        )
+                        .opacity(isOtherDeckInStep1 ? 0.18 : 1.0)
+                        .blur(radius: isOtherDeckInStep1 ? 2.0 : 0)
+                        .allowsHitTesting(homeTutorialStep == 0 || isHighlightedInTour)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
+        .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
+        .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
+    }
+
+    @ViewBuilder
+    private var tourOverlays: some View {
+        if homeTutorialStep == 4 {
+            VStack(spacing: 16) {
+                Spacer()
+
+                HandDrawnUpwardArrowView()
+
+                LiveTestAlertFloatingBanner(
+                    deckName: ordinaryDecks.first(where: { $0.id.uuidString == targetDeckId })?.name ?? "Starter Deck",
+                    onResend: {
+                        sendTutorialTestAlert()
+                    },
+                    onComplete: {
+                        HapticFeedback.success()
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                            homeTutorialStep = 5
+                        }
+                    },
+                    onDismiss: {
+                        withAnimation(.snappy) {
+                            homeTutorialStep = 0
+                        }
+                    }
+                )
+                .padding(.horizontal, 20)
+
+                Spacer()
+            }
+            .transition(.scale(scale: 0.94).combined(with: .opacity))
+            .zIndex(30)
+        }
+
+        if homeTutorialStep == 5 {
+            VStack {
+                TutorialCompletedBanner {
+                    withAnimation(.snappy) {
+                        homeTutorialStep = 0
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                Spacer()
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .zIndex(30)
+            .task {
+                try? await Task.sleep(nanoseconds: 3_500_000_000)
+                withAnimation(.snappy) {
+                    if homeTutorialStep == 5 {
+                        homeTutorialStep = 0
+                    }
+                }
+            }
+        }
+
+        if showingDeckRequirementAlert {
+            DeckRequirementAlert(
+                createDeck: {
+                    showingDeckRequirementAlert = false
+                    showingCreateDeck = true
+                },
+                discoverDecks: {
+                    showingDeckRequirementAlert = false
+                    selectedTab = 1
+                },
+                generateWithAI: {
+                    showingDeckRequirementAlert = false
+                    showingAIComposer = true
+                },
+                dismiss: {
+                    withAnimation(.snappy) { showingDeckRequirementAlert = false }
+                }
+            )
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            .zIndex(10)
+        }
+
+        if showingQuickScheduleTipToast {
+            VStack {
+                Spacer()
+                QuickScheduleTipPopup(dismiss: {
+                    withAnimation(.snappy) { showingQuickScheduleTipToast = false }
+                })
+                .padding(.bottom, 96)
+            }
+            .transition(.asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .move(edge: .bottom).combined(with: .opacity)
+            ))
+            .zIndex(25)
+        }
+
+        if showingNotificationPermissionPrompt {
+            NotificationPermissionPromptModal(
+                targetDeckName: pendingDeckToSchedule?.name ?? "your deck",
+                onAllow: {
+                    withAnimation(.snappy) {
+                        showingNotificationPermissionPrompt = false
+                    }
+                    if let deck = pendingDeckToSchedule {
+                        applySchedule(for: deck, fromDeckCard: pendingFromDeckCard)
+                        pendingDeckToSchedule = nil
+                    }
+                },
+                onStudyInAppOnly: {
+                    withAnimation(.snappy) {
+                        showingNotificationPermissionPrompt = false
+                    }
+                    pendingDeckToSchedule = nil
+                    if homeTutorialStep == 3 {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                            homeTutorialStep = 0
+                        }
+                    }
+                },
+                onOpenSettings: {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        openURL(url)
+                    }
+                }
+            )
+            .transition(.opacity)
+            .zIndex(40)
+        }
+    }
+
     var body: some View {
         ZStack {
             HomeWallpaperBackground()
@@ -592,160 +1045,18 @@ struct HomeLibraryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if sharedDB.isUsingTemporaryStorage {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(Color.orange)
-                                .font(.system(size: 16))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Storage Notice")
-                                    .font(.custom("Poppins-SemiBold", size: 13))
-                                    .foregroundStyle(.white)
-                                Text(sharedDB.storageErrorMessage ?? "Running in temporary memory mode. Flashcards may not persist between app restarts.")
-                                    .font(.custom("Poppins-Regular", size: 11))
-                                    .foregroundStyle(.white.opacity(0.8))
-                            }
-                        }
-                        .padding(12)
-                        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
-                        )
-                        .padding(.horizontal, 2)
+                        storageNoticeView
                     }
-                    HStack(spacing: 12) {
-                        LearnAlertLogoMark()
 
-                        Spacer()
+                    headerBarView
 
-                        if homeTutorialStep > 0 {
-                            Button {
-                                withAnimation(.snappy) {
-                                    homeTutorialStep = 0
-                                }
-                            } label: {
-                                Text("Skip Tour")
-                                    .font(.custom("Poppins-Medium", size: 14, relativeTo: .body))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.plain)
-                            .transition(.opacity)
-                        } else {
-                            if isSearchExpanded {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "magnifyingglass")
-                                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                                    TextField("Search your decks", text: $searchText)
-                                        .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                        .submitLabel(.search)
-                                }
-                                .padding(.horizontal, 14)
-                                .frame(height: 48)
-                                .background(LearnAlertStyle.courseSurface)
-                                .clipShape(Capsule())
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                            } else {
-                                NavigationLink {
-                                    ProgressDashboardView()
-                                } label: {
-                                    Image(systemName: "chart.bar.fill")
-                                        .font(.headline)
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                        .frame(width: 48, height: 48)
-                                        .background(LearnAlertStyle.courseSurface)
-                                        .clipShape(Capsule())
-                                }
-                                .accessibilityLabel("View progress statistics")
-                            }
+                    alertSetupSection
 
-                            Button {
-                                withAnimation(.snappy) {
-                                    isSearchExpanded.toggle()
-                                    if !isSearchExpanded { searchText = "" }
-                                }
-                            } label: {
-                                Image(systemName: isSearchExpanded ? "xmark" : "magnifyingglass")
-                                    .font(.headline)
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    .frame(width: 48, height: 48)
-                                    .background(LearnAlertStyle.courseSurface)
-                                    .clipShape(Capsule())
-                            }
-                            .accessibilityLabel(isSearchExpanded ? "Close deck search" : "Search decks")
-                        }
+                    if !pinnedItems.isEmpty {
+                        pinnedSection
                     }
-                    .padding(.horizontal, 20)
 
-                    HomeAlertSetupCard(
-                        decks: decks,
-                        engine: engine,
-                        targetDeckId: $targetDeckId,
-                        homeTutorialStep: homeTutorialStep,
-                        showSettings: { showingAlertSettings = true },
-                        showDeckRequirement: {
-                            withAnimation(.snappy) { showingDeckRequirementAlert = true }
-                        },
-                        schedule: { quickSchedule($0, fromDeckCard: false) }
-                    )
-                    .padding(.horizontal, 20)
-                    .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
-                    .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
-                    .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
-
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            Text("Your library")
-                                .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                            Spacer()
-                            Text("\(filteredDecks.count) decks")
-                                .font(.custom("Poppins-Regular", size: 12, relativeTo: .caption))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
-                        .padding(.horizontal, 20)
-
-                        if filteredDecks.isEmpty {
-                            EmptyLibraryCard(
-                                isSearching: !searchText.isEmpty,
-                                onCreateDeck: { showingCreateDeck = true },
-                                onBrowseDiscover: { selectedTab = 1 }
-                            )
-                            .padding(.horizontal, 20)
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(filteredDecks) { deck in
-                                    let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
-                                    let isHighlightedInTour = homeTutorialStep == 1 && (deck.id == activeTutorialDeck?.id)
-                                    let isOtherDeckInStep1 = homeTutorialStep == 1 && !isHighlightedInTour
-
-                                    HomeStudyCard(
-                                        deck: deck,
-                                        isTargeted: isTargeted,
-                                        isTutorialHighlighted: isHighlightedInTour,
-                                        isTutorialActive: homeTutorialStep > 0,
-                                        onTapped: {
-                                            if homeTutorialStep == 1 && isHighlightedInTour {
-                                                homeTutorialStep = 2
-                                            }
-                                        },
-                                        schedule: { quickSchedule(deck, fromDeckCard: true) },
-                                        shuffleAppearance: { shuffleAppearance(for: deck) },
-                                        delete: { deckPendingDeletion = deck }
-                                    )
-                                    .opacity(isOtherDeckInStep1 ? 0.18 : 1.0)
-                                    .blur(radius: isOtherDeckInStep1 ? 2.0 : 0)
-                                    .allowsHitTesting(homeTutorialStep == 0 || isHighlightedInTour)
-                                }
-                            }
-                            .padding(.horizontal, 20)
-                        }
-                    }
-                    .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
-                    .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
-                    .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
+                    librarySection
 
                     Spacer().frame(height: 210)
                 }
@@ -754,131 +1065,7 @@ struct HomeLibraryView: View {
             .blur(radius: showingDeckRequirementAlert ? 3 : 0)
             .animation(.easeInOut(duration: 0.25), value: showingDeckRequirementAlert)
 
-            // Step 4: Live Test Alert Banner (Centered with upward arrow)
-            if homeTutorialStep == 4 {
-                VStack(spacing: 16) {
-                    Spacer()
-
-                    HandDrawnUpwardArrowView()
-
-                    LiveTestAlertFloatingBanner(
-                        deckName: decks.first(where: { $0.id.uuidString == targetDeckId })?.name ?? "Starter Deck",
-                        onResend: {
-                            sendTutorialTestAlert()
-                        },
-                        onComplete: {
-                            HapticFeedback.success()
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                homeTutorialStep = 5
-                            }
-                        },
-                        onDismiss: {
-                            withAnimation(.snappy) {
-                                homeTutorialStep = 0
-                            }
-                        }
-                    )
-                    .padding(.horizontal, 20)
-
-                    Spacer()
-                }
-                .transition(.scale(scale: 0.94).combined(with: .opacity))
-                .zIndex(30)
-            }
-
-            // Step 5: Walkthrough Celebration Banner
-            if homeTutorialStep == 5 {
-                VStack {
-                    TutorialCompletedBanner {
-                        withAnimation(.snappy) {
-                            homeTutorialStep = 0
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    Spacer()
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(30)
-                .task {
-                    try? await Task.sleep(nanoseconds: 3_500_000_000)
-                    withAnimation(.snappy) {
-                        if homeTutorialStep == 5 {
-                            homeTutorialStep = 0
-                        }
-                    }
-                }
-            }
-
-            if showingDeckRequirementAlert {
-                DeckRequirementAlert(
-                    createDeck: {
-                        showingDeckRequirementAlert = false
-                        showingCreateDeck = true
-                    },
-                    discoverDecks: {
-                        showingDeckRequirementAlert = false
-                        selectedTab = 1
-                    },
-                    generateWithAI: {
-                        showingDeckRequirementAlert = false
-                        showingAIComposer = true
-                    },
-                    dismiss: {
-                        withAnimation(.snappy) { showingDeckRequirementAlert = false }
-                    }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                .zIndex(10)
-            }
-
-            if showingQuickScheduleTipToast {
-                VStack {
-                    Spacer()
-                    QuickScheduleTipPopup(dismiss: {
-                        withAnimation(.snappy) { showingQuickScheduleTipToast = false }
-                    })
-                    .padding(.bottom, 96)
-                }
-                .transition(.asymmetric(
-                    insertion: .move(edge: .bottom).combined(with: .opacity),
-                    removal: .move(edge: .bottom).combined(with: .opacity)
-                ))
-                .zIndex(25)
-            }
-
-            if showingNotificationPermissionPrompt {
-                NotificationPermissionPromptModal(
-                    targetDeckName: pendingDeckToSchedule?.name ?? "your deck",
-                    onAllow: {
-                        withAnimation(.snappy) {
-                            showingNotificationPermissionPrompt = false
-                        }
-                        if let deck = pendingDeckToSchedule {
-                            applySchedule(for: deck, fromDeckCard: pendingFromDeckCard)
-                            pendingDeckToSchedule = nil
-                        }
-                    },
-                    onStudyInAppOnly: {
-                        withAnimation(.snappy) {
-                            showingNotificationPermissionPrompt = false
-                        }
-                        pendingDeckToSchedule = nil
-                        if homeTutorialStep == 3 {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                homeTutorialStep = 0
-                            }
-                        }
-                    },
-                    onOpenSettings: {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            openURL(url)
-                        }
-                    }
-                )
-                .transition(.opacity)
-                .zIndex(40)
-            }
+            tourOverlays
         }
         .task(id: homeTutorialStep) {
             guard homeTutorialStep == 4 else { return }
@@ -928,6 +1115,44 @@ struct HomeLibraryView: View {
         .sheet(isPresented: $showingAIComposer) {
             GeneratedQuizImportView()
         }
+        .sheet(isPresented: $showingPinnedReorderSheet) {
+            PinnedReorderSheet(
+                progressManager: progressManager,
+                enrolledCourses: enrolledCourses,
+                decks: ordinaryDecks
+            )
+        }
+        .sheet(item: $selectedCourseForOverview) { course in
+            NavigationStack {
+                CourseOverviewView(course: course)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { selectedCourseForOverview = nil }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(item: $selectedLessonForStudy) { lesson in
+            if let course = selectedCourseForStudy {
+                CourseLessonStudyView(course: course, lesson: lesson, onDismiss: { selectedLessonForStudy = nil })
+            }
+        }
+        .confirmationDialog(
+            "Unenroll from \(coursePendingUnenroll?.title ?? "this course")?",
+            isPresented: Binding(
+                get: { coursePendingUnenroll != nil },
+                set: { if !$0 { coursePendingUnenroll = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Unenroll", role: .destructive) {
+                if let course = coursePendingUnenroll {
+                    progressManager.unenroll(courseId: course.id)
+                    coursePendingUnenroll = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { coursePendingUnenroll = nil }
+        }
         .confirmationDialog(
             "Delete \(deckPendingDeletion?.name ?? "this deck")?",
             isPresented: Binding(
@@ -955,8 +1180,22 @@ struct HomeLibraryView: View {
         }
     }
 
+    private func resumeCourse(_ course: CourseDefinition) {
+        if let current = progressManager.currentLesson(for: course) {
+            selectedCourseForStudy = course
+            selectedLessonForStudy = current
+        } else {
+            selectedCourseForOverview = course
+        }
+    }
+
+    private func scheduleCourse(_ course: CourseDefinition) {
+        let deck = progressManager.createOrSyncCourseDeck(for: course, in: context)
+        quickSchedule(deck, fromDeckCard: true)
+    }
+
     private func sendTutorialTestAlert() {
-        guard let deck = decks.first(where: { $0.id.uuidString == targetDeckId }) ?? decks.first,
+        guard let deck = ordinaryDecks.first(where: { $0.id.uuidString == targetDeckId }) ?? ordinaryDecks.first,
               let card = deck.cards.first else { return }
 
         liveTutorialStartTime = Date().timeIntervalSince1970
@@ -1048,7 +1287,7 @@ struct HomeLibraryView: View {
     }
 
     private var activeScheduledCardCount: Int {
-        guard let deck = decks.first(where: { $0.name == engine.activeDeckName }) else { return 0 }
+        guard let deck = ordinaryDecks.first(where: { $0.name == engine.activeDeckName }) else { return 0 }
         if let sectionId = engine.activeSectionId {
             return deck.sections.first(where: { $0.id == sectionId })?.cards.count ?? deck.cards.count
         }
@@ -1829,11 +2068,13 @@ private struct AlertTimelineTrack: View {
 
 private struct HomeStudyCard: View {
     let deck: Deck
+    var isPinned: Bool = false
     let isTargeted: Bool
     var isTutorialHighlighted: Bool = false
     var isTutorialActive: Bool = false
     var onTapped: (() -> Void)? = nil
     let schedule: () -> Void
+    var togglePin: (() -> Void)? = nil
     let shuffleAppearance: () -> Void
     let delete: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -1866,101 +2107,111 @@ private struct HomeStudyCard: View {
                 .transition(.opacity.combined(with: .scale))
             }
 
-            ZStack(alignment: .bottomTrailing) {
-                NavigationLink(destination: DeckDetailView(deck: deck)) {
-                    HStack(spacing: 16) {
-                        DeckCreatureView(
-                            stableID: deck.id,
-                            appearanceSeed: deck.appearanceSeed,
-                            cardCount: deck.cards.count
-                        )
-                        .frame(width: 96, height: 88)
+            ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .bottomTrailing) {
+                    NavigationLink(destination: DeckDetailView(deck: deck)) {
+                        HStack(spacing: 16) {
+                            DeckCreatureView(
+                                stableID: deck.id,
+                                appearanceSeed: deck.appearanceSeed,
+                                cardCount: deck.cards.count
+                            )
+                            .frame(width: 96, height: 88)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(deck.name)
-                                .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(deck.name)
+                                    .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
+                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
 
-                            Text("\(deck.deckType) · \(deck.cards.count) cards")
-                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                Text("\(deck.deckType) · \(deck.cards.count) cards")
+                                    .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
+                                    .foregroundStyle(LearnAlertStyle.textSecondary)
 
-                            Spacer(minLength: 0)
+                                Spacer(minLength: 0)
 
-                            HStack(spacing: 6) {
-                                if deck.cycleStreak > 0 {
-                                    HStack(spacing: 2) {
-                                        Text("🔥")
+                                HStack(spacing: 6) {
+                                    if deck.cycleStreak > 0 {
+                                        HStack(spacing: 2) {
+                                            Text("🔥")
+                                                .font(.system(size: 11))
+                                            Text("\(deck.cycleStreak)")
+                                                .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
+                                                .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
+                                                .monospacedDigit()
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange.opacity(0.14), in: Capsule())
+                                    } else {
+                                        Image(systemName: "chart.bar.fill")
                                             .font(.system(size: 11))
-                                        Text("\(deck.cycleStreak)")
-                                            .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                                            .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
-                                            .monospacedDigit()
+                                            .foregroundStyle(progressColor)
                                     }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.orange.opacity(0.14), in: Capsule())
-                                } else {
-                                    Image(systemName: "chart.bar.fill")
-                                        .font(.system(size: 11))
+
+                                    GeometryReader { geo in
+                                        ZStack(alignment: .leading) {
+                                            Capsule()
+                                                .fill(LearnAlertStyle.textSecondary.opacity(0.18))
+                                                .frame(height: 4)
+
+                                            Capsule()
+                                                .fill(progressColor)
+                                                .frame(
+                                                    width: max(geo.size.width * CGFloat(deck.cycleProgress), deck.cycleProgress > 0 ? 4 : 0),
+                                                    height: 4
+                                                )
+                                        }
+                                        .frame(maxHeight: .infinity, alignment: .center)
+                                    }
+                                    .frame(width: 44, height: 12)
+
+                                    Text(deck.cycleProgress, format: .percent.precision(.fractionLength(0)))
+                                        .monospacedDigit()
                                         .foregroundStyle(progressColor)
+
+                                    Spacer()
                                 }
-
-                                GeometryReader { geo in
-                                    ZStack(alignment: .leading) {
-                                        Capsule()
-                                            .fill(LearnAlertStyle.textSecondary.opacity(0.18))
-                                            .frame(height: 4)
-
-                                        Capsule()
-                                            .fill(progressColor)
-                                            .frame(
-                                                width: max(geo.size.width * CGFloat(deck.cycleProgress), deck.cycleProgress > 0 ? 4 : 0),
-                                                height: 4
-                                            )
-                                    }
-                                    .frame(maxHeight: .infinity, alignment: .center)
-                                }
-                                .frame(width: 44, height: 12)
-
-                                Text(deck.cycleProgress, format: .percent.precision(.fractionLength(0)))
-                                    .monospacedDigit()
-                                    .foregroundStyle(progressColor)
-
-                                Spacer()
+                                .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption))
                             }
-                            .font(.custom("Poppins-Medium", size: 11, relativeTo: .caption))
+                            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-                    }
-                    .padding(11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .simultaneousGesture(TapGesture().onEnded {
-                    onTapped?()
-                })
-                .accessibilityLabel("Open \(deck.name), \(deck.cards.count) cards")
-
-                Button(action: {
-                    if !isTutorialActive {
-                        schedule()
-                    }
-                }) {
-                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
-                        .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
-                        .frame(width: 44, height: 40)
+                        .padding(11)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        onTapped?()
+                    })
+                    .accessibilityLabel("Open \(deck.name), \(deck.cards.count) cards")
+
+                    Button(action: {
+                        if !isTutorialActive {
+                            schedule()
+                        }
+                    }) {
+                        Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
+                            .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
+                            .frame(width: 44, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 9)
+                    .padding(.bottom, 7)
+                    .disabled(isTutorialActive)
+                    .opacity(isTutorialActive ? 0.35 : 1.0)
+                    .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
                 }
-                .buttonStyle(.plain)
-                .padding(.trailing, 9)
-                .padding(.bottom, 7)
-                .disabled(isTutorialActive)
-                .opacity(isTutorialActive ? 0.35 : 1.0)
-                .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
+
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LearnAlertStyle.sky)
+                        .padding(10)
+                        .accessibilityLabel("Pinned")
+                }
             }
             .background(LearnAlertStyle.courseSurface)
             .frame(maxWidth: .infinity)
@@ -1980,6 +2231,11 @@ private struct HomeStudyCard: View {
             )
             .contextMenu {
                 if !isTutorialActive {
+                    if let togglePin {
+                        Button(action: togglePin) {
+                            Label(isPinned ? "Unpin Deck" : "Pin Deck", systemImage: isPinned ? "pin.slash" : "pin")
+                        }
+                    }
                     Button(action: shuffleAppearance) {
                         Label("Shuffle Appearance", systemImage: "shuffle")
                     }
@@ -2008,29 +2264,261 @@ private struct HomeStudyCard: View {
             if deck.cycleProgress >= 0.70 {
                 return Color(red: 0.18, green: 0.80, blue: 0.44)
             } else if deck.cycleProgress >= 0.40 {
-                return Color(red: 0.35, green: 0.78, blue: 0.42)
-            } else if deck.cycleProgress > 0 {
-                return Color(red: 0.96, green: 0.76, blue: 0.18)
+                return LearnAlertStyle.sky
             } else {
-                return Color(red: 1.00, green: 0.48, blue: 0.14)
+                return LearnAlertStyle.indigo
             }
         } else {
-            if deck.cycleProgress >= 1.0 {
-                return Color(red: 0.18, green: 0.80, blue: 0.44)
-            } else if deck.cycleProgress >= 0.70 {
-                return Color(red: 0.35, green: 0.78, blue: 0.42)
-            } else if deck.cycleProgress >= 0.40 {
-                return Color(red: 0.96, green: 0.76, blue: 0.18)
-            } else if deck.cycleProgress > 0 {
-                return Color(red: 1.00, green: 0.58, blue: 0.18)
-            } else {
-                return Color.gray.opacity(0.55)
+            return LearnAlertStyle.textSecondary
+        }
+    }
+}
+
+// MARK: - HomeCourseCard
+private struct HomeCourseCard: View {
+    let course: CourseDefinition
+    let isPinned: Bool
+    let isTargeted: Bool
+    let onContinue: () -> Void
+    let onOpenOverview: () -> Void
+    let schedule: () -> Void
+    let togglePin: () -> Void
+    let unenroll: () -> Void
+
+    @ObservedObject private var progressManager = CourseProgressManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var enrollment: CourseEnrollment? {
+        progressManager.enrollment(for: course.id)
+    }
+
+    private var completionPercent: Double {
+        progressManager.completionPercentage(for: course)
+    }
+
+    private var currentLesson: CourseLesson? {
+        progressManager.currentLesson(for: course)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onOpenOverview) {
+                HStack(alignment: .top, spacing: 14) {
+                    // Course Flag Icon
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(hex: course.colorHex).opacity(0.16))
+                            .frame(width: 54, height: 54)
+
+                        Text(course.flagEmoji)
+                            .font(.system(size: 26))
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("COURSE")
+                                .font(.custom("Poppins-Bold", size: 9))
+                                .foregroundStyle(Color(hex: course.colorHex))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color(hex: course.colorHex).opacity(0.12), in: Capsule())
+
+                            Text(course.levelTag)
+                                .font(.custom("Poppins-Medium", size: 10))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                            Spacer()
+
+                            if isPinned {
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(LearnAlertStyle.sky)
+                                    .accessibilityLabel("Pinned")
+                            }
+                        }
+
+                        Text(course.title)
+                            .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                            .lineLimit(1)
+
+                        if let current = currentLesson {
+                            Text("Next: \(current.title)")
+                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                .lineLimit(1)
+                        } else {
+                            Text("All lessons completed")
+                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
+                                .foregroundStyle(Color(red: 0.18, green: 0.80, blue: 0.44))
+                        }
+
+                        HStack(spacing: 8) {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule()
+                                        .fill(LearnAlertStyle.textSecondary.opacity(0.18))
+                                        .frame(height: 4)
+
+                                    Capsule()
+                                        .fill(Color(hex: course.colorHex))
+                                        .frame(
+                                            width: max(geo.size.width * CGFloat(completionPercent), completionPercent > 0 ? 4 : 0),
+                                            height: 4
+                                        )
+                                }
+                                .frame(maxHeight: .infinity, alignment: .center)
+                            }
+                            .frame(height: 12)
+
+                            Text(completionPercent, format: .percent.precision(.fractionLength(0)))
+                                .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
+                                .monospacedDigit()
+                                .foregroundStyle(Color(hex: course.colorHex))
+                        }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .opacity(0.4)
+
+            // Bottom Actions Bar
+            HStack(spacing: 10) {
+                Button(action: onContinue) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(currentLesson == nil ? "Review Course" : "Continue")
+                            .font(.custom("Poppins-SemiBold", size: 12))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        LinearGradient(
+                            colors: [Color(hex: course.colorHex), Color(hex: course.colorHex).opacity(0.8)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        in: Capsule()
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button(action: schedule) {
+                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
+                        .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
+                        .frame(width: 38, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isTargeted ? "Course alerts active" : "Quick schedule \(course.title)")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(LearnAlertStyle.courseSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    colorScheme == .light ? LearnAlertStyle.hairline.opacity(0.58) : Color.clear,
+                    lineWidth: 0.9
+                )
+        )
+        .shadow(
+            color: colorScheme == .light ? LearnAlertStyle.indigoDeep.opacity(0.11) : LearnAlertStyle.indigoDeep.opacity(0.06),
+            radius: 14,
+            y: 7
+        )
+        .contextMenu {
+            Button(action: togglePin) {
+                Label(isPinned ? "Unpin Course" : "Pin Course", systemImage: isPinned ? "pin.slash" : "pin")
+            }
+            Button(action: schedule) {
+                Label("Schedule Alerts", systemImage: "bell.badge")
+            }
+            Button(role: .destructive, action: unenroll) {
+                Label("Unenroll", systemImage: "xmark.circle")
             }
         }
     }
 }
 
-// MARK: - Guided Walkthrough Top & Floating Banners
+// MARK: - PinnedReorderSheet
+private struct PinnedReorderSheet: View {
+    @ObservedObject var progressManager: CourseProgressManager
+    let enrolledCourses: [CourseDefinition]
+    let decks: [Deck]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(progressManager.pinnedItemIds, id: \.self) { itemId in
+                    HStack(spacing: 12) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                        if itemId.hasPrefix("course:") {
+                            let courseId = String(itemId.dropFirst("course:".count))
+                            if let course = enrolledCourses.first(where: { $0.id == courseId }) {
+                                Text(course.flagEmoji)
+                                    .font(.system(size: 20))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(course.title)
+                                        .font(.custom("Poppins-Medium", size: 14))
+                                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    Text("Course")
+                                        .font(.custom("Poppins-Regular", size: 11))
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
+                            }
+                        } else if itemId.hasPrefix("deck:") {
+                            let deckId = String(itemId.dropFirst("deck:".count))
+                            if let deck = decks.first(where: { $0.id.uuidString == deckId }) {
+                                Image(systemName: "rectangle.stack.fill")
+                                    .foregroundStyle(LearnAlertStyle.sky)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(deck.name)
+                                        .font(.custom("Poppins-Medium", size: 14))
+                                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                                    Text("\(deck.cards.count) cards")
+                                        .font(.custom("Poppins-Regular", size: 11))
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+                .onMove { indices, newOffset in
+                    progressManager.movePinned(from: indices, to: newOffset)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Pinned")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Guided Walkthrough Top & Floating Banners// MARK: - Guided Walkthrough Top & Floating Banners
 private struct TutorialStepTopBanner: View {
     let stepNumber: Int
     let totalSteps: Int

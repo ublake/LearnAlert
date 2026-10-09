@@ -39,6 +39,12 @@ The repository may contain changes that are not yet available in the App Store r
 
 LearnAlert is a native Apple-platform app built with **Swift**, **SwiftUI**, and **SwiftData**. Its interactive notifications use a **Notification Content Extension**, with an **App Group** connecting the app and extension.
 
+## Building locally
+
+Open `LearnAlert.xcworkspace` in Xcode and select the **LearnAlert** scheme. Keep local API configuration in the gitignored `Config.xcconfig` file.
+
+TikTok advertising measurement is disabled by default. Its integration code is retained, but disabled builds exclude the SDK and tracking permission prompt. `pod install` builds this default configuration. To intentionally enable it later, run `LEARNALERT_ENABLE_TIKTOK=1 pod install`, then rebuild; this also updates the tracking privacy declarations. To disable it again, run `LEARNALERT_ENABLE_TIKTOK=0 pod install` and rebuild.
+
 ## Privacy
 
 AI features process submitted content through LearnAlert's backend and third-party AI services. Review the privacy policy before submitting personal or sensitive material. AI-generated cards can contain mistakes; check them against your source material.
@@ -52,3 +58,28 @@ Found a bug or have an idea? [Open an issue](https://github.com/ublake/LearnAler
 ---
 
 Created by **Blake Miller**.
+
+## Courses and community decks
+
+Discover includes Spanish and Korean courses, enrolled course tiles on Home,
+persistent pins, mixed learned-material review, and explicit scheduling.
+Korean includes 10 sections, 41 lessons, 457 practice cards, and graded section
+checkpoints. Lessons require a correct answer for each card; spaced mastery is
+tracked separately. Section checkpoints must be passed in the app (80% by default).
+Course notifications choose unlocked material when expanded and share atomic
+progress with the app. At a checkpoint, learned-material review remains available.
+The system queues up to 60 course alerts and replenishes on app/notification use;
+iOS cannot guarantee unlimited unattended background scheduling.
+
+In-app Korean speech supports normal/slower playback and optional automatic
+pronunciation. Notification speech is disabled pending signed-device verification.
+Vocabulary sheets provide sentence meanings, grammar notes, and dictionary lookups.
+Curriculum content should receive native-speaker review before a public course release.
+
+Community sharing uploads public card snapshots, selected images, and audio;
+private source documents and study history are excluded. See the API repository's
+COMMUNITY.md for storage, moderation, migrations, and account deletion.
+
+Before App Store distribution, verify Apple sign-in, shared app/extension progress,
+checkpoint handoffs, and notification layouts on a provisioned iPhone, and update
+App Store privacy answers for community identifiers, content, images, and audio.

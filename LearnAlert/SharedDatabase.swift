@@ -36,9 +36,16 @@ class SharedDatabase: ObservableObject {
         let databaseURL = baseURL.appendingPathComponent("LearnAlert.sqlite")
         
         // 3. Configure SwiftData to use this shared file
-        let cloudKitDatabase: ModelConfiguration.CloudKitDatabase = Bundle.main.bundleURL.pathExtension == "appex"
+        let cloudKitDatabase: ModelConfiguration.CloudKitDatabase
+        #if targetEnvironment(simulator)
+        // Unsigned simulator/test launches cannot initialize a CloudKit container:
+        // CloudKit traps asynchronously before SwiftData's catch can run.
+        cloudKitDatabase = .none
+        #else
+        cloudKitDatabase = Bundle.main.bundleURL.pathExtension == "appex"
             ? .none
             : .private(Self.cloudKitContainerIdentifier)
+        #endif
         let configuration = ModelConfiguration(
             url: databaseURL,
             cloudKitDatabase: cloudKitDatabase

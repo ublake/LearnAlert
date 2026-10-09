@@ -22,10 +22,16 @@ struct StudyHandoff: Identifiable, Hashable {
     var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")" }
 }
 
+struct CourseHandoff: Identifiable, Hashable {
+    let id: String
+    var sectionId: String? = nil
+}
+
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
     
     @Published var isAuthorized = false
+    @Published var pendingCourseHandoff: CourseHandoff?
     @Published var pendingStudyHandoff: StudyHandoff?
     @Published var shouldShowNotificationOpeningTip = false
     
@@ -238,6 +244,16 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 return
             }
             let userInfo = response.notification.request.content.userInfo
+            if let courseId = userInfo["courseId"] as? String,
+               response.actionIdentifier != UNNotificationDismissActionIdentifier {
+                CourseProgressManager.shared.reloadFromSharedDefaults()
+                let course = CourseCurriculumCatalog.course(for: courseId)
+                let sectionId = course.flatMap { CourseLearningStore.shared.snapshot().pendingCheckpoint(course: $0)?.id }
+                self.pendingCourseHandoff = CourseHandoff(id: courseId, sectionId: sectionId)
+                UserDefaults(suiteName: "group.com.learnalert.shared")?.removeObject(forKey: "handoffCourseId")
+                completionHandler()
+                return
+            }
             let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
             let fromNotificationUI = defaults?.bool(forKey: "handoffFromNotificationUI") ?? false
             let hasHandoffDeck = defaults?.string(forKey: "handoffDeckId") != nil
@@ -293,6 +309,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     @MainActor
     func consumePendingStudyHandoff() {
+        CourseProgressManager.shared.reloadFromSharedDefaults()
+        if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"), let id = defaults.string(forKey: "handoffCourseId") {
+            let course = CourseCurriculumCatalog.course(for: id)
+            pendingCourseHandoff = CourseHandoff(id: id, sectionId: course.flatMap { CourseLearningStore.shared.snapshot().pendingCheckpoint(course: $0)?.id })
+            defaults.removeObject(forKey: "handoffCourseId")
+        }
         guard let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
               let deckString = defaults.string(forKey: "handoffDeckId"),
               let cardString = defaults.string(forKey: "handoffCardId"),

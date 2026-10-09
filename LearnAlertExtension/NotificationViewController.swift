@@ -1295,7 +1295,7 @@ private extension View {
 // MARK: - View Controller LifeCycle
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
-    private var hostingController: UIHostingController<FlashcardNotificationView>?
+    private var hostingController: UIHostingController<AnyView>?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1304,6 +1304,16 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     func didReceive(_ notification: UNNotification) {
         let content = notification.request.content
         let userInfo = content.userInfo
+
+        if let courseId = userInfo["courseId"] as? String, let course = CourseCurriculumCatalog.course(for: courseId) {
+            let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false) { [weak self] in
+                UserDefaults(suiteName: "group.com.learnalert.shared")?.set(courseId, forKey: "handoffCourseId")
+                self?.extensionContext?.performNotificationDefaultAction()
+            }
+            show(AnyView(courseView))
+            preferredContentSize = CGSize(width: view.bounds.width, height: 540)
+            return
+        }
 
         let cardId = userInfo["cardId"] as? String ?? ""
         let deckId = userInfo["deckId"] as? String ?? ""
@@ -1356,9 +1366,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         )
 
         if let existing = hostingController {
-            existing.rootView = swiftUIView
+            existing.rootView = AnyView(swiftUIView)
         } else {
-            let hosting = UIHostingController(rootView: swiftUIView)
+            let hosting = UIHostingController(rootView: AnyView(swiftUIView))
             hosting.view.backgroundColor = .clear
             addChild(hosting)
             view.addSubview(hosting.view)
@@ -1372,6 +1382,23 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             hosting.didMove(toParent: self)
             self.hostingController = hosting
         }
+    }
+
+    private func show(_ root: AnyView) {
+        if let existing = hostingController { existing.rootView = root; return }
+        let hosting = UIHostingController(rootView: root)
+        hosting.view.backgroundColor = .clear
+        addChild(hosting)
+        view.addSubview(hosting.view)
+        hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        hosting.didMove(toParent: self)
+        hostingController = hosting
     }
 
     private func openHostApp(deckId: String) {

@@ -557,6 +557,14 @@ public enum PDFOutlineManager {
     public static func classifyKind(title: String) -> PDFSectionKind {
         let lower = title.lowercased()
 
+        // Prioritize structural container units (module, chapter)
+        if lower.contains("módulo") || lower.contains("modulo") || lower.contains("module") {
+            return .module
+        }
+        if lower.contains("capítulo") || lower.contains("capitulo") || lower.contains("chapter") {
+            return .chapter
+        }
+
         let frontMatterKeywords = [
             "table of contents", "contents", "preface", "foreword",
             "introduction", "acknowledgement", "acknowledgment", "copyright",
@@ -577,12 +585,6 @@ public enum PDFOutlineManager {
             return .backMatter
         }
 
-        if lower.contains("módulo") || lower.contains("modulo") || lower.contains("module") {
-            return .module
-        }
-        if lower.contains("capítulo") || lower.contains("capitulo") || lower.contains("chapter") {
-            return .chapter
-        }
         if lower.contains("lección") || lower.contains("leccion") || lower.contains("lesson") ||
            lower.contains("unidad") || lower.contains("unit") || lower.contains("sección") ||
            lower.contains("section") || lower.contains("tema") || lower.contains("part") || lower.contains("parte") {

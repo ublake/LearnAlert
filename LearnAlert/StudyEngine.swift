@@ -39,7 +39,7 @@ class StudyEngine: ObservableObject {
     let volumeOptions = [3, 5, 7, 10, 15]
     
     var activeVolume: Int {
-        if volumeSelectionIndex == 5 { return customVolume }
+        if volumeSelectionIndex == 5 { return min(60, max(1, customVolume)) }
         return volumeOptions[min(max(0, volumeSelectionIndex), volumeOptions.count - 1)]
     }
     
@@ -55,7 +55,25 @@ class StudyEngine: ObservableObject {
         restoreSession()
     }
     
+    private var restoringCourse = false
+
     func restoreSession() {
+        if let plan = CourseNotificationScheduler.activePlan, savedIsActive {
+            guard !restoringCourse else { return }
+            restoringCourse = true
+            activeDeckId = UUID(uuidString: plan.deckId)
+            activeDeckName = savedDeckName
+            isActive = true
+            Task {
+                defer { restoringCourse = false }
+                do {
+                    scheduledDates = try await CourseNotificationScheduler.replenish()
+                    savedDatesData = try JSONEncoder().encode(scheduledDates)
+                    if scheduledDates.isEmpty, plan.expiresAt != nil || plan.stopWhenMastered == true { stopAlerts() }
+                } catch { print("Course alerts could not be restored: \(error.localizedDescription)") }
+            }
+            return
+        }
         let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
         if sharedDefaults?.bool(forKey: "extensionDidStopAlerts") == true {
             savedIsActive = false
@@ -98,7 +116,36 @@ class StudyEngine: ObservableObject {
     }
     
     @discardableResult
-    func startAlerts(for deck: Deck, section: DeckSection? = nil) async throws -> Int {
+    func startAlerts(for deck: Deck, section: DeckSection? = nil, courseReviewOnly: Bool = false) async throws -> Int {
+        let manager = CourseProgressManager.shared
+        if let course = manager.allEnrolledCourses.first(where: { manager.enrollment(for: $0.id)?.linkedDeckId == deck.id.uuidString }),
+           let enrollment = manager.enrollment(for: course.id) {
+            guard !enrollment.selectedDays.isEmpty else {
+                throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
+            }
+            UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+            let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
+            let plan = CourseAlertPlan(courseId: course.id, deckId: deck.id.uuidString,
+                startHour: startHour, startMinute: startMinute, endHour: endHour, endMinute: endMinute,
+                weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt")
+            let dates = try await CourseNotificationScheduler.activate(plan)
+            guard !dates.isEmpty else {
+                CourseNotificationScheduler.clear()
+                throw NSError(domain: "LearnAlert.Course", code: 204, userInfo: [NSLocalizedDescriptionKey: "No alerts fit the selected days and study window."])
+            }
+            activeDeckId = deck.id; activeDeckName = deck.name
+            activeSectionId = nil; activeSectionName = "Learning Path"
+            scheduledDates = dates; isActive = true
+            savedIsActive = true; savedDeckId = deck.id.uuidString; savedDeckName = deck.name
+            savedSectionId = ""; savedSectionName = "Learning Path"
+            savedDatesData = try JSONEncoder().encode(dates)
+            let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+            defaults?.set(deck.id.uuidString, forKey: "extensionActiveDeckId")
+            defaults?.set(deck.name, forKey: "extensionActiveDeckName")
+            defaults?.set(false, forKey: "extensionDidStopAlerts")
+            return dates.count
+        }
+        CourseNotificationScheduler.clear()
         let cards = fetchCardsToStudy(from: deck, section: section)
         
         // If "Until Deck Learnt" is selected and all cards are mastered
@@ -123,41 +170,14 @@ class StudyEngine: ObservableObject {
         
         let now = Date()
         let calendar = Calendar.current
-        guard var startTime = calendar.date(bySettingHour: startHour, minute: startMinute, second: 0, of: now),
-              var endTime = calendar.date(bySettingHour: endHour, minute: endMinute, second: 0, of: now) else {
-            throw NSError(
-                domain: "LearnAlert.StudyEngine",
-                code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid study window configuration."]
-            )
+        guard let window = StudyScheduling.window(now: now, startHour: startHour, startMinute: startMinute,
+            endHour: endHour, endMinute: endMinute, calendar: calendar) else {
+            throw NSError(domain: "LearnAlert.StudyEngine", code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid study window configuration."])
         }
+        let startTime = window.start
+        let endTime = window.end
 
-        // Overnight window support
-        let startTotalMinutes = startHour * 60 + startMinute
-        let endTotalMinutes = endHour * 60 + endMinute
-        if endTotalMinutes <= startTotalMinutes,
-           let followingDay = calendar.date(byAdding: .day, value: 1, to: endTime) {
-            endTime = followingDay
-        }
-
-        // Shift window if now is past today's window or within 5 minutes of closing
-        if now.addingTimeInterval(300) > endTime {
-            if let nextStart = calendar.date(byAdding: .day, value: 1, to: startTime),
-               let nextEnd = calendar.date(byAdding: .day, value: 1, to: endTime) {
-                startTime = nextStart
-                endTime = nextEnd
-            }
-        } else if now > startTime {
-            startTime = max(now.addingTimeInterval(90), startTime)
-            if startTime >= endTime.addingTimeInterval(-180) {
-                if let nextStart = calendar.date(byAdding: .day, value: 1, to: startTime),
-                   let nextEnd = calendar.date(byAdding: .day, value: 1, to: endTime) {
-                    startTime = nextStart
-                    endTime = nextEnd
-                }
-            }
-        }
-        
         let totalDuration = max(120.0, endTime.timeIntervalSince(startTime))
         let interval = max(60.0, totalDuration / Double(max(1, cards.count)))
         
@@ -173,6 +193,14 @@ class StudyEngine: ObservableObject {
             )
         }
         
+        if !smartSRS {
+            let ordered = orderedCards(deck: deck, section: section)
+            if let last = cards.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
+                UserDefaults.standard.set(ordered[(index + 1) % ordered.count].id.uuidString,
+                    forKey: sequentialCursorKey(deck: deck, section: section))
+            }
+        }
+
         // Update Live UI
         self.activeDeckId = deck.id
         self.activeDeckName = deck.name
@@ -202,6 +230,7 @@ class StudyEngine: ObservableObject {
     }
     
     func stopAlerts() {
+        CourseNotificationScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         withAnimation(.spring) {
             self.isActive = false
@@ -294,6 +323,17 @@ class StudyEngine: ObservableObject {
         }
     }
 
+    private func sequentialCursorKey(deck: Deck, section: DeckSection?) -> String {
+        "sequential-next-\(deck.id.uuidString)-\(section?.id.uuidString ?? "all")"
+    }
+
+    private func orderedCards(deck: Deck, section: DeckSection?) -> [Flashcard] {
+        (section?.cards ?? deck.cards).sorted {
+            if $0.orderIndex != $1.orderIndex { return $0.orderIndex < $1.orderIndex }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+    }
+
     /// Smart Spaced Repetition card selection prioritizing due & new cards
     private func fetchCardsToStudy(from deck: Deck, section: DeckSection?) -> [Flashcard] {
         let baseCards = section?.cards ?? deck.cards
@@ -344,10 +384,9 @@ class StudyEngine: ObservableObject {
             
             return selected
         } else {
-            // Sequential order without SRS filtering
-            let sortedCards = baseCards.sorted { $0.id.uuidString < $1.id.uuidString }
-            let targetCount = min(activeVolume, sortedCards.count)
-            return Array(sortedCards.prefix(targetCount))
+            let ordered = orderedCards(deck: deck, section: section)
+            let nextID = UserDefaults.standard.string(forKey: sequentialCursorKey(deck: deck, section: section)).flatMap(UUID.init(uuidString:))
+            return StudyScheduling.sequentialBatch(ordered, nextID: nextID, count: activeVolume)
         }
     }
 }

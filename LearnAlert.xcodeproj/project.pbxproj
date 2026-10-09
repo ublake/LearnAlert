@@ -11,6 +11,9 @@
 		254C85182F47BFB00026450E /* UserNotificationsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 254C85172F47BFAF0026450E /* UserNotificationsUI.framework */; };
 		254C85222F47BFB00026450E /* LearnAlertExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 254C85132F47BFAF0026450E /* LearnAlertExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2575FFEC2F49A248001DE8B2 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2575FFEB2F49A248001DE8B2 /* Launch Screen.storyboard */; };
+		57FF6B1FC43F82619BEBF39B /* Pods_LearnAlert.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */; };
+		7D62B53640D93AFA5F77B9ED /* Pods_LearnAlertTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */; };
+		C3C2972945E15562A609E5B0 /* Pods_LearnAlertExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -20,6 +23,34 @@
 			proxyType = 1;
 			remoteGlobalIDString = 254C85122F47BFAF0026450E;
 			remoteInfo = LearnAlertExtension;
+		};
+		8A1913A2381ED0F90ADA3764 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 38652F26561A9FDA94B15C02 /* Pods.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = A6DDC045BEE0D7DEA9C324119C9568E6;
+			remoteInfo = "Pods-LearnAlertTests";
+		};
+		A7C10B013000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 25FF1AE92F477005006D435B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 25FF1AF02F477005006D435B;
+			remoteInfo = LearnAlert;
+		};
+		C0152DEEFDA19859D42F874C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 38652F26561A9FDA94B15C02 /* Pods.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = 2B943E19FEE3A636F1CA484D862008FD;
+			remoteInfo = "Pods-LearnAlertExtension";
+		};
+		F2961C0F78B53C3D71AEA686 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 38652F26561A9FDA94B15C02 /* Pods.xcodeproj */;
+			proxyType = 1;
+			remoteGlobalIDString = 74A9B52EBC03F58F0E432CD0226EBDB6;
+			remoteInfo = "Pods-LearnAlert";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -38,13 +69,23 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		250C4A9430551C7E00A86148 /* LearnAlertTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LearnAlertTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0F4F97E309BE04759ED72C36 /* Pods-LearnAlertExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertExtension.debug.xcconfig"; path = "Target Support Files/Pods-LearnAlertExtension/Pods-LearnAlertExtension.debug.xcconfig"; sourceTree = "<group>"; };
+		23FAC7C801113D475B90DD6E /* Pods-LearnAlertTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertTests.release.xcconfig"; path = "Target Support Files/Pods-LearnAlertTests/Pods-LearnAlertTests.release.xcconfig"; sourceTree = "<group>"; };
 		254C85132F47BFAF0026450E /* LearnAlertExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LearnAlertExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		254C85152F47BFAF0026450E /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		254C85172F47BFAF0026450E /* UserNotificationsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotificationsUI.framework; path = System/Library/Frameworks/UserNotificationsUI.framework; sourceTree = SDKROOT; };
 		2575FFEB2F49A248001DE8B2 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
 		2599B0012F477006006D435B /* Config.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
-		25FF1AF12F477005006D435B /* LearnAlert.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LearnAlert.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		25AC703F3076C7A700B460DB /* LearnAlert.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LearnAlert.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		25AC70403076C7A700B460DB /* LearnAlertTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LearnAlertTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		38652F26561A9FDA94B15C02 /* Pods.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = Pods.xcodeproj; path = Pods/Pods.xcodeproj; sourceTree = "<group>"; };
+		3E055B26D4BD859F75BFD338 /* Pods-LearnAlert.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlert.release.xcconfig"; path = "Target Support Files/Pods-LearnAlert/Pods-LearnAlert.release.xcconfig"; sourceTree = "<group>"; };
+		593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlertTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		6CC1E61BF847CC432C296195 /* Pods-LearnAlert.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlert.debug.xcconfig"; path = "Target Support Files/Pods-LearnAlert/Pods-LearnAlert.debug.xcconfig"; sourceTree = "<group>"; };
+		80A55E5E67506831E0962FCD /* Pods-LearnAlertTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertTests.debug.xcconfig"; path = "Target Support Files/Pods-LearnAlertTests/Pods-LearnAlertTests.debug.xcconfig"; sourceTree = "<group>"; };
+		A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlertExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE50B81E34710BB68C51000F /* Pods-LearnAlertExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertExtension.release.xcconfig"; path = "Target Support Files/Pods-LearnAlertExtension/Pods-LearnAlertExtension.release.xcconfig"; sourceTree = "<group>"; };
+		DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlert.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -65,6 +106,17 @@
 		254C85372F4971E60026450E /* Exceptions for "LearnAlert" folder in "LearnAlertExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				CourseCurriculum.swift,
+				"CourseCurriculum+ExpandedKorean.swift",
+				"CourseCurriculum+Korean.swift",
+				CourseLearningStore.swift,
+				CourseModels.swift,
+				CourseNotificationScheduler.swift,
+				CourseNotificationSessionView.swift,
+				CourseQuestionPanel.swift,
+				CourseAnswerMatching.swift,
+				KoreanSpeechManager.swift,
+				KoreanLexicon.swift,
 				Models.swift,
 				SharedDatabase.swift,
 			);
@@ -102,6 +154,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7D62B53640D93AFA5F77B9ED /* Pods_LearnAlertTests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,6 +164,7 @@
 			files = (
 				254C85182F47BFB00026450E /* UserNotificationsUI.framework in Frameworks */,
 				254C85162F47BFAF0026450E /* UserNotifications.framework in Frameworks */,
+				C3C2972945E15562A609E5B0 /* Pods_LearnAlertExtension.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +172,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				57FF6B1FC43F82619BEBF39B /* Pods_LearnAlert.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,8 +184,19 @@
 			children = (
 				254C85152F47BFAF0026450E /* UserNotifications.framework */,
 				254C85172F47BFAF0026450E /* UserNotificationsUI.framework */,
+				DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */,
+				A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */,
+				593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		25AC6FB93076BF7600B460DB /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				254C85132F47BFAF0026450E /* LearnAlertExtension.appex */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		25FF1AE82F477005006D435B = {
@@ -142,16 +208,38 @@
 				254C85192F47BFB00026450E /* LearnAlertExtension */,
 				250C4A9530551C7F00A86148 /* LearnAlertTests */,
 				254C85142F47BFAF0026450E /* Frameworks */,
-				25FF1AF22F477005006D435B /* Products */,
+				E7CEB59F64EC3E3D0F2F8A41 /* Products */,
+				25AC6FB93076BF7600B460DB /* Recovered References */,
+				BC4BEF96F502D47ADB2A686A /* Pods */,
+				38652F26561A9FDA94B15C02 /* Pods.xcodeproj */,
 			);
 			sourceTree = "<group>";
 		};
-		25FF1AF22F477005006D435B /* Products */ = {
+		A7C10B013000000000000010 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				25FF1AF12F477005006D435B /* LearnAlert.app */,
-				254C85132F47BFAF0026450E /* LearnAlertExtension.appex */,
-				250C4A9430551C7E00A86148 /* LearnAlertTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BC4BEF96F502D47ADB2A686A /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				6CC1E61BF847CC432C296195 /* Pods-LearnAlert.debug.xcconfig */,
+				3E055B26D4BD859F75BFD338 /* Pods-LearnAlert.release.xcconfig */,
+				0F4F97E309BE04759ED72C36 /* Pods-LearnAlertExtension.debug.xcconfig */,
+				BE50B81E34710BB68C51000F /* Pods-LearnAlertExtension.release.xcconfig */,
+				80A55E5E67506831E0962FCD /* Pods-LearnAlertTests.debug.xcconfig */,
+				23FAC7C801113D475B90DD6E /* Pods-LearnAlertTests.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		E7CEB59F64EC3E3D0F2F8A41 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				25AC703F3076C7A700B460DB /* LearnAlert.app */,
+				25AC70403076C7A700B460DB /* LearnAlertTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -163,6 +251,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 250C4A9A30551C7F00A86148 /* Build configuration list for PBXNativeTarget "LearnAlertTests" */;
 			buildPhases = (
+				3E21DA156EB01484D6DA658C /* [CP] Check Pods Manifest.lock */,
 				250C4A9030551C7E00A86148 /* Sources */,
 				250C4A9130551C7E00A86148 /* Frameworks */,
 				250C4A9230551C7E00A86148 /* Resources */,
@@ -170,21 +259,22 @@
 			buildRules = (
 			);
 			dependencies = (
+				A7C10B013000000000000002 /* PBXTargetDependency */,
+				29E549613257ED63C51B9340 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				250C4A9530551C7F00A86148 /* LearnAlertTests */,
 			);
 			name = LearnAlertTests;
-			packageProductDependencies = (
-			);
 			productName = LearnAlertTests;
-			productReference = 250C4A9430551C7E00A86148 /* LearnAlertTests.xctest */;
+			productReference = 25AC70403076C7A700B460DB /* LearnAlertTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		254C85122F47BFAF0026450E /* LearnAlertExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 254C85242F47BFB00026450E /* Build configuration list for PBXNativeTarget "LearnAlertExtension" */;
 			buildPhases = (
+				DFA024B7592A91F3D50371B3 /* [CP] Check Pods Manifest.lock */,
 				254C850F2F47BFAF0026450E /* Sources */,
 				254C85102F47BFAF0026450E /* Frameworks */,
 				254C85112F47BFAF0026450E /* Resources */,
@@ -192,13 +282,12 @@
 			buildRules = (
 			);
 			dependencies = (
+				E2A61AB3C0F219211A7B3AB8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				254C85192F47BFB00026450E /* LearnAlertExtension */,
 			);
 			name = LearnAlertExtension;
-			packageProductDependencies = (
-			);
 			productName = LearnAlertExtension;
 			productReference = 254C85132F47BFAF0026450E /* LearnAlertExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -207,6 +296,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 25FF1AFC2F477007006D435B /* Build configuration list for PBXNativeTarget "LearnAlert" */;
 			buildPhases = (
+				1A758E0289EC5B06ACA9ECB2 /* [CP] Check Pods Manifest.lock */,
 				25FF1AED2F477005006D435B /* Sources */,
 				25FF1AEE2F477005006D435B /* Frameworks */,
 				25FF1AEF2F477005006D435B /* Resources */,
@@ -216,15 +306,14 @@
 			);
 			dependencies = (
 				254C85212F47BFB00026450E /* PBXTargetDependency */,
+				3F5CB94FABDA6C983C009B5B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				25FF1AF32F477005006D435B /* LearnAlert */,
 			);
 			name = LearnAlert;
-			packageProductDependencies = (
-			);
 			productName = LearnAlert;
-			productReference = 25FF1AF12F477005006D435B /* LearnAlert.app */;
+			productReference = 25AC703F3076C7A700B460DB /* LearnAlert.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -239,6 +328,7 @@
 				TargetAttributes = {
 					250C4A9330551C7E00A86148 = {
 						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 25FF1AF02F477005006D435B;
 					};
 					254C85122F47BFAF0026450E = {
 						CreatedOnToolsVersion = 26.2;
@@ -258,8 +348,14 @@
 			mainGroup = 25FF1AE82F477005006D435B;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 25FF1AF22F477005006D435B /* Products */;
+			productRefGroup = E7CEB59F64EC3E3D0F2F8A41 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = A7C10B013000000000000010 /* Products */;
+					ProjectRef = 38652F26561A9FDA94B15C02 /* Pods.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				25FF1AF02F477005006D435B /* LearnAlert */,
@@ -294,6 +390,75 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		1A758E0289EC5B06ACA9ECB2 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-LearnAlert-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		3E21DA156EB01484D6DA658C /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-LearnAlertTests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		DFA024B7592A91F3D50371B3 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-LearnAlertExtension-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		250C4A9030551C7E00A86148 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -324,15 +489,37 @@
 			target = 254C85122F47BFAF0026450E /* LearnAlertExtension */;
 			targetProxy = 254C85202F47BFB00026450E /* PBXContainerItemProxy */;
 		};
+		29E549613257ED63C51B9340 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "Pods-LearnAlertTests";
+			targetProxy = 8A1913A2381ED0F90ADA3764 /* PBXContainerItemProxy */;
+		};
+		3F5CB94FABDA6C983C009B5B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "Pods-LearnAlert";
+			targetProxy = F2961C0F78B53C3D71AEA686 /* PBXContainerItemProxy */;
+		};
+		A7C10B013000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 25FF1AF02F477005006D435B /* LearnAlert */;
+			targetProxy = A7C10B013000000000000001 /* PBXContainerItemProxy */;
+		};
+		E2A61AB3C0F219211A7B3AB8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "Pods-LearnAlertExtension";
+			targetProxy = C0152DEEFDA19859D42F874C /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		250C4A9830551C7F00A86148 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 80A55E5E67506831E0962FCD /* Pods-LearnAlertTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
@@ -350,10 +537,12 @@
 		};
 		250C4A9930551C7F00A86148 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 23FAC7C801113D475B90DD6E /* Pods-LearnAlertTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
@@ -371,11 +560,13 @@
 		};
 		254C85252F47BFB00026450E /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 0F4F97E309BE04759ED72C36 /* Pods-LearnAlertExtension.debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LearnAlertExtension/LearnAlertExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 5UCA258TUZ;
+				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LearnAlertExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LearnAlertExtension;
@@ -401,11 +592,13 @@
 		};
 		254C85262F47BFB00026450E /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = BE50B81E34710BB68C51000F /* Pods-LearnAlertExtension.release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = LearnAlertExtension/LearnAlertExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 5UCA258TUZ;
+				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LearnAlertExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = LearnAlertExtension;
@@ -431,6 +624,7 @@
 		};
 		25FF1AFA2F477007006D435B /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 2599B0012F477006006D435B /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -497,6 +691,7 @@
 		};
 		25FF1AFB2F477007006D435B /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 2599B0012F477006006D435B /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -556,7 +751,7 @@
 		};
 		25FF1AFD2F477007006D435B /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 2599B0012F477006006D435B /* Config.xcconfig */;
+			baseConfigurationReference = 6CC1E61BF847CC432C296195 /* Pods-LearnAlert.debug.xcconfig */;
 			buildSettings = {
 				API_KEY = "$(inherited)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -571,6 +766,7 @@
 				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LearnAlert/Info.plist;
@@ -591,6 +787,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
+					"$(inherited)",
 					"-Xlinker",
 					"-export_dynamic",
 				);
@@ -600,18 +797,20 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TIKTOK_TRACKING_ENABLED = NO;
 			};
 			name = Debug;
 		};
 		25FF1AFE2F477007006D435B /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 2599B0012F477006006D435B /* Config.xcconfig */;
+			baseConfigurationReference = 3E055B26D4BD859F75BFD338 /* Pods-LearnAlert.release.xcconfig */;
 			buildSettings = {
 				API_KEY = "$(inherited)";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -626,6 +825,7 @@
 				ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LearnAlert/Info.plist;
@@ -646,6 +846,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
+					"$(inherited)",
 					"-Xlinker",
 					"-export_dynamic",
 				);
@@ -655,12 +856,14 @@
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TIKTOK_TRACKING_ENABLED = NO;
 			};
 			name = Release;
 		};

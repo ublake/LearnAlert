@@ -1,5 +1,8 @@
 import SwiftData
 import SwiftUI
+import AuthenticationServices
+
+// MARK: - Models for Premade / Discover Decks
 
 struct PremadeCard: Identifiable {
     let id: String
@@ -12,6 +15,8 @@ struct PremadeCard: Identifiable {
     var matchingRightItems: [String] = []
     var promptImageName: String? = nil
     var optionImageNames: [String] = []
+    var promptAudioName: String? = nil
+    var sectionName: String = ""
 }
 
 struct PremadeDeck: Identifiable {
@@ -23,156 +28,122 @@ struct PremadeDeck: Identifiable {
     let colorHex: String
     let deckType: String
     let cards: [PremadeCard]
+    var communitySourceID: String? = nil
 }
 
-private struct LanguageTerm {
-    let target: String
-    let english: String
-}
+// MARK: - Curated Deck Catalog
 
 enum PremadeDeckCatalog {
     static let mainCategories = ["All", "Languages", "Math", "Science", "History", "Computing", "Exam Prep"]
 
     static let subcategoriesByCategory: [String: [String]] = [
-        "Languages": ["All", "Spanish", "Korean", "Chinese", "French", "Japanese", "German", "Italian"],
-        "Math": ["All", "Arithmetic", "Algebra", "Geometry", "Fractions"],
+        "All": ["All"],
+        "Languages": ["All", "Spanish", "Korean", "French", "Japanese", "German"],
+        "Math": ["All", "Algebra", "Geometry", "Calculus", "Statistics"],
         "Science": ["All", "Biology", "Chemistry", "Physics", "Astronomy"],
-        "History": ["All", "Ancient History", "US History", "World History"],
-        "Computing": ["All", "Swift", "Programming", "Cybersecurity"],
-        "Exam Prep": ["All", "SAT", "Study Skills"]
+        "History": ["All", "Ancient History", "US History", "World History", "European History"],
+        "Computing": ["All", "Swift", "Programming", "Cybersecurity", "Data Structures"],
+        "Exam Prep": ["All", "SAT", "MCAT", "Study Skills", "AP Prep"]
     ]
 
-    static let decks: [PremadeDeck] = languageDecks + [
+    static let decks: [PremadeDeck] = [
         // MARK: - Math Decks
         PremadeDeck(
-            id: "mental-math",
-            name: "Mental Math Mastery",
-            category: "Math",
-            subcategory: "Arithmetic",
-            description: "Fast calculation strategies, fill-in blanks, and arithmetic drills.",
-            colorHex: "#A27B55",
-            deckType: "Mixed",
-            cards: [
-                PremadeCard(id: "mm-1", question: "What is 15 + 27?", options: ["32", "40", "42", "52"], correctAnswer: "42", hint: "Add 20, then 7.", cardType: .multipleChoice),
-                PremadeCard(id: "mm-2", question: "9 × 8 = ___", correctAnswer: "72", hint: "Ten eights minus eight.", cardType: .fillBlank),
-                PremadeCard(id: "mm-3", question: "Match multiplication facts", correctAnswer: "Matches", hint: "Connect products", cardType: .matching, matchingLeftItems: ["6 × 7", "8 × 8", "9 × 6", "12 × 5"], matchingRightItems: ["42", "64", "54", "60"]),
-                PremadeCard(id: "mm-4", question: "Commutative Property", options: [], correctAnswer: "a + b = b + a (order does not affect sum or product)", hint: "Order invariance", cardType: .vocabulary),
-                PremadeCard(id: "mm-5", question: "Calculate 25% of 80 in your head.", options: [], correctAnswer: "20 (One-fourth of 80)", hint: "Divide 80 by 4", cardType: .tapReveal),
-                PremadeCard(id: "mm-6", question: "100 − 37 = ___", correctAnswer: "63", hint: "Subtract 40, then add back 3", cardType: .fillBlank)
-            ]
-        ),
-        PremadeDeck(
             id: "algebra-basics",
-            name: "Algebra Foundations",
+            name: "Algebra Foundations & Formulas",
             category: "Math",
             subcategory: "Algebra",
-            description: "Equations, variable isolation, and algebraic laws.",
+            description: "Quadratic formula, exponent rules, factoring, and linear systems.",
             colorHex: "#4C89A8",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "alg-1", question: "Solve for x: 3x = 18", options: ["3", "6", "9", "15"], correctAnswer: "6", hint: "Divide both sides by 3.", cardType: .multipleChoice),
-                PremadeCard(id: "alg-2", question: "If 2x + 5 = 17, then x = ___", correctAnswer: "6", hint: "Subtract 5, then divide by 2", cardType: .fillBlank),
-                PremadeCard(id: "alg-3", question: "Match algebraic terms to descriptions", correctAnswer: "Matches", hint: "Connect terms", cardType: .matching, matchingLeftItems: ["Variable", "Coefficient", "Constant", "Exponent"], matchingRightItems: ["A symbol for unknown value", "Number multiplied by variable", "A fixed number value", "Power to raise a number"]),
-                PremadeCard(id: "alg-4", question: "Quadratic Formula", options: [], correctAnswer: "x = (-b ± √(b² - 4ac)) / (2a)", hint: "Solves ax² + bx + c = 0", cardType: .vocabulary),
-                PremadeCard(id: "alg-5", question: "What is the slope-intercept form of a line?", options: [], correctAnswer: "y = mx + b (m is slope, b is y-intercept)", hint: "Relates x and y", cardType: .tapReveal)
+                PremadeCard(id: "alg-1", question: "Quadratic Formula", options: [], correctAnswer: "x = (-b ± √(b² - 4ac)) / (2a)", hint: "Solves ax² + bx + c = 0", cardType: .vocabulary),
+                PremadeCard(id: "alg-2", question: "What is the product rule for exponents: xᵃ · xᵇ = ___?", options: ["xᵃ⁺ᵇ", "xᵃᵇ", "xᵃ⁻ᵇ", "(2x)ᵃ⁺ᵇ"], correctAnswer: "xᵃ⁺ᵇ", hint: "Add exponents when multiplying same base", cardType: .multipleChoice),
+                PremadeCard(id: "alg-3", question: "Match algebraic laws to formulas", correctAnswer: "Matches", hint: "Connect properties", cardType: .matching, matchingLeftItems: ["Commutative Law", "Associative Law", "Distributive Law", "Difference of Squares"], matchingRightItems: ["a + b = b + a", "(a + b) + c = a + (b + c)", "a(b + c) = ab + ac", "a² - b² = (a-b)(a+b)"]),
+                PremadeCard(id: "alg-4", question: "If 3x - 7 = 14, what is the value of x?", correctAnswer: "7", hint: "Add 7 then divide by 3", cardType: .fillBlank),
+                PremadeCard(id: "alg-5", question: "What is the slope-intercept form of a linear equation?", options: [], correctAnswer: "y = mx + b (where m is slope and b is y-intercept)", hint: "Standard linear equation", cardType: .tapReveal)
             ]
         ),
         PremadeDeck(
             id: "geometry-essentials",
-            name: "Geometry Essentials",
+            name: "Geometry & Trigonometry",
             category: "Math",
             subcategory: "Geometry",
-            description: "Angles, area formulas, geometric theorems, and shapes.",
-            colorHex: "#527FB5",
+            description: "Pythagorean theorem, unit circle values, sine/cosine laws, and area formulas.",
+            colorHex: "#5B70E0",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "geo-1", question: "A triangle has interior angles that always sum to ___ degrees.", correctAnswer: "180", hint: "Straight line angle sum", cardType: .fillBlank),
-                PremadeCard(id: "geo-2", question: "How many degrees are in a right angle?", options: ["45°", "90°", "180°", "360°"], correctAnswer: "90°", hint: "Square corner angle", cardType: .multipleChoice),
-                PremadeCard(id: "geo-3", question: "Match shapes to area formulas", correctAnswer: "Matches", hint: "Connect formulas", cardType: .matching, matchingLeftItems: ["Rectangle", "Triangle", "Circle", "Trapezoid"], matchingRightItems: ["width × height", "½ × base × height", "π × r²", "½(a + b) × h"]),
-                PremadeCard(id: "geo-4", question: "Pythagorean Theorem", options: [], correctAnswer: "In a right triangle, a² + b² = c² (where c is the hypotenuse).", hint: "Right triangle relation", cardType: .vocabulary),
-                PremadeCard(id: "geo-5", question: "What is the circumference formula for a circle with radius r?", options: [], correctAnswer: "C = 2πr (or πd)", hint: "Distance around the circle", cardType: .tapReveal)
+                PremadeCard(id: "geom-1", question: "What is the area of a circle with radius r?", options: ["πr²", "2πr", "πd", "4/3 πr³"], correctAnswer: "πr²", hint: "Pi times radius squared", cardType: .multipleChoice),
+                PremadeCard(id: "geom-2", question: "In a right triangle, sin(θ) is defined as ___ over Hypotenuse.", correctAnswer: "Opposite", hint: "SOH in SOH CAH TOA", cardType: .fillBlank),
+                PremadeCard(id: "geom-3", question: "Match trigonometric identities", correctAnswer: "Matches", hint: "Connect identities", cardType: .matching, matchingLeftItems: ["sin²(θ) + cos²(θ)", "tan(θ)", "Pythagorean Theorem", "Sum of triangle angles"], matchingRightItems: ["1", "sin(θ) / cos(θ)", "a² + b² = c²", "180° (π radians)"]),
+                PremadeCard(id: "geom-4", question: "Euler's Formula for Polyhedra", options: [], correctAnswer: "V - E + F = 2 (Vertices - Edges + Faces = 2 for convex polyhedra)", hint: "Polyhedron formula", cardType: .vocabulary),
+                PremadeCard(id: "geom-5", question: "What are the angles in a standard 30-60-90 special right triangle ratio?", options: [], correctAnswer: "Side lengths are in ratio 1 : √3 : 2 (opposite 30°, 60°, 90° respectively).", hint: "Special right triangle", cardType: .tapReveal)
             ]
         ),
         PremadeDeck(
-            id: "fractions",
-            name: "Fraction Fundamentals",
+            id: "calculus-derivatives",
+            name: "Calculus Derivatives & Integrals",
             category: "Math",
-            subcategory: "Fractions",
-            description: "Operations, reciprocals, and equivalent fractions.",
-            colorHex: "#728B5B",
+            subcategory: "Calculus",
+            description: "Power rule, chain rule, product rule, integration by parts, and fundamental theorem.",
+            colorHex: "#3972B5",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "frac-1", question: "Which fraction is equivalent to 1/2?", options: ["2/3", "2/4", "3/4", "1/3"], correctAnswer: "2/4", hint: "Multiply numerator and denominator by 2.", cardType: .multipleChoice),
-                PremadeCard(id: "frac-2", question: "The reciprocal of 2/3 is ___.", correctAnswer: "3/2", hint: "Invert the fraction", cardType: .fillBlank),
-                PremadeCard(id: "frac-3", question: "Match fractions to decimals", correctAnswer: "Matches", hint: "Connect pairs", cardType: .matching, matchingLeftItems: ["1/4", "1/2", "3/4", "1/5"], matchingRightItems: ["0.25", "0.50", "0.75", "0.20"]),
-                PremadeCard(id: "frac-4", question: "Numerator vs Denominator", options: [], correctAnswer: "Numerator: top number (parts you have); Denominator: bottom number (total equal parts in whole).", hint: "Top vs bottom", cardType: .vocabulary),
-                PremadeCard(id: "frac-5", question: "1/4 + 2/4 = ___", correctAnswer: "3/4", hint: "Add the numerators over the common denominator", cardType: .fillBlank)
+                PremadeCard(id: "calc-1", question: "What is the derivative of f(x) = ln(x)?", options: ["1/x", "eˣ", "1/(2x)", "x ln(x)"], correctAnswer: "1/x", hint: "Reciprocal function", cardType: .multipleChoice),
+                PremadeCard(id: "calc-2", question: "The derivative of sin(x) with respect to x is ___.", correctAnswer: "cos(x)", hint: "Standard trig derivative", cardType: .fillBlank),
+                PremadeCard(id: "calc-3", question: "Match calculus rules to mathematical definitions", correctAnswer: "Matches", hint: "Connect rules", cardType: .matching, matchingLeftItems: ["Power Rule (d/dx xⁿ)", "Product Rule (d/dx uv)", "Quotient Rule (d/dx u/v)", "Chain Rule (d/dx f(g(x)))"], matchingRightItems: ["n · xⁿ⁻¹", "u'v + uv'", "(u'v - uv') / v²", "f'(g(x)) · g'(x)"]),
+                PremadeCard(id: "calc-4", question: "Fundamental Theorem of Calculus (Part 1)", options: [], correctAnswer: "If F(x) = ∫[a to x] f(t) dt, then F'(x) = f(x). Differentiation and integration are inverse processes.", hint: "Core theorem of calculus", cardType: .vocabulary),
+                PremadeCard(id: "calc-5", question: "What is the integral of e^(2x) dx?", options: [], correctAnswer: "(1/2) e^(2x) + C", hint: "Divide by the constant multiplier", cardType: .tapReveal)
             ]
         ),
 
         // MARK: - Science Decks
         PremadeDeck(
             id: "cell-biology",
-            name: "Cell Biology & Organelles",
+            name: "Cell Biology & Genetics",
             category: "Science",
             subcategory: "Biology",
-            description: "Cellular anatomy, organelle roles, and cellular respiration.",
-            colorHex: "#4D9B79",
+            description: "Organelles, DNA replication, transcription, translation, and mitosis/meiosis.",
+            colorHex: "#38A169",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "bio-1", question: "Which organelle contains genomic DNA in eukaryotes?", options: ["Nucleus", "Ribosome", "Vacuole", "Cell Wall"], correctAnswer: "Nucleus", hint: "The control center", cardType: .multipleChoice),
-                PremadeCard(id: "bio-2", question: "The primary organelle responsible for generating cellular ATP is the ___.", correctAnswer: "mitochondria", hint: "Powerhouse of the cell", cardType: .fillBlank),
-                PremadeCard(id: "bio-3", question: "Match organelles to their main functions", correctAnswer: "Matches", hint: "Connect organelles", cardType: .matching, matchingLeftItems: ["Ribosome", "Chloroplast", "Lysosome", "Golgi Body"], matchingRightItems: ["Protein synthesis", "Photosynthesis", "Waste digestion", "Packaging & sorting"]),
-                PremadeCard(id: "bio-4", question: "Osmosis", options: [], correctAnswer: "The passive movement of water molecules across a selectively permeable membrane from lower solute to higher solute concentration.", hint: "Water transport", cardType: .vocabulary),
-                PremadeCard(id: "bio-5", question: "What pigment inside chloroplasts captures light energy for photosynthesis?", options: [], correctAnswer: "Chlorophyll", hint: "Gives plants green color", cardType: .tapReveal)
+                PremadeCard(id: "bio-1", question: "Which cellular organelle is responsible for generating the majority of cellular ATP?", options: ["Mitochondria", "Ribosome", "Golgi Apparatus", "Endoplasmic Reticulum"], correctAnswer: "Mitochondria", hint: "Powerhouse of the cell", cardType: .multipleChoice),
+                PremadeCard(id: "bio-2", question: "In DNA, Adenine pairs with ___ via two hydrogen bonds.", correctAnswer: "Thymine", hint: "A pairs with T in DNA", cardType: .fillBlank),
+                PremadeCard(id: "bio-3", question: "Match organelles to functions", correctAnswer: "Matches", hint: "Connect functions", cardType: .matching, matchingLeftItems: ["Nucleus", "Ribosome", "Lysosome", "Chloroplast"], matchingRightItems: ["Houses genetic DNA", "Protein synthesis", "Digestive waste degradation", "Photosynthesis in plant cells"]),
+                PremadeCard(id: "bio-4", question: "Mitosis vs Meiosis", options: [], correctAnswer: "Mitosis produces 2 genetically identical diploid (2n) daughter cells. Meiosis produces 4 genetically unique haploid (n) gametes.", hint: "Cell division comparison", cardType: .vocabulary),
+                PremadeCard(id: "bio-5", question: "What enzyme unwinds the DNA double helix during replication?", options: [], correctAnswer: "DNA Helicase", hint: "Unzipping enzyme", cardType: .tapReveal)
             ]
         ),
         PremadeDeck(
-            id: "chemistry-atoms",
-            name: "Atoms & Periodic Elements",
+            id: "general-chemistry",
+            name: "General Chemistry & Periodic Table",
             category: "Science",
             subcategory: "Chemistry",
-            description: "Subatomic particles, atomic numbers, valence electrons, and bonding.",
-            colorHex: "#8B6CC1",
+            description: "Stoichiometry, periodic trends, electronegativity, pH scale, and bonding.",
+            colorHex: "#2B8A78",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "chem-1", question: "A proton carries a ___ electrical charge.", correctAnswer: "positive", hint: "Opposite of an electron", cardType: .fillBlank),
-                PremadeCard(id: "chem-2", question: "What identifies an element on the periodic table?", options: ["Neutron count", "Proton count (Atomic Number)", "Electron shell size", "Molecular mass"], correctAnswer: "Proton count (Atomic Number)", hint: "The atomic number", cardType: .multipleChoice),
-                PremadeCard(id: "chem-3", question: "Match chemical symbols to elements", correctAnswer: "Matches", hint: "Connect elements", cardType: .matching, matchingLeftItems: ["Na", "Fe", "Au", "K"], matchingRightItems: ["Sodium", "Iron", "Gold", "Potassium"]),
-                PremadeCard(id: "chem-4", question: "Covalent Bond", options: [], correctAnswer: "A chemical bond formed when two atoms share one or more pairs of valence electrons.", hint: "Electron sharing", cardType: .vocabulary),
-                PremadeCard(id: "chem-5", question: "What are isotopes?", options: [], correctAnswer: "Atoms of the same element with the same number of protons but different numbers of neutrons.", hint: "Neutron variations", cardType: .tapReveal)
+                PremadeCard(id: "chem-1", question: "Which element has the highest electronegativity on the periodic table?", options: ["Fluorine (F)", "Oxygen (O)", "Chlorine (Cl)", "Francium (Fr)"], correctAnswer: "Fluorine (F)", hint: "Top right of periodic table (excluding noble gases)", cardType: .multipleChoice),
+                PremadeCard(id: "chem-2", question: "A solution with a pH of 3 is classified as an ___.", correctAnswer: "acid", hint: "pH < 7 is acidic", cardType: .fillBlank),
+                PremadeCard(id: "chem-3", question: "Match chemical bonds to descriptions", correctAnswer: "Matches", hint: "Connect bond types", cardType: .matching, matchingLeftItems: ["Covalent Bond", "Ionic Bond", "Hydrogen Bond", "Metallic Bond"], matchingRightItems: ["Sharing electron pairs", "Electrostatic transfer of electrons", "Dipole attraction with H-F/O/N", "Sea of delocalized electrons"]),
+                PremadeCard(id: "chem-4", question: "Avogadro's Number", options: [], correctAnswer: "6.022 × 10²³ particles per mole. The number of atoms in exactly 12 grams of Carbon-12.", hint: "Mole constant", cardType: .vocabulary),
+                PremadeCard(id: "chem-5", question: "What is Le Chatelier's Principle?", options: [], correctAnswer: "If a dynamic equilibrium is disturbed by changing conditions (temperature, pressure, concentration), the position of equilibrium shifts to counteract the change.", hint: "Equilibrium response", cardType: .tapReveal)
             ]
         ),
         PremadeDeck(
-            id: "physics-motion",
-            name: "Motion & Newton's Laws",
+            id: "classical-physics",
+            name: "Physics: Mechanics & Waves",
             category: "Science",
             subcategory: "Physics",
-            description: "Velocity, acceleration, force, friction, and Newton's three laws.",
-            colorHex: "#477FA3",
+            description: "Newton's laws, energy conservation, momentum, Doppler effect, and electromagnetism.",
+            colorHex: "#317496",
             deckType: "Mixed",
             cards: [
-                PremadeCard(id: "phy-1", question: "The SI unit of force is the ___.", correctAnswer: "newton", hint: "Named after Isaac Newton (N)", cardType: .fillBlank),
-                PremadeCard(id: "phy-2", question: "For every action, there is an equal and opposite reaction. This is Newton's ___ Law.", options: ["First", "Second", "Third", "Universal"], correctAnswer: "Third", hint: "Action-reaction pair", cardType: .multipleChoice),
-                PremadeCard(id: "phy-3", question: "Match physics concepts to SI units", correctAnswer: "Matches", hint: "Connect units", cardType: .matching, matchingLeftItems: ["Velocity", "Acceleration", "Energy / Work", "Power"], matchingRightItems: ["m/s", "m/s²", "Joule (J)", "Watt (W)"]),
-                PremadeCard(id: "phy-4", question: "Inertia", options: [], correctAnswer: "The tendency of an object to resist changes in its state of motion (Newton's First Law).", hint: "Resistance to acceleration", cardType: .vocabulary),
-                PremadeCard(id: "phy-5", question: "What formula defines Newton's Second Law of Motion?", options: [], correctAnswer: "F = ma (Force equals mass times acceleration)", hint: "Force, mass, acceleration", cardType: .tapReveal)
-            ]
-        ),
-        PremadeDeck(
-            id: "astronomy",
-            name: "Solar System & Cosmos",
-            category: "Science",
-            subcategory: "Astronomy",
-            description: "Planets, gravity, star lifecycles, and cosmic phenomena.",
-            colorHex: "#5D61A8",
-            deckType: "Mixed",
-            cards: [
-                PremadeCard(id: "astro-1", question: "The largest planet in our solar system is ___.", correctAnswer: "Jupiter", hint: "The gas giant with the Great Red Spot", cardType: .fillBlank),
-                PremadeCard(id: "astro-2", question: "Which planet is known as the Red Planet due to iron oxide on its surface?", options: ["Venus", "Mars", "Mercury", "Saturn"], correctAnswer: "Mars", hint: "Fourth planet from the Sun", cardType: .multipleChoice),
-                PremadeCard(id: "astro-3", question: "Match celestial objects to classifications", correctAnswer: "Matches", hint: "Connect classes", cardType: .matching, matchingLeftItems: ["Sun", "Moon", "Pluto", "Titan"], matchingRightItems: ["Yellow Dwarf Star", "Earth's natural satellite", "Dwarf Planet", "Saturn's largest moon"]),
-                PremadeCard(id: "astro-4", question: "Light-Year", options: [], correctAnswer: "The distance that light travels in a vacuum in one Julian year (approx. 9.46 trillion km or 5.88 trillion miles).", hint: "Cosmic distance unit", cardType: .vocabulary),
-                PremadeCard(id: "astro-5", question: "What galaxy is our solar system located in?", options: [], correctAnswer: "Milky Way Galaxy", hint: "A barred spiral galaxy", cardType: .tapReveal)
+                PremadeCard(id: "phys-1", question: "What is Newton's Second Law of Motion formula?", options: ["F = ma", "E = mc²", "p = mv", "W = Fd"], correctAnswer: "F = ma", hint: "Force equals mass times acceleration", cardType: .multipleChoice),
+                PremadeCard(id: "phys-2", question: "The SI unit of electrical resistance is the ___.", correctAnswer: "ohm", hint: "Represented by omega Ω", cardType: .fillBlank),
+                PremadeCard(id: "phys-3", question: "Match physical quantities to SI units", correctAnswer: "Matches", hint: "Connect units", cardType: .matching, matchingLeftItems: ["Force", "Energy / Work", "Power", "Frequency"], matchingRightItems: ["Newton (N)", "Joule (J)", "Watt (W)", "Hertz (Hz)"]),
+                PremadeCard(id: "phys-4", question: "Law of Conservation of Energy", options: [], correctAnswer: "Energy cannot be created or destroyed, only transformed from one form to another (e.g. potential to kinetic). Total energy in an isolated system remains constant.", hint: "Energy conservation", cardType: .vocabulary),
+                PremadeCard(id: "phys-5", question: "What causes the Doppler Effect?", options: [], correctAnswer: "The observed change in frequency/wavelength of a wave in relation to an observer moving relative to the wave source.", hint: "Sound shift with motion", cardType: .tapReveal)
             ]
         ),
 
@@ -209,22 +180,6 @@ enum PremadeDeckCatalog {
                 PremadeCard(id: "ush-5", question: "Who was the primary author of the Declaration of Independence?", options: [], correctAnswer: "Thomas Jefferson", hint: "3rd US President", cardType: .tapReveal)
             ]
         ),
-        PremadeDeck(
-            id: "world-history",
-            name: "World History Turning Points",
-            category: "History",
-            subcategory: "World History",
-            description: "Renaissance, Gutenberg press, world wars, and the Industrial Revolution.",
-            colorHex: "#7C735E",
-            deckType: "Mixed",
-            cards: [
-                PremadeCard(id: "wh-1", question: "The Industrial Revolution began in ___ in the late 18th century.", correctAnswer: "Great Britain", hint: "Country of steam and textiles", cardType: .fillBlank),
-                PremadeCard(id: "wh-2", question: "In what year did the Berlin Wall fall, signaling the end of the Cold War?", options: ["1945", "1961", "1989", "1991"], correctAnswer: "1989", hint: "Late 1980s landmark", cardType: .multipleChoice),
-                PremadeCard(id: "wh-3", question: "Match historical figures to achievements", correctAnswer: "Matches", hint: "Connect figures", cardType: .matching, matchingLeftItems: ["Johannes Gutenberg", "Leonardo da Vinci", "Alexander the Great", "Nelson Mandela"], matchingRightItems: ["Movable type printing", "Mona Lisa & Polymath", "Macedonian Empire", "Anti-apartheid leadership"]),
-                PremadeCard(id: "wh-4", question: "The Renaissance", options: [], correctAnswer: "A fervent period of European cultural, artistic, political, and economic rebirth from the 14th to 17th centuries, starting in Italy.", hint: "Cultural rebirth", cardType: .vocabulary),
-                PremadeCard(id: "wh-5", question: "What event triggered the outbreak of World War I in 1914?", options: [], correctAnswer: "The assassination of Archduke Franz Ferdinand of Austria in Sarajevo.", hint: "Sarajevo assassination", cardType: .tapReveal)
-            ]
-        ),
 
         // MARK: - Computing Decks
         PremadeDeck(
@@ -259,22 +214,6 @@ enum PremadeDeckCatalog {
                 PremadeCard(id: "cs-5", question: "What is the difference between synchronous and asynchronous execution?", options: [], correctAnswer: "Synchronous blocks execution until task finishes; Asynchronous executes in background without blocking the main thread.", hint: "Blocking vs Non-blocking", cardType: .tapReveal)
             ]
         ),
-        PremadeDeck(
-            id: "cybersecurity-basics",
-            name: "Cybersecurity & InfoSec",
-            category: "Computing",
-            subcategory: "Cybersecurity",
-            description: "Encryption, authentication, phishing defense, and network security.",
-            colorHex: "#486C74",
-            deckType: "Mixed",
-            cards: [
-                PremadeCard(id: "sec-1", question: "HTTPS encrypts data in transit using the ___ protocol.", correctAnswer: "TLS", hint: "Transport Layer Security (or SSL)", cardType: .fillBlank),
-                PremadeCard(id: "sec-2", question: "What attack involves deceiving users into revealing passwords via fraudulent emails?", options: ["DDoS", "Phishing", "Buffer Overflow", "SQL Injection"], correctAnswer: "Phishing", hint: "Impersonating trusted entities", cardType: .multipleChoice),
-                PremadeCard(id: "sec-3", question: "Match security terms to definitions", correctAnswer: "Matches", hint: "Connect terms", cardType: .matching, matchingLeftItems: ["2FA / MFA", "Public Key Cryptography", "Firewall", "Salting"], matchingRightItems: ["Secondary login verification", "Asymmetric encryption key pair", "Network traffic filter", "Adding random data to hashed passwords"]),
-                PremadeCard(id: "sec-4", question: "Zero Trust Architecture", options: [], correctAnswer: "A security model requiring all users inside or outside the network to be authenticated, authorized, and continuously validated before access is granted.", hint: "Never trust, always verify", cardType: .vocabulary),
-                PremadeCard(id: "sec-5", question: "What makes a password cryptographically resilient?", options: [], correctAnswer: "High entropy: sufficient length (16+ chars), randomness, and unique across every account (managed via password manager).", hint: "Length + Entropy", cardType: .tapReveal)
-            ]
-        ),
 
         // MARK: - Exam Prep Decks
         PremadeDeck(
@@ -294,22 +233,6 @@ enum PremadeDeckCatalog {
             ]
         ),
         PremadeDeck(
-            id: "sat-math",
-            name: "SAT Math Practice",
-            category: "Exam Prep",
-            subcategory: "SAT",
-            description: "Slope, algebra, geometry, exponents, and probability drills.",
-            colorHex: "#4E83A5",
-            deckType: "Mixed",
-            cards: [
-                PremadeCard(id: "satm-1", question: "If 2x + 3 = 11, then x = ___", correctAnswer: "4", hint: "Subtract 3, then divide by 2", cardType: .fillBlank),
-                PremadeCard(id: "satm-2", question: "What is the slope of the line passing through (0, 1) and (2, 5)?", options: ["1", "2", "3", "4"], correctAnswer: "2", hint: "Rise / Run = (5 - 1) / (2 - 0)", cardType: .multipleChoice),
-                PremadeCard(id: "satm-3", question: "Match equations to properties", correctAnswer: "Matches", hint: "Connect types", cardType: .matching, matchingLeftItems: ["y = mx + b", "y = ax² + bx + c", "x² + y² = r²", "a / b = c / d"], matchingRightItems: ["Linear function", "Parabola / Quadratic", "Circle centered at origin", "Proportion cross-multiplication"]),
-                PremadeCard(id: "satm-4", question: "Discriminant (b² - 4ac)", options: [], correctAnswer: "If > 0: two distinct real roots. If = 0: exactly one real root. If < 0: two complex/imaginary roots.", hint: "Quadratic root predictor", cardType: .vocabulary),
-                PremadeCard(id: "satm-5", question: "What is 20% of 150?", options: [], correctAnswer: "30 (0.20 × 150 = 30)", hint: "10% is 15, double it", cardType: .tapReveal)
-            ]
-        ),
-        PremadeDeck(
             id: "study-skills",
             name: "Cognitive Learning & Study Skills",
             category: "Exam Prep",
@@ -326,332 +249,488 @@ enum PremadeDeckCatalog {
             ]
         )
     ]
-
-    private static let languageDecks: [PremadeDeck] =
-        languageSeries(language: "Spanish", slug: "spanish", color: "#D76C82", terms: terms(from: spanishTerms))
-        + languageSeries(language: "Korean", slug: "korean", color: "#6A83C5", terms: terms(from: koreanTerms))
-        + languageSeries(language: "Chinese", slug: "chinese", color: "#D95B4F", terms: terms(from: chineseTerms))
-        + languageSeries(language: "French", slug: "french", color: "#668CC8", terms: terms(from: frenchTerms))
-        + languageSeries(language: "Japanese", slug: "japanese", color: "#C76A77", terms: terms(from: japaneseTerms))
-        + languageSeries(language: "German", slug: "german", color: "#9C7A43", terms: terms(from: germanTerms))
-        + languageSeries(language: "Italian", slug: "italian", color: "#4B9B74", terms: terms(from: italianTerms))
-
-    private static func languageSeries(
-        language: String,
-        slug: String,
-        color: String,
-        terms: [LanguageTerm]
-    ) -> [PremadeDeck] {
-        let deck1 = PremadeDeck(
-            id: "\(slug)-essentials",
-            name: "\(language) Essentials & Vocab",
-            category: "Languages",
-            subcategory: language,
-            description: "Core vocabulary cards, definitions, and essential phrase matching.",
-            colorHex: color,
-            deckType: "Mixed",
-            cards: buildLanguageMixedCards(id: "\(slug)-essentials", language: language, terms: Array(terms.prefix(15)))
-        )
-
-        let deck2 = PremadeDeck(
-            id: "\(slug)-quiz",
-            name: "\(language) Interactive Quiz",
-            category: "Languages",
-            subcategory: language,
-            description: "Multiple-choice recognition challenges and translation options.",
-            colorHex: color,
-            deckType: "Quiz",
-            cards: buildLanguageQuizCards(id: "\(slug)-quiz", language: language, terms: Array(terms.prefix(15)))
-        )
-
-        let deck3 = PremadeDeck(
-            id: "\(slug)-matching",
-            name: "\(language) Match Pairs & Recall",
-            category: "Languages",
-            subcategory: language,
-            description: "Connect words with instant visual feedback and fill-in blanks.",
-            colorHex: color,
-            deckType: "Mixed",
-            cards: buildLanguageMatchingAndBlanks(id: "\(slug)-matching", language: language, terms: Array(terms.prefix(15)))
-        )
-
-        return [deck1, deck2, deck3]
-    }
-
-    private static func buildLanguageMixedCards(id: String, language: String, terms: [LanguageTerm]) -> [PremadeCard] {
-        var cards: [PremadeCard] = []
-        for (idx, term) in terms.prefix(6).enumerated() {
-            if idx % 2 == 0 {
-                cards.append(PremadeCard(
-                    id: "\(id)-voc-\(idx)",
-                    question: term.target,
-                    options: [],
-                    correctAnswer: term.english,
-                    hint: "\(language) word meaning",
-                    cardType: .vocabulary
-                ))
-            } else {
-                cards.append(PremadeCard(
-                    id: "\(id)-rev-\(idx)",
-                    question: "How do you say \"\(term.english)\" in \(language)?",
-                    options: [],
-                    correctAnswer: term.target,
-                    hint: "Think of \(language) phrase",
-                    cardType: .tapReveal
-                ))
-            }
-        }
-        if terms.count >= 4 {
-            let left = Array(terms.prefix(4).map { $0.target })
-            let right = Array(terms.prefix(4).map { $0.english })
-            cards.append(PremadeCard(
-                id: "\(id)-match-1",
-                question: "Match \(language) words to English",
-                options: [],
-                correctAnswer: "Matches",
-                hint: "Tap matching pairs",
-                cardType: .matching,
-                matchingLeftItems: left,
-                matchingRightItems: right
-            ))
-        }
-        return cards
-    }
-
-    private static func buildLanguageQuizCards(id: String, language: String, terms: [LanguageTerm]) -> [PremadeCard] {
-        terms.enumerated().map { index, term in
-            let candidates = (0..<4).map { terms[(index + $0) % terms.count].english }
-            let rotation = index % candidates.count
-            let options = Array(candidates[rotation...] + candidates[..<rotation])
-            return PremadeCard(
-                id: "\(id)-mc-\(index)",
-                question: "What does \"\(term.target)\" mean?",
-                options: options,
-                correctAnswer: term.english,
-                hint: "Common \(language) expression",
-                cardType: .multipleChoice
-            )
-        }
-    }
-
-    private static func buildLanguageMatchingAndBlanks(id: String, language: String, terms: [LanguageTerm]) -> [PremadeCard] {
-        var cards: [PremadeCard] = []
-        for (idx, term) in terms.prefix(4).enumerated() {
-            cards.append(PremadeCard(
-                id: "\(id)-blank-\(idx)",
-                question: "Translate \"\(term.english)\" into \(language): ___",
-                options: [],
-                correctAnswer: term.target,
-                hint: "Type the exact \(language) word",
-                cardType: .fillBlank
-            ))
-        }
-        if terms.count >= 8 {
-            let left1 = Array(terms[0..<4].map { $0.target })
-            let right1 = Array(terms[0..<4].map { $0.english })
-            cards.append(PremadeCard(
-                id: "\(id)-match-1",
-                question: "Match \(language) vocabulary (Part 1)",
-                options: [],
-                correctAnswer: "Matches",
-                hint: "Connect pairs",
-                cardType: .matching,
-                matchingLeftItems: left1,
-                matchingRightItems: right1
-            ))
-            let left2 = Array(terms[4..<8].map { $0.target })
-            let right2 = Array(terms[4..<8].map { $0.english })
-            cards.append(PremadeCard(
-                id: "\(id)-match-2",
-                question: "Match \(language) vocabulary (Part 2)",
-                options: [],
-                correctAnswer: "Matches",
-                hint: "Connect pairs",
-                cardType: .matching,
-                matchingLeftItems: left2,
-                matchingRightItems: right2
-            ))
-        }
-        return cards
-    }
-
-    private static func terms(from source: String) -> [LanguageTerm] {
-        source.split(separator: "\n").compactMap { line in
-            let parts = line.split(separator: "|", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { return nil }
-            return LanguageTerm(target: parts[0], english: parts[1])
-        }
-    }
-
-    private static let spanishTerms = """
-Hola|Hello
-Adiós|Goodbye
-Por favor|Please
-Gracias|Thank you
-Sí|Yes
-No|No
-Disculpe|Excuse me
-Lo siento|Sorry
-Ayuda|Help
-Agua|Water
-Comida|Food
-Casa|House
-Familia|Family
-Amigo|Friend
-Madre|Mother
-Padre|Father
-Día|Day
-Noche|Night
-Hoy|Today
-Mañana|Tomorrow
-"""
-
-    private static let koreanTerms = """
-안녕하세요|Hello
-안녕히 가세요|Goodbye
-주세요|Please
-감사합니다|Thank you
-네|Yes
-아니요|No
-실례합니다|Excuse me
-죄송합니다|Sorry
-도와주세요|Help
-물|Water
-음식|Food
-집|House
-가족|Family
-친구|Friend
-어머니|Mother
-아버지|Father
-하루|Day
-밤|Night
-오늘|Today
-내일|Tomorrow
-"""
-
-    private static let chineseTerms = """
-你好|Hello
-再见|Goodbye
-请|Please
-谢谢|Thank you
-是|Yes
-不|No
-不好意思|Excuse me
-对不起|Sorry
-救命|Help
-水|Water
-食物|Food
-家|House
-家庭|Family
-朋友|Friend
-母亲|Mother
-父亲|Father
-天|Day
-晚上|Night
-今天|Today
-明天|Tomorrow
-"""
-
-    private static let frenchTerms = """
-Bonjour|Hello
-Au revoir|Goodbye
-S’il vous plaît|Please
-Merci|Thank you
-Oui|Yes
-Non|No
-Excusez-moi|Excuse me
-Pardon|Sorry
-Aide|Help
-Eau|Water
-Nourriture|Food
-Maison|House
-Famille|Family
-Ami|Friend
-Mère|Mother
-Père|Father
-Jour|Day
-Nuit|Night
-Aujourd’hui|Today
-Demain|Tomorrow
-"""
-
-    private static let japaneseTerms = """
-こんにちは|Hello
-さようなら|Goodbye
-お願いします|Please
-ありがとう|Thank you
-はい|Yes
-いいえ|No
-すみません|Excuse me
-ごめんなさい|Sorry
-助けて|Help
-水|Water
-食べ物|Food
-家|House
-家族|Family
-友達|Friend
-母|Mother
-父|Father
-日|Day
-夜|Night
-今日|Today
-明日|Tomorrow
-"""
-
-    private static let germanTerms = """
-Hallo|Hello
-Auf Wiedersehen|Goodbye
-Bitte|Please
-Danke|Thank you
-Ja|Yes
-Nein|No
-Entschuldigung|Excuse me
-Es tut mir leid|Sorry
-Hilfe|Help
-Wasser|Water
-Essen|Food
-Haus|House
-Familie|Family
-Freund|Friend
-Mutter|Mother
-Vater|Father
-Tag|Day
-Nacht|Night
-Heute|Today
-Morgen|Tomorrow
-"""
-
-    private static let italianTerms = """
-Ciao|Hello
-Arrivederci|Goodbye
-Per favore|Please
-Grazie|Thank you
-Sì|Yes
-No|No
-Mi scusi|Excuse me
-Mi dispiace|Sorry
-Aiuto|Help
-Acqua|Water
-Cibo|Food
-Casa|House
-Famiglia|Family
-Amico|Friend
-Madre|Mother
-Padre|Father
-Giorno|Day
-Notte|Night
-Oggi|Today
-Domani|Tomorrow
-"""
 }
+
+// MARK: - Main Discover Hub View (2-Column Category Grid)
 
 struct PremadeDecksView: View {
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
+    @ObservedObject private var progressManager = CourseProgressManager.shared
+
+    @State private var addedDeckName: String?
+    @State private var showingCourses = false
+    @State private var showingAllCommunity = false
+    @State private var showingAllPremade = false
+    @State private var showingExamPrep = false
+    @State private var showingShareSheet = false
+    @State private var activeCourseForPath: CourseDefinition?
+    @State private var searchedCourse: CourseDefinition?
+
+    private var enrolledCourse: CourseDefinition? {
+        guard let activeId = progressManager.activeCourseId else { return nil }
+        return CourseCurriculumCatalog.course(for: activeId)
+    }
+
+    private var activeCompletionPercentage: Double {
+        guard let course = enrolledCourse else { return 0 }
+        return progressManager.completionPercentage(for: course)
+    }
+
+    // Preserved for future search restoration
+    @State private var discoverSearch = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Discover")
+                            .font(StudyStudioStyle.title(28))
+                        Text("Your next little breakthrough.")
+                            .font(StudyStudioStyle.body(13))
+                            .foregroundStyle(StudyStudioStyle.secondary)
+                    }
+                    Spacer()
+                    Button {
+                        showingShareSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 18, weight: .medium))
+                            .frame(width: 44, height: 44)
+                            .background(StudyStudioStyle.field, in: Circle())
+                    }
+                    .accessibilityLabel("Share a deck")
+                }
+                .foregroundStyle(StudyStudioStyle.ink)
+
+                /*
+                // Search bar (hidden temporarily as requested, search logic & helpers preserved below)
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 20))
+                    TextField("Search courses & decks", text: $discoverSearch)
+                        .font(StudyStudioStyle.body(15))
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.search)
+                    if !discoverSearch.isEmpty {
+                        Button { discoverSearch = "" } label: {
+                            Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
+                        }.accessibilityLabel("Clear search")
+                    }
+                }
+                .foregroundStyle(StudyStudioStyle.secondary)
+                .padding(.horizontal, 16).frame(minHeight: 56)
+                .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
+                */
+
+                if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if let course = enrolledCourse {
+                        learningProgress(course)
+                        StudyDestinationCard(
+                            eyebrow: "CONTINUE LEARNING",
+                            title: course.title,
+                            subtitle: progressManager.currentLesson(for: course)?.title ?? "Explore your learning path",
+                            badge: "\(Int(activeCompletionPercentage * 100))% complete",
+                            color: StudyStudioStyle.violet,
+                            actionTitle: "Continue"
+                        ) {
+                            activeCourseForPath = course
+                        }
+                    }
+
+                    HStack {
+                        Text("Explore categories")
+                            .font(StudyStudioStyle.heading(17))
+                        Spacer()
+                    }
+                    .foregroundStyle(StudyStudioStyle.ink)
+
+                    destinationCards
+                } else {
+                    searchResults
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 110)
+            .frame(maxWidth: 700)
+            .frame(maxWidth: .infinity)
+        }
+        .background(StudyStudioStyle.canvas.ignoresSafeArea())
+        .tint(StudyStudioStyle.violet)
+        .navigationDestination(isPresented: $showingCourses) {
+            CoursesCatalogListView()
+        }
+        .navigationDestination(isPresented: $showingAllCommunity) {
+            AllCommunityDecksView(
+                libraryDecks: libraryDecks,
+                initialSearch: discoverSearch,
+                onAddDeck: { add($0) },
+                onOpenShareModal: { showingShareSheet = true }
+            )
+        }
+        .navigationDestination(isPresented: $showingAllPremade) {
+            AllPremadeDecksView(libraryDecks: libraryDecks, onAddDeck: add)
+        }
+        .navigationDestination(isPresented: $showingExamPrep) {
+            ExamPrepHubView(libraryDecks: libraryDecks, onAddDeck: add)
+        }
+        .navigationDestination(item: $activeCourseForPath) { course in
+            CoursePathView(course: course)
+        }
+        .navigationDestination(item: $searchedCourse) { course in
+            CourseOverviewView(course: course)
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareDeckToCommunitySheet(libraryDecks: libraryDecks)
+        }
+        .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
+            Button("Done", role: .cancel) { }
+        } message: {
+            Text("\(addedDeckName ?? "This deck") is now ready to study and editable in your library.")
+        }
+    }
+
+    private func learningProgress(_ course: CourseDefinition) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Your learning journey")
+                        .font(StudyStudioStyle.title(20))
+                        .foregroundStyle(StudyStudioStyle.ink)
+                    Text("\(Int(activeCompletionPercentage * 100))% of \(course.title) complete")
+                        .font(StudyStudioStyle.body(12))
+                        .foregroundStyle(StudyStudioStyle.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color(hex: "#E8A320"))
+                    .frame(width: 44, height: 44)
+                    .background(Color(hex: "#E8A320").opacity(0.12), in: Circle())
+                    .accessibilityHidden(true)
+            }
+            ProgressView(value: activeCompletionPercentage)
+                .tint(StudyStudioStyle.mint)
+                .accessibilityLabel("Course progress")
+        }
+    }
+
+    private var destinationCards: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ],
+            spacing: 12
+        ) {
+            DiscoverCategoryTile(
+                title: "Language courses",
+                subtitle: "Spanish & Korean, one lesson at a time.",
+                badge: "\(CourseCurriculumCatalog.courses.count) courses",
+                symbol: "character.bubble.fill",
+                color: StudyStudioStyle.blue,
+                action: { showingCourses = true }
+            )
+
+            DiscoverCategoryTile(
+                title: "Community decks",
+                subtitle: "Fresh perspectives & shared decks.",
+                badge: "Explore",
+                symbol: "person.2.fill",
+                color: StudyStudioStyle.teal,
+                action: { showingAllCommunity = true }
+            )
+
+            DiscoverCategoryTile(
+                title: "Curated subjects",
+                subtitle: "Math, science, tech & history.",
+                badge: "\(PremadeDeckCatalog.decks.count) decks",
+                symbol: "books.vertical.fill",
+                color: StudyStudioStyle.rose,
+                action: { showingAllPremade = true }
+            )
+
+            DiscoverCategoryTile(
+                title: "Exam & cert prep",
+                subtitle: "MCAT, AWS, SAT & study skills.",
+                badge: "Prep",
+                symbol: "target",
+                color: StudyStudioStyle.violet,
+                action: { showingExamPrep = true }
+            )
+        }
+    }
+
+    private var searchResults: some View {
+        let query = discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let courses = CourseCurriculumCatalog.courses.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        let decks = PremadeDeckCatalog.decks.filter {
+            $0.name.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
+                || $0.subcategory.localizedCaseInsensitiveContains(query)
+        }
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Search results").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
+            ForEach(courses) { course in
+                Button { searchedCourse = course } label: {
+                    searchRow(title: course.title, subtitle: "Guided language course", symbol: "character.book.closed", action: "Open")
+                }.buttonStyle(.plain)
+            }
+            ForEach(decks) { deck in
+                let added = libraryDecks.contains { $0.name == deck.name }
+                Button { add(deck) } label: {
+                    searchRow(title: deck.name, subtitle: "\(deck.category) · \(deck.cards.count) cards", symbol: "rectangle.stack", action: added ? "Added" : "Add")
+                }.buttonStyle(.plain).disabled(added)
+            }
+            if courses.isEmpty && decks.isEmpty {
+                Text("No matching courses or curated decks. Try the community library below.")
+                    .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
+            }
+            Button { showingAllCommunity = true } label: {
+                Label("Search community decks", systemImage: "person.2")
+                    .font(StudyStudioStyle.heading(14)).frame(maxWidth: .infinity, minHeight: 52)
+                    .foregroundStyle(.white).background(StudyStudioStyle.violet, in: RoundedRectangle(cornerRadius: 16))
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func searchRow(title: String, subtitle: String, symbol: String, action: String) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(StudyStudioStyle.violet)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(StudyStudioStyle.heading(15)).foregroundStyle(StudyStudioStyle.ink)
+                Text(subtitle).font(StudyStudioStyle.body(12)).foregroundStyle(StudyStudioStyle.secondary)
+            }
+            Spacer(minLength: 0)
+            Text(action).font(StudyStudioStyle.heading(12)).foregroundStyle(StudyStudioStyle.violet)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func add(_ premadeDeck: PremadeDeck) {
+        guard !libraryDecks.contains(where: { premadeDeck.communitySourceID != nil ? $0.sourceCommunityID == premadeDeck.communitySourceID : $0.name == premadeDeck.name }) else { return }
+        let deck = Deck(name: premadeDeck.name, colorHex: premadeDeck.colorHex, deckType: premadeDeck.deckType, orderIndex: libraryDecks.count)
+        deck.sourceCommunityID = premadeDeck.communitySourceID
+        for (index, sourceCard) in premadeDeck.cards.enumerated() {
+            let card = Flashcard(
+                question: sourceCard.question,
+                options: sourceCard.options,
+                correctAnswer: sourceCard.correctAnswer,
+                hint: sourceCard.hint,
+                cardType: sourceCard.cardType,
+                matchingLeftItems: sourceCard.matchingLeftItems,
+                matchingRightItems: sourceCard.matchingRightItems,
+                promptImageName: sourceCard.promptImageName,
+                optionImageNames: sourceCard.optionImageNames
+            )
+            card.orderIndex = index
+            card.promptAudioName = sourceCard.promptAudioName
+            deck.cards.append(card)
+            deck.assignCardToSection(card: card, suggestedCategory: sourceCard.sectionName)
+        }
+        context.insert(deck)
+        try? context.save()
+        InteractionSoundPlayer.shared.play(.addDeck)
+        HapticFeedback.success()
+        addedDeckName = premadeDeck.name
+    }
+}
+
+// MARK: - Dedicated Courses Catalog List View
+
+private struct CoursesCatalogListView: View {
+    @ObservedObject private var progressManager = CourseProgressManager.shared
+    @State private var selectedCourse: CourseDefinition?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Language Courses")
+                        .font(.custom("Poppins-Bold", size: 24))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                    Text("Structured tracks with spaced repetition & lock-screen alerts")
+                        .font(.custom("Poppins-Regular", size: 12))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+
+                VStack(spacing: 14) {
+                    ForEach(CourseCurriculumCatalog.courses) { course in
+                        LanguageCourseHeroCard(
+                            course: course,
+                            isEnrolled: progressManager.isEnrolled(in: course.id),
+                            onSelect: { selectedCourse = course }
+                        )
+                    }
+                }
+                .padding(.horizontal, 20)
+
+                Spacer().frame(height: 60)
+            }
+        }
+        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+        .navigationTitle("Courses")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $selectedCourse) { course in
+            CourseOverviewView(course: course)
+        }
+    }
+}
+
+// MARK: - Language Course Hero Card
+
+private struct LanguageCourseHeroCard: View {
+    let course: CourseDefinition
+    let isEnrolled: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button {
+            onSelect()
+        } label: {
+            HStack(alignment: .top, spacing: 14) {
+                Text(course.flagEmoji)
+                    .font(.system(size: 34))
+                    .padding(8)
+                    .background(Color(hex: course.colorHex).opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(course.title)
+                            .font(.custom("Poppins-Bold", size: 15))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+
+                        Spacer()
+
+                        Text(course.levelTag)
+                            .font(.custom("Poppins-SemiBold", size: 10))
+                            .foregroundStyle(Color(hex: course.colorHex))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color(hex: course.colorHex).opacity(0.12), in: Capsule())
+                    }
+
+                    Text(course.summary)
+                        .font(.custom("Poppins-Regular", size: 11))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        Text("\(course.totalLessonsCount) lessons • ~\(course.estimatedHours) hrs")
+                            .font(.custom("Poppins-Medium", size: 10))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                        Spacer()
+
+                        Text(isEnrolled ? "Continue" : "View Course")
+                            .font(.custom("Poppins-SemiBold", size: 11))
+                            .foregroundStyle(Color(hex: course.colorHex))
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(14)
+            .background(LearnAlertStyle.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Dedicated Exam Prep Hub View (Placeholder / High-Yield Prep)
+
+private struct ExamPrepHubView: View {
+    let libraryDecks: [Deck]
+    let onAddDeck: (PremadeDeck) -> Void
+
+    @State private var searchText = ""
+    @State private var selectedFilter = "All"
+
+    private let examFilters = ["All", "Medical", "Tech", "College", "Law"]
+
+    private var examDecks: [PremadeDeck] {
+        var results: [PremadeDeck] = []
+
+        // Pull Exam Prep decks from premade catalog
+        for deck in PremadeDeckCatalog.decks where deck.category == "Exam Prep" {
+            results.append(deck)
+        }
+
+        return results
+    }
+
+    private var filteredDecks: [PremadeDeck] {
+        examDecks.filter { deck in
+            let matchesFilter: Bool
+            switch selectedFilter {
+            case "Medical": matchesFilter = deck.subcategory.caseInsensitiveCompare("Medical") == .orderedSame
+            case "Tech": matchesFilter = deck.subcategory.caseInsensitiveCompare("Coding") == .orderedSame || deck.subcategory.caseInsensitiveCompare("Computing") == .orderedSame
+            case "College": matchesFilter = deck.subcategory.caseInsensitiveCompare("SAT") == .orderedSame || deck.subcategory.caseInsensitiveCompare("Study Skills") == .orderedSame || deck.subcategory.caseInsensitiveCompare("Exam Prep") == .orderedSame
+            case "Law": matchesFilter = deck.subcategory.caseInsensitiveCompare("Law") == .orderedSame
+            default: matchesFilter = true
+            }
+
+            let matchesSearch = searchText.isEmpty
+                || deck.name.localizedCaseInsensitiveContains(searchText)
+                || deck.description.localizedCaseInsensitiveContains(searchText)
+                || deck.subcategory.localizedCaseInsensitiveContains(searchText)
+
+            return matchesFilter && matchesSearch
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                DiscoverSearchField(searchText: $searchText, placeholder: "Search MCAT, SAT, AWS, USMLE, Law...")
+                DiscoverFilterRow(categories: examFilters, selection: $selectedFilter, compact: true)
+
+                if filteredDecks.isEmpty {
+                    ContentUnavailableView("No Exam Decks Found", systemImage: "target", description: Text("Try adjusting your filter or search query."))
+                        .padding(.vertical, 40)
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(filteredDecks) { deck in
+                            CleanDiscoverDeckCard(
+                                title: deck.name,
+                                subtitle: "\(deck.cards.count) cards • \(deck.subcategory)",
+                                colorHex: deck.colorHex,
+                                iconName: "graduationcap.fill",
+                                isAdded: libraryDecks.contains(where: { $0.name == deck.name }),
+                                onAdd: { onAddDeck(deck) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+
+                Spacer().frame(height: 60)
+            }
+            .padding(.top, 14)
+        }
+        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+        .navigationTitle("Exam & Cert Drills")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Dedicated "See All Premade Decks" View
+
+private struct AllPremadeDecksView: View {
+    let libraryDecks: [Deck]
+    let onAddDeck: (PremadeDeck) -> Void
+
     @State private var searchText = ""
     @State private var selectedCategory = "All"
     @State private var selectedSubcategory = "All"
-    @State private var addedDeckName: String?
 
     private var availableSubcategories: [String] {
         PremadeDeckCatalog.subcategoriesByCategory[selectedCategory] ?? []
@@ -672,72 +751,116 @@ struct PremadeDecksView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Discover")
-                    .font(.custom("Poppins-Bold", size: 30, relativeTo: .largeTitle))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .padding(.horizontal, 20)
-
-                DiscoverSearchField(searchText: $searchText)
+            VStack(alignment: .leading, spacing: 14) {
+                DiscoverSearchField(searchText: $searchText, placeholder: "Search all curated decks...")
                 DiscoverFilterRow(categories: PremadeDeckCatalog.mainCategories, selection: $selectedCategory)
 
                 if !availableSubcategories.isEmpty {
                     DiscoverFilterRow(categories: availableSubcategories, selection: $selectedSubcategory, compact: true)
                 }
 
-                PremadeDeckList(decks: filteredDecks, libraryDecks: libraryDecks, add: add)
-
                 if filteredDecks.isEmpty {
                     ContentUnavailableView("No Decks Found", systemImage: "magnifyingglass", description: Text("Try another search or category."))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .padding(.vertical, 40)
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(filteredDecks) { deck in
+                            CleanDiscoverDeckCard(
+                                title: deck.name,
+                                subtitle: "\(deck.cards.count) cards • \(deck.subcategory)",
+                                colorHex: deck.colorHex,
+                                iconName: "book.closed.fill",
+                                isAdded: libraryDecks.contains(where: { $0.name == deck.name }),
+                                onAdd: { onAddDeck(deck) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
                 }
 
-                Spacer().frame(height: 120)
+                Spacer().frame(height: 60)
             }
-            .padding(.top, 22)
+            .padding(.top, 14)
         }
         .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+        .navigationTitle("Curated Subjects")
+        .navigationBarTitleDisplayMode(.inline)
         .onChange(of: selectedCategory) { _, _ in selectedSubcategory = "All" }
-        .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
-            Button("Done", role: .cancel) { }
-        } message: {
-            Text("\(addedDeckName ?? "This deck") is now editable in your library.")
-        }
-    }
-
-    private func add(_ premadeDeck: PremadeDeck) {
-        guard !libraryDecks.contains(where: { $0.name == premadeDeck.name }) else { return }
-        let deck = Deck(name: premadeDeck.name, colorHex: premadeDeck.colorHex, deckType: premadeDeck.deckType, orderIndex: libraryDecks.count)
-        for sourceCard in premadeDeck.cards {
-            let card = Flashcard(
-                question: sourceCard.question,
-                options: sourceCard.options,
-                correctAnswer: sourceCard.correctAnswer,
-                hint: sourceCard.hint,
-                cardType: sourceCard.cardType,
-                matchingLeftItems: sourceCard.matchingLeftItems,
-                matchingRightItems: sourceCard.matchingRightItems,
-                promptImageName: sourceCard.promptImageName,
-                optionImageNames: sourceCard.optionImageNames
-            )
-            deck.cards.append(card)
-        }
-        context.insert(deck)
-        try? context.save()
-        InteractionSoundPlayer.shared.play(.addDeck)
-        addedDeckName = premadeDeck.name
     }
 }
 
+// MARK: - Clean Discover Deck Card (Title + Small Plus Button)
+
+private struct CleanDiscoverDeckCard: View {
+    let title: String
+    let subtitle: String
+    let colorHex: String
+    let iconName: String
+    let isAdded: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(hex: colorHex).opacity(0.18))
+                    .frame(width: 38, height: 38)
+                Image(systemName: iconName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(hex: colorHex))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.custom("Poppins-SemiBold", size: 14))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .lineLimit(1)
+
+                Text(subtitle)
+                    .font(.custom("Poppins-Regular", size: 11))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                onAdd()
+            } label: {
+                Image(systemName: isAdded ? "checkmark" : "plus")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(isAdded ? LearnAlertStyle.textSecondary : Color.white)
+                    .frame(width: 28, height: 28)
+                    .background(isAdded ? Color.gray.opacity(0.15) : LearnAlertStyle.indigo)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isAdded)
+            .accessibilityLabel(isAdded ? "\(title) already added" : "Add \(title)")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(LearnAlertStyle.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Search Field Component
+
 private struct DiscoverSearchField: View {
     @Binding var searchText: String
+    var placeholder: String = "Search decks..."
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(LearnAlertStyle.textSecondary)
-            TextField("Search discover decks...", text: $searchText)
-                .font(.custom("Poppins-Medium", size: 14))
+            TextField(placeholder, text: $searchText)
+                .font(.custom("Poppins-Medium", size: 13))
                 .foregroundStyle(LearnAlertStyle.textPrimary)
             if !searchText.isEmpty {
                 Button {
@@ -748,17 +871,19 @@ private struct DiscoverSearchField: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LearnAlertStyle.hairline, lineWidth: 1)
         )
         .padding(.horizontal, 20)
     }
 }
+
+// MARK: - Filter Row Component
 
 private struct DiscoverFilterRow: View {
     let categories: [String]
@@ -774,9 +899,9 @@ private struct DiscoverFilterRow: View {
                         withAnimation(.snappy) { selection = category }
                     } label: {
                         Text(category)
-                            .font(.custom(isSelected ? "Poppins-SemiBold" : "Poppins-Medium", size: compact ? 12 : 13))
-                            .padding(.horizontal, compact ? 12 : 16)
-                            .padding(.vertical, compact ? 6 : 8)
+                            .font(.custom(isSelected ? "Poppins-SemiBold" : "Poppins-Medium", size: compact ? 11 : 12))
+                            .padding(.horizontal, compact ? 10 : 14)
+                            .padding(.vertical, compact ? 5 : 7)
                             .background(isSelected ? LearnAlertStyle.indigo : LearnAlertStyle.surface)
                             .foregroundStyle(isSelected ? Color.white : LearnAlertStyle.textPrimary)
                             .clipShape(Capsule())
@@ -789,108 +914,6 @@ private struct DiscoverFilterRow: View {
                 }
             }
             .padding(.horizontal, 20)
-        }
-    }
-}
-
-private struct PremadeDeckList: View {
-    let decks: [PremadeDeck]
-    let libraryDecks: [Deck]
-    let add: (PremadeDeck) -> Void
-
-    var body: some View {
-        LazyVStack(spacing: 14) {
-            ForEach(decks) { deck in
-                PremadeDeckCard(deck: deck, isAdded: libraryDecks.contains(where: { $0.name == deck.name }), onAdd: { add(deck) })
-            }
-        }
-        .padding(.horizontal, 20)
-    }
-}
-
-private struct PremadeDeckCard: View {
-    let deck: PremadeDeck
-    let isAdded: Bool
-    let onAdd: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(hex: deck.colorHex).opacity(0.18))
-                    .frame(width: 44, height: 44)
-                Image(systemName: categoryIcon(deck.category))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Color(hex: deck.colorHex))
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(deck.name)
-                        .font(.custom("Poppins-SemiBold", size: 15))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    Text("\(deck.cards.count) cards")
-                        .font(.custom("Poppins-Medium", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.04), in: Capsule())
-                }
-
-                // Card type pill badges
-                HStack(spacing: 4) {
-                    let types = Array(Set(deck.cards.map { $0.cardType }))
-                    ForEach(types, id: \.self) { type in
-                        HStack(spacing: 3) {
-                            Image(systemName: type.icon)
-                                .font(.system(size: 8))
-                            Text(type.title)
-                                .font(.custom("Poppins-Medium", size: 9))
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    }
-                }
-            }
-
-            Button {
-                onAdd()
-            } label: {
-                Image(systemName: isAdded ? "checkmark" : "plus")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(isAdded ? LearnAlertStyle.textSecondary : Color.white)
-                    .frame(width: 36, height: 36)
-                    .background(isAdded ? Color.gray.opacity(0.15) : LearnAlertStyle.indigo)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAdded)
-            .accessibilityLabel(isAdded ? "\(deck.name) already added" : "Add \(deck.name)")
-        }
-        .padding(12)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-    }
-
-    private func categoryIcon(_ category: String) -> String {
-        switch category {
-        case "Languages": "globe.americas.fill"
-        case "Math": "function"
-        case "Science": "atom"
-        case "History": "scroll.fill"
-        case "Computing": "laptopcomputer"
-        case "Exam Prep": "graduationcap.fill"
-        default: "folder.fill"
         }
     }
 }

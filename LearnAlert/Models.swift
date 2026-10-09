@@ -56,6 +56,10 @@ class Deck {
     var creationDate: Date = Date()
     var orderIndex: Int = 0
     var appearanceSeed: Int64?
+    var sourceCommunityID: String?
+    var publishedCommunityID: String?
+    var communityCategory: String?
+    var communityDescription: String?
 
     // AI & Source Context Caching Fields
     var sourceId: String?
@@ -181,6 +185,7 @@ class Flashcard {
     var cardTypeRaw: String = FlashcardType.multipleChoice.rawValue
     var matchingPairsData: Data = Data()
     var promptImageName: String?
+    var promptAudioName: String?
     var optionImageNamesData: Data = Data()
 
     // Study state

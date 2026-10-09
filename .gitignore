@@ -8,3 +8,9 @@ Config.xcconfig
 project.xcworkspace/xcuserdata/
 xcuserdata/
 DerivedData/
+
+# Generated dependencies and local tools
+Pods/
+build/
+side-repos/
+.agents/

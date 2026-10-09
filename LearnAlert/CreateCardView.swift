@@ -1,6 +1,7 @@
 import PhotosUI
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct CreateCardView: View {
     @Environment(\.modelContext) private var context
@@ -29,6 +30,10 @@ struct CreateCardView: View {
     @State private var optionImages: [UIImage?] = [nil, nil, nil, nil]
     @State private var optionPhotoPickerItems: [PhotosPickerItem?] = [nil, nil, nil, nil]
     @State private var optionImageNames: [String] = []
+    @State private var promptAudioName: String?
+    @State private var showingAudioImporter = false
+    @State private var audioError: String?
+    @State private var didSave = false
 
     private var selectedSection: DeckSection? {
         guard let id = UUID(uuidString: selectedSectionId) else { return nil }
@@ -119,6 +124,19 @@ struct CreateCardView: View {
                     }
                 }
             }
+            .fileImporter(isPresented: $showingAudioImporter,
+                          allowedContentTypes: [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "m4a"), UTType(filenameExtension: "wav")].compactMap { $0 }) { result in
+                do {
+                    let source = try result.get()
+                    let name = try CardAudioStore.importFile(source)
+                    discardUnsavedAudio()
+                    promptAudioName = name
+                } catch { audioError = error.localizedDescription }
+            }
+            .alert("Audio Attachment", isPresented: Binding(get: { audioError != nil }, set: { if !$0 { audioError = nil } })) {
+                Button("OK", role: .cancel) { }
+            } message: { Text(audioError ?? "") }
+            .onDisappear { if !didSave { discardUnsavedAudio() } }
         }
     }
 
@@ -229,6 +247,34 @@ struct CreateCardView: View {
                 case .none:
                     EmptyView()
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Audio (optional)")
+                        .font(.headline)
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                    Text("Attach a pronunciation, question, or explanation. MP3, M4A, or WAV up to 20 MB.")
+                        .font(.subheadline)
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                    HStack(spacing: 16) {
+                        if let promptAudioName {
+                            CardAudioPlaybackButton(name: promptAudioName)
+                            Spacer()
+                            Button("Remove", role: .destructive) {
+                                discardUnsavedAudio()
+                                self.promptAudioName = nil
+                            }.frame(minHeight: 44)
+                        } else {
+                            Button { showingAudioImporter = true } label: {
+                                Label("Attach audio", systemImage: "waveform.badge.plus")
+                                    .frame(minHeight: 44)
+                            }
+                            .tint(LearnAlertStyle.indigo)
+                        }
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 16))
 
                 // Hint (Optional - Hidden for Vocabulary)
                 if selectedType != .vocabulary {
@@ -690,6 +736,7 @@ struct CreateCardView: View {
         selectedSectionId = card.section?.id.uuidString ?? "NONE"
 
         promptImageName = card.promptImageName
+        promptAudioName = card.promptAudioName
         if let pName = card.promptImageName {
             promptImage = CardImageStore.loadImage(named: pName)
         }
@@ -774,10 +821,18 @@ struct CreateCardView: View {
         card.matchingRightItems = right
         card.promptImageName = finalPromptImageName
         card.optionImageNames = finalOptionImageNames
+        card.promptAudioName = promptAudioName
         card.section = selectedSection
         if cardToEdit == nil { deck.cards.append(card) }
         try? context.save()
+        didSave = true
         dismiss()
+    }
+
+    private func discardUnsavedAudio() {
+        if let promptAudioName, promptAudioName != cardToEdit?.promptAudioName {
+            CardAudioStore.delete(named: promptAudioName)
+        }
     }
 }
 

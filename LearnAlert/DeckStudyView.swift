@@ -72,6 +72,7 @@ struct DeckStudyView: View {
                     hint: card.hint,
                     promptImageName: card.promptImageName,
                     optionImageNames: card.optionImageNames,
+                    promptAudioName: card.promptAudioName,
                     cardNumber: cardIndex + 1,
                     cardCount: studyQueue.count,
                     correctCount: correctCount,
@@ -223,6 +224,7 @@ private struct QuizSessionView: View {
     let hint: String
     var promptImageName: String? = nil
     var optionImageNames: [String] = []
+    var promptAudioName: String? = nil
     let cardNumber: Int
     let cardCount: Int
     let correctCount: Int
@@ -271,6 +273,10 @@ private struct QuizSessionView: View {
                         .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
                         .foregroundStyle(QuizTheme.ink)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let promptAudioName {
+                        CardAudioPlaybackButton(name: promptAudioName)
+                    }
 
                     switch cardType {
                     case .vocabulary:
