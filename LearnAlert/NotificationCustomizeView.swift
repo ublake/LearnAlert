@@ -34,7 +34,7 @@ struct NotificationCustomizeView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
+            VStack(alignment: .leading, spacing: 24) {
                 HStack {
                     Text("Customize").font(.largeTitle.weight(.bold)).foregroundStyle(StudyStudioStyle.ink)
                     Spacer()
@@ -55,14 +55,7 @@ struct NotificationCustomizeView: View {
                 }
                 NotificationSimulatedContainer(theme: currentTheme, layout: currentLayout,
                     cardType: previewCardType, isLight: isLight).id(previewCardType)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Appearance").font(.headline).foregroundStyle(StudyStudioStyle.ink)
-                    Picker("Appearance", selection: $appearanceMode) {
-                        Text("System").tag("system")
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
-                    }.pickerStyle(.segmented)
-                }
+                CustomizeStyleControls(appearanceMode: $appearanceMode, layoutRaw: $storedLayoutRaw)
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Color").font(.headline).foregroundStyle(StudyStudioStyle.ink)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 12) {
@@ -72,31 +65,29 @@ struct NotificationCustomizeView: View {
                                 withAnimation(.snappy) { storedThemeRaw = theme.rawValue }
                                 HapticFeedback.selection()
                             } label: {
-                                Circle().fill(theme.previewGradient(isLight: isLight)).frame(width: 40, height: 40)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(theme.previewGradient(isLight: isLight)).frame(width: 40, height: 40)
                                     .overlay {
                                         if selected { Image(systemName: "checkmark").font(.body.bold())
                                             .foregroundStyle(isLight || theme == .light ? Color(red: 0.10, green: 0.13, blue: 0.24) : .white) }
                                     }
                                     .padding(4)
-                                    .overlay(Circle().stroke(selected ? StudyStudioStyle.ink : .clear, lineWidth: 2))
+                                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(selected ? StudyStudioStyle.ink : .clear, lineWidth: 2))
                             }.buttonStyle(.plain).frame(maxWidth: .infinity, minHeight: 48)
                                 .accessibilityLabel(theme.title).accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Layout").font(.headline).foregroundStyle(StudyStudioStyle.ink)
-                    Picker("Layout", selection: $storedLayoutRaw) {
-                        ForEach(NotificationLayoutMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
-                    }.pickerStyle(.segmented)
+                VStack(spacing: 8) {
+                    Button(action: sendTestNotification) {
+                        Label(testScheduledSuccess ? "Sent · arrives in 3 seconds" : "Send a test alert",
+                            systemImage: testScheduledSuccess ? "checkmark" : "bell")
+                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
+                    }.buttonStyle(.bordered).tint(StudyStudioStyle.ink)
+                    Text("Touch and hold your notification to expand it.")
+                        .font(.footnote).foregroundStyle(StudyStudioStyle.secondary)
                 }
-                Button(action: sendTestNotification) {
-                    Label(testScheduledSuccess ? "Sent · arrives in 3 seconds" : "Send a test alert",
-                        systemImage: testScheduledSuccess ? "checkmark" : "bell")
-                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
-                }.buttonStyle(.bordered).tint(StudyStudioStyle.ink)
-                Text("Touch and hold your notification to expand it.")
-                    .font(.footnote).foregroundStyle(StudyStudioStyle.secondary)
             }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 112)
                 .frame(maxWidth: 600).frame(maxWidth: .infinity)
         }.background(StudyStudioStyle.canvas.ignoresSafeArea())
@@ -165,6 +156,93 @@ struct NotificationCustomizeView: View {
                 testScheduledSuccess = false
             }
         }
+    }
+}
+
+/// Two related preferences share one compact surface; native menus keep every option accessible.
+struct CustomizeStyleControls: View {
+    @Binding var appearanceMode: String
+    @Binding var layoutRaw: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var symbolWidth = 20
+
+    private var appearanceTitle: String {
+        switch appearanceMode {
+        case "light": "Light"
+        case "dark": "Dark"
+        default: "System"
+        }
+    }
+
+    private var appearanceSymbol: String {
+        switch appearanceMode {
+        case "light": "sun.max"
+        case "dark": "moon"
+        default: "circle.lefthalf.filled"
+        }
+    }
+
+    private var layout: NotificationLayoutMode {
+        NotificationLayoutMode(rawValue: layoutRaw) ?? .automatic
+    }
+
+    var body: some View {
+        let usesVerticalLayout = dynamicTypeSize.isAccessibilitySize
+        let selectorLayout = usesVerticalLayout
+            ? AnyLayout(VStackLayout(spacing: 0))
+            : AnyLayout(HStackLayout(spacing: 0))
+
+        selectorLayout {
+            Menu {
+                Picker("Appearance", selection: $appearanceMode) {
+                    Label("System", systemImage: "circle.lefthalf.filled").tag("system")
+                    Label("Light", systemImage: "sun.max").tag("light")
+                    Label("Dark", systemImage: "moon").tag("dark")
+                }
+            } label: {
+                selectorLabel("Appearance", value: appearanceTitle, symbol: appearanceSymbol)
+            }
+            .accessibilityLabel("Appearance")
+            .accessibilityValue(appearanceTitle)
+
+            Rectangle().fill(StudyStudioStyle.hairline)
+                .frame(width: usesVerticalLayout ? nil : 1, height: usesVerticalLayout ? 1 : 32)
+                .accessibilityHidden(true)
+
+            Menu {
+                Picker("Layout", selection: $layoutRaw) {
+                    ForEach(NotificationLayoutMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
+                }
+            } label: {
+                selectorLabel("Layout", value: layout.title,
+                    symbol: layout == .compact ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+            }
+            .accessibilityLabel("Layout")
+            .accessibilityValue(layout.title)
+        }
+        .buttonStyle(.plain)
+        .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onChange(of: appearanceMode) { _, _ in HapticFeedback.selection() }
+        .onChange(of: layoutRaw) { _, _ in HapticFeedback.selection() }
+    }
+
+    private func selectorLabel(_ title: String, value: String, symbol: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).font(.body).frame(width: symbolWidth)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption).foregroundStyle(StudyStudioStyle.secondary)
+                Text(value).font(.subheadline.weight(.semibold))
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                .foregroundStyle(StudyStudioStyle.secondary)
+        }
+        .foregroundStyle(StudyStudioStyle.ink)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
