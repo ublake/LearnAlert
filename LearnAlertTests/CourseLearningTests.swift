@@ -199,6 +199,90 @@ struct CourseLearningTests {
         #expect(first.snapshot().progress[course.id]?[lesson.id]?.totalAttemptsCount == 2)
     }
 
+    @Test("Partial practice survives a relaunch before Continue and keeps wrong answers")
+    func resumePartialPractice() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CourseLearningStore(directory: directory, defaults: nil)
+        let lesson = course.units[0].lessons[0]
+        let session = try #require(store.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
+        for (index, correct) in [true, false].enumerated() {
+            let saved = store.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
+                sessionId: session.id, cardId: lesson.cards[index].id, correct: correct) }
+            #expect(saved == true)
+        }
+        let reopened = CourseLearningStore(directory: directory, defaults: nil)
+        let restored = try #require(reopened.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
+        #expect(restored.id == session.id && restored.nextIndex == 2)
+        #expect(restored.missedCardIds == [lesson.cards[1].id])
+        #expect(reopened.snapshot().progress[course.id]?[lesson.id]?.totalAttemptsCount == 2)
+        let duplicate = reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
+            sessionId: session.id, cardId: lesson.cards[0].id, correct: true) }
+        #expect(duplicate == false)
+        #expect(reopened.snapshot().srs[lesson.cards[0].id]?.reviewCount == 1)
+        for card in lesson.cards.dropFirst(2) {
+            #expect(reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
+                sessionId: session.id, cardId: card.id, correct: true) } == true)
+        }
+        // All answers can survive exiting on the last question without tapping Finish.
+        let finalStore = CourseLearningStore(directory: directory, defaults: nil)
+        let allAnswered = try #require(finalStore.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
+        #expect(allAnswered.nextIndex == nil && allAnswered.missedCardIds == [lesson.cards[1].id])
+        #expect(finalStore.transaction { $0.finishPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil, sessionId: session.id) } != nil)
+        let retry = try #require(finalStore.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
+        #expect(retry.id != session.id && retry.nextIndex == 1)
+        #expect(retry.answers.count == lesson.cards.count - 1)
+    }
+
+    @Test("Saved notification answers and legacy snapshots resume without losing mastery")
+    func resumeLegacyPractice() throws {
+        var state = CourseLearningSnapshot()
+        let lesson = course.units[0].lessons[0]
+        state.answer(course: course, lessonId: lesson.id, cardId: lesson.cards[0].id, correct: true, token: "notification")
+        let fraction = state.completionFraction(course: course)
+        #expect(fraction > 0 && fraction < 1 / Double(course.totalLessonsCount))
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        json.removeValue(forKey: "practiceSessions")
+        var legacy = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let resumedValue = legacy.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+        let resumed = try #require(resumedValue)
+        #expect(resumed.nextIndex == 1 && resumed.answers[lesson.cards[0].id] == true)
+        #expect(legacy.eventTokens == ["notification"] && legacy.srs[lesson.cards[0].id]?.reviewCount == 1)
+        #expect(legacy.completionFraction(course: course) == fraction)
+        #expect(legacy.resumePractice(course: course, lessonId: course.units[1].lessons[0].id, checkpointUnitId: nil) == nil)
+    }
+
+    @Test("Checkpoint attempts resume their scores and finalize only after every question")
+    func resumeCheckpoint() throws {
+        var state = CourseLearningSnapshot()
+        let unit = course.units[0], quiz = try #require(unit.checkpointQuiz)
+        #expect(state.resumePractice(course: course, lessonId: nil, checkpointUnitId: unit.id) == nil)
+        for lesson in unit.lessons {
+            for card in lesson.cards { state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: true, token: card.id) }
+        }
+        let sessionValue = state.resumePractice(course: course, lessonId: nil, checkpointUnitId: unit.id)
+        let session = try #require(sessionValue)
+        let firstSaved = state.answerPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id,
+            cardId: quiz.questions[0].id, correct: false)
+        #expect(firstSaved)
+        #expect(state.finishPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id) == nil)
+        var reopened = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(state))
+        let resumedValue = reopened.resumePractice(course: course, lessonId: nil, checkpointUnitId: unit.id)
+        let resumed = try #require(resumedValue)
+        #expect(resumed.id == session.id && resumed.nextIndex == 1)
+        for card in quiz.questions.dropFirst() {
+            let saved = reopened.answerPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id, cardId: card.id, correct: true)
+            #expect(saved)
+        }
+        let completionValue = reopened.finishPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id)
+        let completion = try #require(completionValue)
+        #expect(completion.checkpointResult?.score == quiz.questions.count - 1)
+        #expect(completion.checkpointResult?.missedQuestionIds == [quiz.questions[0].id])
+        #expect(completion.checkpointResult?.passed == true)
+        #expect(reopened.status(course: course, lessonId: course.units[1].lessons[0].id) == .current)
+        #expect(reopened.practiceSessions.isEmpty)
+    }
+
     @Test("Corrupt shared data is reported and never overwritten")
     func corruptStore() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

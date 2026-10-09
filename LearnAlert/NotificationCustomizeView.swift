@@ -8,6 +8,8 @@ struct NotificationCustomizeView: View {
     @AppStorage("notificationCustomLayout", store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var storedLayoutRaw: String = NotificationLayoutMode.automatic.rawValue
 
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
 
@@ -53,6 +55,14 @@ struct NotificationCustomizeView: View {
                 }
                 NotificationSimulatedContainer(theme: currentTheme, layout: currentLayout,
                     cardType: previewCardType, isLight: isLight).id(previewCardType)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Appearance").font(.headline).foregroundStyle(StudyStudioStyle.ink)
+                    Picker("Appearance", selection: $appearanceMode) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }.pickerStyle(.segmented)
+                }
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Color").font(.headline).foregroundStyle(StudyStudioStyle.ink)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 12) {
@@ -62,10 +72,10 @@ struct NotificationCustomizeView: View {
                                 withAnimation(.snappy) { storedThemeRaw = theme.rawValue }
                                 HapticFeedback.selection()
                             } label: {
-                                Circle().fill(theme.previewGradient).frame(width: 40, height: 40)
+                                Circle().fill(theme.previewGradient(isLight: isLight)).frame(width: 40, height: 40)
                                     .overlay {
                                         if selected { Image(systemName: "checkmark").font(.body.bold())
-                                            .foregroundStyle(theme == .light ? Color.black : .white) }
+                                            .foregroundStyle(isLight || theme == .light ? Color(red: 0.10, green: 0.13, blue: 0.24) : .white) }
                                     }
                                     .padding(4)
                                     .overlay(Circle().stroke(selected ? StudyStudioStyle.ink : .clear, lineWidth: 2))
@@ -653,13 +663,13 @@ private struct NotificationSimulatedContainer: View {
     }
 
     private var textColorSecondary: Color {
-        isThemeLight ? Color(red: 0.38, green: 0.44, blue: 0.58) : Color.white.opacity(0.70)
+        isThemeLight ? Color(red: 0.22, green: 0.29, blue: 0.39) : Color.white.opacity(0.70)
     }
 
     private func quizOptionTextColor(_ option: String) -> Color {
         guard let selected = selectedQuizChoice else { return textColorPrimary }
-        if option == quizCorrectAnswer { return Color.green }
-        if option == selected { return Color.red }
+        if option == quizCorrectAnswer { return isThemeLight ? Color(red: 0.03, green: 0.36, blue: 0.18) : Color.green }
+        if option == selected { return isThemeLight ? Color(red: 0.62, green: 0.10, blue: 0.12) : Color.red }
         return textColorSecondary
     }
 
@@ -686,63 +696,7 @@ struct NotificationThemeBackdrop: View {
     var body: some View {
         ZStack {
             if isLight {
-                switch theme {
-                case .defaultTheme:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.93, green: 0.96, blue: 1.0),
-                            Color(red: 0.88, green: 0.93, blue: 0.98),
-                            Color(red: 0.93, green: 0.90, blue: 0.99)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                case .midnight:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.91, green: 0.93, blue: 0.96),
-                            Color(red: 0.84, green: 0.87, blue: 0.92)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                case .aurora:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.90, green: 0.98, blue: 0.94),
-                            Color(red: 0.82, green: 0.94, blue: 0.90)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                case .sunset:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.99, green: 0.92, blue: 0.92),
-                            Color(red: 0.95, green: 0.88, blue: 0.95)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                case .slate:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.92, green: 0.93, blue: 0.95),
-                            Color(red: 0.86, green: 0.88, blue: 0.91)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                case .light:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.97, green: 0.98, blue: 1.0),
-                            Color(red: 0.90, green: 0.93, blue: 0.98)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
+                LinearGradient(colors: theme.lightBackdropColors, startPoint: .topLeading, endPoint: .bottomTrailing)
             } else {
                 switch theme {
                 case .defaultTheme:

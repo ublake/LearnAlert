@@ -2329,6 +2329,13 @@ private struct HomeCourseCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(completionPercent, format: .percent.precision(.fractionLength(0)))
                         .font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
+                    if let lesson = currentLesson {
+                        let answered = progressManager.answeredCardsCount(course: course, lesson: lesson)
+                        if answered > 0 {
+                            Text("\(answered) of \(lesson.cards.count) answered")
+                                .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                        }
+                    }
                     ProgressView(value: completionPercent).tint(Color(hex: course.colorHex))
                 }.frame(maxWidth: .infinity)
                 Button(action: onContinue) {

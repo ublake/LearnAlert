@@ -77,7 +77,8 @@ Artwork: [CourseVocabularyAtlas.png](LearnAlert/CourseVocabularyAtlas.png), gene
 with the built-in image tool. Prompt: a regular 4×4 picture-dictionary atlas,
 super-simple flat cartoons with bold outlines, solid colors, an ivory background,
 and no labels; fruit, animals, drinks, and everyday objects.
-Customize uses one live preview, color swatches, and a compact layout selector.
+Lessons and checkpoints save after every graded answer and resume at the next unanswered question, even after an app relaunch. Existing mastery is preserved, and Home shows the number of answers saved in the current lesson.
+Customize uses one live preview, an appearance control, color swatches that adapt to light and dark mode, and a compact layout selector. The preview and notification share the light palette.
 
 In-app Korean speech supports normal/slower playback and optional automatic
 pronunciation. Notification speech is disabled pending signed-device verification.

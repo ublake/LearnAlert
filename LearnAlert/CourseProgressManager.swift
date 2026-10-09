@@ -407,6 +407,44 @@ final class CourseProgressManager: ObservableObject {
         }
     }
 
+    // MARK: - Resumable In-App Practice
+
+    func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
+        let session = CourseLearningStore.shared.transaction {
+            $0.resumePractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId)
+        } ?? nil
+        reloadFromSharedDefaults()
+        return session
+    }
+
+    @discardableResult
+    func recordPracticeAnswer(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String, correct: Bool) -> Bool {
+        let saved = CourseLearningStore.shared.transaction {
+            $0.answerPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId, cardId: cardId, correct: correct)
+        } ?? false
+        reloadFromSharedDefaults()
+        if saved { reconcilePendingNotifications(for: course) }
+        return saved
+    }
+
+    func finishPractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String) -> CoursePracticeCompletion? {
+        let completion = CourseLearningStore.shared.transaction {
+            $0.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId,
+                passingThreshold: enrollment(for: course.id)?.checkpointPassingThreshold)
+        } ?? nil
+        reloadFromSharedDefaults()
+        if completion != nil { reconcilePendingNotifications(for: course) }
+        return completion
+    }
+
+    func answeredCardsCount(course: CourseDefinition, lesson: CourseLesson) -> Int {
+        let state = CourseLearningStore.shared.snapshot()
+        let key = CourseLearningSnapshot.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil)!
+        let answered = Set(state.practiceSessions[key]?.answers.keys.map { $0 } ?? [])
+        let mastered = Set(state.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
+        return answered.union(mastered).intersection(Set(lesson.cards.map(\.id))).count
+    }
+
     // MARK: - Spaced Repetition + Ordered Path Card Selection (Requirement 7)
 
     /// Generates the next batch of cards to study: combines new cards from current lesson and due SRS cards from completed lessons.
@@ -426,11 +464,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func completionPercentage(for course: CourseDefinition) -> Double {
-        let quizzes = course.units.filter { $0.checkpointQuiz != nil }
-        let total = course.totalLessonsCount + quizzes.count
-        guard total > 0 else { return 0.0 }
-        let completed = completedLessonsCount(for: course) + quizzes.filter { isCheckpointPassed(courseId: course.id, sectionId: $0.id) }.count
-        return min(1.0, Double(completed) / Double(total))
+        CourseLearningStore.shared.snapshot().completionFraction(course: course)
     }
 
     func completedCards(for course: CourseDefinition) -> [CourseLessonCard] {

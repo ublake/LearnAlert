@@ -1,12 +1,110 @@
 import Foundation
 import Darwin
 
+/// An unfinished in-app attempt. Graded answers also persist before Continue is tapped.
+struct CoursePracticeSession: Codable {
+    var id = UUID().uuidString
+    var cardIds: [String]
+    var answers: [String: Bool] = [:]
+
+    var nextIndex: Int? { cardIds.firstIndex { answers[$0] == nil } }
+    var missedCardIds: [String] { cardIds.filter { answers[$0] == false } }
+}
+
+struct CoursePracticeCompletion {
+    var checkpointResult: CourseCheckpointResult?
+}
+
 /// One atomic, cross-process course snapshot, shared by the app and notification extension.
 struct CourseLearningSnapshot: Codable {
     var progress: [String: [String: CourseLessonProgressRecord]] = [:]
     var checkpoints: [String: [String: CourseCheckpointResult]] = [:]
     var srs: [String: CourseCardSRSRecord] = [:]
     var eventTokens: [String] = []
+    var practiceSessions: [String: CoursePracticeSession] = [:]
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, eventTokens, practiceSessions }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        progress = try values.decodeIfPresent([String: [String: CourseLessonProgressRecord]].self, forKey: .progress) ?? [:]
+        checkpoints = try values.decodeIfPresent([String: [String: CourseCheckpointResult]].self, forKey: .checkpoints) ?? [:]
+        srs = try values.decodeIfPresent([String: CourseCardSRSRecord].self, forKey: .srs) ?? [:]
+        eventTokens = try values.decodeIfPresent([String].self, forKey: .eventTokens) ?? []
+        practiceSessions = try values.decodeIfPresent([String: CoursePracticeSession].self, forKey: .practiceSessions) ?? [:]
+    }
+
+    static func practiceKey(courseId: String, lessonId: String?, checkpointUnitId: String?) -> String? {
+        if let lessonId { return "\(courseId):lesson:\(lessonId)" }
+        if let checkpointUnitId { return "\(courseId):checkpoint:\(checkpointUnitId)" }
+        return nil
+    }
+
+    private func practiceCards(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> [CourseLessonCard]? {
+        if let lessonId, status(course: course, lessonId: lessonId) != .locked {
+            return course.units.flatMap(\.lessons).first { $0.id == lessonId }?.cards
+        }
+        if let unit = course.units.first(where: { $0.id == checkpointUnitId }),
+           unit.lessons.allSatisfy({ status(course: course, lessonId: $0.id) == .completed }) {
+            return unit.checkpointQuiz?.questions
+        }
+        return nil
+    }
+
+    mutating func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
+        guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
+              let cards = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId), !cards.isEmpty else { return nil }
+        var session = practiceSessions[key] ?? CoursePracticeSession(cardIds: cards.map(\.id))
+        // Keep answers to surviving cards when a curriculum update adds or removes questions.
+        session.cardIds = cards.map(\.id)
+        session.answers = session.answers.filter { session.cardIds.contains($0.key) }
+        if let lessonId, status(course: course, lessonId: lessonId) != .completed {
+            // Existing saved answers, including notification answers, should not restart a lesson.
+            for id in progress[course.id]?[lessonId]?.masteredCardIds ?? [] where session.cardIds.contains(id) && session.answers[id] == nil {
+                session.answers[id] = true
+            }
+        }
+        practiceSessions[key] = session
+        return session
+    }
+
+    @discardableResult
+    mutating func answerPractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String, correct: Bool) -> Bool {
+        guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
+              var session = practiceSessions[key], session.id == sessionId,
+              let next = session.nextIndex, session.cardIds[next] == cardId,
+              practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId)?.contains(where: { $0.id == cardId }) == true else { return false }
+        if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)") { return false }
+        session.answers[cardId] = correct
+        practiceSessions[key] = session
+        return true
+    }
+
+    mutating func finishPractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, passingThreshold: Double? = nil) -> CoursePracticeCompletion? {
+        guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
+              let session = practiceSessions[key], session.id == sessionId, session.nextIndex == nil else { return nil }
+        var result: CourseCheckpointResult?
+        if let checkpointUnitId {
+            guard let unit = course.units.first(where: { $0.id == checkpointUnitId }),
+                  let checkpointResult = checkpoint(course: course, unit: unit, missed: session.missedCardIds, passingThreshold: passingThreshold) else { return nil }
+            result = checkpointResult
+        }
+        practiceSessions.removeValue(forKey: key)
+        return CoursePracticeCompletion(checkpointResult: result)
+    }
+
+    func completionFraction(course: CourseDefinition) -> Double {
+        let lessonProgress = course.units.flatMap(\.lessons).reduce(0.0) { total, lesson in
+            let record = progress[course.id]?[lesson.id]
+            if record?.status == .completed { return total + 1 }
+            let mastered = Set(record?.masteredCardIds ?? []).intersection(Set(lesson.cards.map(\.id))).count
+            return total + Double(mastered) / Double(max(1, lesson.cards.count))
+        }
+        let quizzes = course.units.filter { $0.checkpointQuiz != nil }
+        let passed = quizzes.filter { checkpoints[course.id]?[$0.id]?.passed == true }.count
+        return min(1, (lessonProgress + Double(passed)) / Double(max(1, course.totalLessonsCount + quizzes.count)))
+    }
 
     func status(course: CourseDefinition, lessonId: String) -> LessonStatus {
         for (index, unit) in course.units.enumerated() where unit.lessons.contains(where: { $0.id == lessonId }) {

@@ -47,6 +47,10 @@ struct CoursePracticeView: View {
     @State private var reviewMisses = false
     @State private var autoPronounce = false
     @State private var lastCorrect = false
+    @State private var savedAnswers: [String: Bool] = [:]
+    @State private var loaded = false
+
+    private var savesSession: Bool { lessonId != nil || checkpointUnit != nil }
 
     private var isCheckpoint: Bool { checkpointUnit != nil }
     private var missedCards: [CourseLessonCard] { cards.filter { missed.contains($0.id) } }
@@ -55,7 +59,14 @@ struct CoursePracticeView: View {
         NavigationStack {
             ZStack {
                 LearnAlertStyle.courseCanvas.ignoresSafeArea()
-                if finished {
+                if !loaded {
+                    VStack(spacing: 16) {
+                        if let saveError {
+                            Text(saveError).foregroundStyle(.red)
+                            Button("Retry opening practice", action: restoreSession)
+                        } else { ProgressView() }
+                    }.padding(24)
+                } else if finished {
                     completion
                 } else if cards.indices.contains(index) {
                     ScrollView {
@@ -73,9 +84,13 @@ struct CoursePracticeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { sessionHeader }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !finished && cards.indices.contains(index) { answerFooter }
+                if loaded && !finished && cards.indices.contains(index) { answerFooter }
             }
-            .onAppear { autoPronounce = manager.enrollment(for: course.id)?.autoPronounceInStudy ?? false; speakCurrent() }
+            .onAppear {
+                autoPronounce = manager.enrollment(for: course.id)?.autoPronounceInStudy ?? false
+                if !loaded { restoreSession() }
+                speakCurrent()
+            }
             .onChange(of: index) { _, _ in speakCurrent() }
             .onChange(of: autoPronounce) { _, value in
                 manager.setAutoPronounce(value, courseId: course.id)
@@ -107,8 +122,8 @@ struct CoursePracticeView: View {
                         .accessibilityLabel("Automatic pronunciation").accessibilityValue(autoPronounce ? "On" : "Off")
                 }
             }
-            if !finished {
-                ProgressView(value: Double(index + (answered ? 1 : 0)), total: Double(max(1, cards.count)))
+            if loaded && !finished {
+                ProgressView(value: Double(savesSession ? savedAnswers.count : index + (answered ? 1 : 0)), total: Double(max(1, cards.count)))
                     .tint(Color(hex: course.colorHex)).animation(.snappy, value: answered)
             }
         }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
@@ -193,7 +208,13 @@ struct CoursePracticeView: View {
     private func record(correct: Bool) {
         guard !answered else { return }
         let card = cards[index]
-        if !isCheckpoint, let unit = course.units.first(where: { $0.lessons.contains(where: { $0.cards.contains(where: { $0.id == card.id }) }) }),
+        if savesSession {
+            guard manager.recordPracticeAnswer(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id,
+                sessionId: session, cardId: card.id, correct: correct) else {
+                pendingGrade = correct; saveError = CourseLearningStore.shared.lastError ?? "Your progress couldn’t be saved. Please try again."; return
+            }
+            savedAnswers[card.id] = correct
+        } else if !isCheckpoint, let unit = course.units.first(where: { $0.lessons.contains(where: { $0.cards.contains(where: { $0.id == card.id }) }) }),
            let lesson = unit.lessons.first(where: { $0.cards.contains(where: { $0.id == card.id }) }) {
             let success = manager.recordCardAnswer(courseId: course.id, sectionId: unit.id, lessonId: lesson.id,
                 cardId: card.id, isCorrect: correct, eventToken: "\(session)-\(card.id)")
@@ -205,19 +226,46 @@ struct CoursePracticeView: View {
         withAnimation(.snappy) { answered = true }
         if correct { HapticFeedback.success() } else { HapticFeedback.warning() }
     }
-    private func advance() {
-        if index + 1 < cards.count { index += 1; answered = false; saveError = nil }
-        else {
-            if let unit = checkpointUnit, let quiz = unit.checkpointQuiz {
-                result = manager.recordCheckpointResult(courseId: course.id, sectionId: unit.id, checkpointId: quiz.id,
-                    score: cards.count - missed.count, totalQuestions: cards.count, missedQuestionIds: missed,
-                    missedConcepts: cards.filter { missed.contains($0.id) }.compactMap(\.conceptTag))
-                if let error = CourseLearningStore.shared.lastError { saveError = error; return }
-            }
-            finished = true
+    private func restoreSession() {
+        guard savesSession else { loaded = true; return }
+        guard let restored = manager.resumePractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id) else {
+            saveError = CourseLearningStore.shared.lastError ?? "This practice is unavailable. Return to the path."
+            return
         }
+        session = restored.id
+        savedAnswers = restored.answers
+        missed = restored.missedCardIds
+        saveError = nil
+        loaded = true
+        if let next = restored.nextIndex { index = next }
+        else { finishSession() }
     }
-    private func reset() { index = 0; answered = false; missed = []; finished = false; result = nil; session = UUID().uuidString }
+
+    private func advance() {
+        let next = savesSession ? cards.indices.first { savedAnswers[cards[$0].id] == nil } : (index + 1 < cards.count ? index + 1 : nil)
+        if let next { index = next; answered = false; saveError = nil }
+        else { finishSession() }
+    }
+
+    private func finishSession() {
+        if savesSession {
+            guard let completion = manager.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id, sessionId: session) else {
+                saveError = CourseLearningStore.shared.lastError ?? "Your result couldn’t be saved. Please try again."
+                // The final answer is already saved; retry only finalization.
+                index = max(0, cards.count - 1); answered = true
+                return
+            }
+            result = completion.checkpointResult
+        }
+        finished = true
+    }
+
+    private func reset() {
+        index = 0; answered = false; missed = []; finished = false; result = nil
+        savedAnswers = [:]; session = UUID().uuidString; loaded = false
+        restoreSession()
+    }
+
 }
 
 private struct CourseCheckpointRemediation: View {

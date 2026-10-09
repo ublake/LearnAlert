@@ -597,6 +597,22 @@ public enum NotificationTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The same light palette is used by Customize and the expanded notification.
+    public var lightBackdropColors: [Color] {
+        switch self {
+        case .defaultTheme: [Color(red: 157/255, green: 187/255, blue: 242/255), Color(red: 187/255, green: 199/255, blue: 244/255)]
+        case .midnight: [Color(red: 161/255, green: 176/255, blue: 211/255), Color(red: 204/255, green: 212/255, blue: 229/255)]
+        case .aurora: [Color(red: 112/255, green: 213/255, blue: 174/255), Color(red: 156/255, green: 220/255, blue: 205/255)]
+        case .sunset: [Color(red: 244/255, green: 173/255, blue: 147/255), Color(red: 237/255, green: 178/255, blue: 200/255)]
+        case .slate: [Color(red: 174/255, green: 185/255, blue: 206/255), Color(red: 204/255, green: 213/255, blue: 227/255)]
+        case .light: [Color(red: 237/255, green: 243/255, blue: 250/255), Color(red: 216/255, green: 230/255, blue: 244/255)]
+        }
+    }
+
+    public func previewGradient(isLight: Bool) -> LinearGradient {
+        isLight ? LinearGradient(colors: lightBackdropColors, startPoint: .topLeading, endPoint: .bottomTrailing) : previewGradient
+    }
+
     public var previewGradient: LinearGradient {
         switch self {
         case .defaultTheme:

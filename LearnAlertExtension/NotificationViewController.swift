@@ -153,7 +153,7 @@ struct FlashcardNotificationView: View {
     }
 
     private var textColorSecondary: Color {
-        isLight ? Color(red: 0.38, green: 0.44, blue: 0.58) : Color.white.opacity(0.68)
+        isLight ? Color(red: 0.22, green: 0.29, blue: 0.39) : Color.white.opacity(0.68)
     }
 
     private var activeCardId: String { sessionCard?.id ?? cardId }
@@ -1042,99 +1042,8 @@ private struct NotificationBackdrop: View {
     var body: some View {
         ZStack {
             if isLight {
-                switch theme {
-                case "default":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.93, green: 0.96, blue: 1.0),
-                            Color(red: 0.88, green: 0.93, blue: 0.98),
-                            Color(red: 0.93, green: 0.90, blue: 0.99)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Circle().fill(Color(red: 0.20, green: 0.72, blue: 0.95).opacity(0.20))
-                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
-                    Circle().fill(Color(red: 0.90, green: 0.35, blue: 0.65).opacity(0.14))
-                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
-
-                case "midnight":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.95, green: 0.96, blue: 0.98),
-                            Color(red: 0.90, green: 0.92, blue: 0.95),
-                            Color(red: 0.86, green: 0.89, blue: 0.93)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Circle().fill(Color(red: 0.15, green: 0.25, blue: 0.45).opacity(0.10))
-                        .frame(width: 260, height: 260).blur(radius: 40).offset(x: 130, y: -160)
-
-                case "aurora":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.90, green: 0.98, blue: 0.95),
-                            Color(red: 0.86, green: 0.95, blue: 0.92),
-                            Color(red: 0.92, green: 0.96, blue: 0.98)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Circle().fill(Color(red: 0.15, green: 0.85, blue: 0.55).opacity(0.18))
-                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
-                    Circle().fill(Color(red: 0.10, green: 0.65, blue: 0.85).opacity(0.14))
-                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
-
-                case "sunset":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.98, green: 0.92, blue: 0.93),
-                            Color(red: 0.96, green: 0.88, blue: 0.92),
-                            Color(red: 0.98, green: 0.93, blue: 0.88)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Circle().fill(Color(red: 0.95, green: 0.40, blue: 0.35).opacity(0.16))
-                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
-                    Circle().fill(Color(red: 0.85, green: 0.25, blue: 0.60).opacity(0.14))
-                        .frame(width: 240, height: 240).blur(radius: 50).offset(x: -140, y: 200)
-
-                case "slate":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.94, green: 0.95, blue: 0.97),
-                            Color(red: 0.90, green: 0.91, blue: 0.94),
-                            Color(red: 0.88, green: 0.89, blue: 0.92)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-
-                case "light":
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.97, green: 0.98, blue: 1.0),
-                            Color(red: 0.90, green: 0.93, blue: 0.98)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                    Circle().fill(Color(red: 0.20, green: 0.65, blue: 0.98).opacity(0.14))
-                        .frame(width: 260, height: 260).blur(radius: 46).offset(x: 140, y: -180)
-
-                default:
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.93, green: 0.96, blue: 1.0),
-                            Color(red: 0.88, green: 0.93, blue: 0.98),
-                            Color(red: 0.93, green: 0.90, blue: 0.99)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
+                LinearGradient(colors: (NotificationTheme(rawValue: theme) ?? .defaultTheme).lightBackdropColors,
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
             } else {
                 switch theme {
                 case "default":

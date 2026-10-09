@@ -325,7 +325,6 @@ struct PremadeDecksView: View {
 
                 if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if let course = enrolledCourse {
-                        learningProgress(course)
                         StudyDestinationCard(
                             eyebrow: "CONTINUE LEARNING",
                             title: course.title,
@@ -388,31 +387,6 @@ struct PremadeDecksView: View {
             Button("Done", role: .cancel) { }
         } message: {
             Text("\(addedDeckName ?? "This deck") is now ready to study and editable in your library.")
-        }
-    }
-
-    private func learningProgress(_ course: CourseDefinition) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Your learning journey")
-                        .font(StudyStudioStyle.title(20))
-                        .foregroundStyle(StudyStudioStyle.ink)
-                    Text("\(Int(activeCompletionPercentage * 100))% of \(course.title) complete")
-                        .font(StudyStudioStyle.body(12))
-                        .foregroundStyle(StudyStudioStyle.secondary)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color(hex: "#E8A320"))
-                    .frame(width: 44, height: 44)
-                    .background(Color(hex: "#E8A320").opacity(0.12), in: Circle())
-                    .accessibilityHidden(true)
-            }
-            ProgressView(value: activeCompletionPercentage)
-                .tint(StudyStudioStyle.mint)
-                .accessibilityLabel("Course progress")
         }
     }
 
