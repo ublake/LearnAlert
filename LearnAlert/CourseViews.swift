@@ -275,7 +275,7 @@ struct CourseOverviewView: View {
                 showingPathView = true
             }
         }
-        .sheet(isPresented: $showingReviewSheet) {
+        .fullScreenCover(isPresented: $showingReviewSheet) {
             CourseReviewStudyView(course: course, cards: completedCards) {
                 showingReviewSheet = false
                 progressManager.reloadFromSharedDefaults()
@@ -810,7 +810,7 @@ struct CoursePathView: View {
             if let id = initialCheckpointSectionId, let unit = course.units.first(where: { $0.id == id }),
                progressManager.getCheckpointStatus(courseId: course.id, sectionId: id) == .available { selectedCheckpoint = unit }
         }
-        .sheet(isPresented: $showingReviewSheet) {
+        .fullScreenCover(isPresented: $showingReviewSheet) {
             CourseReviewStudyView(course: course, cards: completedCards) {
                 showingReviewSheet = false
                 progressManager.reloadFromSharedDefaults()

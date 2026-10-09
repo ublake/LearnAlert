@@ -20,7 +20,7 @@ struct CourseLearningTests {
         let all = cards + quizzes.flatMap(\.questions)
         #expect(course.units.count == 10)
         #expect(lessons.count == 41)
-        #expect(cards.count == 457)
+        #expect(cards.count == 489)
         #expect(quizzes.count == 10)
         #expect(Set(all.map(\.id)).count == all.count)
         #expect(Set(lessons.map(\.id)).count == lessons.count)
@@ -29,6 +29,35 @@ struct CourseLearningTests {
             if card.cardType == "multipleChoice" { #expect(card.options.contains(card.correctAnswer)); #expect(Set(card.options).count == card.options.count) }
             if card.cardType == "matching" { #expect(card.matchingLeftItems.count == card.matchingRightItems.count && !card.matchingLeftItems.isEmpty) }
         }
+    }
+
+    @Test("Picture vocabulary resolves bundled art and keeps image choices aligned")
+    func pictureVocabulary() throws {
+        for course in CourseCurriculumCatalog.courses {
+            let cards = course.units.flatMap(\.lessons).flatMap(\.cards)
+            let prompts = cards.filter { $0.promptImageName != nil }
+            let choices = cards.filter { !$0.optionImageNames.isEmpty }
+            #expect(prompts.count == 16 && choices.count == 16)
+            #expect(Set(prompts.compactMap { $0.options.firstIndex(of: $0.correctAnswer) }).count == 4)
+            for card in prompts + choices {
+                if let name = card.promptImageName { #expect(CardImageStore.loadImage(named: name) != nil) }
+                #expect(card.optionImageNames.isEmpty || card.optionImageNames.count == card.options.count)
+                for name in card.optionImageNames { #expect(CardImageStore.loadImage(named: name) != nil) }
+                let encoded = try JSONEncoder().encode(card)
+                #expect(try JSONDecoder().decode(CourseLessonCard.self, from: encoded) == card)
+            }
+        }
+    }
+
+    @Test("Editing built-in vocabulary art creates a private image copy")
+    func editCoursePicture() throws {
+        let name = "course-vocab-apple"
+        let image = try #require(CardImageStore.loadImage(named: name))
+        let copy = try #require(CardImageStore.saveImage(image, name: name))
+        defer { CardImageStore.deleteImage(named: copy) }
+        #expect(copy != name && copy.hasSuffix(".jpg"))
+        #expect(CardImageStore.loadImage(named: copy) != nil)
+        #expect(CardImageStore.loadImage(named: name) != nil)
     }
 
     @Test("Vocabulary definitions resolve authored particles and irregular verb forms")
@@ -265,11 +294,32 @@ struct CourseLearningTests {
         first.reviewCount = 7
         let upgraded = manager.createOrSyncCourseDeck(for: course, in: context)
         #expect(upgraded.id == old.id)
-        #expect(upgraded.cards.count == 457 && upgraded.sections.count == 10)
+        #expect(upgraded.cards.count == 489 && upgraded.sections.count == 10)
         #expect(upgraded.cards.first?.id == first.id && first.reviewCount == 7)
         let repeated = manager.createOrSyncCourseDeck(for: course, in: context)
-        #expect(repeated.cards.count == 457)
+        #expect(repeated.cards.count == 489)
         #expect(try context.fetch(FetchDescriptor<Deck>()).count == 1)
+    }
+
+    @Test("Spacious picture questions render across appearances")
+    func redesignedAppearance() throws {
+        let cards = course.units.flatMap(\.lessons).flatMap(\.cards)
+        let prompt = try #require(cards.first { $0.promptImageName != nil })
+        let choices = try #require(cards.first { !$0.optionImageNames.isEmpty })
+        for scheme in [ColorScheme.light, .dark] {
+            for (label, view) in [
+                ("picture-prompt", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in })),
+                ("picture-choices", AnyView(CourseQuestionPanel(card: choices, immersive: true) { _ in })),
+                ("large-type", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in }.environment(\.dynamicTypeSize, .accessibility2)))
+            ] {
+                let renderer = ImageRenderer(content: view.padding(24).frame(width: 402)
+                    .background(Color(.systemGroupedBackground)).environment(\.colorScheme, scheme))
+                renderer.scale = 2
+                let image = try #require(renderer.uiImage)
+                #expect(image.size.width == 402)
+                Attachment.record(image, named: "redesign-\(label)-\(scheme == .dark ? "dark" : "light")", as: .png)
+            }
+        }
     }
 
     @Test("Course question renders in light and dark mode")

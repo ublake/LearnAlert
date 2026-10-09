@@ -463,3 +463,58 @@ private extension CourseCurriculumCatalog {
         }
     }
 }
+
+
+extension CourseCurriculumCatalog {
+    /// Stable, authored picture exercises are appended without changing existing card IDs.
+    static func addingVisualVocabulary(to course: CourseDefinition) -> CourseDefinition {
+        let groups: [[(String, String, String, String)]] = [
+            [("apple", "사과", "manzana", "apple"), ("banana", "바나나", "plátano", "banana"),
+             ("orange", "오렌지", "naranja", "orange"), ("grapes", "포도", "uvas", "grapes")],
+            [("cat", "고양이", "gato", "cat"), ("dog", "개", "perro", "dog"),
+             ("rabbit", "토끼", "conejo", "rabbit"), ("bird", "새", "pájaro", "bird")],
+            [("coffee", "커피", "café", "coffee"), ("water", "물", "agua", "water"),
+             ("rice", "밥", "arroz", "cooked rice"), ("milk", "우유", "leche", "milk")],
+            [("book", "책", "libro", "book"), ("bag", "가방", "mochila", "bag / backpack"),
+             ("chair", "의자", "silla", "chair"), ("clock", "시계", "reloj", "clock")]
+        ]
+        let korean = course.language == "Korean"
+        let targetUnit = korean ? "kr-unit-2" : "es-unit-1"
+        let units = course.units.map { unit in
+            guard unit.id == targetUnit else { return unit }
+            let lessons = unit.lessons.enumerated().map { index, lesson in
+                guard groups.indices.contains(index) else { return lesson }
+                let group = groups[index]
+                let words = group.map { korean ? $0.1 : $0.2 }
+                let names = group.map { $0.3 }
+                let images = group.map { "course-vocab-" + $0.0 }
+                let visualCards = group.enumerated().flatMap { offset, entry -> [CourseLessonCard] in
+                    let word = korean ? entry.1 : entry.2
+                    let vocab = korean ? KoreanVocabularyItem(surface: word, dictionaryForm: word,
+                        romanization: "", partOfSpeech: "Noun", contextualMeaning: entry.3) : nil
+                    // Rotate distractors so the correct choice does not occupy a fixed position.
+                    let order = (0..<4).map { ($0 + offset * 2 + 1) % 4 }
+                    return [
+                        CourseLessonCard(id: "\(lesson.id)-picture-\(entry.0)", question: "What is this?",
+                            options: order.map { words[$0] }, correctAnswer: word,
+                            promptImageName: images[offset], vocabularyItem: vocab, conceptTag: "Visual vocabulary",
+                            explanation: "\(word) means \(entry.3)."),
+                        CourseLessonCard(id: "\(lesson.id)-image-choice-\(entry.0)", question: "Find ‘\(word)’",
+                            options: order.map { names[$0] }, correctAnswer: entry.3,
+                            optionImageNames: order.map { images[$0] }, vocabularyItem: vocab,
+                            speechText: word, conceptTag: "Visual vocabulary", explanation: "\(word) means \(entry.3).")
+                    ]
+                }
+                return CourseLesson(id: lesson.id, lessonNumber: lesson.lessonNumber, title: lesson.title,
+                    subtitle: lesson.subtitle, nodeType: lesson.nodeType, estimatedMinutes: lesson.estimatedMinutes,
+                    tipNote: lesson.tipNote, cards: lesson.cards + visualCards)
+            }
+            return CourseUnit(id: unit.id, unitNumber: unit.unitNumber, title: unit.title,
+                subtitle: unit.subtitle, colorHex: unit.colorHex, badgeIcon: unit.badgeIcon,
+                lessons: lessons, checkpointQuiz: unit.checkpointQuiz)
+        }
+        return CourseDefinition(id: course.id, title: course.title, language: course.language,
+            flagEmoji: course.flagEmoji, levelTag: course.levelTag, colorHex: course.colorHex,
+            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes, units: units)
+    }
+}

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The same question interactions in the app and the expanded course notification.
+/// Shared grading, with a spacious app presentation and compact notification presentation.
 struct CourseQuestionPanel: View {
     let card: CourseLessonCard
+    var immersive = false
     var checkpoint = false
     var allowAudio = true
     let onAnswer: (Bool) -> Void
@@ -19,14 +20,21 @@ struct CourseQuestionPanel: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Text(questionText).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity).padding(16).background(.background, in: RoundedRectangle(cornerRadius: 16))
+            Text(questionText).font(immersive ? .title.weight(.bold) : .title3.weight(.semibold)).multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity).padding(immersive ? 0 : 16)
+                .background(immersive ? Color.clear : Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
                 .environment(\.openURL, OpenURLAction { url in
                     guard url.scheme == "learnalert-word" else { return .systemAction }
                     selectedWord = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "word" })?.value
                     inspecting = true
                     return .handled
                 })
+            if let image = CardImageStore.loadImage(named: card.promptImageName) {
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: immersive ? 224 : 160, maxHeight: immersive ? 224 : 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .accessibilityLabel("Vocabulary picture")
+            }
             if !checkpoint {
                 HStack(spacing: 8) {
                     if let text = card.primaryKoreanText, allowAudio {
@@ -43,12 +51,46 @@ struct CourseQuestionPanel: View {
                 if hint { Text(card.hint).font(.callout).foregroundStyle(.secondary) }
             }
             if card.cardType == "multipleChoice" {
-                ForEach(card.options, id: \.self) { option in
-                    Button { selectedOption = option; submit(card.accepts(option)) } label: {
-                        Text(option).foregroundStyle(.primary).frame(maxWidth: .infinity).padding(12)
-                            .background(optionColor(option), in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12), lineWidth: 1))
-                    }.disabled(grade != nil)
+                if card.optionImageNames.count == card.options.count && !card.optionImageNames.isEmpty {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: immersive ? 16 : 8) {
+                        ForEach(card.options.indices, id: \.self) { index in
+                            let option = card.options[index]
+                            Button { selectedOption = option; submit(card.accepts(option)) } label: {
+                                VStack(spacing: 8) {
+                                    if let image = CardImageStore.loadImage(named: card.optionImageNames[index]) {
+                                        Image(uiImage: image).resizable().scaledToFit()
+                                            .frame(maxWidth: .infinity).frame(height: immersive ? 120 : 88)
+                                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    } else { Text(option).frame(minHeight: 88) }
+                                    if grade != nil { Text(option).font(.caption.weight(.medium)).foregroundStyle(.primary) }
+                                }.padding(12).frame(maxWidth: .infinity)
+                                    .background(optionColor(option), in: RoundedRectangle(cornerRadius: 20))
+                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(optionBorder(option), lineWidth: 2))
+                            }.buttonStyle(.plain).disabled(grade != nil)
+                                // VoiceOver may describe the image, but the visual exercise does not show a text answer.
+                                .accessibilityLabel(option).accessibilityAddTraits(selectedOption == option ? .isSelected : [])
+                        }
+                    }
+                } else {
+                    ForEach(card.options.indices, id: \.self) { index in
+                        let option = card.options[index]
+                        Button { selectedOption = option; submit(card.accepts(option)) } label: {
+                            HStack(spacing: 16) {
+                                if immersive {
+                                    Text(String(index + 1)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                        .frame(width: 28, height: 28).background(Color.primary.opacity(0.05), in: Circle())
+                                }
+                                Text(option).font(immersive ? .title3.weight(.medium) : .body)
+                                    .multilineTextAlignment(immersive ? .leading : .center).frame(maxWidth: .infinity, alignment: immersive ? .leading : .center)
+                                if grade != nil && (card.accepts(option) || option == selectedOption) {
+                                    Image(systemName: card.accepts(option) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                }
+                            }.foregroundStyle(.primary).padding(immersive ? 16 : 12)
+                                .frame(minHeight: immersive ? 64 : 44)
+                                .background(optionColor(option), in: RoundedRectangle(cornerRadius: immersive ? 20 : 12))
+                                .overlay(RoundedRectangle(cornerRadius: immersive ? 20 : 12).stroke(optionBorder(option), lineWidth: immersive ? 2 : 1))
+                        }.buttonStyle(.plain).disabled(grade != nil)
+                    }
                 }
             } else if card.cardType == "fillBlank" {
                 TextField("Your answer", text: $typed, axis: .vertical).textFieldStyle(.roundedBorder)
@@ -85,7 +127,7 @@ struct CourseQuestionPanel: View {
                     }
                 } else { Button("Reveal") { revealed = true }.buttonStyle(.borderedProminent) }
             }
-            if let grade {
+            if let grade, !immersive {
                 Label(grade ? "Correct" : "Review later", systemImage: grade ? "checkmark.circle.fill" : "arrow.counterclockwise")
                     .foregroundStyle(grade ? Color.green : Color.orange)
                 if !grade {
@@ -123,10 +165,15 @@ struct CourseQuestionPanel: View {
             }.presentationDetents([.medium, .large])
         }
     }
+    private func optionBorder(_ option: String) -> Color {
+        if grade != nil && card.accepts(option) { return Color.green.opacity(0.6) }
+        if grade != nil && option == selectedOption { return Color.orange.opacity(0.6) }
+        return Color.primary.opacity(0.10)
+    }
     private func optionColor(_ option: String) -> Color {
         if grade != nil && card.accepts(option) { return Color.green.opacity(0.14) }
         if grade != nil && option == selectedOption { return Color.orange.opacity(0.14) }
-        return Color.primary.opacity(0.04)
+        return immersive ? Color(.secondarySystemGroupedBackground) : Color.primary.opacity(0.04)
     }
     private var questionText: AttributedString {
         var text = AttributedString(card.question)

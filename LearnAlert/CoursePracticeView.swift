@@ -28,7 +28,7 @@ struct CourseCheckpointStudyView: View {
     }
 }
 
-private struct CoursePracticeView: View {
+struct CoursePracticeView: View {
     let course: CourseDefinition
     let title: String
     let cards: [CourseLessonCard]
@@ -46,6 +46,7 @@ private struct CoursePracticeView: View {
     @State private var pendingGrade: Bool?
     @State private var reviewMisses = false
     @State private var autoPronounce = false
+    @State private var lastCorrect = false
 
     private var isCheckpoint: Bool { checkpointUnit != nil }
     private var missedCards: [CourseLessonCard] { cards.filter { missed.contains($0.id) } }
@@ -55,50 +56,25 @@ private struct CoursePracticeView: View {
             ZStack {
                 LearnAlertStyle.courseCanvas.ignoresSafeArea()
                 if finished {
-                    VStack(spacing: 18) {
-                        Image(systemName: result?.passed == true ? "checkmark.seal.fill" : "flag.checkered").font(.system(size: 48)).foregroundStyle(.blue)
-                        Text(finishTitle).font(.title2.bold())
-                        Text("\(cards.count - missed.count) / \(cards.count)").font(.headline)
-                        if let result, !result.passed {
-                            Text("Score \(Int(result.percentage * 100))% · Pass at \(Int((manager.enrollment(for: course.id)?.checkpointPassingThreshold ?? checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))%")
-                                .font(.callout).foregroundStyle(.secondary)
-                            if !result.missedConcepts.isEmpty { Text(result.missedConcepts.joined(separator: " · ")).font(.callout).multilineTextAlignment(.center) }
-                            Button("Practice missed questions") { reviewMisses = true }.buttonStyle(.bordered)
-                            Button("Retry checkpoint") { reset() }.buttonStyle(.borderedProminent)
-                        } else if !missed.isEmpty {
-                            Text("Missed cards return in later reviews.").font(.callout).foregroundStyle(.secondary)
-                        }
-                        Button("Back to path") { onDismiss() }.buttonStyle(.borderedProminent)
-                    }.padding(24)
+                    completion
                 } else if cards.indices.contains(index) {
-                    VStack(spacing: 14) {
-                        HStack {
-                            Text("\(index + 1) / \(cards.count)").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            if !isCheckpoint && course.language == "Korean" {
-                                Toggle(isOn: $autoPronounce) { Image(systemName: "speaker.wave.2") }.labelsHidden()
-                                    .accessibilityLabel("Automatic Korean pronunciation")
-                            }
-                        }
-                        ProgressView(value: Double(index), total: Double(max(1, cards.count))).tint(Color(hex: course.colorHex))
-                        ScrollView {
-                            CourseQuestionPanel(card: cards[index], checkpoint: isCheckpoint,
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            Text(isCheckpoint ? "CHECKPOINT" : cards[index].optionImageNames.isEmpty && cards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
+                                .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
+                            CourseQuestionPanel(card: cards[index], immersive: true, checkpoint: isCheckpoint,
                                 allowAudio: course.language == "Korean") { correct in record(correct: correct) }
                                 .id("\(session)-\(index)")
-                        }
-                        if let saveError {
-                            Text(saveError).font(.callout).foregroundStyle(.red)
-                            if let pendingGrade { Button("Retry saving") { record(correct: pendingGrade) }.buttonStyle(.bordered) }
-                        }
-                        if answered {
-                            Button(index == cards.count - 1 ? "Finish" : "Continue") { advance() }
-                                .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-                        }
-                    }.padding(20)
+                        }.padding(.horizontal, 24).padding(.vertical, 24)
+                            .frame(maxWidth: 640).frame(maxWidth: .infinity)
+                    }.scrollDismissesKeyboard(.interactively)
                 } else { ContentUnavailableView("No questions", systemImage: "book.closed") }
             }
-            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Exit") { onDismiss() } } }
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) { sessionHeader }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !finished && cards.indices.contains(index) { answerFooter }
+            }
             .onAppear { autoPronounce = manager.enrollment(for: course.id)?.autoPronounceInStudy ?? false; speakCurrent() }
             .onChange(of: index) { _, _ in speakCurrent() }
             .onChange(of: autoPronounce) { _, value in
@@ -106,11 +82,101 @@ private struct CoursePracticeView: View {
                 if value { speakCurrent() } else { KoreanSpeechManager.shared.stop() }
             }
             .onDisappear { KoreanSpeechManager.shared.stop() }
-            .sheet(isPresented: $reviewMisses) {
-                // Checkpoint remediation is practice only: it cannot unlock the next section.
+            .fullScreenCover(isPresented: $reviewMisses) {
                 CourseCheckpointRemediation(course: course, cards: missedCards) { reviewMisses = false }
             }
-        }.interactiveDismissDisabled(isCheckpoint && answered)
+        }
+    }
+
+    private var sessionHeader: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                Button { onDismiss() } label: {
+                    Image(systemName: "xmark").font(.body.weight(.semibold)).frame(width: 44, height: 44)
+                }.tint(.secondary).accessibilityLabel("Exit practice")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(finished ? "Session complete" : "\(index + 1) of \(cards.count)")
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                if !isCheckpoint && course.language == "Korean" {
+                    Button { autoPronounce.toggle() } label: {
+                        Image(systemName: autoPronounce ? "speaker.wave.2.fill" : "speaker.slash")
+                            .frame(width: 44, height: 44)
+                    }.tint(autoPronounce ? Color(hex: course.colorHex) : .secondary)
+                        .accessibilityLabel("Automatic pronunciation").accessibilityValue(autoPronounce ? "On" : "Off")
+                }
+            }
+            if !finished {
+                ProgressView(value: Double(index + (answered ? 1 : 0)), total: Double(max(1, cards.count)))
+                    .tint(Color(hex: course.colorHex)).animation(.snappy, value: answered)
+            }
+        }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
+            .background(LearnAlertStyle.courseCanvas)
+    }
+
+    private var answerFooter: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let saveError {
+                Text(saveError).font(.callout).foregroundStyle(.red)
+                if let pendingGrade { Button("Retry saving") { record(correct: pendingGrade) } }
+            }
+            if answered {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: lastCorrect ? "checkmark.circle.fill" : "arrow.counterclockwise.circle.fill")
+                        .font(.title2).foregroundStyle(lastCorrect ? Color.green : Color.orange)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(lastCorrect ? "Nicely done!" : "Let’s remember this one").font(.headline)
+                        if !lastCorrect {
+                            if cards[index].cardType == "matching" {
+                                ForEach(cards[index].matchingLeftItems.indices, id: \.self) { item in
+                                    if cards[index].matchingRightItems.indices.contains(item) {
+                                        Text("\(cards[index].matchingLeftItems[item]) → \(cards[index].matchingRightItems[item])").font(.subheadline)
+                                    }
+                                }
+                            } else { Text(cards[index].correctAnswer).font(.subheadline.weight(.semibold)) }
+                        }
+                        if !isCheckpoint, let explanation = cards[index].explanation {
+                            Text(explanation).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                }.accessibilityElement(children: .combine)
+            }
+            Button { advance() } label: {
+                HStack {
+                    Spacer()
+                    Text(index == cards.count - 1 ? "Finish" : "Continue").font(.headline)
+                    Spacer()
+                    Image(systemName: "arrow.right").font(.body.weight(.semibold))
+                }.padding(.horizontal, 24).frame(minHeight: 56)
+                    .foregroundStyle(answered ? .white : .secondary)
+                    .background(answered ? Color(hex: course.colorHex) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
+            }.buttonStyle(.plain).disabled(!answered)
+        }.padding(24).frame(maxWidth: 640).frame(maxWidth: .infinity)
+            .background(LearnAlertStyle.courseCanvas)
+    }
+
+    private var completion: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                Image(systemName: result?.passed == false ? "arrow.counterclockwise" : "checkmark")
+                    .font(.system(size: 48, weight: .bold)).foregroundStyle(Color(hex: course.colorHex))
+                    .frame(width: 128, height: 128)
+                    .background(Color(hex: course.colorHex).opacity(0.12), in: Circle())
+                Text(finishTitle).font(.largeTitle.bold()).multilineTextAlignment(.center)
+                Text("\(cards.count - missed.count) of \(cards.count) correct").font(.title3).foregroundStyle(.secondary)
+                if let result, !result.passed {
+                    Text("\(Int(result.percentage * 100))% · \(Int((manager.enrollment(for: course.id)?.checkpointPassingThreshold ?? checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))% to pass")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    if !result.missedConcepts.isEmpty { Text(result.missedConcepts.joined(separator: " · ")).font(.callout).multilineTextAlignment(.center) }
+                    Button("Practice missed questions") { reviewMisses = true }.buttonStyle(.bordered).controlSize(.large)
+                    Button("Retry checkpoint") { reset() }.buttonStyle(.borderedProminent).controlSize(.large)
+                } else if !missed.isEmpty {
+                    Text("We’ll revisit the missed questions in your reviews.").font(.callout).foregroundStyle(.secondary)
+                }
+                Button("Back to path") { onDismiss() }.buttonStyle(.borderedProminent).controlSize(.large)
+            }.padding(.horizontal, 24).padding(.vertical, 48).frame(maxWidth: 640).frame(maxWidth: .infinity)
+        }.tint(Color(hex: course.colorHex))
     }
 
     private var finishTitle: String {
@@ -135,8 +201,9 @@ private struct CoursePracticeView: View {
         }
         pendingGrade = nil; saveError = nil
         if !correct { missed.append(card.id) }
-        answered = true
-        HapticFeedback.selection()
+        lastCorrect = correct
+        withAnimation(.snappy) { answered = true }
+        if correct { HapticFeedback.success() } else { HapticFeedback.warning() }
     }
     private func advance() {
         if index + 1 < cards.count { index += 1; answered = false; saveError = nil }
@@ -157,17 +224,7 @@ private struct CourseCheckpointRemediation: View {
     let course: CourseDefinition
     let cards: [CourseLessonCard]
     let onDismiss: () -> Void
-    @State private var index = 0
-    @State private var answered = false
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                if cards.indices.contains(index) {
-                    ScrollView { CourseQuestionPanel(card: cards[index]) { _ in answered = true }.id(index) }
-                    if answered { Button("Continue") { index += 1; answered = false }.buttonStyle(.borderedProminent) }
-                } else { Button("Back to checkpoint") { onDismiss() }.buttonStyle(.borderedProminent) }
-            }.padding(20).navigationTitle("Targeted practice").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { onDismiss() } } }
-        }
+        CoursePracticeView(course: course, title: "Targeted practice", cards: cards, onDismiss: onDismiss)
     }
 }

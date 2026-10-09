@@ -551,8 +551,7 @@ struct HomeLibraryView: View {
     @State private var homeAlertMessage: String?
     @State private var showingQuickScheduleTipToast = false
     @State private var showingPinnedReorderSheet = false
-    @State private var selectedLessonForStudy: CourseLesson?
-    @State private var selectedCourseForStudy: CourseDefinition?
+    @State private var selectedCourseStudy: HomeCourseStudySelection?
     @State private var selectedCourseForOverview: CourseDefinition?
     @State private var coursePendingUnenroll: CourseDefinition?
 
@@ -1132,10 +1131,9 @@ struct HomeLibraryView: View {
                     }
             }
         }
-        .fullScreenCover(item: $selectedLessonForStudy) { lesson in
-            if let course = selectedCourseForStudy {
-                CourseLessonStudyView(course: course, lesson: lesson, onDismiss: { selectedLessonForStudy = nil })
-            }
+        .fullScreenCover(item: $selectedCourseStudy) { selection in
+            CourseLessonStudyView(course: selection.course, lesson: selection.lesson,
+                onDismiss: { selectedCourseStudy = nil })
         }
         .confirmationDialog(
             "Unenroll from \(coursePendingUnenroll?.title ?? "this course")?",
@@ -1182,8 +1180,7 @@ struct HomeLibraryView: View {
 
     private func resumeCourse(_ course: CourseDefinition) {
         if let current = progressManager.currentLesson(for: course) {
-            selectedCourseForStudy = course
-            selectedLessonForStudy = current
+            selectedCourseStudy = HomeCourseStudySelection(course: course, lesson: current)
         } else {
             selectedCourseForOverview = course
         }
@@ -2274,6 +2271,13 @@ private struct HomeStudyCard: View {
     }
 }
 
+/// A presentation contains both values, so the first launch cannot capture a missing course.
+private struct HomeCourseStudySelection: Identifiable {
+    let course: CourseDefinition
+    let lesson: CourseLesson
+    var id: String { course.id + ":" + lesson.id }
+}
+
 // MARK: - HomeCourseCard
 private struct HomeCourseCard: View {
     let course: CourseDefinition
@@ -2301,129 +2305,48 @@ private struct HomeCourseCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 16) {
             Button(action: onOpenOverview) {
-                HStack(alignment: .top, spacing: 14) {
-                    // Course Flag Icon
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color(hex: course.colorHex).opacity(0.16))
-                            .frame(width: 54, height: 54)
-
-                        Text(course.flagEmoji)
-                            .font(.system(size: 26))
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        Text(course.flagEmoji).font(.system(size: 28))
+                            .frame(width: 48, height: 48)
+                            .background(Color(hex: course.colorHex).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(course.title).font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
+                            Text(course.levelTag).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        if isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Pinned") }
                     }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            Text("COURSE")
-                                .font(.custom("Poppins-Bold", size: 9))
-                                .foregroundStyle(Color(hex: course.colorHex))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color(hex: course.colorHex).opacity(0.12), in: Capsule())
-
-                            Text(course.levelTag)
-                                .font(.custom("Poppins-Medium", size: 10))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                            Spacer()
-
-                            if isPinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(LearnAlertStyle.sky)
-                                    .accessibilityLabel("Pinned")
-                            }
-                        }
-
-                        Text(course.title)
-                            .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .headline))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                            .lineLimit(1)
-
-                        if let current = currentLesson {
-                            Text("Next: \(current.title)")
-                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                                .lineLimit(1)
-                        } else {
-                            Text("All lessons completed")
-                                .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
-                                .foregroundStyle(Color(red: 0.18, green: 0.80, blue: 0.44))
-                        }
-
-                        HStack(spacing: 8) {
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule()
-                                        .fill(LearnAlertStyle.textSecondary.opacity(0.18))
-                                        .frame(height: 4)
-
-                                    Capsule()
-                                        .fill(Color(hex: course.colorHex))
-                                        .frame(
-                                            width: max(geo.size.width * CGFloat(completionPercent), completionPercent > 0 ? 4 : 0),
-                                            height: 4
-                                        )
-                                }
-                                .frame(maxHeight: .infinity, alignment: .center)
-                            }
-                            .frame(height: 12)
-
-                            Text(completionPercent, format: .percent.precision(.fractionLength(0)))
-                                .font(.custom("Poppins-SemiBold", size: 11, relativeTo: .caption))
-                                .monospacedDigit()
-                                .foregroundStyle(Color(hex: course.colorHex))
-                        }
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Divider()
-                .opacity(0.4)
-
-            // Bottom Actions Bar
-            HStack(spacing: 10) {
+                    Text(currentLesson?.title ?? "All lessons completed")
+                        .font(.subheadline).foregroundStyle(LearnAlertStyle.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(completionPercent, format: .percent.precision(.fractionLength(0)))
+                        .font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
+                    ProgressView(value: completionPercent).tint(Color(hex: course.colorHex))
+                }.frame(maxWidth: .infinity)
                 Button(action: onContinue) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text(currentLesson == nil ? "Review Course" : "Continue")
-                            .font(.custom("Poppins-SemiBold", size: 12))
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(hex: course.colorHex), Color(hex: course.colorHex).opacity(0.8)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule()
-                    )
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
+                    HStack(spacing: 8) {
+                        Text(currentLesson == nil ? "Review" : "Continue")
+                        Image(systemName: "arrow.right").font(.caption.weight(.bold))
+                    }.font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).frame(minHeight: 44)
+                        .background(Color(hex: course.colorHex), in: Capsule())
+                }.buttonStyle(.plain)
                 Button(action: schedule) {
-                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
+                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell")
                         .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
-                        .frame(width: 38, height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isTargeted ? "Course alerts active" : "Quick schedule \(course.title)")
+                        .frame(width: 44, height: 44)
+                }.buttonStyle(.plain)
+                    .accessibilityLabel(isTargeted ? "Course alerts active" : "Schedule \(course.title)")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
+        }.padding(16)
         .background(LearnAlertStyle.courseSurface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(

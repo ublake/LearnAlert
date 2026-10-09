@@ -63,13 +63,21 @@ Created by **Blake Miller**.
 
 Discover includes Spanish and Korean courses, enrolled course tiles on Home,
 persistent pins, mixed learned-material review, and explicit scheduling.
-Korean includes 10 sections, 41 lessons, 457 practice cards, and graded section
+Korean includes 10 sections, 41 lessons, 489 practice cards, and graded section
 checkpoints. Lessons require a correct answer for each card; spaced mastery is
 tracked separately. Section checkpoints must be passed in the app (80% by default).
 Course notifications choose unlocked material when expanded and share atomic
 progress with the app. At a checkpoint, learned-material review remains available.
 The system queues up to 60 course alerts and replenishes on app/notification use;
 iOS cannot guarantee unlimited unattended background scheduling.
+
+Course practice fills the screen with roomy answers and a fixed Continue button.
+Both courses include 32 picture vocabulary exercises with simple cartoon art.
+Artwork: [CourseVocabularyAtlas.png](LearnAlert/CourseVocabularyAtlas.png), generated
+with the built-in image tool. Prompt: a regular 4×4 picture-dictionary atlas,
+super-simple flat cartoons with bold outlines, solid colors, an ivory background,
+and no labels; fruit, animals, drinks, and everyday objects.
+Customize uses one live preview, color swatches, and a compact layout selector.
 
 In-app Korean speech supports normal/slower playback and optional automatic
 pronunciation. Notification speech is disabled pending signed-device verification.

@@ -490,7 +490,8 @@ public enum CardImageStore {
     }
 
     public static func saveImage(_ image: UIImage, name: String? = nil) -> String? {
-        let filename = name ?? "\(UUID().uuidString).jpg"
+        // Editing a bundled picture creates a private copy instead of shadowing shared course art.
+        let filename = name.flatMap { $0.hasPrefix("course-vocab-") ? nil : $0 } ?? "\(UUID().uuidString).jpg"
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
 
         let maxDim: CGFloat = 1200
@@ -518,8 +519,24 @@ public enum CardImageStore {
         }
     }
 
+    /// Built-in course art also resolves in ordinary study and the notification extension.
+    private static let vocabularyImages: [String: UIImage] = {
+        guard let atlas = UIImage(named: "CourseVocabularyAtlas")?.cgImage else { return [:] }
+        let names = ["apple", "banana", "orange", "grapes", "cat", "dog", "rabbit", "bird",
+                     "coffee", "water", "rice", "milk", "book", "bag", "chair", "clock"]
+        let side = CGFloat(atlas.width) / 4
+        var result: [String: UIImage] = [:]
+        for (index, name) in names.enumerated() {
+            let rect = CGRect(x: CGFloat(index % 4) * side, y: CGFloat(index / 4) * side,
+                              width: side, height: side)
+            if let crop = atlas.cropping(to: rect) { result["course-vocab-" + name] = UIImage(cgImage: crop) }
+        }
+        return result
+    }()
+
     public static func loadImage(named filename: String?) -> UIImage? {
         guard let filename, !filename.isEmpty else { return nil }
+        if let image = vocabularyImages[filename] { return image }
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
         if let image = UIImage(contentsOfFile: fileURL.path) {
             return image

@@ -114,6 +114,7 @@
 				CourseNotificationScheduler.swift,
 				CourseNotificationSessionView.swift,
 				CourseQuestionPanel.swift,
+				CourseVocabularyAtlas.png,
 				CourseAnswerMatching.swift,
 				KoreanSpeechManager.swift,
 				KoreanLexicon.swift,

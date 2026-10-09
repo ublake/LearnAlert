@@ -10,7 +10,7 @@ import Foundation
 public enum CourseCurriculumCatalog {
 
     // MARK: - Spanish Beginner Course
-    public static let spanishCourse = CourseDefinition(
+    public static let spanishCourse = addingVisualVocabulary(to: CourseDefinition(
         id: "spanish-course",
         title: "Spanish Foundations",
         language: "Spanish",
@@ -303,10 +303,10 @@ public enum CourseCurriculumCatalog {
                 ]
             )
         ]
-    )
+    ))
 
     // MARK: - Korean Beginner Course
-    public static let koreanCourse = CourseDefinition(
+    public static let koreanCourse = addingVisualVocabulary(to: CourseDefinition(
         id: "korean-course",
         title: "Korean",
         language: "Korean",
@@ -600,7 +600,7 @@ public enum CourseCurriculumCatalog {
                 checkpointQuiz: koreanCheckpoint1
             )
         ] + expandedKoreanUnits
-    )
+    ))
 
     // MARK: - All Active Courses
     public static let courses: [CourseDefinition] = [
