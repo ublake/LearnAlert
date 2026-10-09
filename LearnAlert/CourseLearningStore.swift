@@ -55,9 +55,13 @@ struct CourseLearningSnapshot: Codable {
     mutating func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
         guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
               let cards = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId), !cards.isEmpty else { return nil }
-        var session = practiceSessions[key] ?? CoursePracticeSession(cardIds: cards.map(\.id))
-        // Keep answers to surviving cards when a curriculum update adds or removes questions.
-        session.cardIds = cards.map(\.id)
+        var session = practiceSessions[key] ?? CoursePracticeSession(cardIds: [])
+        let validIds = Set(cards.map(\.id))
+        let survivingIds = session.cardIds.filter { validIds.contains($0) }
+        let added = cards.filter { !survivingIds.contains($0.id) }
+        // Start with an orientation note; randomize exercises once, then save that order.
+        session.cardIds = survivingIds + added.filter { $0.id.hasSuffix("-guide") }.map(\.id)
+            + added.filter { !$0.id.hasSuffix("-guide") }.shuffled().map(\.id)
         session.answers = session.answers.filter { session.cardIds.contains($0.key) }
         if let lessonId, status(course: course, lessonId: lessonId) != .completed {
             // Existing saved answers, including notification answers, should not restart a lesson.
@@ -129,7 +133,7 @@ struct CourseLearningSnapshot: Codable {
         course.units.flatMap(\.lessons).first { status(course: course, lessonId: $0.id) == .current }
     }
 
-    func batch(course: CourseDefinition, count: Int, now: Date = Date(), reviewOnly: Bool = false) -> [CourseLessonCard] {
+    func batch(course: CourseDefinition, count: Int, now: Date = Date(), reviewOnly: Bool = false, randomized: Bool = false) -> [CourseLessonCard] {
         guard count > 0 else { return [] }
         let due = course.units.flatMap(\.lessons).filter { status(course: course, lessonId: $0.id) == .completed }
             .flatMap(\.cards).filter { srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true }
@@ -138,7 +142,7 @@ struct CourseLearningSnapshot: Codable {
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
         let fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
         let reviews = fresh.isEmpty ? count : max(1, count / 2)
-        return Array((Array(due.prefix(reviews)) + fresh).prefix(count))
+        return Array((Array(due.prefix(reviews)) + (randomized ? fresh.shuffled() : fresh)).prefix(count))
     }
 
     func isFullyMastered(course: CourseDefinition) -> Bool {

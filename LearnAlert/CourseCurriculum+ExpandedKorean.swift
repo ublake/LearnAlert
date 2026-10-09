@@ -316,26 +316,9 @@ extension CourseCurriculumCatalog {
 
     private static func koreanLesson(_ id: String, number: Int, title: String, note: String,
                                      entries: [(String, String)]) -> CourseLesson {
-        let cards = entries.enumerated().flatMap { index, entry -> [CourseLessonCard] in
-            let (korean, english) = entry
-            let vocabulary = KoreanVocabularyItem(surface: korean, dictionaryForm: korean,
-                romanization: "", partOfSpeech: korean.contains(" ") || korean.hasSuffix(".") || korean.hasSuffix("?") ? "Expression" : "Noun",
-                contextualMeaning: english, breakdownNote: note, exampleKorean: korean, exampleEnglish: english)
-            let otherMeanings = entries.filter { $0.1 != english }.map { $0.1 }
-            var options = Array(otherMeanings.prefix(3))
-            options.insert(english, at: index % (options.count + 1))
-            return [
-                CourseLessonCard(id: "\(id)-\(index + 1)-read", question: "What does ‘\(korean)’ mean?",
-                    options: options, correctAnswer: english, hint: note, vocabularyItem: vocabulary,
-                    grammarNote: note, speechText: korean, conceptTag: title,
-                    explanation: "\(korean) — \(english)"),
-                CourseLessonCard(id: "\(id)-\(index + 1)-write", question: "Write in Korean: \(english)",
-                    correctAnswer: korean, hint: note, cardType: "fillBlank", vocabularyItem: vocabulary,
-                    grammarNote: note, conceptTag: title, explanation: "\(korean) — \(english)")
-            ]
-        }
+        let cards = variedKoreanCards(id: id, title: title, note: note, entries: entries)
         return CourseLesson(id: id, lessonNumber: number, title: title, subtitle: "",
-            estimatedMinutes: 8, tipNote: note, cards: cards)
+            estimatedMinutes: 15, tipNote: note, cards: cards)
     }
 
     private static func koreanUnit(_ number: Int, title: String, lessons: [CourseLesson]) -> CourseUnit {
@@ -352,7 +335,7 @@ private extension CourseCurriculumCatalog {
     static func koreanTransferQuestions(_ number: Int) -> [CourseLessonCard] {
         switch number {
         case 2: return [
-            CourseLessonCard(id: "kr-transfer-2-1", question: "Choose the correct topic particle: 저는 의사___요.",
+            CourseLessonCard(id: "kr-transfer-2-1", question: "Complete the noun ending: 저는 의사___요.",
                 options: ["예", "이에", "을", "가"], correctAnswer: "예", cardType: "multipleChoice", conceptTag: "Section 2", explanation: "예"),
             CourseLessonCard(id: "kr-transfer-2-2", question: "Which sentence means “There is a chair”?",
                 options: ["의자가 있어요.", "의자를 마셔요.", "의자가 없어요.", "의자는 아니에요."], correctAnswer: "의자가 있어요.", cardType: "multipleChoice", conceptTag: "Section 2", explanation: "의자가 있어요."),
@@ -513,8 +496,8 @@ extension CourseCurriculumCatalog {
                 subtitle: unit.subtitle, colorHex: unit.colorHex, badgeIcon: unit.badgeIcon,
                 lessons: lessons, checkpointQuiz: unit.checkpointQuiz)
         }
-        return CourseDefinition(id: course.id, title: course.title, language: course.language,
+        return enhancingPractice(CourseDefinition(id: course.id, title: course.title, language: course.language,
             flagEmoji: course.flagEmoji, levelTag: course.levelTag, colorHex: course.colorHex,
-            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes, units: units)
+            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes, units: units))
     }
 }

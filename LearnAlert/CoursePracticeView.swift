@@ -49,11 +49,25 @@ struct CoursePracticeView: View {
     @State private var lastCorrect = false
     @State private var savedAnswers: [String: Bool] = [:]
     @State private var loaded = false
+    @State private var orderedIds: [String] = []
+    @State private var prefersReading = false
+    @State private var guideUnit: CourseUnit?
+    private var practiceCards: [CourseLessonCard] {
+        guard !orderedIds.isEmpty else { return cards }
+        let lookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
+        return orderedIds.compactMap { lookup[$0] }
+    }
+    private var currentUnit: CourseUnit? {
+        if let checkpointUnit { return checkpointUnit }
+        guard practiceCards.indices.contains(index) else { return nil }
+        let cardId = practiceCards[index].id
+        return course.units.first { $0.lessons.contains { $0.cards.contains { $0.id == cardId } } }
+    }
 
     private var savesSession: Bool { lessonId != nil || checkpointUnit != nil }
 
     private var isCheckpoint: Bool { checkpointUnit != nil }
-    private var missedCards: [CourseLessonCard] { cards.filter { missed.contains($0.id) } }
+    private var missedCards: [CourseLessonCard] { practiceCards.filter { missed.contains($0.id) } }
 
     var body: some View {
         NavigationStack {
@@ -68,15 +82,17 @@ struct CoursePracticeView: View {
                     }.padding(24)
                 } else if finished {
                     completion
-                } else if cards.indices.contains(index) {
+                } else if practiceCards.indices.contains(index) {
                     ScrollView {
                         VStack(spacing: 16) {
-                            Text(isCheckpoint ? "CHECKPOINT" : cards[index].optionImageNames.isEmpty && cards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
+                            Text(isCheckpoint ? "CHECKPOINT" : practiceCards[index].isListeningQuestion && !prefersReading ? "LISTENING" : practiceCards[index].optionImageNames.isEmpty && practiceCards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
                                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
-                            CourseQuestionPanel(card: cards[index], immersive: true, checkpoint: isCheckpoint,
-                                allowAudio: course.language == "Korean") { correct in record(correct: correct) }
+                            CourseQuestionPanel(card: practiceCards[index], immersive: true, checkpoint: isCheckpoint,
+                                allowAudio: course.language == "Korean", prefersReading: prefersReading,
+                                onReadingRequested: { prefersReading = true }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)")
                         }.padding(.horizontal, 24).padding(.vertical, 24)
+                            .tint(Color(hex: course.colorHex))
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
                     }.scrollDismissesKeyboard(.interactively)
                 } else { ContentUnavailableView("No questions", systemImage: "book.closed") }
@@ -84,7 +100,7 @@ struct CoursePracticeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { sessionHeader }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if loaded && !finished && cards.indices.contains(index) { answerFooter }
+                if loaded && !finished && practiceCards.indices.contains(index) { answerFooter }
             }
             .onAppear {
                 autoPronounce = manager.enrollment(for: course.id)?.autoPronounceInStudy ?? false
@@ -97,6 +113,7 @@ struct CoursePracticeView: View {
                 if value { speakCurrent() } else { KoreanSpeechManager.shared.stop() }
             }
             .onDisappear { KoreanSpeechManager.shared.stop() }
+            .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
             .fullScreenCover(isPresented: $reviewMisses) {
                 CourseCheckpointRemediation(course: course, cards: missedCards) { reviewMisses = false }
             }
@@ -111,11 +128,16 @@ struct CoursePracticeView: View {
                 }.tint(.secondary).accessibilityLabel("Exit practice")
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.subheadline.weight(.semibold)).lineLimit(2)
-                    Text(finished ? "Session complete" : "\(index + 1) of \(cards.count)")
+                    Text(finished ? "Session complete" : "\(index + 1) of \(practiceCards.count)")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }.frame(maxWidth: .infinity, alignment: .leading)
+                if let currentUnit {
+                    Button { KoreanSpeechManager.shared.stop(); guideUnit = currentUnit } label: {
+                        Image(systemName: "book.closed").frame(width: 44, height: 44)
+                    }.accessibilityLabel("Section guide")
+                }
                 if !isCheckpoint && course.language == "Korean" {
-                    Button { autoPronounce.toggle() } label: {
+                    Button { if prefersReading { prefersReading = false }; autoPronounce.toggle() } label: {
                         Image(systemName: autoPronounce ? "speaker.wave.2.fill" : "speaker.slash")
                             .frame(width: 44, height: 44)
                     }.tint(autoPronounce ? Color(hex: course.colorHex) : .secondary)
@@ -123,7 +145,7 @@ struct CoursePracticeView: View {
                 }
             }
             if loaded && !finished {
-                ProgressView(value: Double(savesSession ? savedAnswers.count : index + (answered ? 1 : 0)), total: Double(max(1, cards.count)))
+                ProgressView(value: Double(savesSession ? savedAnswers.count : index + (answered ? 1 : 0)), total: Double(max(1, practiceCards.count)))
                     .tint(Color(hex: course.colorHex)).animation(.snappy, value: answered)
             }
         }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
@@ -143,15 +165,15 @@ struct CoursePracticeView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(lastCorrect ? "Nicely done!" : "Let’s remember this one").font(.headline)
                         if !lastCorrect {
-                            if cards[index].cardType == "matching" {
-                                ForEach(cards[index].matchingLeftItems.indices, id: \.self) { item in
-                                    if cards[index].matchingRightItems.indices.contains(item) {
-                                        Text("\(cards[index].matchingLeftItems[item]) → \(cards[index].matchingRightItems[item])").font(.subheadline)
+                            if practiceCards[index].cardType == "matching" {
+                                ForEach(practiceCards[index].matchingLeftItems.indices, id: \.self) { item in
+                                    if practiceCards[index].matchingRightItems.indices.contains(item) {
+                                        Text("\(practiceCards[index].matchingLeftItems[item]) → \(practiceCards[index].matchingRightItems[item])").font(.subheadline)
                                     }
                                 }
-                            } else { Text(cards[index].correctAnswer).font(.subheadline.weight(.semibold)) }
+                            } else { Text(practiceCards[index].correctAnswer).font(.subheadline.weight(.semibold)) }
                         }
-                        if !isCheckpoint, let explanation = cards[index].explanation {
+                        if !isCheckpoint, let explanation = practiceCards[index].explanation {
                             Text(explanation).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
@@ -160,7 +182,7 @@ struct CoursePracticeView: View {
             Button { advance() } label: {
                 HStack {
                     Spacer()
-                    Text(index == cards.count - 1 ? "Finish" : "Continue").font(.headline)
+                    Text(index == practiceCards.count - 1 ? "Finish" : "Continue").font(.headline)
                     Spacer()
                     Image(systemName: "arrow.right").font(.body.weight(.semibold))
                 }.padding(.horizontal, 24).frame(minHeight: 56)
@@ -179,7 +201,7 @@ struct CoursePracticeView: View {
                     .frame(width: 128, height: 128)
                     .background(Color(hex: course.colorHex).opacity(0.12), in: Circle())
                 Text(finishTitle).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                Text("\(cards.count - missed.count) of \(cards.count) correct").font(.title3).foregroundStyle(.secondary)
+                Text("\(practiceCards.count - missed.count) of \(practiceCards.count) correct").font(.title3).foregroundStyle(.secondary)
                 if let result, !result.passed {
                     Text("\(Int(result.percentage * 100))% · \(Int((manager.enrollment(for: course.id)?.checkpointPassingThreshold ?? checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))% to pass")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -200,14 +222,14 @@ struct CoursePracticeView: View {
         return "Practice complete"
     }
     private func speakCurrent() {
-        guard autoPronounce, !isCheckpoint, course.language == "Korean", cards.indices.contains(index),
+        guard autoPronounce, !prefersReading, !isCheckpoint, course.language == "Korean", practiceCards.indices.contains(index),
               // Don't speak the answer to a production exercise before it is graded.
-              cards[index].cardType != "fillBlank", let text = cards[index].primaryKoreanText else { return }
+              !practiceCards[index].usesTypedAnswer, !practiceCards[index].isListeningQuestion, let text = practiceCards[index].primaryKoreanText else { return }
         KoreanSpeechManager.shared.speak(text)
     }
     private func record(correct: Bool) {
         guard !answered else { return }
-        let card = cards[index]
+        let card = practiceCards[index]
         if savesSession {
             guard manager.recordPracticeAnswer(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id,
                 sessionId: session, cardId: card.id, correct: correct) else {
@@ -227,11 +249,12 @@ struct CoursePracticeView: View {
         if correct { HapticFeedback.success() } else { HapticFeedback.warning() }
     }
     private func restoreSession() {
-        guard savesSession else { loaded = true; return }
+        guard savesSession else { orderedIds = cards.shuffled().map(\.id); loaded = true; return }
         guard let restored = manager.resumePractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id) else {
             saveError = CourseLearningStore.shared.lastError ?? "This practice is unavailable. Return to the path."
             return
         }
+        orderedIds = restored.cardIds
         session = restored.id
         savedAnswers = restored.answers
         missed = restored.missedCardIds
@@ -242,7 +265,7 @@ struct CoursePracticeView: View {
     }
 
     private func advance() {
-        let next = savesSession ? cards.indices.first { savedAnswers[cards[$0].id] == nil } : (index + 1 < cards.count ? index + 1 : nil)
+        let next = savesSession ? practiceCards.indices.first { savedAnswers[practiceCards[$0].id] == nil } : (index + 1 < practiceCards.count ? index + 1 : nil)
         if let next { index = next; answered = false; saveError = nil }
         else { finishSession() }
     }
@@ -252,7 +275,7 @@ struct CoursePracticeView: View {
             guard let completion = manager.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id, sessionId: session) else {
                 saveError = CourseLearningStore.shared.lastError ?? "Your result couldn’t be saved. Please try again."
                 // The final answer is already saved; retry only finalization.
-                index = max(0, cards.count - 1); answered = true
+                index = max(0, practiceCards.count - 1); answered = true
                 return
             }
             result = completion.checkpointResult

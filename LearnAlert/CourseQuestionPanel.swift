@@ -6,16 +6,22 @@ struct CourseQuestionPanel: View {
     var immersive = false
     var checkpoint = false
     var allowAudio = true
+    var prefersReading = false
+    var onReadingRequested: () -> Void = {}
     let onAnswer: (Bool) -> Void
     @State private var typed = ""
+    @State private var optionIndices: [Int] = []
+    private var choiceOrder: [Int] { optionIndices.isEmpty ? Array(card.options.indices) : optionIndices }
     @FocusState private var typing: Bool
     @State private var grade: Bool?
     @State private var selectedOption: String?
     @State private var revealed = false
     @State private var hint = false
     @State private var inspecting = false
-    @State private var leftIndex: Int?
-    @State private var matches: [Int: Int] = [:]
+    @State private var readingInstead = false
+    @ObservedObject private var speech = KoreanSpeechManager.shared
+
+    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && speech.hasVoice }
     @State private var selectedWord: String?
 
     var body: some View {
@@ -35,9 +41,25 @@ struct CourseQuestionPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .accessibilityLabel("Vocabulary picture")
             }
-            if !checkpoint {
+            if listening, let text = card.speechText {
+                HStack(spacing: 16) {
+                    Button { speech.speak(text) } label: {
+                        Label(speech.isSpeaking ? "Play again" : "Listen", systemImage: "speaker.wave.2.fill")
+                            .font(.headline).frame(maxWidth: .infinity, minHeight: immersive ? 80 : 56)
+                    }.buttonStyle(.borderedProminent)
+                    Button { speech.speak(text, speed: .slow) } label: {
+                        Image(systemName: "tortoise.fill").frame(width: 56, height: immersive ? 80 : 56)
+                    }.buttonStyle(.bordered).accessibilityLabel("Listen slowly")
+                }
+                if grade == nil {
+                    Button("I can’t listen right now") {
+                        speech.stop(); readingInstead = true; onReadingRequested()
+                    }.font(.subheadline).frame(minHeight: 44)
+                }
+            }
+            if !checkpoint && (!listening || grade != nil) {
                 HStack(spacing: 8) {
-                    if let text = card.primaryKoreanText, allowAudio {
+                    if let text = card.primaryKoreanText, allowAudio && speech.hasVoice && !prefersReading && !readingInstead {
                         Button { KoreanSpeechManager.shared.speak(text) } label: { Image(systemName: "speaker.wave.2.fill").frame(width: 44, height: 44) }
                             .accessibilityLabel("Pronounce in Korean")
                         Button { KoreanSpeechManager.shared.speak(text, speed: .slow) } label: { Image(systemName: "tortoise.fill").frame(width: 44, height: 44) }
@@ -50,10 +72,10 @@ struct CourseQuestionPanel: View {
                 }.buttonStyle(.borderless)
                 if hint { Text(card.hint).font(.callout).foregroundStyle(.secondary) }
             }
-            if card.cardType == "multipleChoice" {
+            if card.cardType == "multipleChoice" || card.cardType == "listening" {
                 if card.optionImageNames.count == card.options.count && !card.optionImageNames.isEmpty {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: immersive ? 16 : 8) {
-                        ForEach(card.options.indices, id: \.self) { index in
+                        ForEach(Array(choiceOrder.enumerated()), id: \.element) { position, index in
                             let option = card.options[index]
                             Button { selectedOption = option; submit(card.accepts(option)) } label: {
                                 VStack(spacing: 8) {
@@ -72,12 +94,12 @@ struct CourseQuestionPanel: View {
                         }
                     }
                 } else {
-                    ForEach(card.options.indices, id: \.self) { index in
+                    ForEach(Array(choiceOrder.enumerated()), id: \.element) { position, index in
                         let option = card.options[index]
                         Button { selectedOption = option; submit(card.accepts(option)) } label: {
                             HStack(spacing: 16) {
                                 if immersive {
-                                    Text(String(index + 1)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    Text(String(position + 1)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                         .frame(width: 28, height: 28).background(Color.primary.opacity(0.05), in: Circle())
                                 }
                                 Text(option).font(immersive ? .title3.weight(.medium) : .body)
@@ -92,30 +114,25 @@ struct CourseQuestionPanel: View {
                         }.buttonStyle(.plain).disabled(grade != nil)
                     }
                 }
-            } else if card.cardType == "fillBlank" {
+            } else if card.usesTypedAnswer {
                 TextField("Your answer", text: $typed, axis: .vertical).textFieldStyle(.roundedBorder)
                     .focused($typing).autocorrectionDisabled().textInputAutocapitalization(.never).disabled(grade != nil)
                     .onSubmit { if grade == nil { submit(card.accepts(typed)) } }
                 if grade == nil { Button("Check") { submit(card.accepts(typed)) }.buttonStyle(.borderedProminent).disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
             } else if card.cardType == "matching" {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack {
-                        ForEach(card.matchingLeftItems.indices, id: \.self) { index in
-                            Button(card.matchingLeftItems[index]) { leftIndex = index }
-                                .buttonStyle(.bordered).tint(leftIndex == index ? .blue : .gray)
-                                .disabled(grade != nil || matches.values.contains(index))
-                        }
+                CourseMatchingPanel(card: card, immersive: immersive, onAnswer: submit)
+            } else if card.cardType == "vocabulary" {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(card.vocabularyItem?.contextualMeaning ?? card.correctAnswer).font(immersive ? .title3 : .body).fixedSize(horizontal: false, vertical: true)
+                    if let note = card.grammarNote, note != card.correctAnswer { Text(note).font(.callout).foregroundStyle(.secondary) }
+                    if grade == nil {
+                        HStack(spacing: 16) {
+                            Button("Review later") { submit(false) }.buttonStyle(.bordered)
+                            Button("Got it") { submit(true) }.buttonStyle(.borderedProminent)
+                        }.controlSize(.large)
                     }
-                    VStack {
-                        ForEach(Array(card.matchingRightItems.indices.reversed()), id: \.self) { index in
-                            Button(card.matchingRightItems[index]) {
-                                guard let leftIndex else { return }
-                                matches[index] = leftIndex; self.leftIndex = nil
-                                if matches.count == card.matchingRightItems.count { submit(matches.allSatisfy { $0.key == $0.value }) }
-                            }.buttonStyle(.bordered).disabled(grade != nil || leftIndex == nil || matches[index] != nil)
-                        }
-                    }
-                }
+                }.padding(immersive ? 24 : 16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
             } else {
                 if revealed {
                     Text(card.correctAnswer).font(.title3)
@@ -142,6 +159,7 @@ struct CourseQuestionPanel: View {
                 if !checkpoint, let explanation = card.explanation { Text(explanation).font(.callout).foregroundStyle(.secondary) }
             }
         }
+        .onAppear { if optionIndices.isEmpty { optionIndices = Array(card.options.indices).shuffled() } }
         .sheet(isPresented: $inspecting) {
             NavigationStack {
                 ScrollView {
@@ -176,11 +194,12 @@ struct CourseQuestionPanel: View {
         return immersive ? Color(.secondarySystemGroupedBackground) : Color.primary.opacity(0.04)
     }
     private var questionText: AttributedString {
-        var text = AttributedString(card.question)
+        let prompt = card.cardType == "vocabulary" ? (card.vocabularyItem?.surface ?? card.question) : card.questionText(audioEnabled: listening)
+        var text = AttributedString(prompt)
         guard !checkpoint, let expression = try? NSRegularExpression(pattern: "[가-힣ㄱ-ㅎㅏ-ㅣ]+") else { return text }
-        for match in expression.matches(in: card.question, range: NSRange(card.question.startIndex..., in: card.question)) {
-            guard let range = Range(match.range, in: card.question) else { continue }
-            let word = String(card.question[range])
+        for match in expression.matches(in: prompt, range: NSRange(prompt.startIndex..., in: prompt)) {
+            guard let range = Range(match.range, in: prompt) else { continue }
+            let word = String(prompt[range])
             guard let attributedRange = text.range(of: word) else { continue }
             var components = URLComponents(); components.scheme = "learnalert-word"; components.host = "lookup"
             components.queryItems = [URLQueryItem(name: "word", value: word)]

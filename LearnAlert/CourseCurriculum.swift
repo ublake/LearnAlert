@@ -338,7 +338,7 @@ public enum CourseCurriculumCatalog {
                         subtitle: "The 6 core building block vowels: ㅏ, ㅓ, ㅗ, ㅜ, ㅡ, ㅣ.",
                         nodeType: .lesson,
                         estimatedMinutes: 5,
-                        tipNote: "Hangul was created by King Sejong the Great in 1443 to be so logical that a wise person could learn it in a morning! Vowels with a vertical line (ㅏ, ㅓ, ㅣ) are placed to the right of the consonant; horizontal vowels (ㅗ, ㅜ, ㅡ) are placed below.",
+                        tipNote: "Vertical vowels ㅏ, ㅓ, ㅣ sit to the right of an initial consonant. Horizontal vowels ㅗ, ㅜ, ㅡ sit below it. Add silent initial ㅇ when a syllable starts with a vowel: 아, 어, 오, 우, 으, 이. Romanized eo and eu each represent one vowel, not two sounds.",
                         cards: [
                             CourseLessonCard(
                                 id: "kr-1-1-1",

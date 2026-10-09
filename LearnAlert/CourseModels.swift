@@ -340,7 +340,7 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let options: [String]
     public let correctAnswer: String
     public let hint: String
-    public let cardType: String // "multipleChoice", "fillBlank", "vocabulary", "tapReveal", "matching"
+    public let cardType: String // Also supports "listening" and "listeningWrite" with readable alternatives.
     public let matchingLeftItems: [String]
     public let matchingRightItems: [String]
     public let promptImageName: String?
@@ -351,6 +351,7 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let conceptTag: String?
     public let explanation: String?
     public let acceptedAnswers: [String]?
+    public let readingPrompt: String?
 
     public init(
         id: String,
@@ -368,7 +369,8 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         speechText: String? = nil,
         conceptTag: String? = nil,
         explanation: String? = nil,
-        acceptedAnswers: [String]? = nil
+        acceptedAnswers: [String]? = nil,
+        readingPrompt: String? = nil
     ) {
         self.id = id
         self.question = question
@@ -386,11 +388,18 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         self.conceptTag = conceptTag
         self.explanation = explanation
         self.acceptedAnswers = acceptedAnswers
+        self.readingPrompt = readingPrompt
+    }
+
+    public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" }
+    public var usesTypedAnswer: Bool { cardType == "fillBlank" || cardType == "listeningWrite" }
+    public func questionText(audioEnabled: Bool) -> String {
+        isListeningQuestion && !audioEnabled ? (readingPrompt ?? "What does ‘\(speechText ?? "")’ mean?") : question
     }
 
     public var primaryKoreanText: String? {
         if let vocab = vocabularyItem?.surface, !vocab.isEmpty {
-            return vocab
+            return vocabularyItem?.audioText ?? vocab
         }
         if let speech = speechText, !speech.isEmpty {
             return speech

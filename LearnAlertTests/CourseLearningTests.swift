@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import Testing
 #if canImport(UIKit)
 import UIKit
@@ -20,15 +21,94 @@ struct CourseLearningTests {
         let all = cards + quizzes.flatMap(\.questions)
         #expect(course.units.count == 10)
         #expect(lessons.count == 41)
-        #expect(cards.count == 489)
+        #expect(cards.count == 1410)
         #expect(quizzes.count == 10)
         #expect(Set(all.map(\.id)).count == all.count)
         #expect(Set(lessons.map(\.id)).count == lessons.count)
         for card in all {
             #expect(!card.question.isEmpty && !card.correctAnswer.isEmpty)
-            if card.cardType == "multipleChoice" { #expect(card.options.contains(card.correctAnswer)); #expect(Set(card.options).count == card.options.count) }
+            if card.cardType == "multipleChoice" || card.cardType == "listening" { #expect(card.options.contains(card.correctAnswer)); #expect(Set(card.options).count == card.options.count) }
             if card.cardType == "matching" { #expect(card.matchingLeftItems.count == card.matchingRightItems.count && !card.matchingLeftItems.isEmpty) }
         }
+    }
+
+    @Test("Expanded lessons cover reading, listening, production, and matching")
+    func variedPractice() {
+        for lesson in course.units.flatMap(\.lessons) {
+            #expect(lesson.cards.count >= 33)
+            let types = Set(lesson.cards.map(\.cardType))
+            #expect(types.isSuperset(of: ["vocabulary", "multipleChoice", "fillBlank", "matching", "listening", "listeningWrite"]))
+            #expect(!types.contains("tapReveal"))
+        }
+    }
+
+    @Test("Listening alternatives keep the learning task and accept the same answer")
+    func listeningAlternatives() throws {
+        let audioCards = course.units.flatMap(\.lessons).flatMap(\.cards).filter(\.isListeningQuestion)
+        #expect(audioCards.count == 492)
+        for card in audioCards {
+            #expect(card.speechText?.isEmpty == false)
+            #expect(card.readingPrompt?.isEmpty == false)
+            #expect(card.questionText(audioEnabled: true) == card.question)
+            #expect(card.questionText(audioEnabled: false) != card.question)
+            #expect(card.accepts(card.correctAnswer))
+            #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONEncoder().encode(card)) == card)
+            if card.cardType == "listeningWrite" { #expect(card.usesTypedAnswer) }
+        }
+        let legacy = course.units[0].lessons[0].cards[0]
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as? [String: Any])
+        json.removeValue(forKey: "readingPrompt")
+        #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: json)).readingPrompt == nil)
+    }
+
+    @Test("Playback starts and stops without a stale cancellation clearing a new utterance")
+    func speechPlayback() async {
+        let speech = KoreanSpeechManager.shared
+        guard speech.hasVoice else { return }
+        let phrase = "한국어를 공부하고 있어요. 오늘은 새로운 문장을 읽고 연습하고 있어요."
+        speech.speak(phrase)
+        #expect(speech.isSpeaking && speech.currentSpeakingText == phrase)
+        speech.speechSynthesizer(AVSpeechSynthesizer(), didCancel: AVSpeechUtterance(string: "old playback"))
+        await Task.yield()
+        #expect(speech.isSpeaking && speech.currentSpeakingText == phrase)
+        speech.stop()
+        #expect(!speech.isSpeaking && speech.currentSpeakingText == nil)
+    }
+
+    @Test("Matching accepts selection from either side and remembers corrected mistakes")
+    func matchingInteraction() {
+        var state = CourseMatchingState(pairCount: 3)
+        state.select(2, left: false)
+        #expect(state.selectedRight == 2)
+        state.select(1, left: true)
+        #expect(state.hadMistake && state.matched.isEmpty && !state.complete)
+        state.select(2, left: false); state.select(2, left: true)
+        #expect(state.matched == [2] && state.mistakeLeft == nil)
+        state.select(2, left: true)
+        #expect(state.selectedLeft == nil)
+        state.select(0, left: true); state.select(0, left: true)
+        #expect(state.selectedLeft == nil)
+        state.select(0, left: true); state.select(0, left: false)
+        state.select(1, left: false); state.select(1, left: true)
+        #expect(state.complete && state.hadMistake)
+        var perfect = CourseMatchingState(pairCount: 1)
+        perfect.select(0, left: false); perfect.select(0, left: true)
+        #expect(perfect.complete && !perfect.hadMistake)
+    }
+
+    @Test("Every section bundles detailed guides and worked examples offline")
+    func sectionGuides() {
+        for course in CourseCurriculumCatalog.courses {
+            for unit in course.units {
+                let topics = CourseSectionGuides.topics(course: course, unit: unit)
+                #expect(topics.count >= 7)
+                #expect(Set(topics.map(\.id)).count == topics.count)
+                #expect(topics.allSatisfy { !$0.rule.isEmpty })
+                #expect(topics.filter { !$0.examples.isEmpty }.count >= 3)
+            }
+        }
+        let hangul = CourseSectionGuides.topics(course: course, unit: course.units[0])
+        #expect(hangul.contains { $0.rule.contains("Compound vowels") && $0.examples.contains { $0.contains("관") } })
     }
 
     @Test("Picture vocabulary resolves bundled art and keeps image choices aligned")
@@ -208,30 +288,53 @@ struct CourseLearningTests {
         let session = try #require(store.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
         for (index, correct) in [true, false].enumerated() {
             let saved = store.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
-                sessionId: session.id, cardId: lesson.cards[index].id, correct: correct) }
+                sessionId: session.id, cardId: session.cardIds[index], correct: correct) }
             #expect(saved == true)
         }
         let reopened = CourseLearningStore(directory: directory, defaults: nil)
         let restored = try #require(reopened.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
         #expect(restored.id == session.id && restored.nextIndex == 2)
-        #expect(restored.missedCardIds == [lesson.cards[1].id])
+        #expect(restored.cardIds == session.cardIds)
+        #expect(restored.missedCardIds == [session.cardIds[1]])
         #expect(reopened.snapshot().progress[course.id]?[lesson.id]?.totalAttemptsCount == 2)
         let duplicate = reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
-            sessionId: session.id, cardId: lesson.cards[0].id, correct: true) }
+            sessionId: session.id, cardId: session.cardIds[0], correct: true) }
         #expect(duplicate == false)
-        #expect(reopened.snapshot().srs[lesson.cards[0].id]?.reviewCount == 1)
-        for card in lesson.cards.dropFirst(2) {
+        #expect(reopened.snapshot().srs[session.cardIds[0]]?.reviewCount == 1)
+        for cardId in session.cardIds.dropFirst(2) {
             #expect(reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
-                sessionId: session.id, cardId: card.id, correct: true) } == true)
+                sessionId: session.id, cardId: cardId, correct: true) } == true)
         }
         // All answers can survive exiting on the last question without tapping Finish.
         let finalStore = CourseLearningStore(directory: directory, defaults: nil)
         let allAnswered = try #require(finalStore.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
-        #expect(allAnswered.nextIndex == nil && allAnswered.missedCardIds == [lesson.cards[1].id])
+        #expect(allAnswered.nextIndex == nil && allAnswered.missedCardIds == [session.cardIds[1]])
         #expect(finalStore.transaction { $0.finishPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil, sessionId: session.id) } != nil)
         let retry = try #require(finalStore.transaction { $0.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil) } ?? nil)
-        #expect(retry.id != session.id && retry.nextIndex == 1)
+        #expect(retry.id != session.id)
+        #expect(retry.cardIds[try #require(retry.nextIndex)] == session.cardIds[1])
         #expect(retry.answers.count == lesson.cards.count - 1)
+    }
+
+    @Test("A curriculum upgrade preserves the old shuffled order and surviving answers")
+    func practiceUpgrade() throws {
+        var state = CourseLearningSnapshot()
+        let lesson = course.units[0].lessons[0]
+        let ids = [lesson.cards[2].id, lesson.cards[0].id]
+        let key = try #require(CourseLearningSnapshot.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil))
+        var old = CoursePracticeSession(cardIds: [ids[0], "removed-card", ids[1]])
+        old.answers = [ids[0]: false, "removed-card": true]
+        state.practiceSessions[key] = old
+        let resumedValue = state.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+        let resumed = try #require(resumedValue)
+        #expect(resumed.id == old.id && Array(resumed.cardIds.prefix(2)) == ids)
+        #expect(resumed.answers == [ids[0]: false])
+        #expect(resumed.nextIndex == 1)
+        #expect(Set(resumed.cardIds) == Set(lesson.cards.map(\.id)))
+        var reopened = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(state))
+        let againValue = reopened.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+        let again = try #require(againValue)
+        #expect(again.cardIds == resumed.cardIds && again.answers == resumed.answers)
     }
 
     @Test("Saved notification answers and legacy snapshots resume without losing mastery")
@@ -246,7 +349,8 @@ struct CourseLearningTests {
         var legacy = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
         let resumedValue = legacy.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
         let resumed = try #require(resumedValue)
-        #expect(resumed.nextIndex == 1 && resumed.answers[lesson.cards[0].id] == true)
+        #expect(resumed.answers[lesson.cards[0].id] == true)
+        #expect(resumed.answers[resumed.cardIds[try #require(resumed.nextIndex)]] == nil)
         #expect(legacy.eventTokens == ["notification"] && legacy.srs[lesson.cards[0].id]?.reviewCount == 1)
         #expect(legacy.completionFraction(course: course) == fraction)
         #expect(legacy.resumePractice(course: course, lessonId: course.units[1].lessons[0].id, checkpointUnitId: nil) == nil)
@@ -263,21 +367,21 @@ struct CourseLearningTests {
         let sessionValue = state.resumePractice(course: course, lessonId: nil, checkpointUnitId: unit.id)
         let session = try #require(sessionValue)
         let firstSaved = state.answerPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id,
-            cardId: quiz.questions[0].id, correct: false)
+            cardId: session.cardIds[0], correct: false)
         #expect(firstSaved)
         #expect(state.finishPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id) == nil)
         var reopened = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(state))
         let resumedValue = reopened.resumePractice(course: course, lessonId: nil, checkpointUnitId: unit.id)
         let resumed = try #require(resumedValue)
         #expect(resumed.id == session.id && resumed.nextIndex == 1)
-        for card in quiz.questions.dropFirst() {
-            let saved = reopened.answerPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id, cardId: card.id, correct: true)
+        for cardId in session.cardIds.dropFirst() {
+            let saved = reopened.answerPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id, cardId: cardId, correct: true)
             #expect(saved)
         }
         let completionValue = reopened.finishPractice(course: course, lessonId: nil, checkpointUnitId: unit.id, sessionId: session.id)
         let completion = try #require(completionValue)
         #expect(completion.checkpointResult?.score == quiz.questions.count - 1)
-        #expect(completion.checkpointResult?.missedQuestionIds == [quiz.questions[0].id])
+        #expect(completion.checkpointResult?.missedQuestionIds == [session.cardIds[0]])
         #expect(completion.checkpointResult?.passed == true)
         #expect(reopened.status(course: course, lessonId: course.units[1].lessons[0].id) == .current)
         #expect(reopened.practiceSessions.isEmpty)
@@ -378,10 +482,10 @@ struct CourseLearningTests {
         first.reviewCount = 7
         let upgraded = manager.createOrSyncCourseDeck(for: course, in: context)
         #expect(upgraded.id == old.id)
-        #expect(upgraded.cards.count == 489 && upgraded.sections.count == 10)
+        #expect(upgraded.cards.count == 1410 && upgraded.sections.count == 10)
         #expect(upgraded.cards.first?.id == first.id && first.reviewCount == 7)
         let repeated = manager.createOrSyncCourseDeck(for: course, in: context)
-        #expect(repeated.cards.count == 489)
+        #expect(repeated.cards.count == 1410)
         #expect(try context.fetch(FetchDescriptor<Deck>()).count == 1)
     }
 
@@ -390,10 +494,18 @@ struct CourseLearningTests {
         let cards = course.units.flatMap(\.lessons).flatMap(\.cards)
         let prompt = try #require(cards.first { $0.promptImageName != nil })
         let choices = try #require(cards.first { !$0.optionImageNames.isEmpty })
+        let longMatch = try #require(course.units.last?.lessons.last?.cards.first { $0.cardType == "matching" })
         for scheme in [ColorScheme.light, .dark] {
             for (label, view) in [
                 ("picture-prompt", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in })),
                 ("picture-choices", AnyView(CourseQuestionPanel(card: choices, immersive: true) { _ in })),
+                ("long-matching", AnyView(CourseQuestionPanel(card: longMatch, immersive: true) { _ in })),
+                ("accessible-matching", AnyView(CourseQuestionPanel(card: longMatch, immersive: true) { _ in }.environment(\.dynamicTypeSize, .accessibility2))),
+                ("matching", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards[2], immersive: true) { _ in })),
+                ("reading-alternative", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards.first { $0.cardType == "listening" }!, immersive: true, prefersReading: true) { _ in })),
+                ("vocabulary", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards[1], immersive: true) { _ in })),
+                ("listening", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards.first { $0.cardType == "listening" }!, immersive: true) { _ in })),
+                ("guide", AnyView(CourseGuideContent(course: course, unit: course.units[0]))),
                 ("large-type", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in }.environment(\.dynamicTypeSize, .accessibility2)))
             ] {
                 let renderer = ImageRenderer(content: view.padding(24).frame(width: 402)

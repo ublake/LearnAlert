@@ -17,6 +17,7 @@ struct CourseOverviewView: View {
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @ObservedObject private var engine = StudyEngine.shared
 
+    @State private var guideUnit: CourseUnit?
     @State private var showingOnboardingSheet = false
     @State private var showingPathView = false
     @State private var showingReviewSheet = false
@@ -186,6 +187,10 @@ struct CourseOverviewView: View {
                                 Text(unit.title)
                                     .font(.custom("Poppins-Bold", size: 13))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
+                                Spacer()
+                                Button { guideUnit = unit } label: {
+                                    Image(systemName: "book.closed").frame(width: 44, height: 44)
+                                }.accessibilityLabel("Section guide: \(unit.title)")
                             }
 
                             VStack(spacing: 4) {
@@ -269,6 +274,7 @@ struct CourseOverviewView: View {
         .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
         .navigationTitle(course.language)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
         .sheet(isPresented: $showingOnboardingSheet) {
             CourseOnboardingSheet(course: course) {
                 showingOnboardingSheet = false
@@ -688,6 +694,7 @@ struct CoursePathView: View {
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @ObservedObject private var engine = StudyEngine.shared
 
+    @State private var guideUnit: CourseUnit?
     @State private var selectedLessonForStudy: CourseLesson?
     @State private var showingReviewSheet = false
     @State private var selectedCheckpoint: CourseUnit?
@@ -750,6 +757,10 @@ struct CoursePathView: View {
                         .padding(.vertical, 6)
                         .background(Color(hex: unit.colorHex).opacity(0.14), in: Capsule())
 
+                        Button { guideUnit = unit } label: {
+                            Label("Section guide", systemImage: "book.closed").font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                        }.accessibilityLabel("Section guide: \(unit.title)")
+
                         // Staggered Path Nodes
                         VStack(spacing: 16) {
                             ForEach(Array(unit.lessons.enumerated()), id: \.element.id) { index, lesson in
@@ -793,6 +804,7 @@ struct CoursePathView: View {
         .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
         .navigationTitle("Learning Path")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
         .fullScreenCover(item: $selectedLessonForStudy) { lesson in
             CourseLessonStudyView(course: course, lesson: lesson) {
                 selectedLessonForStudy = nil

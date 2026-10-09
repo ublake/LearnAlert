@@ -276,15 +276,16 @@ final class CourseProgressManager: ObservableObject {
             for definition in unit.lessons.flatMap(\.cards) {
                 let type: FlashcardType
                 switch definition.cardType {
-                case "fillBlank": type = .fillBlank
+                case "fillBlank", "listeningWrite": type = .fillBlank
                 case "vocabulary": type = .vocabulary
                 case "tapReveal": type = .tapReveal
                 case "matching": type = .matching
                 default: type = .multipleChoice
                 }
+                let deckQuestion = definition.questionText(audioEnabled: false)
                 let card = originalCards.first(where: {
-                    !usedIds.contains($0.id) && $0.question == definition.question && $0.section?.id == section.id
-                }) ?? Flashcard(question: definition.question, options: definition.options, correctAnswer: definition.correctAnswer)
+                    !usedIds.contains($0.id) && $0.question == deckQuestion && $0.section?.id == section.id
+                }) ?? Flashcard(question: deckQuestion, options: definition.options, correctAnswer: definition.correctAnswer)
                 card.options = definition.options
                 card.correctAnswer = definition.correctAnswer
                 card.hint = definition.hint

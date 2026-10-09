@@ -63,7 +63,7 @@ Created by **Blake Miller**.
 
 Discover includes Spanish and Korean courses, enrolled course tiles on Home,
 persistent pins, mixed learned-material review, and explicit scheduling.
-Korean includes 10 sections, 41 lessons, 489 practice cards, and graded section
+Korean includes 10 sections, 41 lessons, 1,410 practice cards, and graded section
 checkpoints. Lessons require a correct answer for each card; spaced mastery is
 tracked separately. Section checkpoints must be passed in the app (80% by default).
 Course notifications choose unlocked material when expanded and share atomic
@@ -80,9 +80,32 @@ and no labels; fruit, animals, drinks, and everyday objects.
 Lessons and checkpoints save after every graded answer and resume at the next unanswered question, even after an app relaunch. Existing mastery is preserved, and Home shows the number of answers saved in the current lesson.
 Customize uses one live preview, an appearance control, color swatches that adapt to light and dark mode, and a compact layout selector. The preview and notification share the light palette.
 
+Korean lessons contain at least 33 cards each, including paired meanings, recognition,
+written recall, matching, and 492 listening exercises. Matching accepts either side first,
+shows colored selection and completed pairs, and lets a learner fix mistakes immediately.
+Explanations use vocabulary cards with the information visible immediately.
+Practice saves one randomized question order per attempt; resuming and curriculum
+upgrades preserve that order and previously graded answers. Choices and matching pairs
+are shuffled independently. Notification batches also vary fresh questions.
+
+Each section has an offline guide with rules and worked examples. Open it from the
+course overview, learning path, practice header, or expanded course notification.
+The Hangul guide includes diagrams for vertical vowels, horizontal vowels, and batchim,
+plus compound-vowel placement and reading order. Opening a notification guide keeps
+the current question mounted so an unfinished match is preserved.
+
 In-app Korean speech supports normal/slower playback and optional automatic
-pronunciation. Notification speech is disabled pending signed-device verification.
+pronunciation. Listening questions hide the transcript until answered. “I can’t listen
+right now” changes to a reading or written-recall alternative with the same card ID and
+grading, and disables listening for that session. A missing Korean voice also uses the
+written alternative. Notification speech is disabled pending signed-device verification.
 Vocabulary sheets provide sentence meanings, grammar notes, and dictionary lookups.
+Validation on October 9, 2026: 61 tests passed with no failures, skips, or runtime
+warnings; the Release app and notification extension built successfully. Reviewed
+light/dark renders for matching, listening, reading alternatives, vocabulary, guides,
+and accessibility text sizes. Hands-on simulator interaction was unavailable because
+the host Mac was locked. Signed-device notification/audio verification remains open.
+
 Curriculum content should receive native-speaker review before a public course release.
 
 Community sharing uploads public card snapshots, selected images, and audio;

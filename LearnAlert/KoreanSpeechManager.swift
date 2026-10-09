@@ -22,7 +22,11 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     @Published private(set) var currentSpeakingText: String?
 
     private let synthesizer = AVSpeechSynthesizer()
+    private var activeUtteranceID: ObjectIdentifier?
+    private var playbackRequestID: UUID?
+    private let audioSessionQueue = DispatchQueue(label: "com.learnalert.korean-audio-session", qos: .default)
     private var koreanVoice: AVSpeechSynthesisVoice?
+    var hasVoice: Bool { koreanVoice != nil }
 
     private override init() {
         super.init()
@@ -43,54 +47,71 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
 
     /// Speaks Korean text with specified rate. Note: Never call automatically from notifications.
     func speak(_ text: String, speed: PlaybackSpeed = .normal) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard hasVoice, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
-        // Stop current speech if active
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
-
-        // Configure audio session safely
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .duckOthers])
-            try audioSession.setActive(true)
-        } catch {
-            print("Audio session configuration error: \(error)")
-        }
-
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = koreanVoice ?? AVSpeechSynthesisVoice(language: "ko-KR")
-        utterance.rate = Float(speed.rawValue)
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 1.0
-
+        let needsStop = activeUtteranceID != nil
+        activeUtteranceID = nil
+        let requestID = UUID()
+        playbackRequestID = requestID
+        if needsStop { synthesizer.stopSpeaking(at: .immediate) }
         currentSpeakingText = text
         isSpeaking = true
-        synthesizer.speak(utterance)
+        let rate = Float(speed.rawValue)
+        // Session activation is synchronous and can wait on the audio service.
+        // Keep it off the main actor, then begin speech only if this request is current.
+        audioSessionQueue.async { [weak self] in
+            do {
+                let audioSession = AVAudioSession.sharedInstance()
+                try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers, .duckOthers])
+                try audioSession.setActive(true)
+            } catch { print("Audio session configuration error: \(error)") }
+            Task { @MainActor [weak self] in
+                guard let self, self.playbackRequestID == requestID else { return }
+                let utterance = AVSpeechUtterance(string: text)
+                utterance.voice = self.koreanVoice
+                utterance.rate = rate
+                utterance.pitchMultiplier = 1.0
+                utterance.volume = 1.0
+                self.activeUtteranceID = ObjectIdentifier(utterance)
+                self.synthesizer.speak(utterance)
+            }
+        }
     }
 
     func stop() {
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+        if activeUtteranceID != nil { synthesizer.stopSpeaking(at: .immediate) }
+        activeUtteranceID = nil
+        playbackRequestID = nil
         isSpeaking = false
         currentSpeakingText = nil
+        releaseAudioSession()
+    }
+
+    private func releaseAudioSession() {
+        audioSessionQueue.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     // MARK: - AVSpeechSynthesizerDelegate
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.isSpeaking = false
-            self.currentSpeakingText = nil
-        }
+        let identifier = ObjectIdentifier(utterance)
+        Task { @MainActor in self.finishPlayback(identifier) }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            self.isSpeaking = false
-            self.currentSpeakingText = nil
-        }
+        let identifier = ObjectIdentifier(utterance)
+        Task { @MainActor in self.finishPlayback(identifier) }
+    }
+
+    private func finishPlayback(_ identifier: ObjectIdentifier) {
+        // A cancelled normal-speed utterance must not clear the new slow replay.
+        guard activeUtteranceID == identifier else { return }
+        activeUtteranceID = nil
+        playbackRequestID = nil
+        isSpeaking = false
+        currentSpeakingText = nil
+        releaseAudioSession()
     }
 }
