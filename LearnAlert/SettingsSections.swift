@@ -327,15 +327,14 @@ private struct SettingsToggleRow: View {
 
 private struct SettingsRowIcon: View {
     let systemName: String
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(LearnAlertStyle.sky)
-            .frame(width: 28, height: 28)
-            .background(colorScheme == .dark ? Color.white.opacity(0.08) : LearnAlertStyle.courseLavender)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(LearnAlertStyle.indigo)
+            .frame(width: 34, height: 34)
+            .background(LearnAlertStyle.indigo.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -425,59 +424,73 @@ struct SettingsPreferencesGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("PREFERENCES")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+            Text("Preferences")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(LearnAlertStyle.textSecondary)
+                .padding(.leading, 4)
 
             VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "speaker.wave.2.fill")
-                    Text("Alert Sound")
-                        .font(.custom("Poppins-Medium", size: 13, relativeTo: .body))
-                    Spacer()
+                Menu {
                     Picker("Alert Sound", selection: $alertSound) {
                         ForEach(availableSounds) { sound in
                             Text(sound.name).tag(sound.id)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(LearnAlertStyle.figmaBlue)
+                    .pickerStyle(.inline)
+                } label: {
+                    SettingsPreferenceLabel(title: "Alert Sound", systemImage: "speaker.wave.2.fill", value: AlertSoundOption.displayName(for: alertSound))
                 }
-                .padding(14)
+                .accessibilityLabel("Alert Sound")
+                .accessibilityValue(AlertSoundOption.displayName(for: alertSound))
 
-                settingsDivider
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
 
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "circle.lefthalf.filled")
-                    Text("Appearance")
-                        .font(.custom("Poppins-Medium", size: 13, relativeTo: .body))
-                    Spacer()
+                Menu {
                     Picker("Appearance", selection: $appearanceMode) {
                         Text("System").tag("system")
                         Text("Light").tag("light")
                         Text("Dark").tag("dark")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(LearnAlertStyle.figmaBlue)
+                    .pickerStyle(.inline)
+                } label: {
+                    SettingsPreferenceLabel(title: "Appearance", systemImage: "circle.lefthalf.filled", value: appearanceMode == "light" ? "Light" : appearanceMode == "dark" ? "Dark" : "System")
                 }
-                .padding(14)
-
-
+                .accessibilityLabel("Appearance")
+                .accessibilityValue(appearanceMode == "light" ? "Light" : appearanceMode == "dark" ? "Dark" : "System")
             }
-            .foregroundStyle(LearnAlertStyle.textPrimary)
-            .settingsGlassSurface(cornerRadius: 18)
+            .buttonStyle(.plain)
+            .settingsGlassSurface(cornerRadius: 20)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
     }
+}
 
-    private var settingsDivider: some View {
-        Divider().padding(.leading, 54).opacity(0.45)
-    }
+private struct SettingsPreferenceLabel: View {
+    let title: LocalizedStringResource
+    let systemImage: String
+    let value: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private func soundLabel(_ sound: String) -> String {
-        AlertSoundOption.displayName(for: sound)
+    var body: some View {
+        HStack(spacing: 14) {
+            SettingsRowIcon(systemName: systemImage)
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                : AnyLayout(HStackLayout(spacing: 12))
+            layout {
+                Text(title).font(.body.weight(.medium)).foregroundStyle(LearnAlertStyle.textPrimary)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
+                Text(value).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LearnAlertStyle.textSecondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -487,9 +500,10 @@ struct SettingsSupportGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("INFORMATION")
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
+            Text("Information")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(LearnAlertStyle.textSecondary)
+                .padding(.leading, 4)
 
             VStack(spacing: 0) {
                 NavigationLink {
@@ -550,9 +564,9 @@ struct SettingsSupportGroup: View {
                 }
             }
             .foregroundStyle(LearnAlertStyle.textPrimary)
-            .settingsGlassSurface(cornerRadius: 18)
+            .settingsGlassSurface(cornerRadius: 20)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
         .sheet(isPresented: Binding(
             get: { activeSafariURL != nil },
             set: { if !$0 { activeSafariURL = nil } }
@@ -575,7 +589,7 @@ struct SettingsSupportGroup: View {
     }
 
     private var settingsDivider: some View {
-        Divider().padding(.leading, 54).opacity(0.45)
+        Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
     }
 }
 
@@ -584,16 +598,18 @@ private struct SettingsGroupedRow: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             SettingsRowIcon(systemName: systemImage)
             Text(title)
-                .font(.custom("Poppins-Medium", size: 13, relativeTo: .body))
+                .font(.body.weight(.medium))
             Spacer()
             Image(systemName: "chevron.right")
-                .font(.caption.bold())
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LearnAlertStyle.textSecondary)
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .contentShape(Rectangle())
     }
 }

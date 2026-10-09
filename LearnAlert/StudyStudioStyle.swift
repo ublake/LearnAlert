@@ -8,10 +8,10 @@ enum StudyStudioStyle {
     static let rose = Color(hex: "#C65488")
     static let teal = Color(hex: "#237C76")
     static let mint = Color(hex: "#67DFA9")
-    static let canvas = Color.adaptive(light: .white, dark: UIColor(red: 0.10, green: 0.12, blue: 0.19, alpha: 1))
-    static let field = Color.adaptive(light: UIColor(red: 0.945, green: 0.950, blue: 0.974, alpha: 1), dark: UIColor(red: 0.16, green: 0.18, blue: 0.27, alpha: 1))
-    static let ink = Color.adaptive(light: UIColor(red: 0.32, green: 0.37, blue: 0.50, alpha: 1), dark: UIColor(red: 0.91, green: 0.93, blue: 0.99, alpha: 1))
-    static let secondary = Color.adaptive(light: UIColor(red: 0.43, green: 0.48, blue: 0.61, alpha: 1), dark: UIColor(red: 0.67, green: 0.71, blue: 0.82, alpha: 1))
+    static let canvas = Color.adaptive(light: .white, dark: UIColor(red: 0.075, green: 0.080, blue: 0.095, alpha: 1))
+    static let field = Color.adaptive(light: UIColor(red: 0.945, green: 0.950, blue: 0.974, alpha: 1), dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
+    static let ink = Color.adaptive(light: UIColor(red: 0.32, green: 0.37, blue: 0.50, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
+    static let secondary = Color.adaptive(light: UIColor(red: 0.43, green: 0.48, blue: 0.61, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
     static let hairline = secondary.opacity(0.18)
 
     static func title(_ size: CGFloat = 28) -> Font { .custom("Poppins-SemiBold", size: size, relativeTo: .title) }

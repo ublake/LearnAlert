@@ -35,14 +35,27 @@ enum LearnAlertStyle {
     static let coral = Color(red: 0.91, green: 0.34, blue: 0.38)
     static let destructiveRed = Color.adaptive(light: UIColor(red: 0.82, green: 0.20, blue: 0.25, alpha: 1), dark: UIColor(red: 0.95, green: 0.40, blue: 0.45, alpha: 1))
     static let lime = green
-    static let textPrimary = Color.adaptive(light: UIColor(red: 0.13, green: 0.18, blue: 0.36, alpha: 1), dark: UIColor(red: 0.93, green: 0.94, blue: 1, alpha: 1))
-    static let textSecondary = Color.adaptive(light: UIColor(red: 0.36, green: 0.42, blue: 0.58, alpha: 1), dark: UIColor(red: 0.66, green: 0.69, blue: 0.80, alpha: 1))
-    static let hairline = Color.adaptive(light: UIColor(red: 0.72, green: 0.78, blue: 0.91, alpha: 1), dark: UIColor(red: 0.25, green: 0.27, blue: 0.38, alpha: 1))
-    static let surface = Color.adaptive(light: UIColor(white: 1, alpha: 0.92), dark: UIColor(red: 0.17, green: 0.20, blue: 0.31, alpha: 0.94))
+    static let textPrimary = Color.adaptive(light: UIColor(red: 0.13, green: 0.18, blue: 0.36, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
+    static let textSecondary = Color.adaptive(light: UIColor(red: 0.36, green: 0.42, blue: 0.58, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
+    static let hairline = Color.adaptive(light: UIColor(red: 0.72, green: 0.78, blue: 0.91, alpha: 1), dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: 1))
+    static let surface = Color.adaptive(light: UIColor(white: 1, alpha: 0.92), dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
     static let solidPanel = Color(red: 0.055, green: 0.065, blue: 0.12)
     static let solidField = Color(red: 0.025, green: 0.03, blue: 0.065)
-    static let courseCanvas = Color.adaptive(light: UIColor(red: 0.976, green: 0.984, blue: 1, alpha: 1), dark: UIColor(red: 0.12, green: 0.15, blue: 0.24, alpha: 1))
-    static let courseSurface = Color.adaptive(light: .white, dark: UIColor(red: 0.18, green: 0.21, blue: 0.32, alpha: 0.96))
+    static let courseCanvas = Color.adaptive(light: UIColor(red: 0.976, green: 0.984, blue: 1, alpha: 1), dark: UIColor(red: 0.075, green: 0.080, blue: 0.095, alpha: 1))
+    static let courseSurface = Color.adaptive(light: .white, dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
+    // Opaque app surfaces keep controls distinct in either appearance.
+    static let insetSurface = Color.adaptive(
+        light: UIColor(red: 0.945, green: 0.956, blue: 0.975, alpha: 1),
+        dark: UIColor(red: 0.19, green: 0.20, blue: 0.24, alpha: 1)
+    )
+    static let cardBorder = Color.adaptive(
+        light: UIColor(red: 0.86, green: 0.89, blue: 0.94, alpha: 1),
+        dark: UIColor(white: 1, alpha: 0.07)
+    )
+    static let cardShadow = Color.adaptive(
+        light: UIColor(red: 0.08, green: 0.16, blue: 0.30, alpha: 0.045),
+        dark: UIColor(white: 0, alpha: 0.12)
+    )
     static let courseLavender = Color.adaptive(light: UIColor(red: 0.925, green: 0.914, blue: 0.985, alpha: 1), dark: UIColor(red: 0.25, green: 0.23, blue: 0.43, alpha: 1))
     static let glassTint = Color.adaptive(light: UIColor(white: 1, alpha: 0.30), dark: UIColor(white: 1, alpha: 0.10))
     static let glassStroke = Color.adaptive(light: UIColor(white: 1, alpha: 0.58), dark: UIColor(white: 1, alpha: 0.14))
@@ -106,6 +119,13 @@ struct EditorialSurface: ViewModifier {
 }
 
 extension View {
+    func appCardSurface(cornerRadius: CGFloat = 20) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return background(LearnAlertStyle.courseSurface, in: shape)
+            .overlay(shape.strokeBorder(LearnAlertStyle.cardBorder, lineWidth: 1))
+            .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+    }
+
     func clearGlassSurface(cornerRadius: CGFloat = 20) -> some View {
         self
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -196,7 +216,7 @@ extension View {
     }
 
     func settingsGlassSurface(cornerRadius: CGFloat = 18) -> some View {
-        frostedSurface(cornerRadius: cornerRadius)
+        appCardSurface(cornerRadius: cornerRadius)
     }
 
     func solidDarkSurface(cornerRadius: CGFloat = 10) -> some View {
