@@ -116,6 +116,7 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: notificationManager.shouldShowNotificationOpeningTip)
+        .tint(LearnAlertStyle.appAccent)
         .preferredColorScheme(preferredColorScheme)
         .onChange(of: appearanceMode) { _, newMode in
             UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newMode, forKey: "appearanceMode")
@@ -480,7 +481,7 @@ struct TabBarItem: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .foregroundStyle(selectedTab == tab ? (colorScheme == .light ? LearnAlertStyle.sky : Color.white) : LearnAlertStyle.textSecondary.opacity(0.60))
+            .foregroundStyle(selectedTab == tab ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary.opacity(0.60))
             .shadow(color: selectedTab == tab ? Color.black.opacity(0.24) : .clear, radius: 2, y: 1)
             .background {
                 if selectedTab == tab {
@@ -783,7 +784,7 @@ struct HomeLibraryView: View {
                             Text("Reorder")
                                 .font(.custom("Poppins-Medium", size: 12))
                         }
-                        .foregroundStyle(LearnAlertStyle.sky)
+                        .foregroundStyle(LearnAlertStyle.appAccent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1335,8 +1336,8 @@ private struct EmptyLibraryCard: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 40)
                     }
-                    .foregroundStyle(.white)
-                    .background(LearnAlertStyle.indigo)
+                    .foregroundStyle(LearnAlertStyle.appAccentInk)
+                    .background(LearnAlertStyle.appAccent)
                     .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
 
                     Button(action: onBrowseDiscover) {
@@ -1580,18 +1581,11 @@ private struct HomeAlertSetupCard: View {
                     Image(systemName: "arrow.down")
                         .font(.system(size: 10, weight: .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(LearnAlertStyle.appAccentInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(
-                    LinearGradient(
-                        colors: [LearnAlertStyle.indigo, LearnAlertStyle.sky],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: Capsule()
-                )
-                .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 6, y: 2)
+                .background(LearnAlertStyle.appAccent, in: Capsule())
+                .shadow(color: LearnAlertStyle.appAccent.opacity(0.6), radius: 6, y: 2)
                 .transition(.opacity.combined(with: .scale))
             }
 
@@ -1609,8 +1603,8 @@ private struct HomeAlertSetupCard: View {
             .overlay {
                 if homeTutorialStep == 3 {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(LearnAlertStyle.sky, lineWidth: 2)
-                        .shadow(color: LearnAlertStyle.sky.opacity(0.5), radius: 10)
+                        .stroke(LearnAlertStyle.appAccent, lineWidth: 2)
+                        .shadow(color: LearnAlertStyle.appAccent.opacity(0.5), radius: 10)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -1676,13 +1670,13 @@ private struct HomeAlertSetupCard: View {
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
                 }
-                .foregroundStyle(selectedDeck == nil ? LearnAlertStyle.textSecondary : .white)
-                .background(selectedDeck == nil ? LearnAlertStyle.insetSurface : LearnAlertStyle.indigo)
+                .foregroundStyle(selectedDeck == nil ? LearnAlertStyle.textSecondary : LearnAlertStyle.appAccentInk)
+                .background(selectedDeck == nil ? LearnAlertStyle.insetSurface : LearnAlertStyle.appAccent)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(homeTutorialStep == 3 ? LearnAlertStyle.sky : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
-                        .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.sky.opacity(0.85) : Color.clear, radius: 8)
+                        .stroke(homeTutorialStep == 3 ? LearnAlertStyle.appAccent : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
+                        .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
                 )
                 .scaleEffect(homeTutorialStep == 3 && pulseScheduleButton ? 1.025 : 1.0)
                 .disabled(selectedDeck == nil)
@@ -1735,7 +1729,7 @@ private struct HomeAlertSetupCard: View {
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
                 }
-                .foregroundStyle(LearnAlertStyle.indigo)
+                .foregroundStyle(LearnAlertStyle.appAccent)
                 .background(.clear)
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1892,7 +1886,7 @@ private struct DeckRequirementAlert: View {
             VStack(spacing: 16) {
                 Image(systemName: "rectangle.stack.badge.plus")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(LearnAlertStyle.figmaBlue)
+                    .foregroundStyle(LearnAlertStyle.appAccent)
                     .frame(width: 54, height: 54)
                     .background(.ultraThinMaterial, in: Circle())
 
@@ -1915,8 +1909,8 @@ private struct DeckRequirementAlert: View {
                     }
                     .buttonStyle(.plain)
                     .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .body))
-                    .foregroundStyle(.white)
-                    .background(LearnAlertStyle.indigo, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .foregroundStyle(LearnAlertStyle.appAccentInk)
+                    .background(LearnAlertStyle.appAccent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     Button(action: discoverDecks) {
                         Label("Browse Discover", systemImage: "books.vertical.fill")
@@ -1936,7 +1930,7 @@ private struct DeckRequirementAlert: View {
                                     .foregroundStyle(Color(red: 0.85, green: 0.65, blue: 1.0))
                                 Text("Upload with AI")
                                     .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .body))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(LearnAlertStyle.appAccentInk)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
@@ -2035,7 +2029,7 @@ private struct AlertTimelineTrack: View {
                 Capsule()
                     .fill(
                         LinearGradient(
-                            colors: [LearnAlertStyle.aqua, LearnAlertStyle.indigo],
+                            colors: [LearnAlertStyle.aqua, LearnAlertStyle.appAccent],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
@@ -2052,7 +2046,7 @@ private struct AlertTimelineTrack: View {
                         .fill(
                             isNext
                                 ? LearnAlertStyle.aqua
-                                : (date <= currentDate ? LearnAlertStyle.indigo : LearnAlertStyle.textSecondary.opacity(0.45))
+                                : (date <= currentDate ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary.opacity(0.45))
                         )
                         .frame(width: isNext ? 5 : 3.5, height: isNext ? 5 : 3.5)
                         .overlay {
@@ -2094,18 +2088,11 @@ private struct HomeStudyCard: View {
                     Image(systemName: "arrow.down")
                         .font(.system(size: 10, weight: .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(LearnAlertStyle.appAccentInk)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(
-                    LinearGradient(
-                        colors: [LearnAlertStyle.indigo, LearnAlertStyle.sky],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: Capsule()
-                )
-                .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 6, y: 2)
+                .background(LearnAlertStyle.appAccent, in: Capsule())
+                .shadow(color: LearnAlertStyle.appAccent.opacity(0.6), radius: 6, y: 2)
                 .scaleEffect(pulseGlow ? 1.03 : 0.98)
                 .transition(.opacity.combined(with: .scale))
             }
@@ -2196,7 +2183,7 @@ private struct HomeStudyCard: View {
                         }
                     }) {
                         Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
-                            .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
+                            .foregroundStyle(isTargeted ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -2211,7 +2198,7 @@ private struct HomeStudyCard: View {
                 if isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(LearnAlertStyle.sky)
+                        .foregroundStyle(LearnAlertStyle.appAccent)
                         .padding(10)
                         .accessibilityLabel("Pinned")
                 }
@@ -2221,10 +2208,10 @@ private struct HomeStudyCard: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(
-                        isTutorialHighlighted ? LearnAlertStyle.sky : Color.clear,
+                        isTutorialHighlighted ? LearnAlertStyle.appAccent : Color.clear,
                         lineWidth: isTutorialHighlighted ? 2.5 : 0.9
                     )
-                    .shadow(color: isTutorialHighlighted ? LearnAlertStyle.sky.opacity(0.75) : Color.clear, radius: 10)
+                    .shadow(color: isTutorialHighlighted ? LearnAlertStyle.appAccent.opacity(0.75) : Color.clear, radius: 10)
             }
             .contextMenu {
                 if !isTutorialActive {
@@ -2261,9 +2248,9 @@ private struct HomeStudyCard: View {
             if deck.cycleProgress >= 0.70 {
                 return Color(red: 0.18, green: 0.80, blue: 0.44)
             } else if deck.cycleProgress >= 0.40 {
-                return LearnAlertStyle.sky
+                return LearnAlertStyle.appAccent
             } else {
-                return LearnAlertStyle.indigo
+                return LearnAlertStyle.appAccent
             }
         } else {
             return LearnAlertStyle.textSecondary
@@ -2351,13 +2338,13 @@ private struct HomeCourseCard: View {
                         Image(systemName: "arrow.right").font(.caption.weight(.bold))
                     }
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LearnAlertStyle.appAccentInk)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Color(hex: course.colorHex), in: RoundedRectangle(cornerRadius: 14))
+                    .background(LearnAlertStyle.appAccent, in: RoundedRectangle(cornerRadius: 14))
                 }.buttonStyle(.plain)
                 Button(action: schedule) {
                     Image(systemName: isTargeted ? "bell.badge.fill" : "bell")
-                        .foregroundStyle(isTargeted ? LearnAlertStyle.figmaBlue : LearnAlertStyle.textSecondary)
+                        .foregroundStyle(isTargeted ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary)
                         .frame(width: 48, height: 48)
                         .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
                 }.buttonStyle(.plain)
