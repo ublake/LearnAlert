@@ -67,6 +67,7 @@ struct NotificationCustomizeView: View {
                             } label: {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(theme.previewGradient(isLight: isLight)).frame(width: 40, height: 40)
+                                    .lightModeOutline(cornerRadius: 10, opacity: 0.75)
                                     .overlay {
                                         if selected { Image(systemName: "checkmark").font(.body.bold())
                                             .foregroundStyle(isLight || theme == .light ? Color(red: 0.10, green: 0.13, blue: 0.24) : .white) }
@@ -224,6 +225,7 @@ struct CustomizeStyleControls: View {
         }
         .buttonStyle(.plain)
         .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .lightModeOutline(cornerRadius: 16)
         .onChange(of: appearanceMode) { _, _ in HapticFeedback.selection() }
         .onChange(of: layoutRaw) { _, _ in HapticFeedback.selection() }
     }

@@ -908,7 +908,7 @@ private struct PromptInputField: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(LearnAlertStyle.hairline.opacity(0.35), lineWidth: 0.75)
+                        .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.35), lineWidth: 0.75)
                 )
 
                 // Inline Preview Strip when image is selected
@@ -921,7 +921,7 @@ private struct PromptInputField: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(LearnAlertStyle.hairline.opacity(0.4), lineWidth: 0.75)
+                                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.4), lineWidth: 0.75)
                             )
                         Spacer()
                     }
@@ -942,7 +942,7 @@ private extension View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline.opacity(0.35), lineWidth: 0.75)
+                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.35), lineWidth: 0.75)
             )
     }
 }

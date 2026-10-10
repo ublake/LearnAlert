@@ -334,7 +334,7 @@ public struct PDFSectionPickerSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.06), lineWidth: 1)
+                        .stroke(colorScheme == .light ? LearnAlertStyle.cardBorder : Color.white.opacity(0.06), lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -532,7 +532,7 @@ public struct PDFSectionPickerSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.07), lineWidth: 1)
+                .stroke(colorScheme == .light ? LearnAlertStyle.cardBorder : Color.white.opacity(0.07), lineWidth: 1)
         )
     }
 

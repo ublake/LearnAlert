@@ -1,4 +1,11 @@
 import SwiftUI
+import UIKit
+
+// Course views also compile in the notification extension, which has no app design system.
+enum CourseSurfaceStyle {
+    static let lightBorderColor = UIColor(red: 0.65, green: 0.73, blue: 0.82, alpha: 1)
+    static let lightOutline = Color(uiColor: lightBorderColor)
+}
 
 /// Shared grading, with a spacious app presentation and compact notification presentation.
 struct CourseQuestionPanel: View {
@@ -13,6 +20,7 @@ struct CourseQuestionPanel: View {
     @State private var optionIndices: [Int] = []
     private var choiceOrder: [Int] { optionIndices.isEmpty ? Array(card.options.indices) : optionIndices }
     @FocusState private var typing: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @State private var grade: Bool?
     @State private var selectedOption: String?
     @State private var revealed = false
@@ -116,6 +124,13 @@ struct CourseQuestionPanel: View {
                 }
             } else if card.usesTypedAnswer {
                 TextField("Your answer", text: $typed, axis: .vertical).textFieldStyle(.roundedBorder)
+                    .overlay {
+                        if colorScheme == .light {
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(CourseSurfaceStyle.lightOutline, lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
+                    }
                     .focused($typing).autocorrectionDisabled().textInputAutocapitalization(.never).disabled(grade != nil)
                     .onSubmit { if grade == nil { submit(card.accepts(typed)) } }
                 if grade == nil { Button("Check") { submit(card.accepts(typed)) }.buttonStyle(.borderedProminent).disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
@@ -186,7 +201,7 @@ struct CourseQuestionPanel: View {
     private func optionBorder(_ option: String) -> Color {
         if grade != nil && card.accepts(option) { return Color.green.opacity(0.6) }
         if grade != nil && option == selectedOption { return Color.orange.opacity(0.6) }
-        return Color.primary.opacity(0.10)
+        return colorScheme == .light ? CourseSurfaceStyle.lightOutline : Color.primary.opacity(0.10)
     }
     private func optionColor(_ option: String) -> Color {
         if grade != nil && card.accepts(option) { return Color.green.opacity(0.14) }

@@ -69,7 +69,7 @@ struct CreateDeckView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(LearnAlertStyle.hairline.opacity(0.3), lineWidth: 0.75)
+                                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 0.75)
                             )
 
                             // Quick Ideas Chips

@@ -978,7 +978,7 @@ private enum QuizTheme {
     static let border = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
             ? UIColor(white: 1.0, alpha: 0.08)
-            : UIColor(white: 0.0, alpha: 0.04)
+            : LearnAlertStyle.lightBorderColor
     })
 }
 

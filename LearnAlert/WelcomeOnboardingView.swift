@@ -433,7 +433,7 @@ private struct StarterDeckSelectionPage: View {
                             .background(LearnAlertStyle.courseSurface, in: Capsule())
                             .overlay(
                                 Capsule()
-                                    .stroke(LearnAlertStyle.hairline.opacity(0.5), lineWidth: 1)
+                                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.5), lineWidth: 1)
                             )
                         }
                         Spacer()
@@ -504,7 +504,7 @@ private struct StarterDeckSelectionPage: View {
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .stroke(LearnAlertStyle.hairline.opacity(0.6), lineWidth: 1)
+                                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.6), lineWidth: 1)
                             )
                             .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
                         }

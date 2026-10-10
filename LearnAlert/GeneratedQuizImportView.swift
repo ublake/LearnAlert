@@ -1461,7 +1461,7 @@ private struct AIWelcomeBubble: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.white.opacity(0.12), lineWidth: 1)
+                            .stroke(colorScheme == .light ? LearnAlertStyle.cardBorder : Color.white.opacity(0.12), lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -1878,7 +1878,7 @@ private struct GeneratedDeckReadyBubble: View {
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(colorScheme == .light ? Color.black.opacity(0.08) : Color.clear, lineWidth: 1)
+                                        .stroke(colorScheme == .light ? LearnAlertStyle.cardBorder : Color.clear, lineWidth: 1)
                                 )
                                 .shadow(color: colorScheme == .light ? Color.black.opacity(0.06) : Color.clear, radius: 3, y: 1)
                             }

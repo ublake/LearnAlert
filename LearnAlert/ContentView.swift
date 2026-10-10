@@ -286,7 +286,7 @@ private struct NotificationOpeningTip: View {
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline.opacity(0.3), lineWidth: 1)
+                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.3), radius: 24, y: 12)
             .padding(.horizontal, 24)
@@ -1492,6 +1492,7 @@ private struct HomeAlertSetupCard: View {
                         .stroke(homeTutorialStep == 3 ? LearnAlertStyle.appAccent : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
                         .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
                 )
+                .lightModeOutline(cornerRadius: 12, opacity: selectedDeck == nil ? 0.65 : 1)
                 .scaleEffect(homeTutorialStep == 3 && pulseScheduleButton ? 1.025 : 1.0)
                 .disabled(selectedDeck == nil)
 
@@ -2155,12 +2156,14 @@ private struct HomeCourseCard: View {
                     .foregroundStyle(LearnAlertStyle.appAccentInk)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LearnAlertStyle.appAccent, in: RoundedRectangle(cornerRadius: 14))
+                    .lightModeOutline(cornerRadius: 14)
                 }.buttonStyle(.plain)
                 Button(action: schedule) {
                     Image(systemName: isTargeted ? "bell.badge.fill" : "bell")
                         .foregroundStyle(isTargeted ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
                         .frame(width: 48, height: 48)
                         .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
+                        .lightModeOutline(cornerRadius: 14)
                 }.buttonStyle(.plain)
                     .accessibilityLabel(isTargeted ? "Course alerts active" : "Schedule \(course.title)")
             }

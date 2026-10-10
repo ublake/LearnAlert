@@ -167,7 +167,7 @@ struct DeckDetailView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(LearnAlertStyle.hairline.opacity(0.4), lineWidth: 1)
+                        .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.4), lineWidth: 1)
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
@@ -691,7 +691,7 @@ struct CardInteractivePreviewSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(LearnAlertStyle.hairline.opacity(0.3), lineWidth: 1)
+                                            .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
                                     )
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }

@@ -29,6 +29,7 @@ struct CourseMatchingPanel: View {
     let immersive: Bool
     let onAnswer: (Bool) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var textSize
     @State private var state: CourseMatchingState
     @State private var rightOrder: [Int]
@@ -83,6 +84,9 @@ struct CourseMatchingPanel: View {
         let wrong = (left ? state.mistakeLeft : state.mistakeRight) == index
         let matched = state.matched.contains(index)
         let color: Color = wrong ? .orange : selected ? .accentColor : matched ? pairColors[index % pairColors.count] : .primary
+        let border: Color = selected || wrong || matched
+            ? color.opacity(selected || wrong ? 0.9 : 0.55)
+            : colorScheme == .light ? CourseSurfaceStyle.lightOutline : color.opacity(0.12)
         return Button {
             withAnimation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.8)) { state.select(index, left: left) }
         } label: {
@@ -94,7 +98,7 @@ struct CourseMatchingPanel: View {
             }.foregroundStyle(.primary).padding(.horizontal, 12).padding(.vertical, immersive ? 20 : 12)
                 .frame(maxWidth: .infinity, minHeight: immersive ? 80 : 56, maxHeight: .infinity)
                 .background(color.opacity(selected ? 0.22 : matched || wrong ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: immersive ? 20 : 12))
-                .overlay(RoundedRectangle(cornerRadius: immersive ? 20 : 12).stroke(color.opacity(selected || wrong ? 0.9 : matched ? 0.55 : 0.12), lineWidth: selected ? 3 : 1.5))
+                .overlay(RoundedRectangle(cornerRadius: immersive ? 20 : 12).stroke(border, lineWidth: selected ? 3 : 1.5))
                 .scaleEffect(selected ? 1.025 : 1)
         }.buttonStyle(.plain).disabled(matched || state.complete)
             .accessibilityLabel(left ? card.matchingLeftItems[index] : card.matchingRightItems[index])

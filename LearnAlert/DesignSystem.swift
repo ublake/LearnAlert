@@ -37,7 +37,9 @@ enum LearnAlertStyle {
     static let lime = green
     static let textPrimary = Color.adaptive(light: UIColor(red: 0.15, green: 0.18, blue: 0.21, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
     static let textSecondary = Color.adaptive(light: UIColor(red: 0.39, green: 0.43, blue: 0.47, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
-    static let hairline = Color.adaptive(light: UIColor(red: 0.72, green: 0.78, blue: 0.91, alpha: 1), dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: 1))
+    // Cool blue-gray outlines stay visible against white and pale blue surfaces.
+    static let lightBorderColor = CourseSurfaceStyle.lightBorderColor
+    static let hairline = Color.adaptive(light: lightBorderColor, dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: 1))
     static let surface = Color.adaptive(light: UIColor(white: 1, alpha: 0.92), dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
     static let solidPanel = Color(red: 0.055, green: 0.065, blue: 0.12)
     static let solidField = Color(red: 0.025, green: 0.03, blue: 0.065)
@@ -60,16 +62,21 @@ enum LearnAlertStyle {
         dark: UIColor(red: 0.19, green: 0.20, blue: 0.24, alpha: 1)
     )
     static let cardBorder = Color.adaptive(
-        light: UIColor(red: 0.85, green: 0.89, blue: 0.93, alpha: 1),
+        light: lightBorderColor,
         dark: UIColor(white: 1, alpha: 0.07)
     )
     static let cardShadow = Color.adaptive(
-        light: UIColor(red: 0.08, green: 0.16, blue: 0.30, alpha: 0.045),
+        light: UIColor(red: 0.08, green: 0.16, blue: 0.30, alpha: 0.10),
         dark: UIColor(white: 0, alpha: 0.12)
     )
     static let courseLavender = Color.adaptive(light: UIColor(red: 0.925, green: 0.914, blue: 0.985, alpha: 1), dark: UIColor(red: 0.25, green: 0.23, blue: 0.43, alpha: 1))
     static let glassTint = Color.adaptive(light: UIColor(white: 1, alpha: 0.30), dark: UIColor(white: 1, alpha: 0.10))
-    static let glassStroke = Color.adaptive(light: UIColor(white: 1, alpha: 0.58), dark: UIColor(white: 1, alpha: 0.14))
+    // Fields previously faded this color again; preserve that weight only in dark mode.
+    static func surfaceOutline(darkOpacity: CGFloat) -> Color {
+        Color.adaptive(light: lightBorderColor, dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: darkOpacity))
+    }
+
+    static let glassStroke = Color.adaptive(light: lightBorderColor.withAlphaComponent(0.90), dark: UIColor(white: 1, alpha: 0.14))
 }
 
 struct CoursezyBackground: View {
@@ -123,7 +130,7 @@ struct EditorialSurface: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline.opacity(0.5), lineWidth: 1)
+                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.5), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.04), radius: 8, y: 3)
     }
@@ -135,6 +142,10 @@ extension View {
         return background(LearnAlertStyle.courseSurface, in: shape)
             .overlay(shape.strokeBorder(LearnAlertStyle.cardBorder, lineWidth: 1))
             .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+    }
+
+    func lightModeOutline(cornerRadius: CGFloat = 14, opacity: Double = 1) -> some View {
+        modifier(LightModeOutline(cornerRadius: cornerRadius, opacity: opacity))
     }
 
     func clearGlassSurface(cornerRadius: CGFloat = 20) -> some View {
@@ -152,6 +163,7 @@ extension View {
                         lineWidth: 1
                     )
             )
+            .lightModeOutline(cornerRadius: cornerRadius)
             .shadow(color: Color.black.opacity(0.18), radius: 14, y: 5)
     }
 
@@ -219,7 +231,7 @@ extension View {
             .frame(minHeight: 50)
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LearnAlertStyle.hairline.opacity(0.4)))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.4)))
     }
 
     func nativeGlass(cornerRadius: CGFloat = 18) -> some View {
@@ -273,6 +285,22 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
+private struct LightModeOutline: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let cornerRadius: CGFloat
+    let opacity: Double
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if colorScheme == .light {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(LearnAlertStyle.cardBorder.opacity(opacity), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
 private struct LightModeGlassElevation: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     let cornerRadius: CGFloat
@@ -282,7 +310,7 @@ private struct LightModeGlassElevation: ViewModifier {
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
-                        colorScheme == .light ? Color.white.opacity(0.72) : Color.clear,
+                        colorScheme == .light ? LearnAlertStyle.cardBorder : Color.clear,
                         lineWidth: 0.8
                     )
             }
