@@ -75,7 +75,6 @@ struct BottomNavigationBar: View {
         }
         .frame(maxWidth: 560)
         .padding(.horizontal, 16)
-        .padding(.bottom, 4)
         .animation(motion, value: storedStyle)
         .onChange(of: selectedTab) { _, _ in showingCreationActions = false }
         .onChange(of: storedStyle) { _, _ in showingCreationActions = false }
@@ -148,7 +147,7 @@ private struct NavigationDock: View {
             }
 
             creationBall
-                .offset(y: isExpanded && !reduceMotion ? -4 : 0)
+                .offset(y: isExpanded && !reduceMotion ? 10 : 12)
                 .zIndex(2)
         }
         .frame(height: 108, alignment: .top)
@@ -183,13 +182,12 @@ private struct NavigationDock: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
                 .fill(glass)
-                .overlay { RoundedRectangle(cornerRadius: 20).fill(LearnAlertStyle.appAccent.opacity(0.06)) }
-                .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(LearnAlertStyle.glassStroke, lineWidth: 1) }
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 16, y: 8)
+                .overlay { UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12).fill(LearnAlertStyle.appAccent.opacity(0.06)) }
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .padding(.top, 32)
     }
@@ -220,12 +218,11 @@ private struct NavigationDock: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background {
             TopCradleDockShape()
                 .fill(LearnAlertStyle.courseSurface)
-                .overlay { TopCradleDockShape().stroke(LearnAlertStyle.cardBorder, lineWidth: 1) }
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.08), radius: 12, y: 6)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .padding(.top, 32)
     }
@@ -276,13 +273,13 @@ private struct NavigationDock: View {
                 .frame(maxWidth: selected ? .infinity : nil)
             }
         }
-        .padding(6)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(LearnAlertStyle.courseSurface.opacity(reduceTransparency ? 1 : 0.94))
-                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(LearnAlertStyle.cardBorder, lineWidth: 1) }
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 10, y: 6)
+            UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
+                .fill(LearnAlertStyle.courseSurface)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
     }
 
@@ -321,10 +318,11 @@ private struct NavigationDock: View {
         }
         .padding(.horizontal, 4)
         .padding(.top, 8)
+        .padding(.bottom, 4)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(LearnAlertStyle.courseSurface.opacity(reduceTransparency ? 1 : 0.94))
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(LearnAlertStyle.appAccent.opacity(0.26), lineWidth: 1) }
+            UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8)
+                .fill(LearnAlertStyle.courseSurface)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .padding(.top, 36)
     }
@@ -397,7 +395,6 @@ private struct NavigationDock: View {
                             .padding(isExpanded && !reduceMotion ? -10 : -6)
                     }
                 }
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.14), radius: style == .cradle ? 10 : 6, y: 4)
         }
     }
 }
@@ -426,22 +423,20 @@ private struct DockPressStyle: ButtonStyle {
     }
 }
 
-// The notch sits below the floating button, keeping its entire circle above the tabs.
+// A deeper top seat lets the button settle into the bar; the bottom joins the screen edge.
 private struct TopCradleDockShape: Shape {
     func path(in rect: CGRect) -> Path {
         let c = rect.midX
-        let radius: CGFloat = 16
+        let radius: CGFloat = 12
         var path = Path()
         path.move(to: CGPoint(x: radius, y: 0))
         path.addLine(to: CGPoint(x: c - 48, y: 0))
-        path.addCurve(to: CGPoint(x: c, y: 28), control1: CGPoint(x: c - 36, y: 0), control2: CGPoint(x: c - 34, y: 28))
-        path.addCurve(to: CGPoint(x: c + 48, y: 0), control1: CGPoint(x: c + 34, y: 28), control2: CGPoint(x: c + 36, y: 0))
+        path.addCurve(to: CGPoint(x: c, y: 40), control1: CGPoint(x: c - 36, y: 0), control2: CGPoint(x: c - 34, y: 40))
+        path.addCurve(to: CGPoint(x: c + 48, y: 0), control1: CGPoint(x: c + 34, y: 40), control2: CGPoint(x: c + 36, y: 0))
         path.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
         path.addQuadCurve(to: CGPoint(x: rect.maxX, y: radius), control: CGPoint(x: rect.maxX, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: radius, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: 0, y: rect.maxY - radius), control: CGPoint(x: 0, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
         path.addLine(to: CGPoint(x: 0, y: radius))
         path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: .zero)
         path.closeSubpath()
