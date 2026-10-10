@@ -61,6 +61,96 @@ struct CourseLearningTests {
         #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: json)).readingPrompt == nil)
     }
 
+    @Test("Every Korean writing exercise has four keyboard-free answer choices")
+    func keyboardFreeKorean() throws {
+        let all = course.units.flatMap { $0.lessons.flatMap(\.cards) + ($0.checkpointQuiz?.questions ?? []) }
+        for card in all where card.usesTypedAnswer {
+            #expect(card.options.count == 4 && Set(card.options).count == 4)
+            #expect(card.options.filter { card.accepts($0) }.count == 1)
+            #expect(!card.canOfferTypedRecall(masteryScore: 0))
+            #expect(!card.canOfferTypedRecall(masteryScore: 2))
+            #expect(card.canOfferTypedRecall(masteryScore: 3))
+            #expect(!card.canOfferTypedRecall(masteryScore: 3, checkpoint: true))
+            #expect(!card.practiceQuestionText(audioEnabled: false).hasPrefix("Write"))
+            #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONEncoder().encode(card)) == card)
+        }
+        let beginner = try #require(all.first { $0.id == "kr-1-1-4" })
+        #expect(beginner.cardType == "multipleChoice" && beginner.options == ["ㅇ", "ㄱ", "ㄴ", "ㅁ"])
+        #expect(beginner.question == "Which letter is silent at the start of 아 (ah)?")
+        #expect(beginner.accepts("ㅇ") && !beginner.accepts("ㄱ"))
+        let sound = try #require(all.first { $0.id == "kr-1-1-extra-1-read" })
+        #expect(sound.practiceQuestionText(audioEnabled: false) == "How do you read ‘아’?")
+        #expect(sound.practiceOptionText(sound.correctAnswer) == "ah")
+        #expect(sound.practiceOptionText("the vowel sound u") == "oo")
+        #expect(sound.practiceOptionText("the syllable ga") == "ga")
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(beginner)) as? [String: Any])
+        json.removeValue(forKey: "previousQuestion")
+        #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: json)).previousQuestion == nil)
+    }
+
+    @Test("Korean lessons teach before testing, while randomizing within practice stages")
+    func scaffoldedLearningOrder() throws {
+        for lesson in course.units.flatMap(\.lessons) {
+            var state = CourseLearningSnapshot()
+            let ordered = CourseLearningSnapshot.orderedLearningCards(lesson.cards)
+            #expect(Set(ordered.map(\.id)) == Set(lesson.cards.map(\.id)))
+            #expect(ordered.first?.id.hasSuffix("-guide") == true)
+            #expect(ordered.map(\.learningStage) == ordered.map(\.learningStage).sorted())
+            if lesson.id == course.units[0].lessons[0].id {
+                let sessionValue = state.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+                let session = try #require(sessionValue)
+                let lookup = Dictionary(uniqueKeysWithValues: lesson.cards.map { ($0.id, $0) })
+                #expect(session.cardIds.compactMap { lookup[$0]?.learningStage } == ordered.map(\.learningStage))
+                let againValue = state.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+                let again = try #require(againValue)
+                #expect(again.cardIds == session.cardIds)
+                let fresh = state.batch(course: course, count: 8, randomized: true)
+                #expect(fresh.first?.id == lesson.id + "-extra-guide")
+                #expect(fresh.allSatisfy { $0.learningStage <= 2 })
+            }
+        }
+    }
+
+    @Test("Mastered recall remains optional and a missed review returns to guided practice")
+    func recallProgression() throws {
+        var state = CourseLearningSnapshot()
+        let lesson = course.units[0].lessons[0]
+        let card = try #require(lesson.cards.first { $0.cardType == "fillBlank" })
+        for score in 0..<3 {
+            #expect(!card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+            let saved = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: true, token: "recall-\(score)")
+            #expect(saved)
+        }
+        #expect(card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+        #expect(card.practiceQuestionText(audioEnabled: true) == "Choose the block for ‘ah’.")
+        #expect(card.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Type the block for ‘ah’.")
+        let missed = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: false, token: "recall-miss")
+        #expect(missed)
+        #expect(!card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+        let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
+        #expect(audio.practiceQuestionText(audioEnabled: true) == "Listen. Which block did you hear?")
+        #expect(audio.practiceQuestionText(audioEnabled: false) == "Find the block for ‘ah’.")
+        #expect(audio.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Listen and write what you hear.")
+    }
+
+    @Test("A beginner wording upgrade resumes the same saved question and progress")
+    func beginnerWordingUpgrade() throws {
+        var state = CourseLearningSnapshot()
+        let lesson = course.units[0].lessons[0]
+        let key = try #require(CourseLearningSnapshot.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil))
+        var old = CoursePracticeSession(cardIds: ["kr-1-1-1", "kr-1-1-2", "kr-1-1-3", "kr-1-1-4"])
+        old.answers = ["kr-1-1-1": true, "kr-1-1-2": true, "kr-1-1-3": false]
+        state.practiceSessions[key] = old
+        let resumedValue = state.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
+        let resumed = try #require(resumedValue)
+        #expect(resumed.id == old.id && resumed.answers == old.answers)
+        #expect(Array(resumed.cardIds.prefix(4)) == old.cardIds)
+        #expect(resumed.nextIndex == 3 && resumed.cardIds[3] == "kr-1-1-4")
+        let saved = state.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil, sessionId: resumed.id, cardId: "kr-1-1-4", correct: true)
+        #expect(saved)
+        #expect(state.practiceSessions[key]?.answers["kr-1-1-4"] == true)
+    }
+
     @Test("Playback starts and stops without a stale cancellation clearing a new utterance")
     func speechPlayback() async {
         let speech = KoreanSpeechManager.shared
@@ -487,6 +577,56 @@ struct CourseLearningTests {
         let repeated = manager.createOrSyncCourseDeck(for: course, in: context)
         #expect(repeated.cards.count == 1410)
         #expect(try context.fetch(FetchDescriptor<Deck>()).count == 1)
+    }
+
+    @Test("Keyboard-free course deck migration preserves every card ID and its review history")
+    func keyboardFreeDeckUpgrade() throws {
+        let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = ModelContext(container)
+        let manager = CourseProgressManager.shared
+        let deck = manager.createOrSyncCourseDeck(for: course, in: context)
+        let ids = Set(deck.cards.map(\.id))
+        let foundation = try #require(deck.cards.first { $0.question == "Which letter is silent at the start of 아 (ah)?" })
+        foundation.question = "When a vowel stands alone as a syllable (e.g., '아' or '오'), the silent placeholder consonant is ___."
+        foundation.cardType = .fillBlank; foundation.options = []
+        foundation.reviewCount = 7; foundation.correctCount = 5
+        let write = try #require(deck.cards.first { $0.question == "Choose the block for ‘ah’." })
+        write.question = "Write in Korean: the vowel sound a"; write.cardType = .fillBlank; write.options = []
+        write.reviewCount = 9
+        let upgraded = manager.createOrSyncCourseDeck(for: course, in: context)
+        #expect(Set(upgraded.cards.map(\.id)) == ids && upgraded.cards.count == 1410)
+        #expect(foundation.question == "Which letter is silent at the start of 아 (ah)?")
+        #expect(foundation.cardType == .multipleChoice && foundation.options.count == 4)
+        #expect(foundation.reviewCount == 7 && foundation.correctCount == 5)
+        #expect(write.question == "Choose the block for ‘ah’.")
+        #expect(write.cardType == .multipleChoice && write.options.count == 4 && write.reviewCount == 9)
+        #expect(!upgraded.cards.contains { $0.cardType == .fillBlank })
+        #expect(Set(manager.createOrSyncCourseDeck(for: course, in: context).cards.map(\.id)) == ids)
+    }
+
+    @Test("Beginner and mastered-recall choices render without a keyboard")
+    func keyboardFreeAppearance() throws {
+        let lesson = course.units[0].lessons[0]
+        let beginner = try #require(lesson.cards.first { $0.id == "kr-1-1-4" })
+        let recall = try #require(lesson.cards.first { $0.cardType == "fillBlank" })
+        let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
+        for scheme in [ColorScheme.light, .dark] {
+            for (name, view) in [
+                ("beginner", CourseQuestionPanel(card: beginner, immersive: true, allowAudio: false) { _ in }),
+                ("mastered-recall", CourseQuestionPanel(card: recall, immersive: true, allowAudio: false, allowTypedRecall: true) { _ in }),
+                ("dictation-alternative", CourseQuestionPanel(card: audio, immersive: true, allowAudio: false) { _ in })
+            ] {
+                let renderer = ImageRenderer(content: view.padding(24).frame(width: 402)
+                    .background(Color(.systemGroupedBackground)).environment(\.colorScheme, scheme))
+                renderer.scale = 2
+                let image = try #require(renderer.uiImage)
+                #expect(image.size.width == 402)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("korean-\(name)-\(scheme == .dark ? "dark" : "light").png")
+                try #require(image.pngData()).write(to: url)
+                Attachment.record(image, named: url.lastPathComponent, as: .png)
+            }
+        }
     }
 
     @Test("Spacious picture questions render across appearances")

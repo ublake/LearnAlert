@@ -352,6 +352,8 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let explanation: String?
     public let acceptedAnswers: [String]?
     public let readingPrompt: String?
+    /// Old wording used only to find an existing course-deck card during sync.
+    public let previousQuestion: String?
 
     public init(
         id: String,
@@ -370,7 +372,8 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         conceptTag: String? = nil,
         explanation: String? = nil,
         acceptedAnswers: [String]? = nil,
-        readingPrompt: String? = nil
+        readingPrompt: String? = nil,
+        previousQuestion: String? = nil
     ) {
         self.id = id
         self.question = question
@@ -389,12 +392,66 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         self.explanation = explanation
         self.acceptedAnswers = acceptedAnswers
         self.readingPrompt = readingPrompt
+        self.previousQuestion = previousQuestion
     }
 
     public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" }
     public var usesTypedAnswer: Bool { cardType == "fillBlank" || cardType == "listeningWrite" }
     public func questionText(audioEnabled: Bool) -> String {
         isListeningQuestion && !audioEnabled ? (readingPrompt ?? "What does ‘\(speechText ?? "")’ mean?") : question
+    }
+
+    /// Choices are the default. Recall is an opt-in challenge after three successful reviews.
+    public func canOfferTypedRecall(masteryScore: Int, checkpoint: Bool = false) -> Bool {
+        usesTypedAnswer && options.count >= 2 && masteryScore >= 3 && !checkpoint
+    }
+
+    public func practiceQuestionText(audioEnabled: Bool, typedRecall: Bool = false) -> String {
+        let prompt = questionText(audioEnabled: audioEnabled)
+        if Self.soundLabel(correctAnswer) != nil {
+            if isListeningQuestion && audioEnabled { return "Listen. Which sound did you hear?" }
+            if let korean = primaryKoreanText { return "How do you read ‘\(korean)’?" }
+        }
+        let meaningPrompt = cardType == "listeningWrite" ? (readingPrompt ?? question) : question
+        for prefix in ["Write in Korean: ", "Choose the Korean for: "] where meaningPrompt.hasPrefix(prefix) {
+            if let sound = Self.soundLabel(String(meaningPrompt.dropFirst(prefix.count))) {
+                if typedRecall { return cardType == "listeningWrite" && audioEnabled ? question : "Type the block for ‘\(sound)’." }
+                if cardType == "listeningWrite" && audioEnabled { return "Listen. Which block did you hear?" }
+                if cardType == "listeningWrite" { return "Find the block for ‘\(sound)’." }
+                return usesTypedAnswer ? "Choose the block for ‘\(sound)’." : "Which block sounds like ‘\(sound)’?"
+            }
+        }
+        guard usesTypedAnswer, !options.isEmpty, !typedRecall else { return prompt }
+        if cardType == "listeningWrite", audioEnabled { return "Listen. Choose what you heard." }
+        if prompt.hasPrefix("Write in Korean: ") {
+            let instruction = cardType == "listeningWrite" ? "Find the Korean for: " : "Which spelling means: "
+            return instruction + prompt.dropFirst("Write in Korean: ".count)
+        }
+        return prompt
+    }
+
+    public func practiceOptionText(_ option: String) -> String { Self.soundLabel(option) ?? option }
+
+    private static func soundLabel(_ text: String) -> String? {
+        if text.hasPrefix("the vowel sound ") {
+            let sound = String(text.dropFirst("the vowel sound ".count))
+            return ["a": "ah", "eo": "eo", "o": "oh", "u": "oo", "eu": "eu", "i": "ee"][sound] ?? sound
+        }
+        if text.hasPrefix("the syllable ") { return String(text.dropFirst("the syllable ".count)) }
+        return nil
+    }
+
+    /// Introduce the rule before recognition; leave recall exercises until later in the lesson.
+    var learningStage: Int {
+        if id.hasSuffix("-guide") { return 0 }
+        switch cardType {
+        case "vocabulary", "tapReveal": return 1
+        case "matching": return 3
+        case "listening": return 4
+        case "fillBlank": return 5
+        case "listeningWrite": return 6
+        default: return 2
+        }
     }
 
     public var primaryKoreanText: String? {

@@ -73,11 +73,11 @@ extension CourseCurriculumCatalog {
             ),
             CourseLessonCard(
                 id: "kr-cp-1-6",
-                question: "Spell \"Hangul\" in Korean syllable blocks:",
-                options: [],
+                question: "Choose the spelling for \"Hangul\":",
+                options: ["한글", "한국", "한가", "한길"],
                 correctAnswer: "한글",
                 hint: "Han + Geul",
-                cardType: "fillBlank",
+                cardType: "multipleChoice",
                 speechText: "한글",
                 conceptTag: "Syllable Spelling",
                 explanation: "한 (Han: ㅎ+ㅏ+ㄴ) + 글 (Geul: ㄱ+ㅡ+ㄹ) spell 한글 (Hangul)."

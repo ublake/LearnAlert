@@ -368,11 +368,13 @@ public enum CourseCurriculumCatalog {
                             ),
                             CourseLessonCard(
                                 id: "kr-1-1-4",
-                                question: "When a vowel stands alone as a syllable (e.g., '아' or '오'), the silent placeholder consonant is ___.",
-                                options: [],
+                                question: "Which letter is silent at the start of 아 (ah)?",
+                                options: ["ㅇ", "ㄱ", "ㄴ", "ㅁ"],
                                 correctAnswer: "ㅇ",
                                 hint: "The circular consonant",
-                                cardType: "fillBlank"
+                                cardType: "multipleChoice",
+                                explanation: "ㅇ adds no sound at the start: ㅇ + ㅏ = 아 (ah).",
+                                previousQuestion: "When a vowel stands alone as a syllable (e.g., '아' or '오'), the silent placeholder consonant is ___."
                             ),
                             CourseLessonCard(
                                 id: "kr-1-1-5",
@@ -403,11 +405,13 @@ public enum CourseCurriculumCatalog {
                             ),
                             CourseLessonCard(
                                 id: "kr-1-2-2",
-                                question: "The box-shaped consonant 'ㅁ' makes the ___ sound.",
-                                options: [],
+                                question: "What sound does ㅁ make?",
+                                options: ["M", "N", "S", "H"],
                                 correctAnswer: "M",
                                 hint: "Mouth closed shape",
-                                cardType: "fillBlank"
+                                cardType: "multipleChoice",
+                                explanation: "ㅁ makes the M sound, as in 마 (ma).",
+                                previousQuestion: "The box-shaped consonant 'ㅁ' makes the ___ sound."
                             ),
                             CourseLessonCard(
                                 id: "kr-1-2-3",
@@ -456,11 +460,13 @@ public enum CourseCurriculumCatalog {
                             ),
                             CourseLessonCard(
                                 id: "kr-1-3-2",
-                                question: "What is a bottom/final consonant called in Korean?",
-                                options: [],
+                                question: "What is the consonant at the bottom of a Hangul block called?",
+                                options: ["받침", "모음", "자음", "한글"],
                                 correctAnswer: "받침",
                                 hint: "Literally 'support' or 'prop'",
-                                cardType: "fillBlank"
+                                cardType: "multipleChoice",
+                                explanation: "The bottom consonant is 받침 (batchim). In 한, ㄴ is the batchim.",
+                                previousQuestion: "What is a bottom/final consonant called in Korean?"
                             ),
                             CourseLessonCard(
                                 id: "kr-1-3-3",
@@ -509,11 +515,13 @@ public enum CourseCurriculumCatalog {
                             ),
                             CourseLessonCard(
                                 id: "kr-1-4-2",
-                                question: "'Thank you' in polite Korean is '___'.",
-                                options: [],
+                                question: "Which phrase means “thank you”?",
+                                options: ["감사합니다", "안녕하세요", "죄송합니다", "안녕히 가세요"],
                                 correctAnswer: "감사합니다",
                                 hint: "Gamsahamnida",
-                                cardType: "fillBlank"
+                                cardType: "multipleChoice",
+                                explanation: "감사합니다 is a respectful way to say thank you.",
+                                previousQuestion: "'Thank you' in polite Korean is '___'."
                             ),
                             CourseLessonCard(
                                 id: "kr-1-4-3",
@@ -562,11 +570,13 @@ public enum CourseCurriculumCatalog {
                             ),
                             CourseLessonCard(
                                 id: "kr-1-5-2",
-                                question: "Spell 'Hangul' in Korean: ___",
-                                options: [],
+                                question: "Which spelling says “Hangul”?",
+                                options: ["한글", "한국", "한가", "한길"],
                                 correctAnswer: "한글",
                                 hint: "Han + Geul",
-                                cardType: "fillBlank"
+                                cardType: "multipleChoice",
+                                explanation: "한 + 글 = 한글 (Hangul).",
+                                previousQuestion: "Spell 'Hangul' in Korean: ___"
                             ),
                             CourseLessonCard(
                                 id: "kr-1-5-3",

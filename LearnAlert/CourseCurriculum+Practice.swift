@@ -2,9 +2,9 @@ import Foundation
 
 extension CourseCurriculumCatalog {
     /// Different tasks practice the same authored material; IDs remain stable across releases.
-    static func variedKoreanCards(id: String, title: String, note: String, entries: [(String, String)]) -> [CourseLessonCard] {
+    static func variedKoreanCards(id: String, title: String, note: String, entries: [(String, String)], introduction: String? = nil) -> [CourseLessonCard] {
         var cards = [CourseLessonCard(id: "\(id)-guide", question: title,
-            correctAnswer: note, cardType: "vocabulary", conceptTag: title)]
+            correctAnswer: introduction ?? note, cardType: "vocabulary", conceptTag: title)]
         cards += entries.enumerated().flatMap { index, entry -> [CourseLessonCard] in
             let (korean, english) = entry
             let vocabulary = KoreanVocabularyItem(surface: korean, dictionaryForm: korean,
@@ -17,7 +17,7 @@ extension CourseCurriculumCatalog {
                     options: meanings, correctAnswer: english, hint: note, vocabularyItem: vocabulary,
                     grammarNote: note, speechText: korean, conceptTag: title, explanation: "\(korean) — \(english)"),
                 CourseLessonCard(id: "\(id)-\(index + 1)-write", question: "Write in Korean: \(english)",
-                    correctAnswer: korean, hint: note, cardType: "fillBlank", vocabularyItem: vocabulary,
+                    options: spellings, correctAnswer: korean, hint: note, cardType: "fillBlank", vocabularyItem: vocabulary,
                     grammarNote: note, conceptTag: title, explanation: "\(korean) — \(english)"),
                 CourseLessonCard(id: "\(id)-\(index + 1)-recognize", question: "Choose the Korean for: \(english)",
                     options: spellings, correctAnswer: korean, hint: note, grammarNote: note,
@@ -27,7 +27,7 @@ extension CourseCurriculumCatalog {
                     grammarNote: note, speechText: korean, conceptTag: title, explanation: "\(korean) — \(english)",
                     readingPrompt: "Read ‘\(korean)’. Choose its meaning."),
                 CourseLessonCard(id: "\(id)-\(index + 1)-dictate", question: "Listen and write what you hear.",
-                    correctAnswer: korean, hint: note, cardType: "listeningWrite", vocabularyItem: vocabulary,
+                    options: spellings, correctAnswer: korean, hint: note, cardType: "listeningWrite", vocabularyItem: vocabulary,
                     grammarNote: note, speechText: korean, conceptTag: title, explanation: "\(korean) — \(english)",
                     readingPrompt: "Write in Korean: \(english)")
             ]
@@ -61,6 +61,13 @@ extension CourseCurriculumCatalog {
              ("안녕히 가세요", "goodbye to someone leaving"), ("안녕히 계세요", "goodbye to someone staying"), ("만나서 반가워요", "nice to meet you")],
             [("아이", "child"), ("나무", "tree"), ("바다", "sea"), ("우유", "milk"), ("한국어", "Korean language"), ("학교", "school")]
         ]
+        let introductions = [
+            "ㅏ → ah · ㅓ → eo · ㅗ → oh\nㅜ → oo · ㅡ → eu · ㅣ → ee\n\nㅇ is silent at the start of a block: ㅇ + ㅏ = 아 (ah). Read 오 as oh and 이 as ee.",
+            "ㄱ → g/k · ㄴ → n · ㄷ → d/t\nㄹ → r/l · ㅁ → m · ㅂ → b/p\nㅅ → s · ㅈ → j · ㅎ → h\n\nAdd a vowel to read a block: ㄴ + ㅏ = 나 (na). ㅇ is silent at the start, and ng at the bottom.",
+            "Letters share one square block. Read the first consonant, then the vowel, then any consonant at the bottom.\n\nㅎ + ㅏ + ㄴ = 한 (han). The bottom consonant is called 받침 (batchim).",
+            "안녕하세요 → hello\n감사합니다 → thank you\n죄송합니다 → I am sorry\n\nUse 안녕히 가세요 when the other person leaves. Use 안녕히 계세요 when the other person stays.",
+            "아이 → child · 나무 → tree · 바다 → sea\n우유 → milk · 한국어 → Korean language · 학교 → school\n\nRead each block in order. You can tap the speaker to hear the Korean."
+        ]
         let readingNotes: [String: (String, String, String)] = [
             "kr-1-1-2": ("ㅣ", "The ‘ee’ sound in ‘see’. Put this vertical vowel to the right of the initial consonant: ㅇ + ㅣ = 이.", "이"),
             "kr-1-2-4": ("ㅇ", "Initial ㅇ is a silent placeholder. Final ㅇ is ng: 아 sounds a, while 앙 sounds ang.", "아, 앙"),
@@ -81,11 +88,13 @@ extension CourseCurriculumCatalog {
                         matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                         promptImageName: card.promptImageName, optionImageNames: card.optionImageNames,
                         vocabularyItem: vocabulary, grammarNote: card.grammarNote, speechText: card.speechText,
-                        conceptTag: card.conceptTag, explanation: card.explanation, acceptedAnswers: card.acceptedAnswers)
+                        conceptTag: card.conceptTag, explanation: card.explanation, acceptedAnswers: card.acceptedAnswers,
+                        previousQuestion: card.previousQuestion)
                 }
                 if course.language == "Korean", unit.unitNumber == 1, foundations.indices.contains(index) {
                     cards += variedKoreanCards(id: "\(lesson.id)-extra", title: lesson.title,
-                        note: lesson.tipNote ?? "Read the initial, vowel, then final consonant.", entries: foundations[index])
+                        note: lesson.tipNote ?? "Read the initial, vowel, then final consonant.", entries: foundations[index],
+                        introduction: introductions[index])
                 }
                 return CourseLesson(id: lesson.id, lessonNumber: lesson.lessonNumber, title: lesson.title,
                     subtitle: lesson.subtitle, nodeType: lesson.nodeType,

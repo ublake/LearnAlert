@@ -14,9 +14,11 @@ struct CourseQuestionPanel: View {
     var checkpoint = false
     var allowAudio = true
     var prefersReading = false
+    var allowTypedRecall = false
     var onReadingRequested: () -> Void = {}
     let onAnswer: (Bool) -> Void
     @State private var typed = ""
+    @State private var writingAnswer = false
     @State private var optionIndices: [Int] = []
     private var choiceOrder: [Int] { optionIndices.isEmpty ? Array(card.options.indices) : optionIndices }
     @FocusState private var typing: Bool
@@ -29,6 +31,11 @@ struct CourseQuestionPanel: View {
     @State private var readingInstead = false
     @ObservedObject private var speech = KoreanSpeechManager.shared
 
+    private var usesChoices: Bool {
+        card.cardType == "multipleChoice" || card.cardType == "listening"
+            || (card.usesTypedAnswer && !card.options.isEmpty && !writingAnswer)
+    }
+    private var canTryTyping: Bool { allowTypedRecall && !checkpoint && card.usesTypedAnswer && !card.options.isEmpty }
     private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && speech.hasVoice }
     @State private var selectedWord: String?
 
@@ -67,7 +74,7 @@ struct CourseQuestionPanel: View {
             }
             if !checkpoint && (!listening || grade != nil) {
                 HStack(spacing: 8) {
-                    if let text = card.primaryKoreanText, allowAudio && speech.hasVoice && !prefersReading && !readingInstead {
+                    if let text = card.primaryKoreanText, allowAudio && speech.hasVoice && !prefersReading && !readingInstead && (!writingAnswer || grade != nil) {
                         Button { KoreanSpeechManager.shared.speak(text) } label: { Image(systemName: "speaker.wave.2.fill").frame(width: 44, height: 44) }
                             .accessibilityLabel("Pronounce in Korean")
                         Button { KoreanSpeechManager.shared.speak(text, speed: .slow) } label: { Image(systemName: "tortoise.fill").frame(width: 44, height: 44) }
@@ -80,7 +87,7 @@ struct CourseQuestionPanel: View {
                 }.buttonStyle(.borderless)
                 if hint { Text(card.hint).font(.callout).foregroundStyle(.secondary) }
             }
-            if card.cardType == "multipleChoice" || card.cardType == "listening" {
+            if usesChoices {
                 if card.optionImageNames.count == card.options.count && !card.optionImageNames.isEmpty {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: immersive ? 16 : 8) {
                         ForEach(Array(choiceOrder.enumerated()), id: \.element) { position, index in
@@ -91,8 +98,8 @@ struct CourseQuestionPanel: View {
                                         Image(uiImage: image).resizable().scaledToFit()
                                             .frame(maxWidth: .infinity).frame(height: immersive ? 120 : 88)
                                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                                    } else { Text(option).frame(minHeight: 88) }
-                                    if grade != nil { Text(option).font(.caption.weight(.medium)).foregroundStyle(.primary) }
+                                    } else { Text(card.practiceOptionText(option)).frame(minHeight: 88) }
+                                    if grade != nil { Text(card.practiceOptionText(option)).font(.caption.weight(.medium)).foregroundStyle(.primary) }
                                 }.padding(12).frame(maxWidth: .infinity)
                                     .background(optionColor(option), in: RoundedRectangle(cornerRadius: 20))
                                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(optionBorder(option), lineWidth: 2))
@@ -110,7 +117,7 @@ struct CourseQuestionPanel: View {
                                     Text(String(position + 1)).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                                         .frame(width: 28, height: 28).background(Color.primary.opacity(0.05), in: Circle())
                                 }
-                                Text(option).font(immersive ? .title3.weight(.medium) : .body)
+                                Text(card.practiceOptionText(option)).font(immersive ? .title3.weight(.medium) : .body)
                                     .multilineTextAlignment(immersive ? .leading : .center).frame(maxWidth: .infinity, alignment: immersive ? .leading : .center)
                                 if grade != nil && (card.accepts(option) || option == selectedOption) {
                                     Image(systemName: card.accepts(option) ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -158,6 +165,17 @@ struct CourseQuestionPanel: View {
                         }
                     }
                 } else { Button("Reveal") { revealed = true }.buttonStyle(.borderedProminent) }
+            }
+            if (canTryTyping || writingAnswer) && grade == nil {
+                Button {
+                    typing = false
+                    typed = ""
+                    writingAnswer.toggle()
+                } label: {
+                    Label(writingAnswer ? "Use answer choices" : "Try typing",
+                          systemImage: writingAnswer ? "list.bullet" : "keyboard")
+                        .font(.subheadline.weight(.medium)).frame(minHeight: 44)
+                }.buttonStyle(.borderless)
             }
             if let grade, !immersive {
                 Label(grade ? "Correct" : "Review later", systemImage: grade ? "checkmark.circle.fill" : "arrow.counterclockwise")
@@ -209,7 +227,7 @@ struct CourseQuestionPanel: View {
         return immersive ? Color(.secondarySystemGroupedBackground) : Color.primary.opacity(0.04)
     }
     private var questionText: AttributedString {
-        let prompt = card.cardType == "vocabulary" ? (card.vocabularyItem?.surface ?? card.question) : card.questionText(audioEnabled: listening)
+        let prompt = card.cardType == "vocabulary" ? (card.vocabularyItem?.surface ?? card.question) : card.practiceQuestionText(audioEnabled: listening, typedRecall: writingAnswer)
         var text = AttributedString(prompt)
         guard !checkpoint, let expression = try? NSRegularExpression(pattern: "[가-힣ㄱ-ㅎㅏ-ㅣ]+") else { return text }
         for match in expression.matches(in: prompt, range: NSRange(prompt.startIndex..., in: prompt)) {

@@ -52,6 +52,14 @@ struct CourseLearningSnapshot: Codable {
         return nil
     }
 
+    static func orderedLearningCards(_ cards: [CourseLessonCard], randomized: Bool = true) -> [CourseLessonCard] {
+        let stages = Set(cards.map(\.learningStage)).sorted()
+        return stages.flatMap { stage in
+            let group = cards.filter { $0.learningStage == stage }
+            return randomized && stage > 1 ? group.shuffled() : group
+        }
+    }
+
     mutating func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
         guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
               let cards = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId), !cards.isEmpty else { return nil }
@@ -59,9 +67,11 @@ struct CourseLearningSnapshot: Codable {
         let validIds = Set(cards.map(\.id))
         let survivingIds = session.cardIds.filter { validIds.contains($0) }
         let added = cards.filter { !survivingIds.contains($0.id) }
-        // Start with an orientation note; randomize exercises once, then save that order.
-        session.cardIds = survivingIds + added.filter { $0.id.hasSuffix("-guide") }.map(\.id)
-            + added.filter { !$0.id.hasSuffix("-guide") }.shuffled().map(\.id)
+        // New sessions teach before testing; an existing session retains its saved order and answers.
+        // Checkpoints remain shuffled assessments rather than following the lesson stages.
+        let ordered = checkpointUnitId == nil && course.language == "Korean"
+            ? Self.orderedLearningCards(added) : added.shuffled()
+        session.cardIds = survivingIds + ordered.map(\.id)
         session.answers = session.answers.filter { session.cardIds.contains($0.key) }
         if let lessonId, status(course: course, lessonId: lessonId) != .completed {
             // Existing saved answers, including notification answers, should not restart a lesson.
@@ -142,7 +152,9 @@ struct CourseLearningSnapshot: Codable {
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
         let fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
         let reviews = fresh.isEmpty ? count : max(1, count / 2)
-        return Array((Array(due.prefix(reviews)) + (randomized ? fresh.shuffled() : fresh)).prefix(count))
+        let learning = course.language == "Korean"
+            ? Self.orderedLearningCards(fresh, randomized: randomized) : randomized ? fresh.shuffled() : fresh
+        return Array((Array(due.prefix(reviews)) + learning).prefix(count))
     }
 
     func isFullyMastered(course: CourseDefinition) -> Bool {

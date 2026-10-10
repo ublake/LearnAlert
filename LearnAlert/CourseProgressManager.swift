@@ -276,16 +276,18 @@ final class CourseProgressManager: ObservableObject {
             for definition in unit.lessons.flatMap(\.cards) {
                 let type: FlashcardType
                 switch definition.cardType {
-                case "fillBlank", "listeningWrite": type = .fillBlank
+                case "fillBlank", "listeningWrite": type = definition.options.isEmpty ? .fillBlank : .multipleChoice
                 case "vocabulary": type = .vocabulary
                 case "tapReveal": type = .tapReveal
                 case "matching": type = .matching
                 default: type = .multipleChoice
                 }
-                let deckQuestion = definition.questionText(audioEnabled: false)
+                let deckQuestion = definition.practiceQuestionText(audioEnabled: false)
+                let previousQuestions = [definition.questionText(audioEnabled: false), definition.previousQuestion].compactMap { $0 }
                 let card = originalCards.first(where: {
-                    !usedIds.contains($0.id) && $0.question == deckQuestion && $0.section?.id == section.id
+                    !usedIds.contains($0.id) && ($0.question == deckQuestion || previousQuestions.contains($0.question)) && $0.section?.id == section.id
                 }) ?? Flashcard(question: deckQuestion, options: definition.options, correctAnswer: definition.correctAnswer)
+                card.question = deckQuestion
                 card.options = definition.options
                 card.correctAnswer = definition.correctAnswer
                 card.hint = definition.hint
@@ -392,7 +394,10 @@ final class CourseProgressManager: ObservableObject {
         for course in CourseCurriculumCatalog.courses {
             for unit in course.units {
                 for lesson in unit.lessons {
-                    if let card = lesson.cards.first(where: { $0.question == cardQuestion || cardQuestion.contains($0.question) }) {
+                    if let card = lesson.cards.first(where: {
+                        let prompts = [$0.question, $0.practiceQuestionText(audioEnabled: false), $0.previousQuestion].compactMap { $0 }
+                        return prompts.contains { $0 == cardQuestion || cardQuestion.contains($0) }
+                    }) {
                         recordCardAnswer(
                             courseId: course.id,
                             sectionId: unit.id,

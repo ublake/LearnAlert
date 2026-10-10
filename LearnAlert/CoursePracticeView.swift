@@ -89,6 +89,9 @@ struct CoursePracticeView: View {
                                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
                             CourseQuestionPanel(card: practiceCards[index], immersive: true, checkpoint: isCheckpoint,
                                 allowAudio: course.language == "Korean", prefersReading: prefersReading,
+                                allowTypedRecall: practiceCards[index].canOfferTypedRecall(
+                                    masteryScore: manager.srsRecords[practiceCards[index].id]?.masteryScore ?? 0,
+                                    checkpoint: isCheckpoint),
                                 onReadingRequested: { prefersReading = true }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)")
                         }.padding(.horizontal, 24).padding(.vertical, 24)
