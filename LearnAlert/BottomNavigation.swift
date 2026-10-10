@@ -6,10 +6,10 @@ enum BottomNavigationStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .drift: "Drift"
-        case .cradle: "Cradle"
-        case .split: "Split"
-        case .frame: "Frame"
+        case .drift: "Glass"
+        case .cradle: "Lift"
+        case .split: "Islands"
+        case .frame: "Rail"
         }
     }
 }
@@ -113,7 +113,7 @@ struct BottomNavigationBar: View {
     }
 }
 
-// The live bar and the Settings thumbnails share the same silhouettes and materials.
+// Settings renders this same component at a smaller scale for accurate previews.
 private struct NavigationDock: View {
     let style: BottomNavigationStyle
     let selectedTab: Int
@@ -125,148 +125,251 @@ private struct NavigationDock: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    private var motion: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72) }
-    private var barFill: AnyShapeStyle {
+    private let tabs: [(title: String, symbol: String, outline: String)] = [
+        ("Home", "rectangle.stack.fill", "rectangle.stack"),
+        ("Discover", "books.vertical.fill", "books.vertical"),
+        ("Customize", "slider.horizontal.3", "slider.horizontal.3"),
+        ("Settings", "gearshape.fill", "gearshape")
+    ]
+    private var motion: Animation {
+        reduceMotion ? .easeOut(duration: 0.15) : .spring(response: style == .cradle ? 0.38 : 0.46, dampingFraction: style == .cradle ? 0.64 : 0.78)
+    }
+    private var glass: AnyShapeStyle {
         reduceTransparency ? AnyShapeStyle(LearnAlertStyle.courseSurface) : AnyShapeStyle(.regularMaterial)
     }
 
     var body: some View {
         ZStack(alignment: .top) {
-            dockSurface
-                .allowsHitTesting(false)
-
-            HStack(spacing: 0) {
-                tab(0, "Home", "rectangle.stack.fill")
-                tab(1, "Discover", "books.vertical.fill")
-                Color.clear.frame(width: 68, height: 60)
-                tab(2, "Customize", "slider.horizontal.3")
-                tab(3, "Settings", "gearshape.fill")
+            switch style {
+            case .drift: glassDock
+            case .cradle: liftDock
+            case .split: islandDock
+            case .frame: railDock
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
 
             creationBall
-                .offset(y: isExpanded && !reduceMotion ? 40 : 38)
+                .offset(y: isExpanded && !reduceMotion ? -4 : 0)
+                .zIndex(2)
         }
-        .frame(height: 96, alignment: .top)
+        .frame(height: 108, alignment: .top)
         .animation(motion, value: selectedTab)
         .animation(motion, value: isExpanded)
     }
 
-    @ViewBuilder private var dockSurface: some View {
-        switch style {
-        case .drift:
-            surface(WeightedDockShape(sag: isExpanded && !reduceMotion ? 24 : 20))
-                .frame(height: 92)
-        case .cradle:
-            surface(CradleDockShape())
-                .frame(height: 72)
-        case .split:
-            HStack(spacing: 68) {
-                surface(DockWingShape(isLeading: true))
-                    .offset(y: isExpanded && !reduceMotion ? -2 : 0)
-                surface(DockWingShape(isLeading: false))
-                    .offset(y: isExpanded && !reduceMotion ? -2 : 0)
-            }
-            .frame(height: 72)
-            .overlay(alignment: .top) {
-                VStack(spacing: 0) {
-                    Rectangle().fill(LearnAlertStyle.appAccent.opacity(0.24)).frame(width: 72, height: 1)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(LearnAlertStyle.appAccent.opacity(0.40))
-                        .frame(width: 4, height: isExpanded && !reduceMotion ? 40 : 36)
+    // Glass: one translucent surface with a sliding, illuminated tab tile.
+    private var glassDock: some View {
+        pairedTabs { index in
+            tabButton(index) {
+                VStack(spacing: 4) {
+                    Image(systemName: tabs[index].symbol)
+                        .font(.system(size: 18, weight: selectedTab == index ? .semibold : .medium))
+                        .frame(height: 22)
+                    tabTitle(index)
                 }
-                .padding(.top, 16)
-            }
-        case .frame:
-            surface(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .frame(height: 72)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(LearnAlertStyle.appAccent.opacity(0.50))
-                        .frame(height: 2)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
+                .foregroundStyle(tabColor(index))
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+                .background {
+                    if selectedTab == index {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LearnAlertStyle.appAccent.opacity(0.18))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14).strokeBorder(LearnAlertStyle.appAccent.opacity(0.24), lineWidth: 1)
+                            }
+                            .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                            .padding(4)
+                    }
                 }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(glass)
+                .overlay { RoundedRectangle(cornerRadius: 20).fill(LearnAlertStyle.appAccent.opacity(0.06)) }
+                .overlay { RoundedRectangle(cornerRadius: 20).strokeBorder(LearnAlertStyle.glassStroke, lineWidth: 1) }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 16, y: 8)
+        }
+        .padding(.top, 32)
+    }
+
+    // Lift: a solid notched stage. The active icon rises out of its circular seat.
+    private var liftDock: some View {
+        pairedTabs { index in
+            let selected = selectedTab == index
+            tabButton(index) {
+                VStack(spacing: 4) {
+                    Image(systemName: selected ? tabs[index].symbol : tabs[index].outline)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(selected ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .background {
+                            Circle().fill(selected ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface)
+                                .overlay { Circle().strokeBorder(selected ? Color.white.opacity(0.36) : LearnAlertStyle.cardBorder, lineWidth: 1) }
+                                .shadow(color: selected ? .black.opacity(0.16) : .clear, radius: 6, y: 4)
+                        }
+                        .offset(y: selected && !reduceMotion ? -6 : 0)
+                        .scaleEffect(selected && !reduceMotion ? 1.10 : 1)
+                    tabTitle(index)
+                        .foregroundStyle(tabColor(index))
+                        .offset(y: selected && !reduceMotion ? -3 : 0)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background {
+            TopCradleDockShape()
+                .fill(LearnAlertStyle.courseSurface)
+                .overlay { TopCradleDockShape().stroke(LearnAlertStyle.cardBorder, lineWidth: 1) }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.24 : 0.08), radius: 12, y: 6)
+        }
+        .padding(.top, 32)
+    }
+
+    // Islands: two separate compact panels; the selected icon expands into a label.
+    private var islandDock: some View {
+        HStack(spacing: 72) {
+            island([0, 1])
+            island([2, 3])
+        }
+        .padding(.top, 40)
+    }
+
+    private func island(_ indices: [Int]) -> some View {
+        HStack(spacing: 4) {
+            ForEach(indices, id: \.self) { index in
+                let selected = selectedTab == index
+                tabButton(index) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            Image(systemName: tabs[index].outline)
+                                .font(.system(size: 18, weight: .semibold))
+                            if selected {
+                                Text(tabs[index].title)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .fixedSize()
+                                    .transition(.opacity)
+                            }
+                        }
+                        VStack(spacing: 3) {
+                            Image(systemName: tabs[index].outline).font(.system(size: 17, weight: .semibold))
+                            if selected { tabTitle(index) }
+                        }
+                    }
+                    .foregroundStyle(selected ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                    .padding(.horizontal, selected ? 8 : 0)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(LearnAlertStyle.appAccent)
+                                .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                        }
+                    }
+                }
+                .frame(width: selected ? nil : 44)
+                .frame(maxWidth: selected ? .infinity : nil)
+            }
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(LearnAlertStyle.courseSurface.opacity(reduceTransparency ? 1 : 0.94))
+                .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(LearnAlertStyle.cardBorder, lineWidth: 1) }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 10, y: 6)
         }
     }
 
-    private func surface<S: Shape>(_ shape: S) -> some View {
-        shape.fill(barFill)
-            .overlay { shape.fill(LearnAlertStyle.appAccent.opacity(colorScheme == .dark ? 0.055 : 0.075)) }
-            .overlay {
-                shape.stroke(
-                    LinearGradient(colors: [LearnAlertStyle.glassStroke, LearnAlertStyle.appAccent.opacity(0.16)], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 1
-                )
+    // Rail: four continuous segments, text-led controls, matte finish, moving rule.
+    private var railDock: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<4, id: \.self) { index in
+                tabButton(index) {
+                    HStack(spacing: 5) {
+                        Image(systemName: tabs[index].outline)
+                            .font(.system(size: 13, weight: .medium))
+                        Text(tabs[index].title.uppercased())
+                            .font(.system(size: 9, weight: selectedTab == index ? .bold : .medium))
+                            .tracking(0.3)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                    }
+                    .foregroundStyle(tabColor(index))
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 60)
+                    .overlay(alignment: .bottom) {
+                        ZStack {
+                            Rectangle().fill(LearnAlertStyle.cardBorder)
+                            if selectedTab == index {
+                                Rectangle().fill(LearnAlertStyle.appAccentForeground)
+                                    .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                            }
+                        }
+                        .frame(height: 2)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 4)
+                    }
+                }
             }
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 16, y: 8)
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LearnAlertStyle.courseSurface.opacity(reduceTransparency ? 1 : 0.94))
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(LearnAlertStyle.appAccent.opacity(0.26), lineWidth: 1) }
+        }
+        .padding(.top, 36)
     }
 
-    private func tab(_ index: Int, _ title: String, _ symbol: String) -> some View {
-        let selected = selectedTab == index
-        return Button { selectTab(index) } label: {
-            VStack(spacing: 4) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: selected ? .semibold : .medium))
-                    .frame(height: 22)
-                    .offset(y: selected && style == .split && !reduceMotion ? -2 : 0)
-                    .scaleEffect(selected && style == .cradle && !reduceMotion ? 1.12 : 1)
-                Text(title)
-                    .font(.system(size: 10, weight: selected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(selected ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 60)
-            .background {
-                if selected && (style == .drift || style == .cradle) {
-                    RoundedRectangle(cornerRadius: style == .drift ? 14 : 10, style: .continuous)
-                        .fill(LearnAlertStyle.appAccent.opacity(style == .drift ? 0.18 : 0.12))
-                        .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 4)
-                }
-            }
-            .overlay(alignment: style == .split ? .top : .bottom) {
-                if selected && (style == .split || style == .frame) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(LearnAlertStyle.appAccentForeground)
-                        .frame(width: style == .split ? 16 : 24, height: 3)
-                        .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
-                        .padding(.vertical, 2)
-                }
-            }
-            .contentShape(Rectangle())
+    private func pairedTabs<Content: View>(@ViewBuilder content: (Int) -> Content) -> some View {
+        HStack(spacing: 0) {
+            content(0)
+            content(1)
+            Color.clear.frame(width: 68, height: 60)
+            content(2)
+            content(3)
+        }
+    }
+
+    private func tabButton<Content: View>(_ index: Int, @ViewBuilder content: () -> Content) -> some View {
+        Button { selectTab(index) } label: {
+            content().contentShape(Rectangle())
         }
         .buttonStyle(DockPressStyle())
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityShowsLargeContentViewer { Label(title, systemImage: symbol) }
+        .accessibilityLabel(tabs[index].title)
+        .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
+        .accessibilityShowsLargeContentViewer { Label(tabs[index].title, systemImage: tabs[index].symbol) }
         .frame(maxWidth: .infinity)
+    }
+
+    private func tabTitle(_ index: Int) -> some View {
+        Text(tabs[index].title)
+            .font(.system(size: 10, weight: selectedTab == index ? .semibold : .medium))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    private func tabColor(_ index: Int) -> Color {
+        selectedTab == index ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary
     }
 
     private var creationBall: some View {
         Button(action: toggleCreation) {
             Image(systemName: reduceMotion && isExpanded ? "xmark" : "plus")
-                .font(.system(size: 24, weight: .medium))
+                .font(.system(size: style == .frame ? 22 : 24, weight: .medium))
                 .rotationEffect(.degrees(isExpanded && !reduceMotion ? 45 : 0))
-                .foregroundStyle(LearnAlertStyle.appAccentInk)
+                .foregroundStyle(style == .frame ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.appAccentInk)
                 .frame(width: 56, height: 56)
                 .background {
-                    Circle().fill(reduceTransparency ? AnyShapeStyle(LearnAlertStyle.courseSurface) : AnyShapeStyle(.thinMaterial))
-                        .overlay { Circle().fill(LearnAlertStyle.appAccent) }
-                        .overlay {
-                            Circle().fill(LinearGradient(colors: [Color.white.opacity(0.24), .clear], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        }
-                        .overlay {
-                            Circle().strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.45 : 0.80), lineWidth: 1)
-                        }
-                        .overlay(alignment: .topLeading) {
-                            Capsule().fill(Color.white.opacity(0.55)).frame(width: 16, height: 3).rotationEffect(.degrees(-35)).offset(x: 10, y: 10)
-                        }
-                        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.30 : 0.15), radius: 8, y: 6)
+                    ballSurface
                 }
                 .scaleEffect(isExpanded && !reduceMotion ? 1.06 : 1)
                 .contentShape(Circle())
@@ -276,6 +379,26 @@ private struct NavigationDock: View {
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityHint("Create a deck or import with AI")
         .accessibilityShowsLargeContentViewer { Label("New deck", systemImage: "plus") }
+    }
+
+    @ViewBuilder private var ballSurface: some View {
+        if style == .frame {
+            Circle().fill(LearnAlertStyle.courseSurface)
+                .overlay { Circle().fill(LearnAlertStyle.appAccent.opacity(0.12)) }
+                .overlay { Circle().strokeBorder(LearnAlertStyle.appAccentForeground.opacity(0.65), lineWidth: 1.5) }
+        } else {
+            Circle().fill(reduceTransparency ? AnyShapeStyle(LearnAlertStyle.courseSurface) : AnyShapeStyle(.thinMaterial))
+                .overlay { Circle().fill(LearnAlertStyle.appAccent) }
+                .overlay { Circle().fill(LinearGradient(colors: [.white.opacity(style == .cradle ? 0.10 : 0.24), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)) }
+                .overlay { Circle().strokeBorder(.white.opacity(colorScheme == .dark ? 0.45 : 0.80), lineWidth: 1) }
+                .overlay {
+                    if style == .split {
+                        Circle().stroke(LearnAlertStyle.appAccent.opacity(0.22), lineWidth: 1)
+                            .padding(isExpanded && !reduceMotion ? -10 : -6)
+                    }
+                }
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.14), radius: style == .cradle ? 10 : 6, y: 4)
+        }
     }
 }
 
@@ -303,72 +426,24 @@ private struct DockPressStyle: ButtonStyle {
     }
 }
 
-// A flat top and a soft belly make the center ball feel like a weight in the dock.
-private struct WeightedDockShape: Shape {
-    var sag: CGFloat
-    var animatableData: CGFloat {
-        get { sag }
-        set { sag = newValue }
-    }
-
+// The notch sits below the floating button, keeping its entire circle above the tabs.
+private struct TopCradleDockShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let radius: CGFloat = 20
-        let bottom = rect.maxY - 20
-        let center = rect.midX
-        let shoulder = min(64.0, rect.width * 0.23)
+        let c = rect.midX
+        let radius: CGFloat = 16
         var path = Path()
         path.move(to: CGPoint(x: radius, y: 0))
+        path.addLine(to: CGPoint(x: c - 48, y: 0))
+        path.addCurve(to: CGPoint(x: c, y: 28), control1: CGPoint(x: c - 36, y: 0), control2: CGPoint(x: c - 34, y: 28))
+        path.addCurve(to: CGPoint(x: c + 48, y: 0), control1: CGPoint(x: c + 34, y: 28), control2: CGPoint(x: c + 36, y: 0))
         path.addLine(to: CGPoint(x: rect.maxX - radius, y: 0))
         path.addQuadCurve(to: CGPoint(x: rect.maxX, y: radius), control: CGPoint(x: rect.maxX, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX, y: bottom - radius))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: bottom), control: CGPoint(x: rect.maxX, y: bottom))
-        path.addLine(to: CGPoint(x: center + shoulder, y: bottom))
-        path.addCurve(to: CGPoint(x: center, y: bottom + sag), control1: CGPoint(x: center + shoulder * 0.48, y: bottom), control2: CGPoint(x: center + shoulder * 0.42, y: bottom + sag))
-        path.addCurve(to: CGPoint(x: center - shoulder, y: bottom), control1: CGPoint(x: center - shoulder * 0.42, y: bottom + sag), control2: CGPoint(x: center - shoulder * 0.48, y: bottom))
-        path.addLine(to: CGPoint(x: radius, y: bottom))
-        path.addQuadCurve(to: CGPoint(x: 0, y: bottom - radius), control: CGPoint(x: 0, y: bottom))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: radius, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: 0, y: rect.maxY - radius), control: CGPoint(x: 0, y: rect.maxY))
         path.addLine(to: CGPoint(x: 0, y: radius))
         path.addQuadCurve(to: CGPoint(x: radius, y: 0), control: .zero)
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct CradleDockShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        // Trace the outline explicitly so the material also follows the lower cradle.
-        var path = Path()
-        let c = rect.midX
-        path.move(to: CGPoint(x: 20, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX - 20, y: 0))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 20), control: CGPoint(x: rect.maxX, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - 20))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - 20, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: c + 48, y: rect.maxY))
-        path.addCurve(to: CGPoint(x: c, y: 30), control1: CGPoint(x: c + 34, y: rect.maxY), control2: CGPoint(x: c + 36, y: 30))
-        path.addCurve(to: CGPoint(x: c - 48, y: rect.maxY), control1: CGPoint(x: c - 36, y: 30), control2: CGPoint(x: c - 34, y: rect.maxY))
-        path.addLine(to: CGPoint(x: 20, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: 0, y: rect.maxY - 20), control: CGPoint(x: 0, y: rect.maxY))
-        path.addLine(to: CGPoint(x: 0, y: 20))
-        path.addQuadCurve(to: CGPoint(x: 20, y: 0), control: .zero)
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct DockWingShape: Shape {
-    let isLeading: Bool
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: 16, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX - 16, y: 0))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: 16), control: CGPoint(x: rect.maxX, y: 0))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - (isLeading ? 28 : 16)))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX - 16, y: rect.maxY - (isLeading ? 12 : 0)), control: CGPoint(x: rect.maxX, y: rect.maxY - (isLeading ? 12 : 0)))
-        path.addLine(to: CGPoint(x: 16, y: rect.maxY - (isLeading ? 0 : 12)))
-        path.addQuadCurve(to: CGPoint(x: 0, y: rect.maxY - (isLeading ? 16 : 28)), control: CGPoint(x: 0, y: rect.maxY - (isLeading ? 0 : 12)))
-        path.addLine(to: CGPoint(x: 0, y: 16))
-        path.addQuadCurve(to: CGPoint(x: 16, y: 0), control: .zero)
         path.closeSubpath()
         return path
     }
@@ -395,9 +470,9 @@ struct SettingsNavigationGroup: View {
                     } label: {
                         VStack(spacing: 12) {
                             NavigationDock(style: style, selectedTab: 0, selectTab: { _ in }, toggleCreation: {})
-                                .frame(width: 288, height: 96)
+                                .frame(width: 288, height: 108)
                                 .scaleEffect(0.40)
-                                .frame(width: 116, height: 40)
+                                .frame(width: 116, height: 44)
                                 .frame(maxWidth: .infinity)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
