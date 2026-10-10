@@ -35,30 +35,32 @@ enum LearnAlertStyle {
     static let coral = Color(red: 0.91, green: 0.34, blue: 0.38)
     static let destructiveRed = Color.adaptive(light: UIColor(red: 0.82, green: 0.20, blue: 0.25, alpha: 1), dark: UIColor(red: 0.95, green: 0.40, blue: 0.45, alpha: 1))
     static let lime = green
-    static let textPrimary = Color.adaptive(light: UIColor(red: 0.15, green: 0.19, blue: 0.18, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
-    static let textSecondary = Color.adaptive(light: UIColor(red: 0.39, green: 0.44, blue: 0.42, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
+    static let textPrimary = Color.adaptive(light: UIColor(red: 0.15, green: 0.18, blue: 0.21, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
+    static let textSecondary = Color.adaptive(light: UIColor(red: 0.39, green: 0.43, blue: 0.47, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
     static let hairline = Color.adaptive(light: UIColor(red: 0.72, green: 0.78, blue: 0.91, alpha: 1), dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: 1))
     static let surface = Color.adaptive(light: UIColor(white: 1, alpha: 0.92), dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
     static let solidPanel = Color(red: 0.055, green: 0.065, blue: 0.12)
     static let solidField = Color(red: 0.025, green: 0.03, blue: 0.065)
-    static let courseCanvas = Color.adaptive(light: UIColor(red: 0.965, green: 0.977, blue: 0.969, alpha: 1), dark: UIColor(red: 0.075, green: 0.080, blue: 0.095, alpha: 1))
+    static let courseCanvas = Color.adaptive(light: UIColor(red: 0.969, green: 0.977, blue: 0.986, alpha: 1), dark: UIColor(red: 0.075, green: 0.080, blue: 0.095, alpha: 1))
     static let courseSurface = Color.adaptive(light: .white, dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
-    // Muted teal for app controls; notification and course palettes are independent.
+    // A translucent baby-blue fill with separate readable ink for labels and links.
+    // Notification themes and course identity colors keep their own palettes.
     static let appAccent = Color.adaptive(
-        light: UIColor(red: 0.153, green: 0.420, blue: 0.388, alpha: 1),
-        dark: UIColor(red: 0.573, green: 0.773, blue: 0.714, alpha: 1)
+        light: UIColor(red: 0.65, green: 0.81, blue: 0.95, alpha: 0.88),
+        dark: UIColor(red: 0.66, green: 0.83, blue: 0.97, alpha: 0.88)
     )
-    static let appAccentInk = Color.adaptive(
-        light: .white,
-        dark: UIColor(red: 0.067, green: 0.157, blue: 0.137, alpha: 1)
+    static let appAccentInk = Color(red: 0.105, green: 0.225, blue: 0.34)
+    static let appAccentForeground = Color.adaptive(
+        light: UIColor(red: 0.22, green: 0.40, blue: 0.56, alpha: 1),
+        dark: UIColor(red: 0.66, green: 0.83, blue: 0.97, alpha: 1)
     )
     // Opaque app surfaces keep controls distinct in either appearance.
     static let insetSurface = Color.adaptive(
-        light: UIColor(red: 0.933, green: 0.953, blue: 0.941, alpha: 1),
+        light: UIColor(red: 0.929, green: 0.953, blue: 0.977, alpha: 1),
         dark: UIColor(red: 0.19, green: 0.20, blue: 0.24, alpha: 1)
     )
     static let cardBorder = Color.adaptive(
-        light: UIColor(red: 0.86, green: 0.90, blue: 0.88, alpha: 1),
+        light: UIColor(red: 0.85, green: 0.89, blue: 0.93, alpha: 1),
         dark: UIColor(white: 1, alpha: 0.07)
     )
     static let cardShadow = Color.adaptive(

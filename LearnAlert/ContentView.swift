@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var tabDragOffset: CGFloat = 0
+    @State private var showingCreationActions = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
@@ -55,12 +57,27 @@ struct ContentView: View {
                 }
                 .animation(nil, value: selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
+                .accessibilityHidden(showingCreationActions)
+
+                if showingCreationActions {
+                    Button {
+                        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72)) {
+                            showingCreationActions = false
+                        }
+                    } label: {
+                        Color.black.opacity(0.14).ignoresSafeArea()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close new deck options")
+                    .transition(.opacity)
+                }
+
                 VStack {
                     Spacer()
-                    LiquidTabBar(
+                    BottomNavigationBar(
                         selectedTab: $selectedTab,
                         tabDragOffset: $tabDragOffset,
+                        showingCreationActions: $showingCreationActions,
                         createDeck: { showingCreateDeck = true },
                         importWithAI: { showingAIComposer = true }
                     )
@@ -116,7 +133,7 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: notificationManager.shouldShowNotificationOpeningTip)
-        .tint(LearnAlertStyle.appAccent)
+        .tint(LearnAlertStyle.appAccentForeground)
         .preferredColorScheme(preferredColorScheme)
         .onChange(of: appearanceMode) { _, newMode in
             UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newMode, forKey: "appearanceMode")
@@ -324,209 +341,6 @@ struct CoursezyHeaderView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 8)
-    }
-}
-
-// MARK: - Liquid Tab Bar
-struct LiquidTabBar: View {
-    @Binding var selectedTab: Int
-    @Binding var tabDragOffset: CGFloat
-    let createDeck: () -> Void
-    let importWithAI: () -> Void
-    @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
-    @Namespace private var selectionNamespace
-    @State private var showingCreationActions = false
-    
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            if showingCreationActions && homeTutorialStep == 0 {
-                creationAction(title: "Import with AI", systemImage: "sparkles") {
-                    InteractionSoundPlayer.shared.play(.click)
-                    showingCreationActions = false
-                    importWithAI()
-                }
-                .offset(y: -138)
-                .transition(.offset(y: 138))
-
-                creationAction(title: "Create Deck", systemImage: "rectangle.stack.badge.plus") {
-                    InteractionSoundPlayer.shared.play(.click)
-                    showingCreationActions = false
-                    createDeck()
-                }
-                .offset(y: -72)
-                .transition(.offset(y: 72))
-            }
-
-            HStack(spacing: 8) {
-                HStack(spacing: 2) {
-                    TabBarItem(icon: "rectangle.stack.fill", title: "Home", tab: 0, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                    TabBarItem(icon: "books.vertical.fill", title: "Discover", tab: 1, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                    TabBarItem(icon: "slider.horizontal.3", title: "Customize", tab: 2, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                    TabBarItem(icon: "gearshape.fill", title: "Settings", tab: 3, selectedTab: $selectedTab, selectionNamespace: selectionNamespace)
-                }
-                .padding(4)
-                .background(.ultraThinMaterial, in: Capsule())
-                .background(LearnAlertStyle.glassTint, in: Capsule())
-                .overlay(Capsule().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
-                .disabled(homeTutorialStep > 0)
-                .opacity(homeTutorialStep > 0 ? 0.30 : 1.0)
-
-                if selectedTab != 2 {
-                    Button {
-                        guard homeTutorialStep == 0 else { return }
-                        withAnimation(.spring(duration: 0.42, bounce: 0.16)) {
-                            showingCreationActions.toggle()
-                        }
-                    } label: {
-                        Image(systemName: showingCreationActions ? "xmark" : "plus")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                            .frame(width: 50, height: 50)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .background(LearnAlertStyle.glassTint, in: Circle())
-                            .overlay(Circle().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
-                    }
-                    .disabled(homeTutorialStep > 0)
-                    .opacity(homeTutorialStep > 0 ? 0.30 : 1.0)
-                    .accessibilityLabel("New deck options")
-                    .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .zIndex(1)
-        }
-        .shadow(color: Color.black.opacity(0.12), radius: 14, y: 7)
-        .offset(x: tabDragOffset)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    guard homeTutorialStep == 0 else { return }
-                    tabDragOffset = value.translation.width / 3
-                }
-                .onEnded { value in
-                    guard homeTutorialStep == 0 else { return }
-                    let threshold: CGFloat = 40
-                    if value.translation.width > threshold && selectedTab > 0 {
-                        selectedTab -= 1
-                    } else if value.translation.width < -threshold && selectedTab < 3 {
-                        selectedTab += 1
-                    }
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        tabDragOffset = 0
-                    }
-                }
-        )
-        .padding(.horizontal, 14)
-        .padding(.bottom, 5)
-        .animation(.spring(response: 0.36, dampingFraction: 0.68, blendDuration: 0.12), value: selectedTab)
-    }
-
-    private func creationAction(title: LocalizedStringResource, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .body))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .foregroundStyle(LearnAlertStyle.textPrimary)
-        .buttonStyle(CreationActionButtonStyle())
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct CreationActionButtonStyle: ButtonStyle {
-    @ViewBuilder
-    func makeBody(configuration: Configuration) -> some View {
-        if #available(iOS 26.0, *) {
-            configuration.label
-                .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-                .padding(.horizontal, 18)
-                .glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            configuration.label
-                .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
-                .padding(.horizontal, 18)
-                .background(.ultraThinMaterial, in: Capsule())
-                .background(LearnAlertStyle.glassTint, in: Capsule())
-                .overlay(Capsule().stroke(LearnAlertStyle.glassStroke, lineWidth: 0.8))
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
-                .opacity(configuration.isPressed ? 0.84 : 1)
-        }
-    }
-}
-
-struct TabBarItem: View {
-    let icon: String
-    let title: String
-    let tab: Int
-    @Binding var selectedTab: Int
-    let selectionNamespace: Namespace.ID
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.36, dampingFraction: 0.68, blendDuration: 0.12)) {
-                selectedTab = tab
-            }
-        }) {
-            VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: selectedTab == tab ? .bold : .medium))
-                    .scaleEffect(selectedTab == tab ? 1.08 : 1.0)
-                    .frame(width: 24, height: 22, alignment: .center)
-
-                Text(title)
-                    .font(.system(size: 10, weight: selectedTab == tab ? .semibold : .medium))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .frame(height: 13, alignment: .center)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .foregroundStyle(selectedTab == tab ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary.opacity(0.60))
-            .shadow(color: selectedTab == tab ? Color.black.opacity(0.24) : .clear, radius: 2, y: 1)
-            .background {
-                if selectedTab == tab {
-                    selectionBackground
-                        .matchedGeometryEffect(id: "tab-selection", in: selectionNamespace)
-                }
-            }
-            .contentShape(Capsule())
-        }
-        .accessibilityLabel(title)
-        .accessibilityShowsLargeContentViewer {
-            Label(title, systemImage: icon)
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private var selectionBackground: some View {
-        Capsule()
-            .fill(
-                LinearGradient(
-                    colors: colorScheme == .light
-                        ? [Color.white.opacity(0.92), Color.white.opacity(0.78)]
-                        : [Color.white.opacity(0.24), Color.white.opacity(0.14)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(
-                Capsule()
-                    .stroke(
-                    LinearGradient(
-                        colors: colorScheme == .light
-                            ? [Color.white.opacity(0.95), Color.white.opacity(0.40)]
-                            : [Color.white.opacity(0.40), Color.white.opacity(0.10)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.9
-                )
-            )
-            .shadow(color: (colorScheme == .light ? LearnAlertStyle.indigo.opacity(0.16) : Color.black.opacity(0.35)), radius: 7, x: 0, y: 2)
-            .padding(.horizontal, 0)
-            .padding(.vertical, 0)
     }
 }
 
@@ -784,7 +598,7 @@ struct HomeLibraryView: View {
                             Text("Reorder")
                                 .font(.custom("Poppins-Medium", size: 12))
                         }
-                        .foregroundStyle(LearnAlertStyle.appAccent)
+                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1005,7 +819,7 @@ struct HomeLibraryView: View {
                 QuickScheduleTipPopup(dismiss: {
                     withAnimation(.snappy) { showingQuickScheduleTipToast = false }
                 })
-                .padding(.bottom, 96)
+                .padding(.bottom, 120)
             }
             .transition(.asymmetric(
                 insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -1729,7 +1543,7 @@ private struct HomeAlertSetupCard: View {
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
                 }
-                .foregroundStyle(LearnAlertStyle.appAccent)
+                .foregroundStyle(LearnAlertStyle.appAccentForeground)
                 .background(.clear)
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1886,7 +1700,7 @@ private struct DeckRequirementAlert: View {
             VStack(spacing: 16) {
                 Image(systemName: "rectangle.stack.badge.plus")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(LearnAlertStyle.appAccent)
+                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
                     .frame(width: 54, height: 54)
                     .background(.ultraThinMaterial, in: Circle())
 
@@ -2183,7 +1997,7 @@ private struct HomeStudyCard: View {
                         }
                     }) {
                         Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
-                            .foregroundStyle(isTargeted ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary)
+                            .foregroundStyle(isTargeted ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -2198,7 +2012,7 @@ private struct HomeStudyCard: View {
                 if isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(LearnAlertStyle.appAccent)
+                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
                         .padding(10)
                         .accessibilityLabel("Pinned")
                 }
@@ -2344,7 +2158,7 @@ private struct HomeCourseCard: View {
                 }.buttonStyle(.plain)
                 Button(action: schedule) {
                     Image(systemName: isTargeted ? "bell.badge.fill" : "bell")
-                        .foregroundStyle(isTargeted ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary)
+                        .foregroundStyle(isTargeted ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
                         .frame(width: 48, height: 48)
                         .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
                 }.buttonStyle(.plain)
@@ -3437,7 +3251,9 @@ struct AppSettingsView: View {
                 )
 
                 SettingsSupportGroup()
-                
+
+                SettingsNavigationGroup()
+
                 Spacer().frame(height: 120)
             }
             .padding(.top, 22)

@@ -71,7 +71,7 @@ struct SettingsStatusSection: View {
                 Button("Settings", action: openSystemSettings)
                     .font(.custom("Poppins-SemiBold", size: 10))
                     .buttonStyle(.bordered)
-                    .tint(LearnAlertStyle.appAccent)
+                    .tint(LearnAlertStyle.appAccentForeground)
             }
             .padding(15)
             .nativeGlass(cornerRadius: 16)
@@ -139,7 +139,7 @@ struct SettingsLearningSection: View {
                     Spacer()
                     DatePicker("", selection: startTimeBinding, displayedComponents: .hourAndMinute)
                         .labelsHidden()
-                        .tint(LearnAlertStyle.appAccent)
+                        .tint(LearnAlertStyle.appAccentForeground)
                 }
                 .padding(14)
 
@@ -152,7 +152,7 @@ struct SettingsLearningSection: View {
                     Spacer()
                     DatePicker("", selection: endTimeBinding, displayedComponents: .hourAndMinute)
                         .labelsHidden()
-                        .tint(LearnAlertStyle.appAccent)
+                        .tint(LearnAlertStyle.appAccentForeground)
                 }
                 .padding(14)
 
@@ -253,7 +253,7 @@ struct SettingsAlertSoundSection: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .tint(LearnAlertStyle.appAccent)
+                .tint(LearnAlertStyle.appAccentForeground)
                 .font(.custom("Poppins-Medium", size: 13))
                 .controlSize(.large)
             }
@@ -290,7 +290,7 @@ struct SettingsAppearanceSection: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
-                .tint(LearnAlertStyle.appAccent)
+                .tint(LearnAlertStyle.appAccentForeground)
                 .controlSize(.large)
             }
             .padding(14)
@@ -320,7 +320,7 @@ private struct SettingsToggleRow: View {
                 }
             }
         }
-        .tint(LearnAlertStyle.appAccent)
+        .tint(LearnAlertStyle.appAccentForeground)
         .padding(14)
     }
 }
@@ -331,7 +331,7 @@ private struct SettingsRowIcon: View {
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(LearnAlertStyle.appAccent)
+            .foregroundStyle(LearnAlertStyle.appAccentForeground)
             .frame(width: 34, height: 34)
             .background(LearnAlertStyle.appAccent.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .accessibilityHidden(true)
@@ -348,7 +348,7 @@ private struct SettingsMenuLabel: View {
                 .font(.system(size: 8, weight: .bold))
         }
         .font(.custom("Poppins-Medium", size: 10))
-        .foregroundStyle(LearnAlertStyle.appAccent)
+        .foregroundStyle(LearnAlertStyle.appAccentForeground)
     }
 }
 
@@ -386,7 +386,7 @@ struct SettingsNavigationRow: View {
         .padding(16)
         .foregroundStyle(
             isHighlighted
-                ? AnyShapeStyle(LearnAlertStyle.appAccent)
+                ? AnyShapeStyle(LearnAlertStyle.appAccentForeground)
                 : AnyShapeStyle(.secondary)
         )
         .background(isHighlighted ? LearnAlertStyle.courseLavender.opacity(0.72) : Color.gray.opacity(0.16))
@@ -643,7 +643,7 @@ struct ManageMyDataView: View {
                                 title: "Download Data",
                                 detail: "Export your decks and cards",
                                 systemImage: "arrow.down.doc.fill",
-                                roleColor: LearnAlertStyle.appAccent
+                                roleColor: LearnAlertStyle.appAccentForeground
                             )
                         }
                         .buttonStyle(.plain)
@@ -926,7 +926,7 @@ struct WhatsNewView: View {
                         version: "1.0.0",
                         title: "Release",
                         badgeText: "Current Version",
-                        badgeColor: LearnAlertStyle.appAccent,
+                        badgeColor: LearnAlertStyle.appAccentForeground,
                         isCurrent: true
                     )
                 }
@@ -945,7 +945,7 @@ private struct ReleaseNotesEntry: View {
     var title: LocalizedStringResource? = nil
     var detail: LocalizedStringResource? = nil
     var badgeText: String? = nil
-    var badgeColor: Color = LearnAlertStyle.appAccent
+    var badgeColor: Color = LearnAlertStyle.appAccentForeground
     var isCurrent: Bool = false
 
     var body: some View {
@@ -1129,7 +1129,7 @@ struct FeedbackView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
                                 Image(systemName: "info.circle.fill")
-                                    .foregroundStyle(LearnAlertStyle.appAccent)
+                                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
                                 Text("No Email App Found")
                                     .font(.custom("Poppins-SemiBold", size: 13))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
@@ -1208,7 +1208,7 @@ struct FeedbackView: View {
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.70)
                             }
-                            .foregroundStyle(LearnAlertStyle.appAccent)
+                            .foregroundStyle(LearnAlertStyle.appAccentForeground)
                         }
                         .buttonStyle(.plain)
                     }
