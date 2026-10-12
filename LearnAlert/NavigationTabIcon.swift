@@ -100,10 +100,10 @@ struct NavigationTabIcon: View {
         context.stroke(gear, with: .color(palette.blueInk), style: StrokeStyle(lineWidth: 0.85, lineJoin: .round))
         let hub = Path(ellipseIn: CGRect(x: 10.3, y: 8.3, width: 11.4, height: 11.4))
         context.fill(hub, with: .color(palette.gearHub))
-        context.stroke(hub, with: .color(palette.peachInk), lineWidth: 0.7)
+        context.stroke(hub, with: .color(palette.blueInk), lineWidth: 0.7)
         let center = Path(ellipseIn: CGRect(x: 13, y: 11, width: 6, height: 6))
         context.fill(center, with: .color(LearnAlertStyle.courseSurface))
-        context.stroke(center, with: .color(palette.peachInk.opacity(0.65)), lineWidth: 0.65)
+        context.stroke(center, with: .color(palette.blueInk.opacity(0.65)), lineWidth: 0.65)
     }
 
     private func roundedRect(_ rect: CGRect, radius: CGFloat, fill: Color, outline: Color, in context: inout GraphicsContext) {
@@ -130,7 +130,7 @@ private struct NavigationIconPalette {
         isDark ? Color(red: 0.96, green: 0.73, blue: 0.61) : Color(red: 0.92, green: 0.64, blue: 0.51)
     }
     var gearHub: Color {
-        isDark ? Color(red: 0.62, green: 0.33, blue: 0.24) : Color(red: 0.59, green: 0.29, blue: 0.20)
+        isDark ? Color(red: 0.22, green: 0.42, blue: 0.61) : Color(red: 0.16, green: 0.34, blue: 0.52)
     }
     var yellow: Color {
         isDark ? Color(red: 0.98, green: 0.85, blue: 0.57) : Color(red: 0.92, green: 0.78, blue: 0.43)
