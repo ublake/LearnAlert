@@ -345,6 +345,39 @@ struct CoursezyHeaderView: View {
 }
 
 // MARK: - Tab 1: Home Library
+private enum HomeAlertTarget {
+    case deck(Deck)
+    case course(CourseDefinition)
+
+    var selectionId: String {
+        switch self {
+        case .deck(let deck): deck.id.uuidString
+        case .course(let course): CourseProgressManager.shared.enrollment(for: course.id)?.linkedDeckId ?? "course:\(course.id)"
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .deck(let deck): deck.name
+        case .course(let course): "\(course.flagEmoji) \(course.title)"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .deck(let deck): "\(deck.cards.count) cards"
+        case .course(let course): "\(course.totalLessonsCount) lessons"
+        }
+    }
+
+    var canSchedule: Bool {
+        switch self {
+        case .deck(let deck): deck.cards.count >= 2
+        case .course(let course): course.totalLessonsCount > 0
+        }
+    }
+}
+
 struct HomeLibraryView: View {
     @Query(sort: \Deck.orderIndex) private var allDecks: [Deck]
     @Environment(\.modelContext) private var context
@@ -360,7 +393,8 @@ struct HomeLibraryView: View {
     @State private var showingAlertSettings = false
     @State private var showingDeckRequirementAlert = false
     @State private var showingNotificationPermissionPrompt = false
-    @State private var pendingDeckToSchedule: Deck?
+    @State private var pendingTargetToSchedule: HomeAlertTarget?
+    @State private var isSchedulingAlerts = false
     @State private var pendingFromDeckCard = false
     @State private var scheduleCelebrationEvent: CelebrationEvent?
     @State private var deckPendingDeletion: Deck?
@@ -563,8 +597,10 @@ struct HomeLibraryView: View {
     private var alertSetupSection: some View {
         HomeAlertSetupCard(
             decks: ordinaryDecks,
+            courses: enrolledCourses,
             engine: engine,
             targetDeckId: $targetDeckId,
+            isScheduling: isSchedulingAlerts,
             homeTutorialStep: homeTutorialStep,
             showSettings: { showingAlertSettings = true },
             showDeckRequirement: {
@@ -828,21 +864,21 @@ struct HomeLibraryView: View {
 
         if showingNotificationPermissionPrompt {
             NotificationPermissionPromptModal(
-                targetDeckName: pendingDeckToSchedule?.name ?? "your deck",
+                targetDeckName: pendingTargetToSchedule?.name ?? "your deck or course",
                 onAllow: {
                     withAnimation(.snappy) {
                         showingNotificationPermissionPrompt = false
                     }
-                    if let deck = pendingDeckToSchedule {
-                        applySchedule(for: deck, fromDeckCard: pendingFromDeckCard)
-                        pendingDeckToSchedule = nil
+                    if let target = pendingTargetToSchedule {
+                        pendingTargetToSchedule = nil
+                        quickSchedule(target, fromDeckCard: pendingFromDeckCard)
                     }
                 },
                 onStudyInAppOnly: {
                     withAnimation(.snappy) {
                         showingNotificationPermissionPrompt = false
                     }
-                    pendingDeckToSchedule = nil
+                    pendingTargetToSchedule = nil
                     if homeTutorialStep == 3 {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                             homeTutorialStep = 0
@@ -1008,8 +1044,7 @@ struct HomeLibraryView: View {
     }
 
     private func scheduleCourse(_ course: CourseDefinition) {
-        let deck = progressManager.createOrSyncCourseDeck(for: course, in: context)
-        quickSchedule(deck, fromDeckCard: true)
+        quickSchedule(.course(course), fromDeckCard: true)
     }
 
     private func sendTutorialTestAlert() {
@@ -1030,39 +1065,40 @@ struct HomeLibraryView: View {
     }
 
     private func quickSchedule(_ deck: Deck, fromDeckCard: Bool = false) {
-        guard deck.cards.count >= 2 else {
+        quickSchedule(.deck(deck), fromDeckCard: fromDeckCard)
+    }
+
+    private func quickSchedule(_ target: HomeAlertTarget, fromDeckCard: Bool = false) {
+        guard !isSchedulingAlerts else { return }
+        guard target.canSchedule else {
             HapticFeedback.warning()
             homeAlertMessage = "Add at least two cards before scheduling this deck."
             return
         }
-
+        isSchedulingAlerts = true
         Task { @MainActor in
+            defer { isSchedulingAlerts = false }
             let settings = await UNUserNotificationCenter.current().notificationSettings()
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
-                applySchedule(for: deck, fromDeckCard: fromDeckCard)
+                await applySchedule(for: target, fromDeckCard: fromDeckCard)
             case .notDetermined, .denied:
-                // Halt actual notifications until permission is allowed!
-                pendingDeckToSchedule = deck
+                pendingTargetToSchedule = target
                 pendingFromDeckCard = fromDeckCard
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     showingNotificationPermissionPrompt = true
                 }
             @unknown default:
-                applySchedule(for: deck, fromDeckCard: fromDeckCard)
+                await applySchedule(for: target, fromDeckCard: fromDeckCard)
             }
         }
     }
 
-    private func applySchedule(for deck: Deck, fromDeckCard: Bool = false) {
-        guard deck.cards.count >= 2 else {
-            HapticFeedback.warning()
-            homeAlertMessage = "Add at least two cards before scheduling this deck."
-            return
-        }
-        targetDeckId = deck.id.uuidString
+    @MainActor
+    private func applySchedule(for target: HomeAlertTarget, fromDeckCard: Bool = false) async {
+        targetDeckId = target.selectionId
 
-        if homeTutorialStep == 3 {
+        if homeTutorialStep == 3, case .deck = target {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 homeTutorialStep = 4
             }
@@ -1070,23 +1106,24 @@ struct HomeLibraryView: View {
             return
         }
 
-        Task { @MainActor in
-            do {
-                _ = try await engine.startAlerts(for: deck)
-                InteractionSoundPlayer.shared.play(.scheduledAlerts)
-                HapticFeedback.success()
-                scheduleCelebrationEvent = CelebrationEvent()
-
-                if fromDeckCard && !hasSeenQuickScheduleSwitchTip {
-                    hasSeenQuickScheduleSwitchTip = true
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-                        showingQuickScheduleTipToast = true
-                    }
-                }
-            } catch {
-                HapticFeedback.warning()
-                homeAlertMessage = error.localizedDescription
+        do {
+            switch target {
+            case .deck(let deck): _ = try await engine.startAlerts(for: deck)
+            case .course(let course): _ = try await engine.startAlerts(for: course)
             }
+            InteractionSoundPlayer.shared.play(.scheduledAlerts)
+            HapticFeedback.success()
+            scheduleCelebrationEvent = CelebrationEvent()
+
+            if fromDeckCard && !hasSeenQuickScheduleSwitchTip {
+                hasSeenQuickScheduleSwitchTip = true
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                    showingQuickScheduleTipToast = true
+                }
+            }
+        } catch {
+            HapticFeedback.warning()
+            homeAlertMessage = error.localizedDescription
         }
     }
 
@@ -1359,24 +1396,33 @@ private enum AIConnectivityCheck {
 
 private struct HomeAlertSetupCard: View {
     let decks: [Deck]
+    let courses: [CourseDefinition]
     @ObservedObject var engine: StudyEngine
     @Binding var targetDeckId: String
+    var isScheduling = false
     var homeTutorialStep: Int = 0
     let showSettings: () -> Void
     let showDeckRequirement: () -> Void
-    let schedule: (Deck) -> Void
+    let schedule: (HomeAlertTarget) -> Void
     @State private var pulseScheduleButton = false
 
-    private var selectedDeck: Deck? {
-        if let deck = decks.first(where: { $0.id.uuidString == targetDeckId && $0.cards.count >= 2 }) {
-            return deck
+    private var selectedTarget: HomeAlertTarget? {
+        if let deck = schedulableDecks.first(where: { $0.id.uuidString == targetDeckId }) {
+            return .deck(deck)
         }
-        return schedulableDecks.first
+        if let course = courses.first(where: {
+            "course:\($0.id)" == targetDeckId || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == targetDeckId
+        }) {
+            return .course(course)
+        }
+        return schedulableDecks.first.map(HomeAlertTarget.deck) ?? courses.first.map(HomeAlertTarget.course)
     }
 
     private var schedulableDecks: [Deck] {
         decks.filter { $0.cards.count >= 2 }
     }
+
+    private var hasStudyMaterial: Bool { !schedulableDecks.isEmpty || !courses.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1447,48 +1493,61 @@ private struct HomeAlertSetupCard: View {
             }
 
             Group {
-                if schedulableDecks.isEmpty {
+                if !hasStudyMaterial {
                     Button(action: showDeckRequirement) {
-                        DeckPickerLabel(selectedDeck: selectedDeck)
+                        AlertTargetPickerLabel(selectedTarget: selectedTarget)
                     }
                 } else {
                     Menu {
-                        ForEach(schedulableDecks) { deck in
-                            Button(deck.name) {
-                                targetDeckId = deck.id.uuidString
+                        Section("Decks") {
+                            if schedulableDecks.isEmpty {
+                                Button("No decks ready") {}.disabled(true)
+                            }
+                            ForEach(schedulableDecks) { deck in
+                                Button(deck.name) { targetDeckId = deck.id.uuidString }
+                            }
+                        }
+                        Section("Courses") {
+                            if courses.isEmpty {
+                                Button("No courses started") {}.disabled(true)
+                            }
+                            ForEach(courses) { course in
+                                Button("\(course.flagEmoji) \(course.title)") {
+                                    targetDeckId = HomeAlertTarget.course(course).selectionId
+                                }
                             }
                         }
                     } label: {
-                        DeckPickerLabel(selectedDeck: selectedDeck)
+                        AlertTargetPickerLabel(selectedTarget: selectedTarget)
                     }
                     .disabled(homeTutorialStep == 3)
                 }
             }
-            .overlay { DeckSelectionHintBorder(isVisible: !schedulableDecks.isEmpty && selectedDeck == nil) }
+            .overlay { DeckSelectionHintBorder(isVisible: hasStudyMaterial && selectedTarget == nil) }
 
 
 
             HStack(spacing: 10) {
                 Button {
-                    guard let selectedDeck else { return }
-                    schedule(selectedDeck)
+                    guard let selectedTarget else { return }
+                    schedule(selectedTarget)
                 } label: {
-                    Label(homeTutorialStep == 3 ? "Try Test Alert" : "Schedule Alerts", systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
+                    Label(isScheduling ? "Scheduling…" : homeTutorialStep == 3 ? "Try Test Alert" : "Schedule Alerts", systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
                 }
-                .foregroundStyle(selectedDeck == nil ? LearnAlertStyle.textSecondary : LearnAlertStyle.appAccentInk)
-                .background(selectedDeck == nil ? LearnAlertStyle.insetSurface : LearnAlertStyle.appAccent)
+                .foregroundStyle(selectedTarget == nil ? LearnAlertStyle.textSecondary : LearnAlertStyle.appAccentInk)
+                .background(selectedTarget == nil ? LearnAlertStyle.insetSurface : LearnAlertStyle.appAccent)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(homeTutorialStep == 3 ? LearnAlertStyle.appAccent : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
                         .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
                 )
-                .lightModeOutline(cornerRadius: 12, opacity: selectedDeck == nil ? 0.65 : 1)
+                .lightModeOutline(cornerRadius: 12, opacity: selectedTarget == nil ? 0.65 : 1)
                 .scaleEffect(homeTutorialStep == 3 && pulseScheduleButton ? 1.025 : 1.0)
-                .disabled(selectedDeck == nil)
+                .disabled(selectedTarget == nil || isScheduling)
 
                 Button(action: showSettings) {
                     Image(systemName: "slider.horizontal.3")
@@ -1520,7 +1579,7 @@ private struct HomeAlertSetupCard: View {
                         .background(LearnAlertStyle.aqua)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Deck Scheduled")
+                        Text(engine.activeSectionName == "Learning Path" ? "Course Scheduled" : "Deck Scheduled")
                             .font(.headline)
                         Text(engine.activeDeckName)
                             .font(.subheadline)
@@ -1565,18 +1624,18 @@ private struct HomeAlertSetupCard: View {
     }
 }
 
-private struct DeckPickerLabel: View {
-    let selectedDeck: Deck?
+private struct AlertTargetPickerLabel: View {
+    let selectedTarget: HomeAlertTarget?
 
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedDeck?.name ?? "Choose a deck")
+                Text(selectedTarget?.name ?? "Choose a deck or course")
                     .font(.subheadline.weight(.medium))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(selectedDeck.map { "\($0.cards.count) cards" } ?? "Nothing selected")
+                Text(selectedTarget?.detail ?? "Nothing selected")
                     .font(.caption)
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -2744,15 +2803,24 @@ struct SetupAlertsView: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("SELECT DECK")
+                Text("SELECT DECK OR COURSE")
                     .font(.caption.bold())
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Menu {
-                    Picker("Deck Target", selection: $selectedDeckId) {
-                        Text("All Active Decks").tag("ALL")
-                        ForEach(decks) { deck in Text(deck.name).tag(deck.id.uuidString) }
+                    Picker("Deck or Course", selection: $selectedDeckId) {
+                        Section("Decks") {
+                            Text("All Active Decks").tag("ALL")
+                            ForEach(decks.filter { $0.deckType != "Course" }) { deck in
+                                Text(deck.name).tag(deck.id.uuidString)
+                            }
+                        }
+                        Section("Courses") {
+                            ForEach(decks.filter { $0.deckType == "Course" }) { deck in
+                                Text(deck.name).tag(deck.id.uuidString)
+                            }
+                        }
                     }
                 } label: {
                     HStack {
@@ -3248,8 +3316,6 @@ struct AppSettingsView: View {
                 )
 
                 SettingsSupportGroup()
-
-                SettingsNavigationGroup()
 
                 Spacer().frame(height: 120)
             }

@@ -13,7 +13,6 @@ import SwiftData
 struct CourseOverviewView: View {
     let course: CourseDefinition
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @ObservedObject private var engine = StudyEngine.shared
 
@@ -301,7 +300,6 @@ struct CourseOverviewView: View {
     }
 
     private func scheduleCourseAlerts() {
-        let deck = progressManager.createOrSyncCourseDeck(for: course, in: context)
         Task { @MainActor in
             if !NotificationManager.shared.isAuthorized {
                 guard await NotificationManager.shared.requestPermission() else {
@@ -310,7 +308,7 @@ struct CourseOverviewView: View {
                 }
             }
             do {
-                _ = try await engine.startAlerts(for: deck, courseReviewOnly: true)
+                _ = try await engine.startAlerts(for: course, courseReviewOnly: true)
                 InteractionSoundPlayer.shared.play(.scheduledAlerts)
                 HapticFeedback.success()
                 showingScheduleAlertSuccess = true

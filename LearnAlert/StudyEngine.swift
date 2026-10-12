@@ -63,6 +63,8 @@ class StudyEngine: ObservableObject {
             restoringCourse = true
             activeDeckId = UUID(uuidString: plan.deckId)
             activeDeckName = savedDeckName
+            activeSectionId = nil
+            activeSectionName = "Learning Path"
             isActive = true
             Task {
                 defer { restoringCourse = false }
@@ -115,35 +117,53 @@ class StudyEngine: ObservableObject {
         }
     }
     
+    /// Courses already have an enrollment and linked deck identity. Scheduling must
+    /// not rebuild their SwiftData cards on the main thread.
+    @discardableResult
+    func startAlerts(for course: CourseDefinition, courseReviewOnly: Bool = false) async throws -> Int {
+        guard let enrollment = CourseProgressManager.shared.enrollment(for: course.id) else {
+            throw NSError(domain: "LearnAlert.Course", code: 404, userInfo: [NSLocalizedDescriptionKey: "Start this course before scheduling its alerts."])
+        }
+        return try await startAlerts(for: course, enrollment: enrollment, courseReviewOnly: courseReviewOnly)
+    }
+
+    private func startAlerts(for course: CourseDefinition, enrollment: CourseEnrollment, courseReviewOnly: Bool) async throws -> Int {
+        guard let linkedDeckId = enrollment.linkedDeckId, let deckId = UUID(uuidString: linkedDeckId) else {
+            throw NSError(domain: "LearnAlert.Course", code: 404, userInfo: [NSLocalizedDescriptionKey: "This course's linked deck is missing. Open the course to set it up again."])
+        }
+        guard !enrollment.selectedDays.isEmpty else {
+            throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
+        }
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
+        let plan = CourseAlertPlan(courseId: course.id, deckId: linkedDeckId,
+            startHour: startHour, startMinute: startMinute, endHour: endHour, endMinute: endMinute,
+            weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt")
+        let dates = try await CourseNotificationScheduler.activate(plan)
+        guard !dates.isEmpty else {
+            CourseNotificationScheduler.clear()
+            throw NSError(domain: "LearnAlert.Course", code: 204, userInfo: [NSLocalizedDescriptionKey: "No alerts fit the selected days and study window."])
+        }
+        let name = "\(course.flagEmoji) \(course.title)"
+        activeDeckId = deckId; activeDeckName = name
+        activeSectionId = nil; activeSectionName = "Learning Path"
+        scheduledDates = dates; isActive = true
+        savedIsActive = true; savedDeckId = linkedDeckId; savedDeckName = name
+        savedSectionId = ""; savedSectionName = "Learning Path"
+        savedDatesData = try JSONEncoder().encode(dates)
+        let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+        defaults?.set(linkedDeckId, forKey: "extensionActiveDeckId")
+        defaults?.set(name, forKey: "extensionActiveDeckName")
+        defaults?.set(false, forKey: "extensionDidStopAlerts")
+        return dates.count
+    }
+
     @discardableResult
     func startAlerts(for deck: Deck, section: DeckSection? = nil, courseReviewOnly: Bool = false) async throws -> Int {
         let manager = CourseProgressManager.shared
         if let course = manager.allEnrolledCourses.first(where: { manager.enrollment(for: $0.id)?.linkedDeckId == deck.id.uuidString }),
            let enrollment = manager.enrollment(for: course.id) {
-            guard !enrollment.selectedDays.isEmpty else {
-                throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
-            }
-            UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-            let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
-            let plan = CourseAlertPlan(courseId: course.id, deckId: deck.id.uuidString,
-                startHour: startHour, startMinute: startMinute, endHour: endHour, endMinute: endMinute,
-                weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt")
-            let dates = try await CourseNotificationScheduler.activate(plan)
-            guard !dates.isEmpty else {
-                CourseNotificationScheduler.clear()
-                throw NSError(domain: "LearnAlert.Course", code: 204, userInfo: [NSLocalizedDescriptionKey: "No alerts fit the selected days and study window."])
-            }
-            activeDeckId = deck.id; activeDeckName = deck.name
-            activeSectionId = nil; activeSectionName = "Learning Path"
-            scheduledDates = dates; isActive = true
-            savedIsActive = true; savedDeckId = deck.id.uuidString; savedDeckName = deck.name
-            savedSectionId = ""; savedSectionName = "Learning Path"
-            savedDatesData = try JSONEncoder().encode(dates)
-            let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-            defaults?.set(deck.id.uuidString, forKey: "extensionActiveDeckId")
-            defaults?.set(deck.name, forKey: "extensionActiveDeckName")
-            defaults?.set(false, forKey: "extensionDidStopAlerts")
-            return dates.count
+            return try await startAlerts(for: course, enrollment: enrollment, courseReviewOnly: courseReviewOnly)
         }
         CourseNotificationScheduler.clear()
         let cards = fetchCardsToStudy(from: deck, section: section)
