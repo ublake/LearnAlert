@@ -99,7 +99,7 @@ struct NavigationTabIcon: View {
         context.fill(gear, with: .color(palette.blue))
         context.stroke(gear, with: .color(palette.blueInk), style: StrokeStyle(lineWidth: 0.85, lineJoin: .round))
         let hub = Path(ellipseIn: CGRect(x: 10.3, y: 8.3, width: 11.4, height: 11.4))
-        context.fill(hub, with: .color(palette.peach))
+        context.fill(hub, with: .color(palette.gearHub))
         context.stroke(hub, with: .color(palette.peachInk), lineWidth: 0.7)
         let center = Path(ellipseIn: CGRect(x: 13, y: 11, width: 6, height: 6))
         context.fill(center, with: .color(LearnAlertStyle.courseSurface))
@@ -128,6 +128,9 @@ private struct NavigationIconPalette {
     }
     var peach: Color {
         isDark ? Color(red: 0.96, green: 0.73, blue: 0.61) : Color(red: 0.92, green: 0.64, blue: 0.51)
+    }
+    var gearHub: Color {
+        isDark ? Color(red: 0.80, green: 0.51, blue: 0.40) : Color(red: 0.78, green: 0.45, blue: 0.34)
     }
     var yellow: Color {
         isDark ? Color(red: 0.98, green: 0.85, blue: 0.57) : Color(red: 0.92, green: 0.78, blue: 0.43)
