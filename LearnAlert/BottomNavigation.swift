@@ -161,8 +161,7 @@ private struct NavigationDock: View {
         pairedTabs { index in
             tabButton(index) {
                 VStack(spacing: 4) {
-                    Image(systemName: tabSymbol(index))
-                        .font(.system(size: 18, weight: selectedTab == index ? .semibold : .medium))
+                    tabIcon(index, size: 18, weight: selectedTab == index ? .semibold : .medium)
                         .frame(height: 22)
                     tabTitle(index)
                 }
@@ -199,8 +198,7 @@ private struct NavigationDock: View {
             let selected = selectedTab == index
             tabButton(index) {
                 VStack(spacing: 4) {
-                    Image(systemName: tabSymbol(index))
-                        .font(.system(size: 17, weight: .semibold))
+                    tabIcon(index, size: 17)
                         .foregroundStyle(tabColor(index))
                         .frame(width: 36, height: 36)
                         .background {
@@ -234,8 +232,7 @@ private struct NavigationDock: View {
             let selected = selectedTab == index
             tabButton(index) {
                 VStack(spacing: 4) {
-                    Image(systemName: tabSymbol(index))
-                        .font(.system(size: 21, weight: .semibold))
+                    tabIcon(index, size: 21)
                         .frame(height: 24)
                     tabTitle(index)
                         .frame(height: 14)
@@ -269,8 +266,7 @@ private struct NavigationDock: View {
         pairedTabs { index in
             tabButton(index) {
                 HStack(spacing: 5) {
-                    Image(systemName: tabSymbol(index))
-                        .font(.system(size: 13, weight: .medium))
+                    tabIcon(index, size: 13, weight: .medium)
                     Text(tabs[index].title.uppercased())
                         .font(.system(size: 9, weight: selectedTab == index ? .bold : .medium))
                         .tracking(0.3)
@@ -327,8 +323,9 @@ private struct NavigationDock: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func tabSymbol(_ index: Int) -> String {
-        selectedTab == index ? tabs[index].symbol : tabs[index].outline
+    private func tabIcon(_ index: Int, size: CGFloat, weight: Font.Weight = .semibold) -> some View {
+        NavigationTabIcon(tab: index, outlineSymbol: tabs[index].outline,
+                          isSelected: selectedTab == index, size: size, weight: weight)
     }
 
     private func tabTitle(_ index: Int) -> some View {
