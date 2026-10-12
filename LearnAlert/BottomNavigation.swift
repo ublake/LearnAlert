@@ -89,6 +89,7 @@ struct BottomNavigationBar: View {
             }
         }
         .padding(.horizontal, 16)
+        .offset(y: style == .split ? 48 : 40)
         .accessibilityElement(children: .contain)
     }
 
