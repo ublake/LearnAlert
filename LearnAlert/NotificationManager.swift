@@ -179,9 +179,33 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         hint: String,
         cardId: UUID = UUID(),
         deckId: UUID = UUID(),
-        delay: TimeInterval = 0.8
+        delay: TimeInterval = 0.8,
+        appearance: NotificationAppearance = .saved(),
+        completion: ((Error?) -> Void)? = nil
     ) {
         setupCategories()
+        let content = Self.tutorialAlertContent(deckTitle: deckTitle, question: question, options: options,
+            correctAnswer: correctAnswer, hint: hint, cardId: cardId, deckId: deckId, appearance: appearance)
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 0.5), repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "tutorial_\(cardId.uuidString)",
+            content: content,
+            trigger: trigger
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Error scheduling tutorial alert: \(error)")
+            }
+            completion?(error)
+        }
+    }
+
+    static func tutorialAlertContent(
+        deckTitle: String, question: String, options: [String], correctAnswer: String, hint: String,
+        cardId: UUID, deckId: UUID, appearance: NotificationAppearance
+    ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = "LearnAlert: \(deckTitle)"
         content.body = "Press and hold to answer"
@@ -211,18 +235,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "matchingRightItems": [String]()
         ]
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 0.5), repeats: false)
-        let request = UNNotificationRequest(
-            identifier: "tutorial_\(cardId.uuidString)",
-            content: content,
-            trigger: trigger
-        )
+        content.userInfo.merge(appearance.userInfo) { _, selected in selected }
 
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Error scheduling tutorial alert: \(error)")
-            }
-        }
+        return content
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

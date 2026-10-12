@@ -631,6 +631,35 @@ public enum NotificationTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// Carries test-alert appearance across processes, including builds without a shared container.
+public nonisolated struct NotificationAppearance: Equatable {
+    public var theme: NotificationTheme
+    public var layout: NotificationLayoutMode
+    public var mode: String
+
+    public init(theme: NotificationTheme, layout: NotificationLayoutMode, mode: String) {
+        self.theme = theme
+        self.layout = layout
+        self.mode = ["light", "dark"].contains(mode) ? mode : "system"
+    }
+
+    public static func saved(in defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared")) -> Self {
+        Self(theme: NotificationTheme(rawValue: defaults?.string(forKey: "notificationCustomTheme") ?? "") ?? .defaultTheme,
+             layout: NotificationLayoutMode(rawValue: defaults?.string(forKey: "notificationCustomLayout") ?? "") ?? .automatic,
+             mode: defaults?.string(forKey: "appearanceMode") ?? "system")
+    }
+
+    public var userInfo: [String: String] {
+        ["notificationCustomTheme": theme.rawValue, "notificationCustomLayout": layout.rawValue, "appearanceMode": mode]
+    }
+
+    public static func resolve(userInfo: [AnyHashable: Any], fallback: Self = .saved()) -> Self {
+        Self(theme: (userInfo["notificationCustomTheme"] as? String).flatMap(NotificationTheme.init(rawValue:)) ?? fallback.theme,
+             layout: (userInfo["notificationCustomLayout"] as? String).flatMap(NotificationLayoutMode.init(rawValue:)) ?? fallback.layout,
+             mode: (userInfo["appearanceMode"] as? String).flatMap { ["system", "light", "dark"].contains($0) ? $0 : nil } ?? fallback.mode)
+    }
+}
+
 public enum NotificationLayoutMode: String, CaseIterable, Identifiable {
     case automatic = "automatic"
     case compact = "compact"

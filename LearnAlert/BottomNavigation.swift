@@ -74,7 +74,7 @@ struct BottomNavigationBar: View {
             )
         }
         .frame(maxWidth: 560)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, style == .split ? 0 : 16)
         .animation(motion, value: storedStyle)
         .onChange(of: selectedTab) { _, _ in showingCreationActions = false }
         .onChange(of: storedStyle) { _, _ in showingCreationActions = false }
@@ -147,10 +147,11 @@ private struct NavigationDock: View {
             }
 
             creationBall
-                .offset(y: isExpanded && !reduceMotion ? 10 : 12)
+                .offset(y: (style == .split ? 28 : 20) - (isExpanded && !reduceMotion ? 2 : 0))
                 .zIndex(2)
         }
         .frame(height: 108, alignment: .top)
+        .offset(y: 8)
         .animation(motion, value: selectedTab)
         .animation(motion, value: isExpanded)
     }
@@ -227,11 +228,16 @@ private struct NavigationDock: View {
         .padding(.top, 32)
     }
 
-    // Islands: two separate compact panels; the selected icon expands into a label.
+    // Islands: expanding tabs share a continuous base with the center button embedded in it.
     private var islandDock: some View {
-        HStack(spacing: 72) {
+        HStack(spacing: 68) {
             island([0, 1])
             island([2, 3])
+        }
+        .padding(.horizontal, 16)
+        .background {
+            Rectangle().fill(LearnAlertStyle.courseSurface)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .padding(.top, 40)
     }
@@ -276,11 +282,6 @@ private struct NavigationDock: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
-        .background {
-            UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
-                .fill(LearnAlertStyle.courseSurface)
-                .ignoresSafeArea(.container, edges: .bottom)
-        }
     }
 
     // Rail: four continuous segments, text-led controls, matte finish, moving rule.
@@ -389,10 +390,9 @@ private struct NavigationDock: View {
                 .overlay { Circle().fill(LearnAlertStyle.appAccent) }
                 .overlay { Circle().fill(LinearGradient(colors: [.white.opacity(style == .cradle ? 0.10 : 0.24), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)) }
                 .overlay { Circle().strokeBorder(.white.opacity(colorScheme == .dark ? 0.45 : 0.80), lineWidth: 1) }
-                .overlay {
+                .background {
                     if style == .split {
-                        Circle().stroke(LearnAlertStyle.appAccent.opacity(0.22), lineWidth: 1)
-                            .padding(isExpanded && !reduceMotion ? -10 : -6)
+                        Circle().fill(LearnAlertStyle.courseSurface).padding(-4)
                     }
                 }
         }

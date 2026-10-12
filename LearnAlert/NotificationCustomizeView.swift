@@ -16,6 +16,7 @@ struct NotificationCustomizeView: View {
     @State private var previewCardType: FlashcardType = .multipleChoice
     @State private var showingPermissionAlert = false
     @State private var testScheduledSuccess = false
+    @State private var testSchedulingError: String?
 
     private var isLight: Bool { colorScheme == .light }
 
@@ -86,7 +87,7 @@ struct NotificationCustomizeView: View {
                             systemImage: testScheduledSuccess ? "checkmark" : "bell")
                             .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
                     }.buttonStyle(.bordered).tint(StudyStudioStyle.ink)
-                    Text("Touch and hold your notification to expand it.")
+                    Text("Touch and hold the alert to see your color and answer.")
                         .font(.footnote).foregroundStyle(StudyStudioStyle.secondary)
                 }
             }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 112)
@@ -97,6 +98,10 @@ struct NotificationCustomizeView: View {
                 Button("Open Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) } }
                 Button("Cancel", role: .cancel) { }
             } message: { Text("Allow notifications in Settings to receive study alerts.") }
+            .alert("Couldn’t send test alert", isPresented: Binding(
+                get: { testSchedulingError != nil }, set: { if !$0 { testSchedulingError = nil } }
+            )) { Button("OK", role: .cancel) { testSchedulingError = nil } }
+            message: { Text(testSchedulingError ?? "Please try again.") }
     }
 
     private func resetToDefault() {
@@ -144,17 +149,22 @@ struct NotificationCustomizeView: View {
             question: "Which planet is known for its rings?",
             options: ["Saturn", "Jupiter", "Mars", "Neptune"],
             correctAnswer: "Saturn",
-            hint: "It is the sixth planet from the Sun."
-        )
-
-        HapticFeedback.success()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            testScheduledSuccess = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
-            withAnimation {
-                testScheduledSuccess = false
+            hint: "It is the sixth planet from the Sun.",
+            delay: 3,
+            appearance: NotificationAppearance(theme: currentTheme, layout: currentLayout, mode: appearanceMode)
+        ) { error in
+            Task { @MainActor in
+                if let error {
+                    HapticFeedback.warning()
+                    testSchedulingError = error.localizedDescription
+                    return
+                }
+                HapticFeedback.success()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    testScheduledSuccess = true
+                }
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation { testScheduledSuccess = false }
             }
         }
     }

@@ -86,6 +86,7 @@ struct FlashcardNotificationView: View {
     var optionImageNames: [String] = []
     var previewMode = false
     var isTutorial = false
+    var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
@@ -128,19 +129,18 @@ struct FlashcardNotificationView: View {
 
     // MARK: - Appearance & Customization Dynamics
     private var effectiveColorScheme: ColorScheme {
-        let mode = UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "appearanceMode") ?? "system"
+        let mode = appearance.mode
         if mode == "light" { return .light }
         if mode == "dark" { return .dark }
         return systemColorScheme
     }
 
     private var customTheme: String {
-        UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "notificationCustomTheme") ?? "default"
+        appearance.theme.rawValue
     }
 
     private var isCompactLayout: Bool {
-        let layout = UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "notificationCustomLayout") ?? "automatic"
-        return layout == "compact"
+        appearance.layout == .compact
     }
 
     private var isLight: Bool {
@@ -1262,6 +1262,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             promptImageName: promptImageName,
             optionImageNames: optionImageNames,
             isTutorial: isTutorial,
+            appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in
                 self?.openHostApp(deckId: deckId)
             },
