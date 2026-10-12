@@ -130,7 +130,7 @@ private struct NavigationIconPalette {
         isDark ? Color(red: 0.96, green: 0.73, blue: 0.61) : Color(red: 0.92, green: 0.64, blue: 0.51)
     }
     var gearHub: Color {
-        isDark ? Color(red: 0.80, green: 0.51, blue: 0.40) : Color(red: 0.78, green: 0.45, blue: 0.34)
+        isDark ? Color(red: 0.62, green: 0.33, blue: 0.24) : Color(red: 0.59, green: 0.29, blue: 0.20)
     }
     var yellow: Color {
         isDark ? Color(red: 0.98, green: 0.85, blue: 0.57) : Color(red: 0.92, green: 0.78, blue: 0.43)
