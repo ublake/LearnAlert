@@ -23,17 +23,13 @@ struct BottomNavigationBar: View {
     @AppStorage("navigationBarStyle") private var storedStyle = BottomNavigationStyle.drift.rawValue
     @AppStorage("homeTutorialStep") private var homeTutorialStep = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var style: BottomNavigationStyle { BottomNavigationStyle(rawValue: storedStyle) ?? .drift }
     private var motion: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72) }
 
     var body: some View {
         VStack(spacing: 12) {
-            if showingCreationActions && homeTutorialStep == 0 {
-                creationMenu
-                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            }
+            creationMenu
 
             NavigationDock(
                 style: style,
@@ -84,14 +80,23 @@ struct BottomNavigationBar: View {
     }
 
     private var creationMenu: some View {
-        VStack(spacing: 0) {
-            creationAction("Create Deck", icon: "rectangle.stack.badge.plus", action: createDeck)
-            Rectangle().fill(LearnAlertStyle.cardBorder).frame(height: 1).padding(.horizontal, 16)
-            creationAction("Import with AI", icon: "sparkles", action: importWithAI)
+        HStack(alignment: .bottom, spacing: 16) {
+            if showingCreationActions && homeTutorialStep == 0 {
+                creationAction("Create Deck", icon: "rectangle.stack.badge.plus", action: createDeck)
+                    .transition(creationActionTransition(isLeading: true))
+                creationAction("Import with AI", icon: "sparkles", action: importWithAI)
+                    .transition(creationActionTransition(isLeading: false))
+            }
         }
-        .appCardSurface(cornerRadius: 20)
-        .frame(maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 300)
+        .padding(.horizontal, 16)
         .accessibilityElement(children: .contain)
+    }
+
+    private func creationActionTransition(isLeading: Bool) -> AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .offset(x: isLeading ? 16 : -16, y: 32)
+            .combined(with: .scale(scale: 0.92, anchor: isLeading ? .bottomTrailing : .bottomLeading))
+            .combined(with: .opacity)
     }
 
     private func creationAction(_ title: LocalizedStringKey, icon: String, action: @escaping () -> Void) -> some View {
@@ -100,15 +105,25 @@ struct BottomNavigationBar: View {
             withAnimation(motion) { showingCreationActions = false }
             action()
         } label: {
-            Label(title, systemImage: icon)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 88)
+            .appCardSurface(cornerRadius: 20)
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(DockPressStyle())
+        .accessibilityLabel(title)
     }
 }
 
