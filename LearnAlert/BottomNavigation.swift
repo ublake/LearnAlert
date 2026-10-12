@@ -151,7 +151,7 @@ private struct NavigationDock: View {
                 .zIndex(2)
         }
         .frame(height: 108, alignment: .top)
-        .offset(y: 16)
+        .offset(y: 24)
         .animation(motion, value: selectedTab)
         .animation(motion, value: isExpanded)
     }
@@ -244,9 +244,7 @@ private struct NavigationDock: View {
                 .frame(height: 52)
                 .background {
                     if selected {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(LearnAlertStyle.appAccent.opacity(0.18))
-                            .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                        islandSelection(index)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -259,6 +257,28 @@ private struct NavigationDock: View {
                 .ignoresSafeArea(.container, edges: .bottom)
         }
         .padding(.top, 40)
+    }
+
+    private func islandSelection(_ index: Int) -> some View {
+        let leadingEdge = index == 0
+        let trailingEdge = index == 3
+        let outerEdge = leadingEdge || trailingEdge
+
+        // The outer highlights reach the screen edges; icon positions and tap areas stay fixed.
+        return UnevenRoundedRectangle(
+            topLeadingRadius: leadingEdge ? 0 : 12,
+            bottomLeadingRadius: leadingEdge ? 0 : 12,
+            bottomTrailingRadius: trailingEdge ? 0 : 12,
+            topTrailingRadius: trailingEdge ? 0 : 12,
+            style: .continuous
+        )
+        .fill(LearnAlertStyle.appAccent.opacity(0.18))
+        .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+        .padding(.leading, leadingEdge ? -20 : 0)
+        .padding(.trailing, trailingEdge ? -20 : 0)
+        .padding(.top, outerEdge ? -8 : 0)
+        .padding(.bottom, outerEdge ? -48 : 0)
+        .allowsHitTesting(false)
     }
 
     // Rail: four continuous segments, text-led controls, matte finish, moving rule.
