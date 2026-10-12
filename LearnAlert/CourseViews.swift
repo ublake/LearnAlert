@@ -352,7 +352,6 @@ struct CourseOnboardingSheet: View {
     @ObservedObject private var progressManager = CourseProgressManager.shared
 
     @State private var step = 1
-    @State private var selectedGoal: CourseGoal = .conversation
     @State private var selectedExperience: CourseExperienceLevel = .absoluteBeginner
     @State private var selectedStudyMode: CourseStudyMode = .inAppAndNotifications
     @State private var selectedDays: Set<Int> = [1, 2, 3, 4, 5, 6, 7]
@@ -367,7 +366,7 @@ struct CourseOnboardingSheet: View {
             VStack(spacing: 0) {
                 // Step Progress Indicator
                 HStack(spacing: 6) {
-                    ForEach(1...4, id: \.self) { s in
+                    ForEach(1...3, id: \.self) { s in
                         Capsule()
                             .fill(s <= step ? Color(hex: course.colorHex) : Color.gray.opacity(0.2))
                             .frame(height: 4)
@@ -380,12 +379,10 @@ struct CourseOnboardingSheet: View {
                     VStack(alignment: .leading, spacing: 18) {
                         switch step {
                         case 1:
-                            goalStepView
-                        case 2:
                             experienceStepView
-                        case 3:
+                        case 2:
                             studyModeStepView
-                        case 4:
+                        case 3:
                             planSummaryStepView
                         default:
                             EmptyView()
@@ -410,13 +407,13 @@ struct CourseOnboardingSheet: View {
                     }
 
                     Button {
-                        if step < 4 {
+                        if step < 3 {
                             withAnimation(.snappy) { step += 1 }
                         } else {
                             completeOnboarding()
                         }
                     } label: {
-                        Text(step == 4 ? "Start Course" : "Continue")
+                        Text(step == 3 ? "Start Course" : "Continue")
                             .font(.custom("Poppins-SemiBold", size: 14))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -431,55 +428,11 @@ struct CourseOnboardingSheet: View {
                 .background(LearnAlertStyle.surface)
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-            .navigationTitle("Personalize Plan")
+            .navigationTitle("Course Setup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private var goalStepView: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("What's your primary goal?")
-                .font(.custom("Poppins-Bold", size: 18))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-
-            VStack(spacing: 10) {
-                ForEach(CourseGoal.allCases) { goal in
-                    let isSelected = selectedGoal == goal
-                    Button {
-                        withAnimation(.snappy) { selectedGoal = goal }
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: goal.icon)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(isSelected ? Color.white : Color(hex: course.colorHex))
-                                .frame(width: 38, height: 38)
-                                .background(isSelected ? Color(hex: course.colorHex) : Color(hex: course.colorHex).opacity(0.12), in: Circle())
-
-                            Text(goal.title)
-                                .font(.custom("Poppins-SemiBold", size: 14))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-
-                            Spacer()
-
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Color(hex: course.colorHex))
-                            }
-                        }
-                        .padding(14)
-                        .background(isSelected ? Color(hex: course.colorHex).opacity(0.08) : LearnAlertStyle.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(isSelected ? Color(hex: course.colorHex) : LearnAlertStyle.hairline, lineWidth: isSelected ? 1.5 : 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -626,7 +579,6 @@ struct CourseOnboardingSheet: View {
             }
 
             VStack(spacing: 10) {
-                PlanSummaryRow(label: "Primary Goal", value: selectedGoal.title, icon: selectedGoal.icon, colorHex: course.colorHex)
                 PlanSummaryRow(label: "Experience", value: selectedExperience.title, icon: selectedExperience.icon, colorHex: course.colorHex)
                 PlanSummaryRow(label: "Study Mode", value: selectedStudyMode.title, icon: selectedStudyMode.icon, colorHex: course.colorHex)
                 PlanSummaryRow(label: "Cadence", value: "\(dailyCardsCount) alerts / day", icon: "bell.badge.fill", colorHex: course.colorHex)
@@ -644,7 +596,7 @@ struct CourseOnboardingSheet: View {
     private func completeOnboarding() {
         _ = progressManager.enroll(
             course: course,
-            goal: selectedGoal,
+            goal: progressManager.enrollment(for: course.id)?.goal ?? .conversation,
             experienceLevel: selectedExperience,
             studyMode: selectedStudyMode,
             selectedDays: Array(selectedDays),
