@@ -151,7 +151,7 @@ private struct NavigationDock: View {
                 .zIndex(2)
         }
         .frame(height: 108, alignment: .top)
-        .offset(y: 8)
+        .offset(y: 12)
         .animation(motion, value: selectedTab)
         .animation(motion, value: isExpanded)
     }
