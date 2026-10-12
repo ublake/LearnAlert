@@ -161,7 +161,7 @@ private struct NavigationDock: View {
         pairedTabs { index in
             tabButton(index) {
                 VStack(spacing: 4) {
-                    Image(systemName: tabs[index].symbol)
+                    Image(systemName: tabSymbol(index))
                         .font(.system(size: 18, weight: selectedTab == index ? .semibold : .medium))
                         .frame(height: 22)
                     tabTitle(index)
@@ -199,13 +199,13 @@ private struct NavigationDock: View {
             let selected = selectedTab == index
             tabButton(index) {
                 VStack(spacing: 4) {
-                    Image(systemName: selected ? tabs[index].symbol : tabs[index].outline)
+                    Image(systemName: tabSymbol(index))
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(selected ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                        .foregroundStyle(tabColor(index))
                         .frame(width: 36, height: 36)
                         .background {
-                            Circle().fill(selected ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface)
-                                .overlay { Circle().strokeBorder(selected ? Color.white.opacity(0.36) : LearnAlertStyle.cardBorder, lineWidth: 1) }
+                            Circle().fill(selected ? LearnAlertStyle.appAccent.opacity(0.18) : LearnAlertStyle.insetSurface)
+                                .overlay { Circle().strokeBorder(selected ? LearnAlertStyle.appAccentForeground.opacity(0.30) : LearnAlertStyle.cardBorder, lineWidth: 1) }
                                 .shadow(color: selected ? .black.opacity(0.16) : .clear, radius: 6, y: 4)
                         }
                         .offset(y: selected && !reduceMotion ? -6 : 0)
@@ -228,13 +228,35 @@ private struct NavigationDock: View {
         .padding(.top, 32)
     }
 
-    // Islands: expanding tabs share a continuous base with the center button embedded in it.
+    // Islands: equal-width tabs keep the icons centered as their selected labels appear.
     private var islandDock: some View {
-        HStack(spacing: 68) {
-            island([0, 1])
-            island([2, 3])
+        pairedTabs(rowHeight: 52) { index in
+            let selected = selectedTab == index
+            tabButton(index) {
+                VStack(spacing: 4) {
+                    Image(systemName: tabSymbol(index))
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(height: 24)
+                    tabTitle(index)
+                        .frame(height: 14)
+                        .opacity(selected ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(tabColor(index))
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(LearnAlertStyle.appAccent.opacity(0.18))
+                            .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background {
             Rectangle().fill(LearnAlertStyle.courseSurface)
                 .ignoresSafeArea(.container, edges: .bottom)
@@ -242,78 +264,34 @@ private struct NavigationDock: View {
         .padding(.top, 40)
     }
 
-    private func island(_ indices: [Int]) -> some View {
-        HStack(spacing: 4) {
-            ForEach(indices, id: \.self) { index in
-                let selected = selectedTab == index
-                tabButton(index) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 6) {
-                            Image(systemName: tabs[index].outline)
-                                .font(.system(size: 18, weight: .semibold))
-                            if selected {
-                                Text(tabs[index].title)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .fixedSize()
-                                    .transition(.opacity)
-                            }
-                        }
-                        VStack(spacing: 3) {
-                            Image(systemName: tabs[index].outline).font(.system(size: 17, weight: .semibold))
-                            if selected { tabTitle(index) }
-                        }
-                    }
-                    .foregroundStyle(selected ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
-                    .padding(.horizontal, selected ? 8 : 0)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background {
-                        if selected {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(LearnAlertStyle.appAccent)
+    // Rail: four continuous segments, text-led controls, matte finish, moving rule.
+    private var railDock: some View {
+        pairedTabs { index in
+            tabButton(index) {
+                HStack(spacing: 5) {
+                    Image(systemName: tabSymbol(index))
+                        .font(.system(size: 13, weight: .medium))
+                    Text(tabs[index].title.uppercased())
+                        .font(.system(size: 9, weight: selectedTab == index ? .bold : .medium))
+                        .tracking(0.3)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                }
+                .foregroundStyle(tabColor(index))
+                .padding(.horizontal, 5)
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+                .overlay(alignment: .bottom) {
+                    ZStack {
+                        Rectangle().fill(LearnAlertStyle.cardBorder)
+                        if selectedTab == index {
+                            Rectangle().fill(LearnAlertStyle.appAccentForeground)
                                 .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
                         }
                     }
-                }
-                .frame(width: selected ? nil : 44)
-                .frame(maxWidth: selected ? .infinity : nil)
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
-    }
-
-    // Rail: four continuous segments, text-led controls, matte finish, moving rule.
-    private var railDock: some View {
-        HStack(spacing: 0) {
-            ForEach(0..<4, id: \.self) { index in
-                tabButton(index) {
-                    HStack(spacing: 5) {
-                        Image(systemName: tabs[index].outline)
-                            .font(.system(size: 13, weight: .medium))
-                        Text(tabs[index].title.uppercased())
-                            .font(.system(size: 9, weight: selectedTab == index ? .bold : .medium))
-                            .tracking(0.3)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                    }
-                    .foregroundStyle(tabColor(index))
-                    .padding(.horizontal, 5)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 60)
-                    .overlay(alignment: .bottom) {
-                        ZStack {
-                            Rectangle().fill(LearnAlertStyle.cardBorder)
-                            if selectedTab == index {
-                                Rectangle().fill(LearnAlertStyle.appAccentForeground)
-                                    .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
-                            }
-                        }
-                        .frame(height: 2)
-                        .padding(.horizontal, 8)
-                        .padding(.bottom, 4)
-                    }
+                    .frame(height: 2)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 4)
                 }
             }
         }
@@ -328,11 +306,11 @@ private struct NavigationDock: View {
         .padding(.top, 36)
     }
 
-    private func pairedTabs<Content: View>(@ViewBuilder content: (Int) -> Content) -> some View {
+    private func pairedTabs<Content: View>(rowHeight: CGFloat = 60, @ViewBuilder content: (Int) -> Content) -> some View {
         HStack(spacing: 0) {
             content(0)
             content(1)
-            Color.clear.frame(width: 68, height: 60)
+            Color.clear.frame(maxWidth: .infinity).frame(height: rowHeight)
             content(2)
             content(3)
         }
@@ -347,6 +325,10 @@ private struct NavigationDock: View {
         .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
         .accessibilityShowsLargeContentViewer { Label(tabs[index].title, systemImage: tabs[index].symbol) }
         .frame(maxWidth: .infinity)
+    }
+
+    private func tabSymbol(_ index: Int) -> String {
+        selectedTab == index ? tabs[index].symbol : tabs[index].outline
     }
 
     private func tabTitle(_ index: Int) -> some View {
