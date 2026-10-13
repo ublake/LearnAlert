@@ -463,7 +463,7 @@ struct ShareDeckToCommunitySheet: View {
     @State private var deckDescription = ""
     @State private var isPublishing = false
     @State private var progress = ""
-    @State private var isPublished = false
+    @State private var isSubmitted = false
     @State private var publishError: String?
     @State private var showingProfile = false
     @State private var showingPreview = false
@@ -504,28 +504,31 @@ struct ShareDeckToCommunitySheet: View {
                 }.padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-            .navigationTitle(isPublished ? "Deck shared" : "Share a deck").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isSubmitted ? "Submitted for review" : "Share a deck").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isPublishing) } }
             .safeAreaInset(edge: .bottom) {
                 if selectedDeck != nil {
                     VStack(spacing: 10) {
                         if isPublishing { ProgressView(progress).font(.caption) }
-                        Text("Cards and media are public. Study history stays private.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                        if selectedDeck?.publishedCommunityID != nil && !isSubmitted {
+                            Text("Updates make the community copy private until approved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                        }
+                        Text("Review can take up to 3 days. Cards and media stay private until approved. Study history stays private.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         Button { beginPublish() } label: {
-                            Label(isPublished ? "Published" : selectedDeck?.publishedCommunityID == nil ? "Publish deck" : "Update public deck", systemImage: isPublished ? "checkmark.circle.fill" : "square.and.arrow.up")
+                            Label(isSubmitted ? "Awaiting review" : selectedDeck?.publishedCommunityID == nil ? "Submit for review" : "Submit update for review", systemImage: isSubmitted ? "clock.fill" : "square.and.arrow.up")
                                 .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
                         }.buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk)
-                            .disabled(isPublishing || isPublished || selectedDeck?.cards.isEmpty == true || (selectedDeck?.cards.count ?? 0) > 500)
+                            .disabled(isPublishing || isSubmitted || selectedDeck?.cards.isEmpty == true || (selectedDeck?.cards.count ?? 0) > 500)
                     }.padding(16).background(LearnAlertStyle.courseSurface)
                 }
             }
             .interactiveDismissDisabled(isPublishing)
             .onAppear { if selectedDeckID == nil { selectedDeckID = availableDecks.first(where: { $0.id == initialDeckID })?.id ?? availableDecks.first?.id; loadMetadata() } }
             .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
-            .onChange(of: category) { _, _ in isPublished = false }
-            .onChange(of: deckDescription) { _, _ in isPublished = false }
+            .onChange(of: category) { _, _ in isSubmitted = false }
+            .onChange(of: deckDescription) { _, _ in isSubmitted = false }
             .sheet(isPresented: $showingProfile) {
-                CommunityProfileSheet(saveTitle: "Save & publish", onSave: { showingProfile = false; Task { await publish() } })
+                CommunityProfileSheet(saveTitle: "Save & submit", onSave: { showingProfile = false; Task { await publish() } })
             }
             .sheet(isPresented: $showingPreview) { if let deck = selectedDeck { LocalCommunityPreviewSheet(deck: deck) } }
         }
@@ -537,7 +540,7 @@ struct ShareDeckToCommunitySheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }
-                Text(session.isSignedIn ? session.handle : "Your public preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                Text(session.isSignedIn ? session.handle : "Your community preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             Text(deck.name).font(.title3.weight(.semibold))
             if !deckDescription.isEmpty { Text(deckDescription).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
@@ -551,7 +554,7 @@ struct ShareDeckToCommunitySheet: View {
     }
     private func loadMetadata() {
         category = selectedDeck?.communityCategory ?? "General"; deckDescription = selectedDeck?.communityDescription ?? ""
-        isPublished = false; publishError = nil
+        isSubmitted = false; publishError = nil
     }
     private func beginPublish() {
         if !session.isSignedIn || session.needsProfileSetup { showingProfile = true }
@@ -564,7 +567,7 @@ struct ShareDeckToCommunitySheet: View {
         do {
             let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: deckDescription, token: token) { progress = $0 }
             deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = deckDescription
-            try context.save(); isPublished = true; HapticFeedback.success()
+            try context.save(); isSubmitted = true; HapticFeedback.success()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); publishError = error.localizedDescription }
     }
@@ -607,12 +610,24 @@ struct MySharedDecksSheet: View {
             ScrollView {
                 VStack(spacing: 16) {
                     if isLoading { ProgressView("Loading your decks…").frame(minHeight: 120) }
-                    else if decks.isEmpty { ContentUnavailableView("No shared decks yet", systemImage: "rectangle.stack") }
+                    else if decks.isEmpty { ContentUnavailableView("No submissions yet", systemImage: "rectangle.stack") }
                     ForEach(decks) { deck in
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(deck.name).font(.headline); Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            Text(deck.name).font(.headline)
+                            Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            if deck.reviewStatus == "pending" {
+                                Label("Pending review", systemImage: "clock").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.appAccentForeground)
+                                Text("Review can take up to 3 days.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            } else if deck.reviewStatus == "rejected" {
+                                Label("Needs changes", systemImage: "exclamationmark.bubble").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.destructiveRed)
+                                if let note = deck.reviewMessage, !note.isEmpty {
+                                    Text(note).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
+                            } else if deck.reviewStatus == "approved" {
+                                Label("Approved", systemImage: "checkmark.circle").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.appAccentForeground)
+                            }
                             HStack {
-                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button("Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
                                 Button("Remove", systemImage: "trash", role: .destructive) { removingDeck = deck }.frame(minHeight: 44)
                             }.disabled(isRemoving)
@@ -621,19 +636,19 @@ struct MySharedDecksSheet: View {
                     if let message { Text(message).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
                 }.padding(20)
             }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-                .navigationTitle("My shared decks").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("My community decks").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isRemoving) } }
                 .task { await load() }.refreshable { await load() }
                 .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
                 .sheet(item: $editingDeck) { ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: $0.id) }
-                .confirmationDialog("Remove this public deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
-                    Button("Remove public deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
+                .confirmationDialog("Remove this community deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
+                    Button("Remove community deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
                 } message: { Text("Your personal deck and copies already downloaded by other learners remain in their libraries.") }
                 .interactiveDismissDisabled(isRemoving)
         }
     }
     @MainActor private func load() async {
-        guard let token = session.token else { isLoading = false; message = "Sign in with Apple to see your shared decks."; return }
+        guard let token = session.token else { isLoading = false; message = "Sign in with Apple to see your community decks."; return }
         isLoading = true; message = nil
         defer { isLoading = false }
         do {

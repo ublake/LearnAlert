@@ -435,7 +435,7 @@ struct CommunityProfileSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if session.isSignedIn {
                         Menu {
-                            Button("My shared decks", systemImage: "rectangle.stack") { showingMyDecks = true }
+                            Button("My community decks", systemImage: "rectangle.stack") { showingMyDecks = true }
                             Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut(); dismiss() }
                             Button("Delete community account", role: .destructive) { confirmingDelete = true }
                         } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }

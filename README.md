@@ -114,6 +114,12 @@ Community sharing uploads public card snapshots, selected images, and audio;
 private source documents and study history are excluded. See the API repository's
 COMMUNITY.md for storage, moderation, migrations, and account deletion.
 
+New community submissions and updates stay private until manually approved in the
+owner's admin review queue. The app explains that review can take up to 3 days and
+shows pending, approved, or needs-changes status in My community decks. Rejection
+notes are visible there, with an option to edit and resubmit. Approval never happens
+automatically; updates temporarily remove the community copy from public listings.
+
 Before App Store distribution, verify Apple sign-in, shared app/extension progress,
 checkpoint handoffs, and notification layouts on a provisioned iPhone, and update
 App Store privacy answers for community identifiers, content, images, and audio.

@@ -33,6 +33,9 @@ struct CommunityDeckPayload: Codable, Identifiable {
     let publishedAt: Int?
     var cards: [CommunityCardPayload]?
     var authorAvatar: CommunityAvatar? = nil
+    var reviewStatus: String? = nil
+    var reviewMessage: String? = nil
+    var submittedAt: Int? = nil
 }
 
 enum CommunityDeckSort: String, CaseIterable {
@@ -408,7 +411,7 @@ enum CommunityDeckTransfer {
                 cards[index].optionImageIDs = cards[index].optionImageIDs.map { $0.flatMap { remoteIDs[$0] } }
                 cards[index].promptAudioID = cards[index].promptAudioID.flatMap { remoteIDs[$0] }
             }
-            progress("Publishing your deck…")
+            progress("Submitting for review…")
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
                 colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards), deckID: id, token: token)
             return id

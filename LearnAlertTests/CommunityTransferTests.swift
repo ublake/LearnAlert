@@ -58,7 +58,7 @@ struct CommunityTransferTests {
         return data
     }
 
-    @Test("Publishing includes image/audio references and excludes private study material")
+    @Test("Accepted review submissions include image/audio references and exclude private study material")
     func publishesMedia() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in
             UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
@@ -86,7 +86,7 @@ struct CommunityTransferTests {
                 return (201, try json(["id": type.hasPrefix("image/") ? imageID : audioID]))
             }
             published = try JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any]
-            return (200, try json(["id": draftID, "success": true]))
+            return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
         }
         let id = try await CommunityDeckTransfer.publish(deck: deck, category: "Science", description: "With media", token: "test", api: api()) { _ in }
         #expect(id == draftID)
@@ -294,6 +294,30 @@ struct CommunityTransferTests {
         #expect(!store.canChangePage)
         await store.load()
         #expect(store.currentPage == 1 && store.canChangePage)
+    }
+
+    @Test("My community decks includes review status and rejection notes; older payloads still decode")
+    func communityReviewStates() async throws {
+        CommunityTestProtocol.response = { request in
+            #expect(request.url?.path == "/v1/community/account/decks")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer owner-token")
+            let rows: [[String: Any]] = ["pending", "approved", "rejected"].map { status in
+                ["id": status, "name": "My deck", "description": "", "authorHandle": "@cozy_otter", "categoryTag": "General",
+                 "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 5, "downloadCount": 0,
+                 "reviewStatus": status, "reviewMessage": status == "rejected" ? "Please correct the answer on card 2." : "",
+                 "submittedAt": 1791900000]
+            }
+            return (200, try json(["decks": rows, "nextOffset": NSNull()]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let page = try await api().myDecks(token: "owner-token")
+        #expect(page.decks.map(\.reviewStatus) == ["pending", "approved", "rejected"])
+        #expect(page.decks.last?.reviewMessage == "Please correct the answer on card 2.")
+        #expect(page.decks.first?.submittedAt == 1791900000)
+        let legacy = try JSONDecoder().decode(CommunityDeckPayload.self, from: json([
+            "id": "legacy", "name": "Published deck", "description": "", "authorHandle": "@buddy", "categoryTag": "General",
+            "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 5, "downloadCount": 4]))
+        #expect(legacy.reviewStatus == nil && legacy.reviewMessage == nil && legacy.submittedAt == nil)
     }
 
 }
