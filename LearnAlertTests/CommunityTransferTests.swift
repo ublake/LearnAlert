@@ -132,4 +132,74 @@ struct CommunityTransferTests {
         #expect(try Data(contentsOf: CardAudioStore.url(named: name)) == audioData)
         #expect(try CardAudioStore.contentType(for: name) == "audio/wav")
     }
+    @Test("Existing Apple credentials remain readable before profile setup")
+    func legacyCredentials() throws {
+        let result = try JSONDecoder().decode(CommunityAPI.SignInResult.self,
+            from: json(["token": "saved", "expiresAt": 2000000000, "handle": "@learner"]))
+        #expect(result.token == "saved")
+        #expect(result.profile == nil)
+    }
+
+    @Test("Profile saving sends only the chosen public fields with account authentication")
+    func savesProfile() async throws {
+        let avatar = CommunityAvatar(hair: 5, eyes: 4, mouth: 3)
+        CommunityTestProtocol.response = { request in
+            #expect(request.url?.path == "/v1/community/account")
+            #expect(request.httpMethod == "PUT")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer account-token")
+            let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any])
+            #expect(Set(body.keys) == ["username", "avatar"])
+            #expect(body["username"] as? String == "funny_buddy")
+            return (200, try json(["handle": "@funny_buddy", "avatar": ["hair": 5, "eyes": 4, "mouth": 3], "isComplete": true]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let profile = try await api().saveProfile(username: "funny_buddy", avatar: avatar, token: "account-token")
+        #expect(profile.handle == "@funny_buddy")
+        #expect(profile.avatar == avatar)
+        #expect(profile.isComplete)
+    }
+
+    @Test("Preview uses its dedicated endpoint and keeps public author and media data")
+    func previewsDeck() async throws {
+        let id = UUID().uuidString
+        CommunityTestProtocol.response = { request in
+            #expect(request.url?.path == "/v1/community/decks/\(id)/preview")
+            #expect(request.httpMethod == "GET")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            return (200, try json(["deck": ["id": id, "name": "Sample", "description": "", "authorHandle": "@buddy",
+                "authorAvatar": ["hair": 2, "eyes": 1, "mouth": 5], "categoryTag": "General", "colorHex": "#5B70E0",
+                "deckType": "Mixed", "cardCount": 10, "downloadCount": 0,
+                "cards": [["id": "one", "question": "Q", "correctAnswer": "A", "options": [], "hint": "", "cardType": "tap_reveal",
+                    "matchingLeftItems": [], "matchingRightItems": [], "sectionName": "", "promptAudioID": "audio-id", "optionImageIDs": []]]]]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let preview = try await api().preview(deckID: id)
+        #expect(preview.authorAvatar == CommunityAvatar(hair: 2, eyes: 1, mouth: 5))
+        #expect(preview.cards?.first?.promptAudioID == "audio-id")
+        #expect(preview.downloadCount == 0)
+    }
+
+    @Test("Publishing after an account change creates a new deck without updating the previous account")
+    func accountChangePublication() async throws {
+        let deck = Deck(name: "My deck")
+        let previousID = UUID().uuidString
+        let newID = UUID().uuidString
+        deck.publishedCommunityID = previousID
+        deck.cards = [Flashcard(question: "Q", correctAnswer: "A", cardType: .tapReveal)]
+        var paths: [String] = []
+        CommunityTestProtocol.response = { request in
+            let path = request.url!.path
+            paths.append(path)
+            if path == "/v1/community/account/decks" { return (200, try json(["decks": [], "nextOffset": NSNull()])) }
+            if path == "/v1/community/decks/drafts" { return (201, try json(["id": newID])) }
+            #expect(path == "/v1/community/decks/\(newID)")
+            return (200, try json(["id": newID, "success": true]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "new-account", api: api()) { _ in }
+        #expect(id == newID)
+        #expect(paths == ["/v1/community/account/decks", "/v1/community/decks/drafts", "/v1/community/decks/\(newID)"])
+        #expect(deck.publishedCommunityID == previousID)
+    }
+
 }

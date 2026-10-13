@@ -261,7 +261,7 @@ struct PremadeDecksView: View {
     @State private var addedDeckName: String?
     @State private var showingCourses = false
     @State private var showingAllCommunity = false
-    @State private var showingAllPremade = false
+    @StateObject private var communityFeed = CommunityFeedStore()
     @State private var showingExamPrep = false
     @State private var showingShareSheet = false
     @State private var activeCourseForPath: CourseDefinition?
@@ -292,15 +292,6 @@ struct PremadeDecksView: View {
                             .foregroundStyle(StudyStudioStyle.secondary)
                     }
                     Spacer()
-                    Button {
-                        showingShareSheet = true
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 44, height: 44)
-                            .background(StudyStudioStyle.field, in: Circle())
-                    }
-                    .accessibilityLabel("Share a deck")
                 }
                 .foregroundStyle(StudyStudioStyle.ink)
 
@@ -345,6 +336,10 @@ struct PremadeDecksView: View {
                     .foregroundStyle(StudyStudioStyle.ink)
 
                     destinationCards
+
+                    CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
+                        onAddDeck: add, onShare: { showingShareSheet = true })
+                        .padding(.top, 12)
                 } else {
                     searchResults
                 }
@@ -355,6 +350,7 @@ struct PremadeDecksView: View {
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
+        .refreshable { await communityFeed.load() }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
         .tint(StudyStudioStyle.violet)
         .navigationDestination(isPresented: $showingCourses) {
@@ -367,9 +363,6 @@ struct PremadeDecksView: View {
                 onAddDeck: { add($0) },
                 onOpenShareModal: { showingShareSheet = true }
             )
-        }
-        .navigationDestination(isPresented: $showingAllPremade) {
-            AllPremadeDecksView(libraryDecks: libraryDecks, onAddDeck: add)
         }
         .navigationDestination(isPresented: $showingExamPrep) {
             ExamPrepHubView(libraryDecks: libraryDecks, onAddDeck: add)
@@ -405,24 +398,6 @@ struct PremadeDecksView: View {
                 symbol: "character.bubble.fill",
                 color: StudyStudioStyle.blue,
                 action: { showingCourses = true }
-            )
-
-            DiscoverCategoryTile(
-                title: "Community decks",
-                subtitle: "Fresh perspectives & shared decks.",
-                badge: "Explore",
-                symbol: "person.2.fill",
-                color: StudyStudioStyle.teal,
-                action: { showingAllCommunity = true }
-            )
-
-            DiscoverCategoryTile(
-                title: "Curated subjects",
-                subtitle: "Math, science, tech & history.",
-                badge: "\(PremadeDeckCatalog.decks.count) decks",
-                symbol: "books.vertical.fill",
-                color: StudyStudioStyle.rose,
-                action: { showingAllPremade = true }
             )
 
             DiscoverCategoryTile(

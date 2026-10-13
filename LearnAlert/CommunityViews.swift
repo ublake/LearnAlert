@@ -1,193 +1,316 @@
 import SwiftUI
 import SwiftData
-import AuthenticationServices
+import AVFoundation
+import Combine
 
 extension Notification.Name {
     static let communityLibraryChanged = Notification.Name("communityLibraryChanged")
 }
 
-struct AllCommunityDecksView: View {
-    let libraryDecks: [Deck]
-    let onAddDeck: (PremadeDeck) -> Void
-    let onOpenShareModal: () -> Void
-    @ObservedObject private var session = CommunitySession.shared
-    @State private var search = ""
-    @State private var category = "All"
-    @State private var decks: [CommunityDeckPayload] = []
-    @State private var nextOffset: Int?
-    @State private var isLoading = false
-    @State private var downloadingID: String?
-    @State private var downloadProgress = ""
-    @State private var errorMessage: String?
-    @State private var reportMessage: String?
-    private let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
+@MainActor
+final class CommunityFeedStore: ObservableObject {
+    @Published var search = ""
+    @Published var category = "All"
+    @Published private(set) var decks: [CommunityDeckPayload] = []
+    @Published private(set) var nextOffset: Int?
+    @Published private(set) var isLoading = false
+    @Published private(set) var errorMessage: String?
+    private var requestID = UUID()
 
-    init(libraryDecks: [Deck], initialSearch: String = "", onAddDeck: @escaping (PremadeDeck) -> Void, onOpenShareModal: @escaping () -> Void) {
-        self.libraryDecks = libraryDecks
-        self.onAddDeck = onAddDeck
-        self.onOpenShareModal = onOpenShareModal
-        _search = State(initialValue: initialSearch)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(StudyStudioStyle.secondary)
-                    TextField("Search user-made decks", text: $search)
-                        .textInputAutocapitalization(.never)
-                        .submitLabel(.search)
-                    if !search.isEmpty {
-                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .frame(minWidth: 44, minHeight: 44)
-                            .accessibilityLabel("Clear search")
-                    }
-                }
-                .padding(.horizontal, 16)
-                .frame(minHeight: 48)
-                .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 12))
-
-                Picker("Category", selection: $category) {
-                    ForEach(categories, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.menu)
-                .tint(StudyStudioStyle.violet)
-
-                if isLoading && decks.isEmpty {
-                    ProgressView("Loading community decks…")
-                        .frame(maxWidth: .infinity, minHeight: 160)
-                } else if let errorMessage {
-                    ContentUnavailableView {
-                        Label("Library Unavailable", systemImage: "wifi.exclamationmark")
-                    } description: { Text(errorMessage) } actions: {
-                        Button("Try Again") { Task { await load() } }
-                    }
-                } else if decks.isEmpty {
-                    ContentUnavailableView("No Shared Decks Yet", systemImage: "person.2", description: Text(search.isEmpty ? "Share a deck to help other learners get started." : "Try another title or category."))
-                }
-
-                LazyVStack(spacing: 16) {
-                    ForEach(decks) { deck in
-                        communityRow(deck)
-                    }
-                }
-                if nextOffset != nil {
-                    Button { Task { await load(more: true) } } label: {
-                        if isLoading { ProgressView() }
-                        else { Text("Load more decks") }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .disabled(isLoading)
-                }
-            }
-            .padding(16)
-            .padding(.bottom, 32)
-        }
-        .background(StudyStudioStyle.canvas.ignoresSafeArea())
-        .tint(StudyStudioStyle.violet)
-        .navigationTitle("User-Made Decks")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onOpenShareModal) { Label("Share Deck", systemImage: "square.and.arrow.up") }
-                    .tint(StudyStudioStyle.violet)
-            }
-        }
-        .task(id: "\(category):\(search)") {
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch { return }
-            await load()
-        }
-        .refreshable { await load() }
-        .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
-        .alert("Community Library", isPresented: Binding(get: { reportMessage != nil }, set: { if !$0 { reportMessage = nil } })) {
-            Button("OK", role: .cancel) { }
-        } message: { Text(reportMessage ?? "") }
-    }
-
-    private func communityRow(_ deck: CommunityDeckPayload) -> some View {
-        let added = libraryDecks.contains { $0.sourceCommunityID == deck.id }
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(deck.name).font(.headline).foregroundStyle(StudyStudioStyle.ink)
-                    Text(deck.authorHandle).font(.subheadline).foregroundStyle(StudyStudioStyle.secondary)
-                }
-                Spacer(minLength: 0)
-                Button { Task { await download(deck) } } label: {
-                    if downloadingID == deck.id { ProgressView().frame(width: 44, height: 44) }
-                    else { Image(systemName: added ? "checkmark" : "arrow.down.circle")
-                        .font(.title2).frame(width: 44, height: 44) }
-                }
-                .disabled(added || downloadingID != nil)
-                .tint(StudyStudioStyle.violet)
-                .accessibilityLabel(added ? "\(deck.name) already in your library" : "Download \(deck.name)")
-            }
-            if !deck.description.isEmpty {
-                Text(deck.description).font(.subheadline).foregroundStyle(StudyStudioStyle.secondary).lineLimit(3)
-            }
-            HStack(spacing: 16) {
-                Text(deck.categoryTag)
-                Text("\(deck.cardCount) cards")
-                Label("\(deck.downloadCount)", systemImage: "arrow.down")
-            }
-            .font(.caption)
-            .foregroundStyle(StudyStudioStyle.secondary)
-            if downloadingID == deck.id {
-                Text(downloadProgress).font(.caption).foregroundStyle(StudyStudioStyle.violet)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudyStudioStyle.hairline))
-        .contextMenu {
-            Button("Report deck", systemImage: "flag") { Task { await report(deck) } }
-        }
-    }
-
-    @MainActor
-    private func load(more: Bool = false) async {
-        let query = search
-        let selectedCategory = category
-        isLoading = true
-        errorMessage = nil
-        defer { if search == query && category == selectedCategory { isLoading = false } }
+    func load(more: Bool = false) async {
+        if more && (isLoading || nextOffset == nil) { return }
+        let id = UUID(); requestID = id
+        let query = search; let selectedCategory = category
+        isLoading = true; errorMessage = nil
+        defer { if requestID == id { isLoading = false } }
         do {
             let page = try await CommunityAPI().list(search: query, category: selectedCategory, offset: more ? nextOffset ?? 0 : 0)
-            guard !Task.isCancelled, search == query, category == selectedCategory else { return }
+            guard !Task.isCancelled, requestID == id, search == query, category == selectedCategory else { return }
             if more {
                 let existing = Set(decks.map(\.id))
                 decks.append(contentsOf: page.decks.filter { !existing.contains($0.id) })
             } else { decks = page.decks }
             nextOffset = page.nextOffset
         } catch {
-            guard !Task.isCancelled, search == query, category == selectedCategory else { return }
+            guard !Task.isCancelled, requestID == id, search == query, category == selectedCategory else { return }
             errorMessage = error.localizedDescription
         }
     }
+}
 
-    @MainActor
-    private func download(_ deck: CommunityDeckPayload) async {
-        downloadingID = deck.id
-        downloadProgress = "Downloading deck…"
+struct CommunityFeedView: View {
+    @ObservedObject var store: CommunityFeedStore
+    let libraryDecks: [Deck]
+    let onAddDeck: (PremadeDeck) -> Void
+    let onShare: () -> Void
+    @ObservedObject private var session = CommunitySession.shared
+    @State private var selectedPreview: CommunityDeckPayload?
+    @State private var downloadingID: String?
+    @State private var downloadProgress = ""
+    @State private var message: String?
+    static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Community decks").font(.title3.weight(.semibold))
+                Spacer(minLength: 8)
+                Button(action: onShare) { Label("Share", systemImage: "square.and.arrow.up").font(.subheadline.weight(.semibold)).frame(minHeight: 44) }
+                    .accessibilityLabel("Share a deck")
+            }
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(LearnAlertStyle.textSecondary)
+                    TextField("Search decks", text: $store.search).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
+                    if !store.search.isEmpty {
+                        Button { store.search = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 32, height: 44) }.accessibilityLabel("Clear search")
+                    }
+                }
+                .font(.subheadline).padding(.horizontal, 12).frame(minHeight: 48)
+                .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
+                Menu {
+                    Picker("Category", selection: $store.category) {
+                        ForEach(Self.categories, id: \.self) { Text($0).tag($0) }
+                    }
+                } label: {
+                    HStack(spacing: 5) { Text(store.category); Image(systemName: "chevron.down").font(.caption2.weight(.semibold)) }
+                        .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 48)
+                        .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .accessibilityLabel("Filter community decks").accessibilityValue(store.category)
+            }
+            if store.isLoading && store.decks.isEmpty {
+                ProgressView("Loading decks…").frame(maxWidth: .infinity, minHeight: 140)
+            } else if let error = store.errorMessage {
+                VStack(spacing: 12) {
+                    Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                    Button("Try again") { Task { await store.load() } }.frame(minHeight: 44)
+                }.frame(maxWidth: .infinity).padding(20).appCardSurface(cornerRadius: 20)
+            } else if store.decks.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "rectangle.stack").font(.system(size: 30)).foregroundStyle(LearnAlertStyle.appAccentForeground)
+                    Text(store.search.isEmpty && store.category == "All" ? "Be the first to share" : "No matching decks").font(.headline)
+                    Button(store.search.isEmpty && store.category == "All" ? "Share a deck" : "Clear filters") {
+                        if store.search.isEmpty && store.category == "All" { onShare() }
+                        else { store.search = ""; store.category = "All" }
+                    }.frame(minHeight: 44)
+                }.frame(maxWidth: .infinity).padding(24).appCardSurface(cornerRadius: 20)
+            }
+            LazyVStack(spacing: 12) {
+                ForEach(store.decks) { deck in
+                    CommunityDeckCard(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
+                        progress: downloadingID == deck.id ? downloadProgress : "",
+                        open: { selectedPreview = deck }, download: { Task { await download(deck) } })
+                        .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
+                }
+            }
+            if store.nextOffset != nil {
+                Button { Task { await store.load(more: true) } } label: {
+                    HStack { if store.isLoading { ProgressView() }; Text("More decks") }.frame(maxWidth: .infinity, minHeight: 48)
+                }.disabled(store.isLoading)
+            }
+        }
+        .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
+        .task(id: "\(store.category):\(store.search)") {
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+            await store.load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await store.load() } }
+        .sheet(item: $selectedPreview) { deck in
+            CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
+                progress: downloadProgress, download: { Task { await download(deck) } })
+        }
+        .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK", role: .cancel) { message = nil }
+        } message: { Text(message ?? "") }
+    }
+
+    private func isAdded(_ deck: CommunityDeckPayload) -> Bool { libraryDecks.contains { $0.sourceCommunityID == deck.id } }
+    @MainActor private func download(_ deck: CommunityDeckPayload) async {
+        guard downloadingID == nil, !isAdded(deck) else { return }
+        downloadingID = deck.id; downloadProgress = "Downloading deck…"
         defer { downloadingID = nil }
         do {
             let downloaded = try await CommunityDeckTransfer.download(deck) { downloadProgress = $0 }
-            onAddDeck(downloaded)
-        } catch { reportMessage = error.localizedDescription }
+            selectedPreview = nil; onAddDeck(downloaded)
+        } catch { message = error.localizedDescription }
     }
-
-    @MainActor
-    private func report(_ deck: CommunityDeckPayload) async {
-        guard let token = session.token else {
-            reportMessage = "Sign in with Apple using Share Deck before reporting a deck."
-            return
-        }
+    @MainActor private func report(_ deck: CommunityDeckPayload) async {
+        guard let token = session.token else { message = "Sign in with Apple in Settings before reporting a deck."; return }
         do {
             try await CommunityAPI().report(deckID: deck.id, reason: "Reported by a learner for review.", token: token)
-            reportMessage = "Your report has been saved for review."
-        } catch { session.handle(error); reportMessage = error.localizedDescription }
+            message = "Your report has been saved for review."
+        } catch { session.handle(error); message = error.localizedDescription }
+    }
+}
+
+struct CommunityDeckCard: View {
+    let deck: CommunityDeckPayload
+    var isAdded = false
+    var isDownloading = false
+    var progress = ""
+    let open: () -> Void
+    let download: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Button(action: open) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "rectangle.stack.fill").font(.system(size: 24))
+                        .foregroundStyle(Color(hex: deck.colorHex)).frame(width: 54, height: 62)
+                        .background(Color(hex: deck.colorHex).opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(deck.name).font(.headline).multilineTextAlignment(.leading)
+                        HStack(spacing: 6) {
+                            CommunityAvatarView(avatar: deck.authorAvatar ?? .init()).frame(width: 24, height: 24)
+                            Text(deck.authorHandle).font(.caption).lineLimit(1)
+                        }.foregroundStyle(LearnAlertStyle.textSecondary)
+                        if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
+                        Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                        if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(LearnAlertStyle.appAccentForeground) }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .foregroundStyle(LearnAlertStyle.textPrimary).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityHint("Preview this deck")
+            Button(action: download) {
+                if isDownloading { ProgressView().frame(width: 44, height: 44) }
+                else { Image(systemName: isAdded ? "checkmark.circle.fill" : "arrow.down.circle.fill").font(.system(size: 25)).frame(width: 44, height: 44) }
+            }
+            .buttonStyle(.plain).tint(LearnAlertStyle.appAccentForeground)
+            .disabled(isAdded || isDownloading).accessibilityLabel(isAdded ? "Already in your library" : "Add \(deck.name) to your library")
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+    }
+}
+
+struct AllCommunityDecksView: View {
+    let libraryDecks: [Deck]
+    var initialSearch = ""
+    let onAddDeck: (PremadeDeck) -> Void
+    let onOpenShareModal: () -> Void
+    @StateObject private var store = CommunityFeedStore()
+    var body: some View {
+        ScrollView { CommunityFeedView(store: store, libraryDecks: libraryDecks, onAddDeck: onAddDeck, onShare: onOpenShareModal).padding(20).padding(.bottom, 100) }
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).navigationTitle("Community decks")
+            .navigationBarTitleDisplayMode(.inline).onAppear { store.search = initialSearch }
+            .refreshable { await store.load() }
+    }
+}
+
+struct CommunityDeckPreviewSheet: View {
+    let deck: CommunityDeckPayload
+    var isAdded = false
+    var isDownloading = false
+    var progress = ""
+    let download: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var preview: CommunityDeckPayload?
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 12) {
+                        CommunityAvatarView(avatar: deck.authorAvatar ?? .init()).frame(width: 48, height: 48)
+                        VStack(alignment: .leading, spacing: 4) { Text(deck.name).font(.title2.weight(.bold)); Text(deck.authorHandle).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
+                    }
+                    if !deck.description.isEmpty { Text(deck.description).font(.body) }
+                    Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                    if let error { Text(error).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
+                    else if let cards = preview?.cards {
+                        Text("A peek inside").font(.headline)
+                        ForEach(cards) { CommunitySampleCardView(card: $0) }
+                    } else { ProgressView().frame(maxWidth: .infinity, minHeight: 100) }
+                }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
+            }
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
+            .navigationTitle("Deck preview").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) {
+                    if isDownloading { ProgressView(progress).font(.caption) }
+                    Button(action: download) { Label(isAdded ? "In your library" : "Add to library", systemImage: isAdded ? "checkmark" : "arrow.down").frame(maxWidth: .infinity, minHeight: 48) }
+                        .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk).disabled(isAdded || isDownloading)
+                }.padding(16).background(LearnAlertStyle.courseSurface)
+            }
+            .task { await load() }
+        }
+    }
+    @MainActor private func load() async {
+        error = nil
+        do { preview = try await CommunityAPI().preview(deckID: deck.id) }
+        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    }
+}
+
+private struct CommunityRemoteImage: View {
+    let id: String
+    @State private var image: UIImage?
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            else { Image(systemName: "photo").font(.largeTitle).foregroundStyle(LearnAlertStyle.textSecondary).frame(maxWidth: .infinity, minHeight: 64) }
+        }
+        .frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12))
+        .task(id: id) { if let data = try? await CommunityAPI().media(id: id, maximumBytes: 10 * 1024 * 1024), !Task.isCancelled { image = UIImage(data: data) } }
+    }
+}
+
+private struct CommunityPreviewAudio: View {
+    var mediaID: String? = nil
+    var localName: String? = nil
+    @State private var player: AVAudioPlayer?
+    @State private var task: Task<Void, Never>?
+    @State private var isLoading = false
+    @State private var error: String?
+    var body: some View {
+        VStack(alignment: .leading) {
+            Button {
+                task?.cancel(); player?.stop(); isLoading = true; error = nil
+                task = Task {
+                    defer { isLoading = false }
+                    do {
+                        let data: Data
+                        if let mediaID { data = try await CommunityAPI().media(id: mediaID, maximumBytes: CardAudioStore.maximumBytes) }
+                        else if let localName { data = try Data(contentsOf: CardAudioStore.url(named: localName)) }
+                        else { return }
+                        try Task.checkCancellation()
+                        player = try AVAudioPlayer(data: data); player?.play()
+                    } catch { if !Task.isCancelled { self.error = "Audio could not play." } }
+                }
+            } label: { HStack { if isLoading { ProgressView() }; Label("Listen", systemImage: "speaker.wave.2.fill") }.frame(minHeight: 44) }
+            .disabled(isLoading).tint(LearnAlertStyle.appAccentForeground)
+            if let error { Text(error).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
+        }.onDisappear { task?.cancel(); player?.stop() }
+    }
+}
+
+struct CommunitySampleCardView: View {
+    let card: CommunityCardPayload
+    var localCard: Flashcard? = nil
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(card.question).font(.body.weight(.medium))
+            if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12)) }
+            else if let id = card.promptImageID { CommunityRemoteImage(id: id) }
+            if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
+            else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
+            ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
+                HStack(spacing: 12) {
+                    if let localCard, localCard.optionImageNames.indices.contains(index), let image = CardImageStore.loadImage(named: localCard.optionImageNames[index]) { Image(uiImage: image).resizable().scaledToFit().frame(width: 54, height: 54) }
+                    else if card.optionImageIDs.indices.contains(index), let id = card.optionImageIDs[index] { CommunityRemoteImage(id: id).frame(width: 54, height: 54) }
+                    Text(option).font(.subheadline)
+                }
+            }
+            DisclosureGroup("Show answer") {
+                if card.cardType == "matching" {
+                    ForEach(Array(card.matchingLeftItems.enumerated()), id: \.offset) { index, item in
+                        if card.matchingRightItems.indices.contains(index) { Text("\(item) → \(card.matchingRightItems[index])").frame(maxWidth: .infinity, alignment: .leading) }
+                    }
+                } else { Text(card.correctAnswer).frame(maxWidth: .infinity, alignment: .leading) }
+            }.font(.subheadline).tint(LearnAlertStyle.appAccentForeground)
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
     }
 }
 
@@ -195,193 +318,202 @@ struct ShareDeckToCommunitySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let libraryDecks: [Deck]
+    var initialDeckID: UUID? = nil
     @ObservedObject private var session = CommunitySession.shared
     @State private var selectedDeckID: UUID?
     @State private var category = "General"
     @State private var deckDescription = ""
-    @State private var nonce = ""
     @State private var isPublishing = false
     @State private var progress = ""
     @State private var isPublished = false
-    @State private var confirmingRemove = false
-    @State private var confirmingAccountDeletion = false
     @State private var publishError: String?
-    private let categories = ["General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
-    private var selectedDeck: Deck? { libraryDecks.first { $0.id == selectedDeckID } }
+    @State private var showingProfile = false
+    @State private var showingPreview = false
+    private var availableDecks: [Deck] { libraryDecks.filter { $0.deckType != "Course" } }
+    private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if session.isSignedIn {
+                VStack(alignment: .leading, spacing: 20) {
+                    if availableDecks.isEmpty {
+                        ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck from your personal library."))
+                    } else {
                         Menu {
-                            Button("Sign Out") { session.signOut() }
-                            Button("Delete Community Account", role: .destructive) { confirmingAccountDeletion = true }
+                            ForEach(availableDecks) { deck in Button(deck.name) { selectedDeckID = deck.id } }
                         } label: {
-                            Label(session.handle, systemImage: "person.crop.circle")
-                                .font(.subheadline).foregroundStyle(StudyStudioStyle.secondary)
-                                .frame(minHeight: 44)
+                            HStack(spacing: 12) {
+                                Image(systemName: "rectangle.stack.fill").font(.title2).foregroundStyle(selectedDeck.map { Color(hex: $0.colorHex) } ?? LearnAlertStyle.appAccentForeground)
+                                VStack(alignment: .leading, spacing: 3) { Text(selectedDeck?.name ?? "Choose a deck").font(.headline); Text("From your library").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
+                                Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold))
+                            }.foregroundStyle(LearnAlertStyle.textPrimary).padding(16).appCardSurface(cornerRadius: 20)
                         }.disabled(isPublishing)
-                    } else {
-                        signInSection
-                    }
-
-                    if libraryDecks.isEmpty {
-                        ContentUnavailableView("Create a Deck First", systemImage: "rectangle.stack", description: Text("Add cards, images, and audio to a deck in your library, then share it here."))
-                    } else {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Choose a deck").font(.headline)
-                            Picker("Deck", selection: $selectedDeckID) {
-                                ForEach(libraryDecks) { deck in Text(deck.name).tag(Optional(deck.id)) }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(StudyStudioStyle.violet)
-                            if let deck = selectedDeck {
-                                let imageCount = deck.cards.reduce(0) { $0 + ($1.promptImageName == nil ? 0 : 1) + $1.optionImageNames.filter { !$0.isEmpty }.count }
-                                let audioCount = deck.cards.filter { $0.promptAudioName != nil }.count
-                                Text("\(deck.cards.count) cards · \(imageCount) images · \(audioCount) audio clips")
-                                    .font(.subheadline).foregroundStyle(StudyStudioStyle.secondary)
-                            }
-                            Picker("Category", selection: $category) {
-                                ForEach(categories, id: \.self) { Text($0).tag($0) }
-                            }.pickerStyle(.menu).tint(StudyStudioStyle.violet)
-                            TextField("Describe what this deck teaches", text: $deckDescription, axis: .vertical)
-                                .lineLimit(3...6)
-                                .padding(16)
-                                .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 12))
-                        }
-                        .disabled(isPublishing)
-
-                        Text("Publishing shares the cards, images, and audio with everyone. Your study history and source documents stay private.")
-                            .font(.subheadline).foregroundStyle(StudyStudioStyle.secondary)
-
-                        if let message = publishError ?? session.errorMessage {
-                            Text(message).font(.subheadline).foregroundStyle(.red)
-                        }
-
-                        if isPublishing {
-                            ProgressView(progress).frame(maxWidth: .infinity)
-                        }
-                        Button { Task { await publish() } } label: {
-                            Label(isPublished ? "Published Successfully" : selectedDeck?.publishedCommunityID == nil ? "Publish Deck" : "Update Public Deck",
-                                  systemImage: isPublished ? "checkmark.circle" : "square.and.arrow.up")
-                                .font(.body.weight(.semibold))
-                                .frame(maxWidth: .infinity, minHeight: 48)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(StudyStudioStyle.violet)
-                        .disabled(!session.isSignedIn || selectedDeck == nil || selectedDeck?.cards.isEmpty == true || isPublishing || isPublished)
-
-                        if selectedDeck?.publishedCommunityID != nil {
-                            Button("Remove Public Deck", role: .destructive) { confirmingRemove = true }
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .disabled(isPublishing || !session.isSignedIn)
+                        if let deck = selectedDeck {
+                            listingPreview(deck)
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Text("Category").font(.subheadline.weight(.medium)); Spacer()
+                                    Picker("Category", selection: $category) { ForEach(CommunityFeedView.categories.filter { $0 != "All" }, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
+                                }
+                                Divider()
+                                TextField("A short description", text: $deckDescription, axis: .vertical).lineLimit(2...4)
+                                    .font(.body).textInputAutocapitalization(.sentences)
+                            }.padding(16).appCardSurface(cornerRadius: 20).disabled(isPublishing)
+                            if deck.cards.count > 500 { Text("Share up to 500 cards in one deck.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
                         }
                     }
-                }
-                .padding(24)
+                    if let error = publishError { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
+                }.padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
-            .background(StudyStudioStyle.canvas.ignoresSafeArea())
-            .navigationTitle("Share a Deck")
-            .navigationBarTitleDisplayMode(.inline)
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
+            .navigationTitle(isPublished ? "Deck shared" : "Share a deck").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isPublishing) } }
-            .interactiveDismissDisabled(isPublishing)
-            .onAppear { if selectedDeckID == nil { selectedDeckID = libraryDecks.first?.id } }
-            .onChange(of: selectedDeckID) { _, _ in
-                isPublished = false
-                publishError = nil
-                category = selectedDeck?.communityCategory ?? "General"
-                deckDescription = selectedDeck?.communityDescription ?? ""
+            .safeAreaInset(edge: .bottom) {
+                if selectedDeck != nil {
+                    VStack(spacing: 10) {
+                        if isPublishing { ProgressView(progress).font(.caption) }
+                        Text("Cards and media are public. Study history stays private.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                        Button { beginPublish() } label: {
+                            Label(isPublished ? "Published" : selectedDeck?.publishedCommunityID == nil ? "Publish deck" : "Update public deck", systemImage: isPublished ? "checkmark.circle.fill" : "square.and.arrow.up")
+                                .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
+                        }.buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk)
+                            .disabled(isPublishing || isPublished || selectedDeck?.cards.isEmpty == true || (selectedDeck?.cards.count ?? 0) > 500)
+                    }.padding(16).background(LearnAlertStyle.courseSurface)
+                }
             }
+            .interactiveDismissDisabled(isPublishing)
+            .onAppear { if selectedDeckID == nil { selectedDeckID = initialDeckID ?? availableDecks.first?.id; loadMetadata() } }
+            .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
             .onChange(of: category) { _, _ in isPublished = false }
             .onChange(of: deckDescription) { _, _ in isPublished = false }
-            .confirmationDialog("Delete your community account?", isPresented: $confirmingAccountDeletion, titleVisibility: .visible) {
-                Button("Delete Community Account", role: .destructive) { Task { await deleteAccount() } }
-            } message: { Text("Removes your public decks and community sign-in data. Your personal library stays on this device.") }
-            .confirmationDialog("Remove this deck from the public library?", isPresented: $confirmingRemove, titleVisibility: .visible) {
-                Button("Remove Public Deck", role: .destructive) { Task { await remove() } }
-            } message: { Text("Your personal deck and copies already downloaded by other learners will remain in their libraries.") }
-        }
-    }
-
-    @MainActor
-    private func deleteAccount() async {
-        guard let token = session.token else { return }
-        isPublishing = true
-        defer { isPublishing = false }
-        do {
-            try await CommunityAPI().deleteAccount(token: token)
-            session.signOut()
-            for deck in libraryDecks { deck.publishedCommunityID = nil }
-            try context.save()
-            isPublished = false
-            publishError = nil
-        } catch { session.handle(error); publishError = error.localizedDescription }
-    }
-
-    private var signInSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Sign in to share").font(.title2.weight(.semibold))
-            Text("Use Sign in with Apple to publish and manage your public decks.")
-                .font(.subheadline).foregroundStyle(StudyStudioStyle.secondary)
-            SignInWithAppleButton(.signIn) { request in
-                session.errorMessage = nil
-                nonce = CommunitySession.makeNonce()
-                request.nonce = CommunitySession.hashedNonce(nonce)
-                request.requestedScopes = [.fullName]
-            } onCompletion: { result in
-                switch result {
-                case .success(let authorization):
-                    guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                          let tokenData = credential.identityToken, let token = String(data: tokenData, encoding: .utf8) else {
-                        session.errorMessage = "Apple did not provide a sign-in token. Please try again."
-                        return
-                    }
-                    let signInNonce = nonce
-                    Task { await session.signIn(identityToken: token, nonce: signInNonce, givenName: credential.fullName?.givenName) }
-                case .failure(let error):
-                    if (error as? ASAuthorizationError)?.code != .canceled {
-                        session.errorMessage = "Apple sign-in could not finish. Make sure you’re signed in to your Apple Account in Settings, then try again."
-                    }
-                }
+            .sheet(isPresented: $showingProfile) {
+                CommunityProfileSheet(saveTitle: "Save & publish", onSave: { showingProfile = false; Task { await publish() } })
             }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 48)
-            .disabled(session.isSigningIn)
-            if session.isSigningIn { ProgressView("Signing in…") }
+            .sheet(isPresented: $showingPreview) { if let deck = selectedDeck { LocalCommunityPreviewSheet(deck: deck) } }
         }
     }
 
-    @MainActor
-    private func publish() async {
-        guard let deck = selectedDeck, let token = session.token else { return }
-        isPublishing = true
-        publishError = nil
+    private func listingPreview(_ deck: Deck) -> some View {
+        let images = deck.cards.reduce(0) { $0 + ($1.promptImageName == nil ? 0 : 1) + $1.optionImageNames.filter { !$0.isEmpty }.count }
+        let audio = deck.cards.filter { $0.promptAudioName != nil }.count
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32)
+                Text(session.isSignedIn ? session.handle : "Your public preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+            Text(deck.name).font(.title3.weight(.semibold))
+            if !deckDescription.isEmpty { Text(deckDescription).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
+            HStack(spacing: 12) {
+                Label("\(deck.cards.count)", systemImage: "rectangle.stack")
+                if images > 0 { Label("\(images)", systemImage: "photo") }
+                if audio > 0 { Label("\(audio)", systemImage: "speaker.wave.2") }
+            }.font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+            Button { showingPreview = true } label: { Label("Preview cards", systemImage: "eye").font(.subheadline.weight(.medium)).frame(minHeight: 44) }
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+    }
+    private func loadMetadata() {
+        category = selectedDeck?.communityCategory ?? "General"; deckDescription = selectedDeck?.communityDescription ?? ""
+        isPublished = false; publishError = nil
+    }
+    private func beginPublish() {
+        if !session.isSignedIn || session.needsProfileSetup { showingProfile = true }
+        else { Task { await publish() } }
+    }
+    @MainActor private func publish() async {
+        guard let deck = selectedDeck, let token = session.token, !isPublishing else { return }
+        isPublishing = true; publishError = nil
         defer { isPublishing = false }
         do {
             let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: deckDescription, token: token) { progress = $0 }
-            deck.publishedCommunityID = id
-            deck.communityCategory = category
-            deck.communityDescription = deckDescription
-            try context.save()
-            isPublished = true
-            HapticFeedback.success()
+            deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = deckDescription
+            try context.save(); isPublished = true; HapticFeedback.success()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); publishError = error.localizedDescription }
     }
+}
 
-    @MainActor
-    private func remove() async {
-        guard let deck = selectedDeck, let id = deck.publishedCommunityID, let token = session.token else { return }
-        isPublishing = true
-        progress = "Removing public deck…"
-        defer { isPublishing = false }
+private struct LocalCommunityPreviewSheet: View {
+    let deck: Deck
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    ForEach(Array(deck.cards.sorted { $0.orderIndex < $1.orderIndex }.prefix(5))) { card in
+                        CommunitySampleCardView(card: CommunityCardPayload(id: card.id.uuidString, question: card.question, correctAnswer: card.correctAnswer,
+                            options: card.options, hint: card.hint, cardType: card.cardType.rawValue, matchingLeftItems: card.matchingLeftItems,
+                            matchingRightItems: card.matchingRightItems, sectionName: card.section?.name ?? "", optionImageIDs: []), localCard: card)
+                    }
+                }.padding(20)
+            }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
+                .navigationTitle("Card preview").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+struct MySharedDecksSheet: View {
+    let libraryDecks: [Deck]
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @ObservedObject private var session = CommunitySession.shared
+    @State private var decks: [CommunityDeckPayload] = []
+    @State private var isLoading = true
+    @State private var message: String?
+    @State private var editingDeck: Deck?
+    @State private var removingDeck: CommunityDeckPayload?
+    @State private var isRemoving = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    if isLoading { ProgressView("Loading your decks…").frame(minHeight: 120) }
+                    else if decks.isEmpty { ContentUnavailableView("No shared decks yet", systemImage: "rectangle.stack") }
+                    ForEach(decks) { deck in
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(deck.name).font(.headline); Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            HStack {
+                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.deckType != "Course" }) { Button("Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                Spacer()
+                                Button("Remove", systemImage: "trash", role: .destructive) { removingDeck = deck }.frame(minHeight: 44)
+                            }.disabled(isRemoving)
+                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+                    }
+                    if let message { Text(message).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
+                }.padding(20)
+            }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
+                .navigationTitle("My shared decks").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isRemoving) } }
+                .task { await load() }.refreshable { await load() }
+                .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
+                .sheet(item: $editingDeck) { ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: $0.id) }
+                .confirmationDialog("Remove this public deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
+                    Button("Remove public deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
+                } message: { Text("Your personal deck and copies already downloaded by other learners remain in their libraries.") }
+                .interactiveDismissDisabled(isRemoving)
+        }
+    }
+    @MainActor private func load() async {
+        guard let token = session.token else { isLoading = false; message = "Sign in with Apple to see your shared decks."; return }
+        isLoading = true; message = nil
+        defer { isLoading = false }
         do {
-            try await CommunityAPI().remove(deckID: id, token: token)
-            deck.publishedCommunityID = nil
-            try context.save()
-            isPublished = false
+            let page = try await CommunityAPI().myDecks(token: token)
+            guard session.token == token else { return }
+            decks = page.decks
+        }
+        catch { session.handle(error); message = error.localizedDescription }
+    }
+    @MainActor private func remove(_ deck: CommunityDeckPayload) async {
+        guard let token = session.token, !isRemoving else { return }
+        isRemoving = true; message = nil
+        defer { isRemoving = false; removingDeck = nil }
+        do {
+            try await CommunityAPI().remove(deckID: deck.id, token: token)
+            for local in libraryDecks where local.publishedCommunityID == deck.id { local.publishedCommunityID = nil }
+            try context.save(); decks.removeAll { $0.id == deck.id }
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
-        } catch { session.handle(error); publishError = error.localizedDescription }
+        } catch { session.handle(error); message = error.localizedDescription }
     }
 }

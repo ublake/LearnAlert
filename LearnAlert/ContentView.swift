@@ -3308,6 +3308,8 @@ struct AppSettingsView: View {
                     .foregroundStyle(LearnAlertStyle.textPrimary)
                     .padding(.horizontal, 20)
 
+                SettingsProfileCard()
+
                 SettingsPreferencesGroup(
                     alertSound: $alertSound,
                     availableSounds: availableSounds,

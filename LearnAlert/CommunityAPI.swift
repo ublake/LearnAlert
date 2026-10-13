@@ -32,6 +32,7 @@ struct CommunityDeckPayload: Codable, Identifiable {
     let downloadCount: Int
     let publishedAt: Int?
     var cards: [CommunityCardPayload]?
+    var authorAvatar: CommunityAvatar? = nil
 }
 
 struct CommunityDeckPage: Decodable {
@@ -57,7 +58,8 @@ struct CommunityAPI {
     struct SignInResult: Codable {
         let token: String
         let expiresAt: Int
-        let handle: String
+        var handle: String
+        var profile: CommunityProfile? = nil
     }
     struct IDResult: Decodable { let id: String }
     struct SuccessResult: Decodable { let success: Bool }
@@ -89,6 +91,28 @@ struct CommunityAPI {
                                  URLQueryItem(name: "category", value: category == "All" ? "" : category),
                                  URLQueryItem(name: "offset", value: String(offset))]
         return try await decoded(URLRequest(url: components.url!))
+    }
+
+    func profile(token: String) async throws -> CommunityProfile {
+        var request = URLRequest(url: endpoint("account"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await decoded(request)
+    }
+
+    func saveProfile(username: String, avatar: CommunityAvatar, token: String) async throws -> CommunityProfile {
+        struct Body: Encodable { let username: String; let avatar: CommunityAvatar }
+        return try await jsonRequest("account", method: "PUT", body: Body(username: username, avatar: avatar), token: token)
+    }
+
+    func myDecks(token: String) async throws -> CommunityDeckPage {
+        var request = URLRequest(url: endpoint("account/decks"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await decoded(request)
+    }
+
+    func preview(deckID: String) async throws -> CommunityDeckPayload {
+        let result: DeckResult = try await decoded(URLRequest(url: endpoint("decks/\(deckID)/preview")))
+        return result.deck
     }
 
     func draft(metadata: Metadata, token: String) async throws -> String {
@@ -181,6 +205,8 @@ final class CommunitySession: ObservableObject {
     var isSignedIn: Bool { credentials.map { $0.expiresAt > Int(Date().timeIntervalSince1970) } ?? false }
     var handle: String { credentials?.handle ?? "" }
     var token: String? { isSignedIn ? credentials?.token : nil }
+    var profile: CommunityProfile { credentials?.profile ?? CommunityProfile(handle: handle, avatar: .init(), isComplete: false) }
+    var needsProfileSetup: Bool { isSignedIn && !profile.isComplete }
 
     private init() {
         var query = keychainQuery
@@ -196,22 +222,55 @@ final class CommunitySession: ObservableObject {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "session"]
     }
 
-    func signIn(identityToken: String, nonce: String, givenName: String?) async {
+    private func persist(_ result: CommunityAPI.SignInResult) throws {
+        let data = try JSONEncoder().encode(result)
+        var update: [String: Any] = [kSecValueData as String: data]
+        update[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemUpdate(keychainQuery as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = keychainQuery
+            for (key, value) in update { item[key] = value }
+            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+                throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
+            }
+        } else if status != errSecSuccess {
+            throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
+        }
+        credentials = result
+    }
+
+    @discardableResult
+    func signIn(identityToken: String, nonce: String, givenName: String?) async -> Bool {
         isSigningIn = true
         errorMessage = nil
         defer { isSigningIn = false }
         do {
             let result = try await CommunityAPI().signIn(identityToken: identityToken, nonce: nonce, givenName: givenName)
-            let data = try JSONEncoder().encode(result)
-            SecItemDelete(keychainQuery as CFDictionary)
-            var item = keychainQuery
-            item[kSecValueData as String] = data
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
-                throw CommunityAPIError(status: 500, message: "Your sign-in could not be saved securely. Please try again.")
-            }
-            credentials = result
-        } catch { errorMessage = error.localizedDescription }
+            try persist(result)
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func refreshProfile() async {
+        guard let token else { return }
+        do {
+            let profile = try await CommunityAPI().profile(token: token)
+            guard var result = credentials, self.token == token else { return }
+            result.profile = profile; result.handle = profile.handle
+            try persist(result)
+        } catch { if self.token == token { handle(error) } }
+    }
+
+    func saveProfile(username: String, avatar: CommunityAvatar) async throws {
+        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple to save your profile.") }
+        do {
+            let profile = try await CommunityAPI().saveProfile(username: username, avatar: avatar, token: token)
+            guard var result = credentials, self.token == token else { throw CancellationError() }
+            result.profile = profile; result.handle = profile.handle
+            try persist(result)
+            errorMessage = nil
+            NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
+        } catch { if self.token == token { handle(error) }; throw error }
     }
 
     func signOut() {
@@ -298,7 +357,13 @@ enum CommunityDeckTransfer {
             throw CommunityAPIError(status: 413, message: "A shared deck can contain up to 100 MB of images and audio.")
         }
         progress("Preparing your deck…")
-        let existingID = deck.publishedCommunityID
+        let existingID: String?
+        if let previousID = deck.publishedCommunityID {
+            // A device library can outlive an Apple account change or a public removal.
+            // Only update an existing publication when it belongs to the signed-in account.
+            let owned = try await api.myDecks(token: token)
+            existingID = owned.decks.contains { $0.id == previousID } ? previousID : nil
+        } else { existingID = nil }
         let id: String
         if let existingID { id = existingID }
         else { id = try await api.draft(metadata: metadata, token: token) }
