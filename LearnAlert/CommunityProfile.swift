@@ -33,15 +33,36 @@ struct CommunityAvatar: Codable, Equatable {
         skinTone = try values.decodeIfPresent(Int.self, forKey: .skinTone) ?? 3
     }
 
-    static let hairNames = ["Bedhead", "Noodle", "Sprout", "Side swoop", "Tiny crown", "Bald-ish"]
-    static let eyeNames = ["Wide awake", "Sleepy", "Side-eye", "Tiny dots", "Wink", "Dizzy"]
-    static let mouthNames = ["Big grin", "Oops", "Smirk", "Tiny fangs", "Mustache", "Bubblegum"]
+    static let hairNames = ["Bedhead", "Noodle", "Sprout", "Side swoop", "Tiny crown", "Bald-ish", "Short crop", "Bob", "Space buns", "Cloud curls", "Ponytail", "Mohawk", "Braids", "Beanie", "Baseball cap", "Big bow"]
+    static let eyeNames = ["Wide awake", "Sleepy", "Side-eye", "Tiny dots", "Wink", "Dizzy", "Heart eyes", "Starry", "Sunglasses", "Round glasses", "Delighted", "Curious", "Lashes", "Sparkly", "Monocle", "Focused"]
+    static let mouthNames = ["Big grin", "Oops", "Smirk", "Tiny fangs", "Mustache", "Bubblegum", "Tongue out", "Whistle", "Wobbly", "Little smile", "Poker face", "Kiss", "Goatee", "One tooth", "Lopsided", "Cat smile"]
 }
 
 struct CommunityProfile: Codable, Equatable {
     var handle: String
     var avatar: CommunityAvatar
     var isComplete: Bool
+}
+
+/// Coordinated colors keep line-only features visible on every skin tone.
+private struct CommunityAvatarPalette {
+    let hair: Color
+    let feature: Color
+    let nose: Color
+    let blush: Color
+    let shirt: Color
+    let background: Color
+
+    init(tone: Int) {
+        let index = min(max(tone, 0), 6)
+        func color(_ hex: String) -> Color { Color(hex: hex) }
+        hair = color(["#59413A", "#543C36", "#4D3430", "#4A332E", "#392821", "#E2B886", "#F0CEA3"][index])
+        feature = color(["#343846", "#343846", "#353440", "#3B3035", "#332327", "#FFE2C6", "#FFEAD5"][index])
+        nose = color(["#CF9980", "#C38C70", "#B77C5C", "#AD7051", "#875031", "#E2AB85", "#D79F79"][index])
+        blush = color(["#E9A8A0", "#E7A099", "#DB9385", "#D58B78", "#C77363", "#C6836A", "#B67361"][index])
+        shirt = color(["#7096BB", "#729BC0", "#739FC4", "#76A3C7", "#91B7D5", "#A2C5DC", "#ADD1E5"][index])
+        background = color(["#DDEAF4", "#DCE9F3", "#DCE9F2", "#DBE8F1", "#D7E6F0", "#D1E3EF", "#C8DEED"][index])
+    }
 }
 
 /// A small, deliberately silly character, rendered locally from three shared choices.
@@ -54,26 +75,45 @@ struct CommunityAvatarView: View {
             g.scaleBy(x: size.width / 100, y: size.height / 100)
             let ink = Color(red: 0.18, green: 0.21, blue: 0.27)
             let skin = CommunityAvatar.skinTones[min(max(avatar.skinTone, 0), CommunityAvatar.skinTones.count - 1)]
-            let hair = Color(red: 0.33, green: 0.25, blue: 0.25)
+            let palette = CommunityAvatarPalette(tone: avatar.skinTone)
+            let hair = palette.hair
             func oval(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: Color) {
                 g.fill(Path(ellipseIn: CGRect(x: x, y: y, width: w, height: h)), with: .color(color))
             }
-            func line(_ points: [CGPoint], color: Color = Color(red: 0.18, green: 0.21, blue: 0.27), width: CGFloat = 2.5) {
+            func line(_ points: [CGPoint], color: Color? = nil, width: CGFloat = 2.5) {
                 var p = Path(); p.addLines(points)
-                g.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+                g.stroke(p, with: .color(color ?? palette.feature), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
             }
-            func curve(_ start: CGPoint, _ end: CGPoint, _ c1: CGPoint, _ c2: CGPoint, color: Color = Color(red: 0.18, green: 0.21, blue: 0.27), width: CGFloat = 2.5) {
+            func curve(_ start: CGPoint, _ end: CGPoint, _ c1: CGPoint, _ c2: CGPoint, color: Color? = nil, width: CGFloat = 2.5) {
                 var p = Path(); p.move(to: start); p.addCurve(to: end, control1: c1, control2: c2)
-                g.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round))
+                g.stroke(p, with: .color(color ?? palette.feature), style: StrokeStyle(lineWidth: width, lineCap: .round))
+            }
+            func star(_ center: CGPoint, radius: CGFloat, color: Color) {
+                var p = Path()
+                for step in 0..<10 {
+                    let angle = CGFloat(step) * .pi / 5 - .pi / 2
+                    let r = step.isMultiple(of: 2) ? radius : radius * 0.44
+                    let point = CGPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r)
+                    if step == 0 { p.move(to: point) } else { p.addLine(to: point) }
+                }
+                p.closeSubpath(); g.fill(p, with: .color(color))
+            }
+            func heart(_ x: CGFloat, _ y: CGFloat) {
+                var p = Path(); p.move(to: CGPoint(x: x + 7, y: y + 13))
+                p.addCurve(to: CGPoint(x: x, y: y + 4), control1: CGPoint(x: x + 3, y: y + 10), control2: CGPoint(x: x - 2, y: y + 7))
+                p.addCurve(to: CGPoint(x: x + 7, y: y + 3), control1: CGPoint(x: x, y: y - 1), control2: CGPoint(x: x + 5, y: y - 1))
+                p.addCurve(to: CGPoint(x: x + 14, y: y + 4), control1: CGPoint(x: x + 9, y: y - 1), control2: CGPoint(x: x + 14, y: y - 1))
+                p.addCurve(to: CGPoint(x: x + 7, y: y + 13), control1: CGPoint(x: x + 16, y: y + 7), control2: CGPoint(x: x + 11, y: y + 10))
+                g.fill(p, with: .color(Color(hex: "#DA546B")))
             }
             g.clip(to: Path(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerRadius: 24))
-            g.fill(Path(CGRect(x: 0, y: 0, width: 100, height: 100)), with: .color(LearnAlertStyle.appAccent.opacity(0.30)))
-            oval(19, 78, 62, 43, Color(red: 0.44, green: 0.66, blue: 0.83))
+            g.fill(Path(CGRect(x: 0, y: 0, width: 100, height: 100)), with: .color(palette.background))
+            oval(19, 78, 62, 43, palette.shirt)
             g.fill(Path(roundedRect: CGRect(x: 42, y: 70, width: 16, height: 16), cornerRadius: 5), with: .color(skin))
             oval(19, 42, 15, 19, skin); oval(66, 42, 15, 19, skin)
             oval(27, 23, 46, 55, skin)
-            oval(31, 58, 8, 4, Color(red: 0.94, green: 0.55, blue: 0.51).opacity(0.55))
-            oval(62, 58, 8, 4, Color(red: 0.94, green: 0.55, blue: 0.51).opacity(0.55))
+            oval(31, 58, 8, 4, palette.blush.opacity(0.65))
+            oval(62, 58, 8, 4, palette.blush.opacity(0.65))
             switch avatar.hair {
             case 0:
                 var p = Path(); p.addLines([CGPoint(x: 27, y: 39), CGPoint(x: 23, y: 22), CGPoint(x: 35, y: 26), CGPoint(x: 34, y: 13), CGPoint(x: 46, y: 23), CGPoint(x: 54, y: 10), CGPoint(x: 58, y: 24), CGPoint(x: 75, y: 20), CGPoint(x: 70, y: 39), CGPoint(x: 61, y: 30), CGPoint(x: 40, y: 32)]); p.closeSubpath()
@@ -90,6 +130,40 @@ struct CommunityAvatarView: View {
             case 4:
                 oval(27, 25, 47, 10, hair)
                 var p = Path(); p.addLines([CGPoint(x: 37, y: 25), CGPoint(x: 34, y: 11), CGPoint(x: 45, y: 17), CGPoint(x: 51, y: 7), CGPoint(x: 58, y: 17), CGPoint(x: 68, y: 11), CGPoint(x: 64, y: 25)]); p.closeSubpath(); g.fill(p, with: .color(Color(red: 0.99, green: 0.78, blue: 0.38)))
+            case 6:
+                oval(27, 19, 46, 18, hair)
+                line([CGPoint(x: 31, y: 33), CGPoint(x: 69, y: 33)], color: skin, width: 2)
+            case 7:
+                oval(23, 21, 54, 27, hair)
+                oval(23, 36, 9, 30, hair); oval(68, 36, 9, 30, hair)
+            case 8:
+                oval(27, 22, 46, 14, hair)
+                oval(17, 14, 23, 23, hair); oval(60, 14, 23, 23, hair)
+                line([CGPoint(x: 22, y: 30), CGPoint(x: 32, y: 30)], color: palette.shirt)
+                line([CGPoint(x: 67, y: 30), CGPoint(x: 77, y: 30)], color: palette.shirt)
+            case 9:
+                for point in [CGPoint(x: 27, y: 25), CGPoint(x: 36, y: 14), CGPoint(x: 49, y: 11), CGPoint(x: 61, y: 15), CGPoint(x: 70, y: 26)] { oval(point.x - 9, point.y - 7, 20, 22, hair) }
+            case 10:
+                oval(24, 24, 15, 42, hair); oval(27, 18, 46, 19, hair)
+                oval(20, 27, 13, 8, palette.shirt)
+            case 11:
+                var p = Path(); p.addLines([CGPoint(x: 39, y: 33), CGPoint(x: 42, y: 8), CGPoint(x: 49, y: 14), CGPoint(x: 54, y: 5), CGPoint(x: 61, y: 33)]); p.closeSubpath(); g.fill(p, with: .color(hair))
+            case 12:
+                oval(27, 21, 46, 16, hair)
+                for y in stride(from: CGFloat(35), through: 64, by: 8) { oval(23, y, 10, 12, hair); oval(67, y, 10, 12, hair) }
+                oval(23, 67, 10, 5, palette.shirt); oval(67, 67, 10, 5, palette.shirt)
+            case 13:
+                oval(24, 13, 52, 36, palette.shirt)
+                g.fill(Path(roundedRect: CGRect(x: 24, y: 28, width: 52, height: 11), cornerRadius: 4), with: .color(Color(hex: "#456384")))
+                oval(43, 6, 14, 14, .white)
+            case 14:
+                oval(26, 17, 48, 23, Color(hex: "#456384"))
+                oval(42, 31, 40, 8, palette.shirt)
+                star(CGPoint(x: 47, y: 27), radius: 5, color: .white)
+            case 15:
+                oval(27, 22, 46, 14, hair)
+                var p = Path(); p.addLines([CGPoint(x: 50, y: 22), CGPoint(x: 32, y: 9), CGPoint(x: 32, y: 28), CGPoint(x: 50, y: 22), CGPoint(x: 68, y: 9), CGPoint(x: 68, y: 28)]); p.closeSubpath(); g.fill(p, with: .color(Color(hex: "#D96B84")))
+                oval(45, 17, 10, 10, Color(hex: "#F1ABC0"))
             default:
                 for x in [CGFloat(45), 51, 57] { curve(CGPoint(x: x, y: 26), CGPoint(x: x - 5, y: 17), CGPoint(x: x + 2, y: 22), CGPoint(x: x - 3, y: 19), color: hair, width: 2) }
             }
@@ -100,17 +174,53 @@ struct CommunityAvatarView: View {
                 oval(32, 41, 14, 13, .white); oval(55, 41, 14, 13, .white)
                 oval(39, 43, 5, 7, ink); oval(62, 43, 5, 7, ink)
             case 3:
-                oval(36, 44, 4, 5, ink); oval(61, 44, 4, 5, ink)
+                oval(36, 44, 4, 5, palette.feature); oval(61, 44, 4, 5, palette.feature)
             case 4:
                 oval(33, 40, 13, 15, .white); oval(39, 44, 5, 7, ink)
                 line([CGPoint(x: 57, y: 47), CGPoint(x: 66, y: 46)])
             case 5:
                 for x in [CGFloat(35), 58] { line([CGPoint(x: x, y: 42), CGPoint(x: x + 8, y: 51)]); line([CGPoint(x: x + 8, y: 42), CGPoint(x: x, y: 51)]) }
+            case 6: heart(32, 41); heart(55, 41)
+            case 7:
+                for x in [CGFloat(39), 62] { oval(x - 8, 39, 16, 17, .white); star(CGPoint(x: x, y: 47), radius: 6, color: ink) }
+            case 8:
+                for x in [CGFloat(31), 54] {
+                    g.fill(Path(roundedRect: CGRect(x: x, y: 41, width: 16, height: 12), cornerRadius: 4), with: .color(ink))
+                    line([CGPoint(x: x + 3, y: 44), CGPoint(x: x + 7, y: 44)], color: .white, width: 1.5)
+                }
+                line([CGPoint(x: 47, y: 45), CGPoint(x: 54, y: 45)], color: ink)
+            case 9:
+                for x in [CGFloat(31), 54] {
+                    oval(x, 39, 17, 17, .white); oval(x + 6, 44, 5, 7, ink)
+                    g.stroke(Path(ellipseIn: CGRect(x: x, y: 39, width: 17, height: 17)), with: .color(ink), lineWidth: 2)
+                }
+                line([CGPoint(x: 48, y: 46), CGPoint(x: 54, y: 46)], color: ink, width: 2)
+            case 10:
+                for x in [CGFloat(34), 57] { curve(CGPoint(x: x, y: 48), CGPoint(x: x + 10, y: 48), CGPoint(x: x + 2, y: 40), CGPoint(x: x + 8, y: 40)) }
+            case 11:
+                oval(33, 41, 13, 15, .white); oval(55, 39, 14, 17, .white)
+                oval(38, 45, 5, 7, ink); oval(60, 44, 5, 7, ink)
+                curve(CGPoint(x: 54, y: 35), CGPoint(x: 68, y: 34), CGPoint(x: 58, y: 30), CGPoint(x: 64, y: 30))
+            case 12:
+                for x in [CGFloat(33), 56] {
+                    oval(x, 41, 13, 14, .white); oval(x + 5, 45, 5, 7, ink)
+                    line([CGPoint(x: x, y: 44), CGPoint(x: x - 2, y: 39)]); line([CGPoint(x: x + 4, y: 41), CGPoint(x: x + 3, y: 37)])
+                }
+            case 13:
+                for x in [CGFloat(32), 55] { oval(x, 39, 15, 17, ink); oval(x + 3, 41, 6, 6, .white); oval(x + 9, 49, 3, 3, .white) }
+            case 14:
+                oval(33, 41, 13, 14, .white); oval(38, 44, 5, 7, ink)
+                oval(55, 39, 17, 17, .white); oval(61, 44, 5, 7, ink)
+                g.stroke(Path(ellipseIn: CGRect(x: 55, y: 39, width: 17, height: 17)), with: .color(Color(hex: "#BA873B")), lineWidth: 2.5)
+                curve(CGPoint(x: 72, y: 49), CGPoint(x: 72, y: 76), CGPoint(x: 78, y: 63), CGPoint(x: 71, y: 70), color: Color(hex: "#BA873B"), width: 1)
+            case 15:
+                oval(35, 45, 5, 6, palette.feature); oval(60, 45, 5, 6, palette.feature)
+                line([CGPoint(x: 32, y: 38), CGPoint(x: 44, y: 41)]); line([CGPoint(x: 56, y: 41), CGPoint(x: 68, y: 38)])
             default:
                 oval(32, 39, 15, 17, .white); oval(55, 39, 15, 17, .white)
                 oval(38, 44, 5, 7, ink); oval(59, 44, 5, 7, ink)
             }
-            curve(CGPoint(x: 48, y: 53), CGPoint(x: 52, y: 57), CGPoint(x: 45, y: 58), CGPoint(x: 49, y: 58), color: Color(red: 0.80, green: 0.51, blue: 0.40), width: 1.5)
+            curve(CGPoint(x: 48, y: 53), CGPoint(x: 52, y: 57), CGPoint(x: 45, y: 58), CGPoint(x: 49, y: 58), color: palette.nose, width: 1.5)
             switch avatar.mouth {
             case 1: oval(46, 62, 9, 10, ink)
             case 2: curve(CGPoint(x: 43, y: 65), CGPoint(x: 62, y: 62), CGPoint(x: 48, y: 70), CGPoint(x: 58, y: 68))
@@ -122,6 +232,30 @@ struct CommunityAvatarView: View {
                 curve(CGPoint(x: 43, y: 68), CGPoint(x: 59, y: 68), CGPoint(x: 47, y: 72), CGPoint(x: 55, y: 72), width: 2)
             case 5:
                 oval(43, 62, 28, 25, Color(red: 0.96, green: 0.57, blue: 0.70)); oval(49, 66, 7, 4, .white.opacity(0.55))
+            case 6:
+                oval(40, 61, 22, 10, ink); oval(48, 65, 10, 12, Color(hex: "#ED8B9C"))
+                line([CGPoint(x: 53, y: 68), CGPoint(x: 53, y: 72)], color: Color(hex: "#BF566A"), width: 1)
+            case 7:
+                oval(47, 62, 8, 8, palette.feature)
+                curve(CGPoint(x: 58, y: 63), CGPoint(x: 65, y: 58), CGPoint(x: 59, y: 58), CGPoint(x: 63, y: 61), width: 1.5)
+            case 8: line([CGPoint(x: 40, y: 65), CGPoint(x: 46, y: 62), CGPoint(x: 52, y: 67), CGPoint(x: 58, y: 62), CGPoint(x: 64, y: 65)], width: 2)
+            case 9: curve(CGPoint(x: 42, y: 63), CGPoint(x: 60, y: 63), CGPoint(x: 46, y: 72), CGPoint(x: 56, y: 72))
+            case 10: line([CGPoint(x: 42, y: 65), CGPoint(x: 60, y: 65)], width: 2)
+            case 11:
+                line([CGPoint(x: 47, y: 61), CGPoint(x: 54, y: 64), CGPoint(x: 47, y: 67)], color: Color(hex: "#D56B82"), width: 3)
+                heart(61, 55)
+            case 12:
+                curve(CGPoint(x: 42, y: 63), CGPoint(x: 60, y: 63), CGPoint(x: 46, y: 69), CGPoint(x: 56, y: 69))
+                var p = Path(); p.addLines([CGPoint(x: 44, y: 73), CGPoint(x: 58, y: 73), CGPoint(x: 51, y: 82)]); p.closeSubpath(); g.fill(p, with: .color(hair))
+            case 13:
+                oval(40, 61, 22, 13, ink)
+                g.fill(Path(roundedRect: CGRect(x: 47, y: 61, width: 7, height: 6), cornerRadius: 1), with: .color(.white))
+            case 14:
+                curve(CGPoint(x: 42, y: 67), CGPoint(x: 62, y: 60), CGPoint(x: 52, y: 75), CGPoint(x: 64, y: 71))
+                line([CGPoint(x: 61, y: 59), CGPoint(x: 64, y: 63)], width: 1.5)
+            case 15:
+                curve(CGPoint(x: 39, y: 64), CGPoint(x: 51, y: 64), CGPoint(x: 43, y: 71), CGPoint(x: 49, y: 70), width: 2)
+                curve(CGPoint(x: 51, y: 64), CGPoint(x: 63, y: 64), CGPoint(x: 53, y: 70), CGPoint(x: 60, y: 71), width: 2)
             default:
                 oval(40, 61, 22, 13, ink)
                 g.fill(Path(roundedRect: CGRect(x: 43, y: 62, width: 16, height: 4), cornerRadius: 1), with: .color(.white))
@@ -190,7 +324,9 @@ struct SettingsProfileCard: View {
             if session.isSignedIn {
                 Button { showingProfile = true } label: {
                     HStack(spacing: 16) {
-                        CommunityAvatarView(avatar: session.profile.avatar).frame(width: 68, height: 68)
+                        if session.profile.isComplete {
+                            CommunityAvatarView(avatar: session.profile.avatar).frame(width: 68, height: 68)
+                        }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(session.needsProfileSetup ? "Finish your profile" : session.handle).font(.headline)
                             Text("Your community profile").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
@@ -205,10 +341,8 @@ struct SettingsProfileCard: View {
                 .buttonStyle(.plain)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        CommunityAvatarView().frame(width: 52, height: 52)
-                        Text("Your profile").font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
-                    }
+                    Text("Join the community").font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
+                    Text("Sign in to create your character and share decks.").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                     CommunitySignInButton { showingProfile = session.needsProfileSetup }
                     if let error = session.errorMessage { Text(error).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
                 }
@@ -327,44 +461,39 @@ struct CommunityProfileSheet: View {
     }
 
     private var skinTonePicker: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Skin tone").font(.subheadline.weight(.medium)).accessibilityHidden(true)
-            GeometryReader { proxy in
-                let travel = max(proxy.size.width - 28, 1)
-                let selection = min(max(avatar.skinTone, 0), 6)
-                ZStack(alignment: .leading) {
-                    Capsule().fill(LinearGradient(colors: CommunityAvatar.skinTones, startPoint: .leading, endPoint: .trailing))
-                        .frame(height: 18).padding(.horizontal, 14)
-                    Circle().fill(CommunityAvatar.skinTones[selection])
-                        .overlay(Circle().strokeBorder(.white, lineWidth: 3))
-                        .shadow(color: .black.opacity(0.24), radius: 3, y: 1)
-                        .frame(width: 28, height: 28)
-                        .offset(x: travel * CGFloat(selection) / 6)
-                }
-                .frame(height: 44).contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                    let selected = min(max(Int(((value.location.x - 14) / travel * 6).rounded()), 0), 6)
-                    if avatar.skinTone != selected {
-                        avatar.skinTone = selected
-                        HapticFeedback.impact(.light)
-                    }
-                })
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Skin tone").font(.subheadline.weight(.medium))
+            ViewThatFits(in: .horizontal) {
+                skinToneSwatches(size: 44)
+                ScrollView(.horizontal) { skinToneSwatches(size: 44) }.scrollIndicators(.hidden)
             }
-            .frame(height: 44)
-            .accessibilityElement(children: .ignore).accessibilityLabel("Skin tone")
-            .accessibilityValue("Shade \(min(max(avatar.skinTone, 0), 6) + 1) of 7")
-            .accessibilityAdjustableAction { direction in
-                guard !isSaving, !deletingAccount else { return }
-                switch direction {
-                case .increment: avatar.skinTone = min(avatar.skinTone + 1, 6)
-                case .decrement: avatar.skinTone = max(avatar.skinTone - 1, 0)
-                @unknown default: break
-                }
-            }
-            .allowsHitTesting(!isSaving && !deletingAccount)
-            .disabled(isSaving || deletingAccount)
         }
-        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 4)
+        .padding(16)
+        .disabled(isSaving || deletingAccount)
+    }
+
+    private func skinToneSwatches(size: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            ForEach(CommunityAvatar.skinTones.indices, id: \.self) { index in
+                Button {
+                    guard avatar.skinTone != index else { return }
+                    avatar.skinTone = index
+                    HapticFeedback.impact(.light)
+                } label: {
+                    Circle().fill(CommunityAvatar.skinTones[index])
+                        .overlay { Circle().strokeBorder(LearnAlertStyle.textSecondary.opacity(0.30), lineWidth: 1) }
+                        .padding(4)
+                        .overlay {
+                            if avatar.skinTone == index { Circle().strokeBorder(LearnAlertStyle.appAccentForeground, lineWidth: 2) }
+                        }
+                        .frame(width: size, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Skin tone \(index + 1) of \(CommunityAvatar.skinTones.count)")
+                .accessibilityAddTraits(avatar.skinTone == index ? .isSelected : [])
+            }
+        }
     }
 
     private func partPicker(_ title: String, selection: Binding<Int>, names: [String]) -> some View {
@@ -373,7 +502,20 @@ struct CommunityProfileSheet: View {
             Button { change(selection, by: -1, count: names.count) } label: {
                 Image(systemName: "chevron.left").frame(width: 44, height: 44)
             }.accessibilityLabel("Previous \(title.lowercased())")
-            Text(names[min(max(selection.wrappedValue, 0), names.count - 1)]).font(.subheadline).frame(maxWidth: .infinity)
+            Menu {
+                ForEach(names.indices, id: \.self) { index in
+                    Button { change(selection, by: index - selection.wrappedValue, count: names.count) } label: {
+                        if selection.wrappedValue == index { Label(names[index], systemImage: "checkmark") }
+                        else { Text(names[index]) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(names[min(max(selection.wrappedValue, 0), names.count - 1)]).font(.subheadline)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }.frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityLabel("\(title): \(names[min(max(selection.wrappedValue, 0), names.count - 1)])")
             Button { change(selection, by: 1, count: names.count) } label: {
                 Image(systemName: "chevron.right").frame(width: 44, height: 44)
             }.accessibilityLabel("Next \(title.lowercased())")

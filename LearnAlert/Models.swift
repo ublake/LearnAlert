@@ -56,6 +56,7 @@ class Deck {
     var creationDate: Date = Date()
     var orderIndex: Int = 0
     var appearanceSeed: Int64?
+    var sourcePremadeID: String?
     var sourceCommunityID: String?
     var publishedCommunityID: String?
     var communityCategory: String?

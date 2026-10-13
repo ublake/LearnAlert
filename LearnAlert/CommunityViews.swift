@@ -329,7 +329,7 @@ struct ShareDeckToCommunitySheet: View {
     @State private var publishError: String?
     @State private var showingProfile = false
     @State private var showingPreview = false
-    private var availableDecks: [Deck] { libraryDecks.filter { $0.deckType != "Course" } }
+    private var availableDecks: [Deck] { libraryDecks.filter(\.canShareToCommunity) }
     private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
 
     var body: some View {
@@ -337,7 +337,7 @@ struct ShareDeckToCommunitySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if availableDecks.isEmpty {
-                        ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck from your personal library."))
+                        ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck you created. Built-in and downloaded community decks can’t be republished."))
                     } else {
                         Menu {
                             ForEach(availableDecks) { deck in Button(deck.name) { selectedDeckID = deck.id } }
@@ -382,7 +382,7 @@ struct ShareDeckToCommunitySheet: View {
                 }
             }
             .interactiveDismissDisabled(isPublishing)
-            .onAppear { if selectedDeckID == nil { selectedDeckID = initialDeckID ?? availableDecks.first?.id; loadMetadata() } }
+            .onAppear { if selectedDeckID == nil { selectedDeckID = availableDecks.first(where: { $0.id == initialDeckID })?.id ?? availableDecks.first?.id; loadMetadata() } }
             .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
             .onChange(of: category) { _, _ in isPublished = false }
             .onChange(of: deckDescription) { _, _ in isPublished = false }
@@ -398,7 +398,7 @@ struct ShareDeckToCommunitySheet: View {
         let audio = deck.cards.filter { $0.promptAudioName != nil }.count
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32)
+                if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }
                 Text(session.isSignedIn ? session.handle : "Your public preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             Text(deck.name).font(.title3.weight(.semibold))
@@ -474,7 +474,7 @@ struct MySharedDecksSheet: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(deck.name).font(.headline); Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                             HStack {
-                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.deckType != "Course" }) { Button("Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button("Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
                                 Button("Remove", systemImage: "trash", role: .destructive) { removingDeck = deck }.frame(minHeight: 44)
                             }.disabled(isRemoving)

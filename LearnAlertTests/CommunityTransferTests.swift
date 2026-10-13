@@ -214,4 +214,51 @@ struct CommunityTransferTests {
         }
     }
 
+    @Test("Built-in and downloaded decks are blocked before any network or media transfer")
+    func preventsRepublication() async throws {
+        var requests = 0
+        CommunityTestProtocol.response = { _ in requests += 1; return (500, Data()) }
+        defer { CommunityTestProtocol.response = nil }
+        let downloaded = Deck(name: "Renamed downloaded deck")
+        downloaded.sourceCommunityID = UUID().uuidString
+        let builtIn = Deck(name: "Renamed exam deck")
+        builtIn.sourcePremadeID = "exam-original"
+        let course = Deck(name: "Renamed course", deckType: "Course")
+        for deck in [downloaded, builtIn, course] {
+            deck.cards = [Flashcard(question: "Q", correctAnswer: "A", cardType: .tapReveal)]
+            #expect(!deck.canShareToCommunity)
+            do {
+                _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+                Issue.record("A restricted deck was published")
+            } catch let error as CommunityAPIError { #expect(error.status == 403) }
+        }
+        #expect(requests == 0)
+        let personal = Deck(name: "Original")
+        personal.publishedCommunityID = UUID().uuidString
+        personal.cards = [Flashcard(question: "My own Q", correctAnswer: "My own A", cardType: .tapReveal)]
+        #expect(personal.canShareToCommunity)
+    }
+
+    @Test("Older built-in imports remain restricted after renaming, reordering, and adding a card")
+    func recognizesLegacyBuiltIn() throws {
+        let source = try #require(PremadeDeckCatalog.decks.first)
+        let deck = Deck(name: "A renamed built-in")
+        deck.cards = source.cards.reversed().map { Flashcard(question: $0.question.uppercased(), correctAnswer: $0.correctAnswer,
+            cardType: $0.cardType, matchingLeftItems: $0.matchingLeftItems, matchingRightItems: $0.matchingRightItems) }
+        deck.cards.append(Flashcard(question: "An extra question", correctAnswer: "Extra", cardType: .tapReveal))
+        #expect(deck.sourcePremadeID == nil)
+        #expect(!deck.canShareToCommunity)
+    }
+
+    @Test("All expanded character choices retain their original IDs and survive profile encoding")
+    func expandedCharacterCompatibility() throws {
+        #expect(CommunityAvatar.hairNames.count == 16)
+        #expect(CommunityAvatar.eyeNames.count == 16)
+        #expect(CommunityAvatar.mouthNames.count == 16)
+        for part in 0..<16 {
+            let avatar = CommunityAvatar(hair: part, eyes: part, mouth: part, skinTone: part % 7)
+            #expect(try JSONDecoder().decode(CommunityAvatar.self, from: JSONEncoder().encode(avatar)) == avatar)
+        }
+    }
+
 }

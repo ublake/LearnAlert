@@ -462,6 +462,7 @@ struct PremadeDecksView: View {
         guard !libraryDecks.contains(where: { premadeDeck.communitySourceID != nil ? $0.sourceCommunityID == premadeDeck.communitySourceID : $0.name == premadeDeck.name }) else { return }
         let deck = Deck(name: premadeDeck.name, colorHex: premadeDeck.colorHex, deckType: premadeDeck.deckType, orderIndex: libraryDecks.count)
         deck.sourceCommunityID = premadeDeck.communitySourceID
+        deck.sourcePremadeID = premadeDeck.communitySourceID == nil ? premadeDeck.id : nil
         for (index, sourceCard) in premadeDeck.cards.enumerated() {
             let card = Flashcard(
                 question: sourceCard.question,

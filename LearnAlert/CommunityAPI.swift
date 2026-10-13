@@ -40,6 +40,25 @@ struct CommunityDeckPage: Decodable {
     let nextOffset: Int?
 }
 
+extension Deck {
+    /// Provenance survives edits; content matching also catches built-in imports made before tracking existed.
+    var communitySharingRestriction: String? {
+        if sourceCommunityID != nil { return "Downloaded community decks can’t be republished. Share a deck you created." }
+        if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and courses can’t be published to the community." }
+        func key(_ question: String, _ answer: String, _ left: [String], _ right: [String]) -> [String] {
+            func normalized(_ text: String) -> String { text.precomposedStringWithCompatibilityMapping.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            return [normalized(question), normalized(answer)] + zip(left, right).flatMap { [normalized($0), normalized($1)] }
+        }
+        let local = Set(cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) })
+        if PremadeDeckCatalog.decks.contains(where: { premade in
+            !premade.cards.isEmpty && Set(premade.cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) }).isSubset(of: local)
+        }) { return "Built-in decks can’t be published to the community." }
+        return nil
+    }
+
+    var canShareToCommunity: Bool { communitySharingRestriction == nil }
+}
+
 struct CommunityAPIError: LocalizedError {
     let status: Int
     let message: String
@@ -78,6 +97,7 @@ struct CommunityAPI {
         let colorHex: String
         let deckType: String
         let cards: [CommunityCardPayload]
+        var origin = "personal"
     }
 
     func signIn(identityToken: String, nonce: String, givenName: String?) async throws -> SignInResult {
@@ -312,6 +332,7 @@ enum CommunityDeckTransfer {
     static func publish(deck: Deck, category: String, description: String, token: String,
                         api: CommunityAPI? = nil,
                         progress: @escaping (String) -> Void) async throws -> String {
+        if let reason = deck.communitySharingRestriction { throw CommunityAPIError(status: 403, message: reason) }
         let api = api ?? CommunityAPI()
         guard !deck.cards.isEmpty, deck.cards.count <= 500 else {
             throw CommunityAPIError(status: 400, message: "Publish between 1 and 500 cards per deck.")

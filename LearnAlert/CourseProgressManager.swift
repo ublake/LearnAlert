@@ -261,6 +261,7 @@ final class CourseProgressManager: ObservableObject {
         let deck = existing ?? Deck(name: deckName, colorHex: course.colorHex, deckType: "Course", orderIndex: allDecks.count)
         if existing == nil { context.insert(deck) }
         deck.name = deckName
+        deck.sourcePremadeID = "course:\(course.id)"
         if var enrollment = loadEnrollment(for: course.id), enrollment.linkedDeckId != deck.id.uuidString {
             enrollment.linkedDeckId = deck.id.uuidString
             saveEnrollment(enrollment)
