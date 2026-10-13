@@ -26,6 +26,7 @@ struct DiscoverCategoryTile: View {
     let badge: String
     let symbol: String
     let color: Color
+    var usesColorFill = true
     let action: () -> Void
 
     var body: some View {
@@ -38,31 +39,31 @@ struct DiscoverCategoryTile: View {
                 HStack(alignment: .center) {
                     Image(systemName: symbol)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(usesColorFill ? Color.white : color)
                         .frame(width: 36, height: 36)
-                        .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(usesColorFill ? Color.white.opacity(0.18) : color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                     Spacer(minLength: 4)
 
                     Text(badge)
                         .font(StudyStudioStyle.heading(10))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .foregroundStyle(usesColorFill ? Color.white.opacity(0.92) : StudyStudioStyle.secondary)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3.5)
-                        .background(.white.opacity(0.16), in: Capsule())
+                        .background(usesColorFill ? Color.white.opacity(0.16) : color.opacity(0.10), in: Capsule())
                         .lineLimit(1)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
                         .font(StudyStudioStyle.heading(15))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(usesColorFill ? Color.white : StudyStudioStyle.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
 
                     Text(subtitle)
                         .font(StudyStudioStyle.body(11))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(usesColorFill ? Color.white.opacity(0.85) : StudyStudioStyle.secondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -75,12 +76,13 @@ struct DiscoverCategoryTile: View {
                     Image(systemName: "arrow.forward")
                         .font(.system(size: 10, weight: .semibold))
                 }
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(usesColorFill ? Color.white.opacity(0.9) : color)
             }
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 135, alignment: .topLeading)
-            .background(color, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: color.opacity(0.22), radius: 6, y: 3)
+            .background(usesColorFill ? color : LearnAlertStyle.courseSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(usesColorFill ? Color.clear : StudyStudioStyle.hairline, lineWidth: 1) }
+            .shadow(color: usesColorFill ? color.opacity(0.22) : Color.black.opacity(0.04), radius: 6, y: 3)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)

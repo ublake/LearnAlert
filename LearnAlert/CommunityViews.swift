@@ -43,6 +43,7 @@ struct CommunityFeedView: View {
     let libraryDecks: [Deck]
     let onAddDeck: (PremadeDeck) -> Void
     let onShare: () -> Void
+    var showsSearchField = true
     @ObservedObject private var session = CommunitySession.shared
     @State private var selectedPreview: CommunityDeckPayload?
     @State private var downloadingID: String?
@@ -52,32 +53,24 @@ struct CommunityFeedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Community decks").font(.title3.weight(.semibold))
-                Spacer(minLength: 8)
-                Button(action: onShare) { Label("Share", systemImage: "square.and.arrow.up").font(.subheadline.weight(.semibold)).frame(minHeight: 44) }
-                    .accessibilityLabel("Share a deck")
+                Spacer(minLength: 4)
+                categoryFilter
+                Button(action: onShare) {
+                    Image(systemName: "square.and.arrow.up").font(.subheadline.weight(.semibold)).frame(width: 44, height: 44)
+                }.accessibilityLabel("Share a deck")
             }
-            HStack(spacing: 10) {
+            if showsSearchField {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(LearnAlertStyle.textSecondary)
                     TextField("Search decks", text: $store.search).textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
                     if !store.search.isEmpty {
-                        Button { store.search = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 32, height: 44) }.accessibilityLabel("Clear search")
+                        Button { store.search = "" } label: { Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44) }.accessibilityLabel("Clear search")
                     }
                 }
                 .font(.subheadline).padding(.horizontal, 12).frame(minHeight: 48)
                 .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                Menu {
-                    Picker("Category", selection: $store.category) {
-                        ForEach(Self.categories, id: \.self) { Text($0).tag($0) }
-                    }
-                } label: {
-                    HStack(spacing: 5) { Text(store.category); Image(systemName: "chevron.down").font(.caption2.weight(.semibold)) }
-                        .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 48)
-                        .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                }
-                .accessibilityLabel("Filter community decks").accessibilityValue(store.category)
             }
             if store.isLoading && store.decks.isEmpty {
                 ProgressView("Loading decks…").frame(maxWidth: .infinity, minHeight: 140)
@@ -125,6 +118,23 @@ struct CommunityFeedView: View {
         } message: { Text(message ?? "") }
     }
 
+    private var categoryFilter: some View {
+        Menu {
+            Picker("Category", selection: $store.category) {
+                ForEach(Self.categories, id: \.self) { Text($0).tag($0) }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal.decrease")
+                if store.category != "All" { Text(store.category).lineLimit(1) }
+                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+            }
+            .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 44)
+            .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .accessibilityLabel("Filter community decks").accessibilityValue(store.category)
+    }
+
     private func isAdded(_ deck: CommunityDeckPayload) -> Bool { libraryDecks.contains { $0.sourceCommunityID == deck.id } }
     @MainActor private func download(_ deck: CommunityDeckPayload) async {
         guard downloadingID == nil, !isAdded(deck) else { return }
@@ -152,34 +162,38 @@ struct CommunityDeckCard: View {
     let open: () -> Void
     let download: () -> Void
 
+    private var cardColor: Color { deck.categoryTag == "Languages" ? StudyStudioStyle.blue : StudyStudioStyle.violet }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: open) {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "rectangle.stack.fill").font(.system(size: 24))
-                        .foregroundStyle(Color(hex: deck.colorHex)).frame(width: 54, height: 62)
-                        .background(Color(hex: deck.colorHex).opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(.white).frame(width: 54, height: 62)
+                        .background(.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
                     VStack(alignment: .leading, spacing: 8) {
                         Text(deck.name).font(.headline).multilineTextAlignment(.leading)
                         HStack(spacing: 6) {
                             CommunityAvatarView(avatar: deck.authorAvatar ?? .init()).frame(width: 24, height: 24)
                             Text(deck.authorHandle).font(.caption).lineLimit(1)
-                        }.foregroundStyle(LearnAlertStyle.textSecondary)
-                        if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
-                        Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                        if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(LearnAlertStyle.appAccentForeground) }
+                        }.foregroundStyle(Color.white.opacity(0.88))
+                        if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(Color.white.opacity(0.88)).lineLimit(2).multilineTextAlignment(.leading) }
+                        Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.caption).foregroundStyle(Color.white.opacity(0.88))
+                        if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(Color.white) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .foregroundStyle(LearnAlertStyle.textPrimary).contentShape(Rectangle())
+                .foregroundStyle(Color.white).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityHint("Preview this deck")
             Button(action: download) {
                 if isDownloading { ProgressView().frame(width: 44, height: 44) }
                 else { Image(systemName: isAdded ? "checkmark.circle.fill" : "arrow.down.circle.fill").font(.system(size: 25)).frame(width: 44, height: 44) }
             }
-            .buttonStyle(.plain).tint(LearnAlertStyle.appAccentForeground)
+            .buttonStyle(.plain).tint(Color.white)
             .disabled(isAdded || isDownloading).accessibilityLabel(isAdded ? "Already in your library" : "Add \(deck.name) to your library")
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(cardColor, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: cardColor.opacity(0.18), radius: 6, y: 3)
     }
 }
 

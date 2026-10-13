@@ -257,6 +257,7 @@ struct PremadeDecksView: View {
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
     @ObservedObject private var progressManager = CourseProgressManager.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var addedDeckName: String?
     @State private var showingCourses = false
@@ -277,42 +278,54 @@ struct PremadeDecksView: View {
         return progressManager.completionPercentage(for: course)
     }
 
-    // Preserved for future search restoration
     @State private var discoverSearch = ""
+    @State private var showingSearch = false
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Discover")
-                            .font(StudyStudioStyle.title(28))
-                        Text("Your next little breakthrough.")
-                            .font(StudyStudioStyle.body(13))
-                            .foregroundStyle(StudyStudioStyle.secondary)
-                    }
+                    Text("Discover").font(StudyStudioStyle.title(28))
                     Spacer()
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
+                        searchFocused = showingSearch
+                        if !showingSearch { discoverSearch = "" }
+                    } label: {
+                        Image(systemName: showingSearch ? "xmark" : "magnifyingglass")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                            .frame(width: 44, height: 44)
+                            .appCardSurface(cornerRadius: 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showingSearch ? "Close search" : "Search Discover")
+                    .accessibilityValue(showingSearch ? "Expanded" : "Collapsed")
                 }
                 .foregroundStyle(StudyStudioStyle.ink)
 
-                /*
-                // Search bar (hidden temporarily as requested, search logic & helpers preserved below)
-                HStack(spacing: 12) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 20))
-                    TextField("Search courses & decks", text: $discoverSearch)
-                        .font(StudyStudioStyle.body(15))
-                        .textInputAutocapitalization(.never)
-                        .submitLabel(.search)
-                    if !discoverSearch.isEmpty {
-                        Button { discoverSearch = "" } label: {
-                            Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
-                        }.accessibilityLabel("Clear search")
+                if showingSearch {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(StudyStudioStyle.secondary)
+                        TextField("Search decks & courses", text: $discoverSearch)
+                            .font(.subheadline).textInputAutocapitalization(.never)
+                            .autocorrectionDisabled().submitLabel(.search)
+                            .focused($searchFocused)
+                        if !discoverSearch.isEmpty {
+                            Button { discoverSearch = "" } label: {
+                                Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
+                            }.accessibilityLabel("Clear search")
+                        }
                     }
+                    .padding(.horizontal, 12).frame(minHeight: 48)
+                    .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(StudyStudioStyle.hairline, lineWidth: 1) }
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
-                .foregroundStyle(StudyStudioStyle.secondary)
-                .padding(.horizontal, 16).frame(minHeight: 56)
-                .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 20))
-                */
+
+                CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
+                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false)
 
                 if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if let course = enrolledCourse {
@@ -337,9 +350,6 @@ struct PremadeDecksView: View {
 
                     destinationCards
 
-                    CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
-                        onAddDeck: add, onShare: { showingShareSheet = true })
-                        .padding(.top, 12)
                 } else {
                     searchResults
                 }
@@ -351,6 +361,12 @@ struct PremadeDecksView: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable { await communityFeed.load() }
+        .onChange(of: discoverSearch) { _, query in
+            if communityFeed.search != query { communityFeed.search = query }
+        }
+        .onChange(of: communityFeed.search) { _, query in
+            if discoverSearch != query { discoverSearch = query }
+        }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
         .tint(StudyStudioStyle.violet)
         .navigationDestination(isPresented: $showingCourses) {
@@ -397,6 +413,7 @@ struct PremadeDecksView: View {
                 badge: "\(CourseCurriculumCatalog.courses.count) courses",
                 symbol: "character.bubble.fill",
                 color: StudyStudioStyle.blue,
+                usesColorFill: false,
                 action: { showingCourses = true }
             )
 
@@ -406,6 +423,7 @@ struct PremadeDecksView: View {
                 badge: "Prep",
                 symbol: "target",
                 color: StudyStudioStyle.violet,
+                usesColorFill: false,
                 action: { showingExamPrep = true }
             )
         }
@@ -419,7 +437,7 @@ struct PremadeDecksView: View {
                 || $0.subcategory.localizedCaseInsensitiveContains(query)
         }
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Search results").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
+            Text("Courses & exam decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
                     searchRow(title: course.title, subtitle: "Guided language course", symbol: "character.book.closed", action: "Open")
@@ -432,7 +450,7 @@ struct PremadeDecksView: View {
                 }.buttonStyle(.plain).disabled(added)
             }
             if courses.isEmpty && decks.isEmpty {
-                Text("No matching courses or curated decks. Try the community library below.")
+                Text("No matching courses or exam decks.")
                     .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
             Button { showingAllCommunity = true } label: {
