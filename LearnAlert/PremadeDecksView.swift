@@ -348,26 +348,26 @@ struct PremadeDecksView: View {
                     }
                     .foregroundStyle(StudyStudioStyle.ink)
 
-                    destinationCards
-
+                    VStack(spacing: 4) {
+                        destinationCards
+                        if communityFeed.totalCount > 0 {
+                            CommunityDeckPageSelector(store: communityFeed)
+                        }
+                    }
                 } else {
-                    searchResults
+                    VStack(alignment: .leading, spacing: 4) {
+                        searchResults
+                        if communityFeed.totalCount > 0 {
+                            CommunityDeckPageSelector(store: communityFeed)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, communityFeed.totalCount > 0 ? 12 : 110)
+            .padding(.bottom, 110)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if communityFeed.totalCount > 0 {
-                CommunityDeckPageSelector(store: communityFeed)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 4)
-                    .padding(.bottom, 72)
-                    .background(StudyStudioStyle.canvas)
-            }
         }
         .refreshable { await communityFeed.load() }
         .onChange(of: discoverSearch) { _, query in
