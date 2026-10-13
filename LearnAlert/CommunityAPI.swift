@@ -35,6 +35,11 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var authorAvatar: CommunityAvatar? = nil
 }
 
+enum CommunityDeckSort: String, CaseIterable {
+    case popular, recent
+    var title: String { self == .popular ? "Popular" : "Recent" }
+}
+
 struct CommunityDeckPage: Decodable {
     let decks: [CommunityDeckPayload]
     let nextOffset: Int?
@@ -105,11 +110,12 @@ struct CommunityAPI {
         return try await jsonRequest("auth/apple", method: "POST", body: Body(identityToken: identityToken, nonce: nonce, givenName: givenName))
     }
 
-    func list(search: String, category: String, offset: Int = 0) async throws -> CommunityDeckPage {
+    func list(search: String, category: String, offset: Int = 0, sort: CommunityDeckSort = .recent) async throws -> CommunityDeckPage {
         var components = URLComponents(url: endpoint("decks"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "q", value: search),
                                  URLQueryItem(name: "category", value: category == "All" ? "" : category),
-                                 URLQueryItem(name: "offset", value: String(offset))]
+                                 URLQueryItem(name: "offset", value: String(offset)),
+                                 URLQueryItem(name: "sort", value: sort.rawValue)]
         return try await decoded(URLRequest(url: components.url!))
     }
 

@@ -286,7 +286,7 @@ struct PremadeDecksView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
-                    Text("Discover").font(StudyStudioStyle.title(28))
+                    Text("Community decks").font(StudyStudioStyle.title(24))
                     Spacer()
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
@@ -325,7 +325,7 @@ struct PremadeDecksView: View {
                 }
 
                 CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
-                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false)
+                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false)
 
                 if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if let course = enrolledCourse {
@@ -413,7 +413,6 @@ struct PremadeDecksView: View {
                 badge: "\(CourseCurriculumCatalog.courses.count) courses",
                 symbol: "character.bubble.fill",
                 color: StudyStudioStyle.blue,
-                usesColorFill: false,
                 action: { showingCourses = true }
             )
 
@@ -423,7 +422,6 @@ struct PremadeDecksView: View {
                 badge: "Prep",
                 symbol: "target",
                 color: StudyStudioStyle.violet,
-                usesColorFill: false,
                 action: { showingExamPrep = true }
             )
         }
