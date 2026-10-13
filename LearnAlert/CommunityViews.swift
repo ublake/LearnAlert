@@ -107,15 +107,17 @@ struct CommunityFeedView: View {
                     }
                 }.frame(maxWidth: .infinity).padding(24).appCardSurface(cornerRadius: 20)
             }
-            LazyVStack(spacing: 12) {
-                ForEach(store.decks) { deck in
-                    CommunityDeckCard(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
-                        progress: downloadingID == deck.id ? downloadProgress : "",
-                        open: { selectedPreview = deck }, download: { Task { await download(deck) } })
-                        .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
+            VStack(spacing: 4) {
+                LazyVStack(spacing: 12) {
+                    ForEach(store.decks) { deck in
+                        CommunityDeckCard(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
+                            progress: downloadingID == deck.id ? downloadProgress : "",
+                            open: { selectedPreview = deck }, download: { Task { await download(deck) } })
+                            .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
+                    }
                 }
+                if store.totalCount > 0 { pageSelector }
             }
-            if store.totalCount > 0 { pageSelector }
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
         .task(id: "\(store.sort.rawValue):\(store.category):\(store.search)") {
@@ -153,11 +155,11 @@ struct CommunityFeedView: View {
                         Button { changePage(page) } label: {
                             Text("\(page)").font(.caption.weight(.semibold)).monospacedDigit()
                                 .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 32, height: 32)
                                 .background {
                                     if page == store.currentPage {
-                                        RoundedRectangle(cornerRadius: 8).fill(LearnAlertStyle.appAccent)
-                                            .frame(width: 28, height: 24)
+                                        RoundedRectangle(cornerRadius: 6).fill(LearnAlertStyle.appAccent)
+                                            .frame(width: 24, height: 20)
                                     }
                                 }
                                 .contentShape(Rectangle())
@@ -169,16 +171,12 @@ struct CommunityFeedView: View {
                 }
                 pageArrow(forward: true)
             }
-            .padding(.horizontal, 4)
-            .background { Capsule().fill(LearnAlertStyle.insetSurface).frame(height: 30) }
             .fixedSize(horizontal: true, vertical: false)
-            HStack(spacing: 16) {
+            HStack(spacing: 8) {
                 pageArrow(forward: false)
                 Text("\(store.currentPage) / \(store.pageCount)").font(.caption.weight(.semibold)).monospacedDigit()
                 pageArrow(forward: true)
             }
-            .padding(.horizontal, 4)
-            .background { Capsule().fill(LearnAlertStyle.insetSurface).frame(height: 30) }
         }
         .disabled(!store.canChangePage)
         .frame(maxWidth: .infinity)
@@ -190,7 +188,7 @@ struct CommunityFeedView: View {
     private func pageArrow(forward: Bool) -> some View {
         Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
             Image(systemName: forward ? "chevron.right" : "chevron.left")
-                .font(.system(size: 11, weight: .semibold)).frame(width: 44, height: 44)
+                .font(.system(size: 11, weight: .semibold)).frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
