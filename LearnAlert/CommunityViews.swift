@@ -291,10 +291,8 @@ struct CommunityDeckCard: View {
                         .background(Color(hex: deck.colorHex).opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
                     VStack(alignment: .leading, spacing: 8) {
                         Text(deck.name).font(.headline).multilineTextAlignment(.leading)
-                        HStack(spacing: 6) {
-                            CommunityAvatarView(avatar: deck.authorAvatar ?? .init()).frame(width: 24, height: 24)
-                            Text(deck.authorHandle).font(.caption).lineLimit(1)
-                        }.foregroundStyle(LearnAlertStyle.textSecondary)
+                        Text(deck.authorHandle).font(.caption).lineLimit(1)
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
                         if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
                         Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                         if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(LearnAlertStyle.appAccentForeground) }
