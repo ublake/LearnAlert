@@ -9,7 +9,7 @@ extension Notification.Name {
 
 @MainActor
 final class CommunityFeedStore: ObservableObject {
-    static let pageSize = 4
+    static let pageSize = 6
     @Published var search = ""
     @Published var category = "All"
     @Published var sort: CommunityDeckSort = .popular
@@ -62,6 +62,7 @@ struct CommunityFeedView: View {
     let onShare: () -> Void
     var showsSearchField = true
     var showsTitle = true
+    var showsPageSelector = true
     @Namespace private var sortNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
@@ -116,7 +117,7 @@ struct CommunityFeedView: View {
                             .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
                     }
                 }
-                if store.totalCount > 0 { pageSelector }
+                if showsPageSelector && store.totalCount > 0 { CommunityDeckPageSelector(store: store) }
             }
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
@@ -132,74 +133,6 @@ struct CommunityFeedView: View {
         .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
-    }
-
-    private var pageItems: [Int] {
-        let count = store.pageCount
-        let current = store.currentPage
-        if count <= 5 { return Array(1...count) }
-        if current <= 3 { return [1, 2, 3, -1, count] }
-        if current >= count - 2 { return [1, -1, count - 2, count - 1, count] }
-        return [1, -1, current, -2, count]
-    }
-
-    private var pageSelector: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 0) {
-                pageArrow(forward: false)
-                ForEach(pageItems, id: \.self) { page in
-                    if page < 0 {
-                        Text("…").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                            .frame(width: 16).accessibilityHidden(true)
-                    } else {
-                        Button { changePage(page) } label: {
-                            Text("\(page)").font(.caption.weight(.semibold)).monospacedDigit()
-                                .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
-                                .frame(width: 32, height: 32)
-                                .background {
-                                    if page == store.currentPage {
-                                        RoundedRectangle(cornerRadius: 6).fill(LearnAlertStyle.appAccent)
-                                            .frame(width: 24, height: 20)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Page \(page) of \(store.pageCount)")
-                        .accessibilityAddTraits(page == store.currentPage ? .isSelected : [])
-                    }
-                }
-                pageArrow(forward: true)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            HStack(spacing: 8) {
-                pageArrow(forward: false)
-                Text("\(store.currentPage) / \(store.pageCount)").font(.caption.weight(.semibold)).monospacedDigit()
-                pageArrow(forward: true)
-            }
-        }
-        .disabled(!store.canChangePage)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Community deck pages")
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.currentPage)
-    }
-
-    private func pageArrow(forward: Bool) -> some View {
-        Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
-            Image(systemName: forward ? "chevron.right" : "chevron.left")
-                .font(.system(size: 11, weight: .semibold)).frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(forward ? store.currentPage >= store.pageCount : store.currentPage <= 1)
-        .accessibilityLabel(forward ? "Next page" : "Previous page")
-    }
-
-    private func changePage(_ page: Int) {
-        guard store.canChangePage, page != store.currentPage, (1...store.pageCount).contains(page) else { return }
-        HapticFeedback.impact(.light)
-        Task { await store.load(page: page) }
     }
 
     private var sortSelector: some View {
@@ -264,6 +197,81 @@ struct CommunityFeedView: View {
             message = "Your report has been saved for review."
         } catch { session.handle(error); message = error.localizedDescription }
     }
+}
+
+/// A shared compact pager, used inline or in Discover's persistent footer.
+struct CommunityDeckPageSelector: View {
+    @ObservedObject var store: CommunityFeedStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var pageItems: [Int] {
+        let count = store.pageCount
+        let current = store.currentPage
+        if count <= 5 { return Array(1...count) }
+        if current <= 3 { return [1, 2, 3, -1, count] }
+        if current >= count - 2 { return [1, -1, count - 2, count - 1, count] }
+        return [1, -1, current, -2, count]
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 0) {
+                pageArrow(forward: false)
+                ForEach(pageItems, id: \.self) { page in
+                    if page < 0 {
+                        Text("…").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            .frame(width: 16).accessibilityHidden(true)
+                    } else {
+                        Button { changePage(page) } label: {
+                            Text("\(page)").font(.caption.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                                .frame(width: 32, height: 32)
+                                .background {
+                                    if page == store.currentPage {
+                                        RoundedRectangle(cornerRadius: 6).fill(LearnAlertStyle.appAccent)
+                                            .frame(width: 24, height: 20)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Page \(page) of \(store.pageCount)")
+                        .accessibilityAddTraits(page == store.currentPage ? .isSelected : [])
+                    }
+                }
+                pageArrow(forward: true)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 8) {
+                pageArrow(forward: false)
+                Text("\(store.currentPage) / \(store.pageCount)").font(.caption.weight(.semibold)).monospacedDigit()
+                pageArrow(forward: true)
+            }
+        }
+        .disabled(!store.canChangePage)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Community deck pages")
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.currentPage)
+    }
+
+    private func pageArrow(forward: Bool) -> some View {
+        Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
+            Image(systemName: forward ? "chevron.right" : "chevron.left")
+                .font(.system(size: 11, weight: .semibold)).frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(forward ? store.currentPage >= store.pageCount : store.currentPage <= 1)
+        .accessibilityLabel(forward ? "Next page" : "Previous page")
+    }
+
+    private func changePage(_ page: Int) {
+        guard store.canChangePage, page != store.currentPage, (1...store.pageCount).contains(page) else { return }
+        HapticFeedback.impact(.light)
+        Task { await store.load(page: page) }
+    }
+
 }
 
 struct CommunityDeckCard: View {

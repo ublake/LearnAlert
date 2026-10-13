@@ -520,12 +520,7 @@ struct HomeLibraryView: View {
             : AnyLayout(HStackLayout(spacing: 12))
         layout {
             if !isSearchExpanded {
-                HStack(spacing: 8) {
-                    LearnAlertLogoMark()
-                    Text("Home")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                }
+                LearnAlertLogoMark(size: 64)
             }
 
             if !dynamicTypeSize.isAccessibilitySize && !isSearchExpanded { Spacer() }

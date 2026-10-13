@@ -90,11 +90,14 @@ struct CoursezyBackground: View {
 
 // MARK: - LearnAlert Logo Mark
 struct LearnAlertLogoMark: View {
+    var size: CGFloat = 36
+
     var body: some View {
         Image("LearnAlertLogo")
             .resizable()
             .scaledToFit()
-            .frame(width: 36, height: 36)
+            .frame(width: size, height: size)
+            .accessibilityLabel("LearnAlert")
     }
 }
 

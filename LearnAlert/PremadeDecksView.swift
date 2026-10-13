@@ -325,7 +325,7 @@ struct PremadeDecksView: View {
                 }
 
                 CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
-                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false)
+                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false, showsPageSelector: false)
 
                 if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     if let course = enrolledCourse {
@@ -356,9 +356,18 @@ struct PremadeDecksView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, 110)
+            .padding(.bottom, communityFeed.totalCount > 0 ? 12 : 110)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if communityFeed.totalCount > 0 {
+                CommunityDeckPageSelector(store: communityFeed)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+                    .padding(.bottom, 72)
+                    .background(StudyStudioStyle.canvas)
+            }
         }
         .refreshable { await communityFeed.load() }
         .onChange(of: discoverSearch) { _, query in

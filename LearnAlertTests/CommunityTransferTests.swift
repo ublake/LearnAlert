@@ -261,35 +261,35 @@ struct CommunityTransferTests {
         }
     }
 
-    @Test("Community pages replace four-card slices, keep query sorting, and recover a removed last page")
+    @Test("Community pages replace six-card slices, keep query sorting, and recover a removed last page")
     func communityPaging() async throws {
-        var total = 9
+        var total = 13
         var offsets: [Int] = []
         CommunityTestProtocol.response = { request in
             let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
             let values = Dictionary(uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value ?? "") })
-            #expect(values["limit"] == "4")
+            #expect(values["limit"] == "6")
             #expect(values["sort"] == "popular")
             let offset = Int(values["offset"]!)!
             offsets.append(offset)
-            let decks: [[String: Any]] = offset >= total ? [] : (offset..<min(offset + 4, total)).map { index in
+            let decks: [[String: Any]] = offset >= total ? [] : (offset..<min(offset + 6, total)).map { index in
                 ["id": "deck-\(index)", "name": "Deck \(index)", "description": "", "authorHandle": "@cozy_otter", "categoryTag": "Science",
                  "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 10, "downloadCount": index]
             }
-            return (200, try json(["decks": decks, "totalCount": total, "nextOffset": offset + 4 < total ? offset + 4 : NSNull()]))
+            return (200, try json(["decks": decks, "totalCount": total, "nextOffset": offset + 6 < total ? offset + 6 : NSNull()]))
         }
         defer { CommunityTestProtocol.response = nil }
         let store = CommunityFeedStore(api: api())
         await store.load()
-        #expect(store.decks.count == 4 && store.currentPage == 1 && store.pageCount == 3)
+        #expect(store.decks.count == 6 && store.currentPage == 1 && store.pageCount == 3)
         await store.load(page: 2)
-        #expect(store.decks.map(\.id) == ["deck-4", "deck-5", "deck-6", "deck-7"])
+        #expect(store.decks.map(\.id) == ["deck-6", "deck-7", "deck-8", "deck-9", "deck-10", "deck-11"])
         await store.load(page: 3)
         #expect(store.decks.count == 1 && store.currentPage == 3)
-        total = 5
+        total = 7
         await store.load(page: 3)
-        #expect(store.currentPage == 2 && store.decks.map(\.id) == ["deck-4"])
-        #expect(offsets == [0, 4, 8, 8, 4])
+        #expect(store.currentPage == 2 && store.decks.map(\.id) == ["deck-6"])
+        #expect(offsets == [0, 6, 12, 12, 6])
         store.search = "new query"
         #expect(!store.canChangePage)
         await store.load()
