@@ -9,33 +9,47 @@ extension Notification.Name {
 
 @MainActor
 final class CommunityFeedStore: ObservableObject {
+    static let pageSize = 4
     @Published var search = ""
     @Published var category = "All"
-    @Published var sort: CommunityDeckSort = .popular {
-        didSet { if sort != oldValue { nextOffset = nil } }
-    }
+    @Published var sort: CommunityDeckSort = .popular
     @Published private(set) var decks: [CommunityDeckPayload] = []
-    @Published private(set) var nextOffset: Int?
+    @Published private(set) var currentPage = 1
+    @Published private(set) var totalCount = 0
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     private var requestID = UUID()
+    private let api: CommunityAPI
+    private struct Query: Equatable {
+        let search: String
+        let category: String
+        let sort: CommunityDeckSort
+    }
+    private var loadedQuery: Query?
+    private var query: Query { Query(search: search, category: category, sort: sort) }
+    var pageCount: Int { max(1, (totalCount + Self.pageSize - 1) / Self.pageSize) }
+    var canChangePage: Bool { !isLoading && loadedQuery == query }
 
-    func load(more: Bool = false) async {
-        if more && (isLoading || nextOffset == nil) { return }
+    init(api: CommunityAPI = CommunityAPI()) { self.api = api }
+
+    func load(page requestedPage: Int = 1) async {
         let id = UUID(); requestID = id
-        let query = search; let selectedCategory = category; let selectedSort = sort
+        let selectedQuery = query
+        let target = max(1, requestedPage)
         isLoading = true; errorMessage = nil
         defer { if requestID == id { isLoading = false } }
         do {
-            let page = try await CommunityAPI().list(search: query, category: selectedCategory, offset: more ? nextOffset ?? 0 : 0, sort: selectedSort)
-            guard !Task.isCancelled, requestID == id, search == query, category == selectedCategory, sort == selectedSort else { return }
-            if more {
-                let existing = Set(decks.map(\.id))
-                decks.append(contentsOf: page.decks.filter { !existing.contains($0.id) })
-            } else { decks = page.decks }
-            nextOffset = page.nextOffset
+            let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
+                offset: (target - 1) * Self.pageSize, sort: selectedQuery.sort, limit: Self.pageSize)
+            guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
+            let count = max(0, page.totalCount ?? ((target - 1) * Self.pageSize + page.decks.count + (page.nextOffset == nil ? 0 : 1)))
+            let lastPage = max(1, (count + Self.pageSize - 1) / Self.pageSize)
+            // A removal can shrink the last page while it is being viewed.
+            if target > lastPage { await load(page: lastPage); return }
+            decks = page.decks
+            currentPage = target; totalCount = count; loadedQuery = selectedQuery
         } catch {
-            guard !Task.isCancelled, requestID == id, search == query, category == selectedCategory, sort == selectedSort else { return }
+            guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -101,11 +115,7 @@ struct CommunityFeedView: View {
                         .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
                 }
             }
-            if store.nextOffset != nil {
-                Button { Task { await store.load(more: true) } } label: {
-                    HStack { if store.isLoading { ProgressView() }; Text("More decks") }.frame(maxWidth: .infinity, minHeight: 48)
-                }.disabled(store.isLoading)
-            }
+            if store.totalCount > 0 { pageSelector }
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
         .task(id: "\(store.sort.rawValue):\(store.category):\(store.search)") {
@@ -120,6 +130,69 @@ struct CommunityFeedView: View {
         .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
+    }
+
+    private var pageItems: [Int] {
+        let count = store.pageCount
+        let current = store.currentPage
+        if count <= 5 { return Array(1...count) }
+        if current <= 3 { return [1, 2, 3, -1, count] }
+        if current >= count - 2 { return [1, -1, count - 2, count - 1, count] }
+        return [1, -1, current, -2, count]
+    }
+
+    private var pageSelector: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 4) {
+                pageArrow(forward: false)
+                ForEach(pageItems, id: \.self) { page in
+                    if page < 0 {
+                        Text("…").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            .frame(width: 16).accessibilityHidden(true)
+                    } else {
+                        Button { changePage(page) } label: {
+                            Text("\(page)").font(.subheadline.weight(.semibold)).monospacedDigit()
+                                .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                                .frame(width: 44, height: 44)
+                                .background(page == store.currentPage ? LearnAlertStyle.appAccent : Color.clear, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Page \(page) of \(store.pageCount)")
+                        .accessibilityAddTraits(page == store.currentPage ? .isSelected : [])
+                    }
+                }
+                pageArrow(forward: true)
+            }
+            .padding(8).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 22))
+            .fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 16) {
+                pageArrow(forward: false)
+                Text("\(store.currentPage) / \(store.pageCount)").font(.subheadline.weight(.semibold)).monospacedDigit()
+                pageArrow(forward: true)
+            }
+            .padding(8).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 22))
+        }
+        .disabled(!store.canChangePage)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Community deck pages")
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.currentPage)
+    }
+
+    private func pageArrow(forward: Bool) -> some View {
+        Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
+            Image(systemName: forward ? "chevron.right" : "chevron.left")
+                .font(.system(size: 13, weight: .semibold)).frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(forward ? store.currentPage >= store.pageCount : store.currentPage <= 1)
+        .accessibilityLabel(forward ? "Next page" : "Previous page")
+    }
+
+    private func changePage(_ page: Int) {
+        guard store.canChangePage, page != store.currentPage, (1...store.pageCount).contains(page) else { return }
+        HapticFeedback.impact(.light)
+        Task { await store.load(page: page) }
     }
 
     private var sortSelector: some View {
@@ -198,8 +271,8 @@ struct CommunityDeckCard: View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: open) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "rectangle.stack.fill").font(.system(size: 24))
-                        .foregroundStyle(Color(hex: deck.colorHex)).frame(width: 54, height: 62)
+                    Image(systemName: "rectangle.stack.fill").font(.system(size: 18))
+                        .foregroundStyle(Color(hex: deck.colorHex)).frame(width: 36, height: 40)
                         .background(Color(hex: deck.colorHex).opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
                     VStack(alignment: .leading, spacing: 8) {
                         Text(deck.name).font(.headline).multilineTextAlignment(.leading)
@@ -208,7 +281,7 @@ struct CommunityDeckCard: View {
                             Text(deck.authorHandle).font(.caption).lineLimit(1)
                         }.foregroundStyle(LearnAlertStyle.textSecondary)
                         if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
-                        Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                        Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                         if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(LearnAlertStyle.appAccentForeground) }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -258,10 +331,9 @@ struct CommunityDeckPreviewSheet: View {
                         VStack(alignment: .leading, spacing: 4) { Text(deck.name).font(.title2.weight(.bold)); Text(deck.authorHandle).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
                     }
                     if !deck.description.isEmpty { Text(deck.description).font(.body) }
-                    Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                    Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                     if let error { Text(error).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
                     else if let cards = preview?.cards {
-                        Text("A peek inside").font(.headline)
                         ForEach(cards) { CommunitySampleCardView(card: $0) }
                     } else { ProgressView().frame(maxWidth: .infinity, minHeight: 100) }
                 }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
@@ -514,7 +586,7 @@ struct MySharedDecksSheet: View {
                     else if decks.isEmpty { ContentUnavailableView("No shared decks yet", systemImage: "rectangle.stack") }
                     ForEach(decks) { deck in
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(deck.name).font(.headline); Text("\(deck.categoryTag) · \(deck.cardCount) cards").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            Text(deck.name).font(.headline); Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                             HStack {
                                 if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button("Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
