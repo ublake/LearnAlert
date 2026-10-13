@@ -300,22 +300,23 @@ struct CommunityDeckCard: View {
                 }
                 .foregroundStyle(LearnAlertStyle.textPrimary).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityHint("Preview this deck")
-            VStack(alignment: .trailing, spacing: 8) {
-                Button(action: download) {
-                    if isDownloading { ProgressView().frame(width: 44, height: 44) }
-                    else { Image(systemName: isAdded ? "checkmark.circle.fill" : "arrow.down.circle.fill").font(.system(size: 25)).frame(width: 44, height: 44) }
-                }
-                .buttonStyle(.plain).tint(LearnAlertStyle.appAccentForeground)
-                .disabled(isAdded || isDownloading).accessibilityLabel(isAdded ? "Already in your library" : "Add \(deck.name) to your library")
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.down").font(.system(size: 10, weight: .semibold))
-                    Text(deck.downloadCount.formatted()).monospacedDigit()
-                }
-                .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                .fixedSize()
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(deck.downloadCount) downloads")
+            Button(action: download) {
+                if isDownloading { ProgressView().frame(width: 44, height: 44) }
+                else { Image(systemName: isAdded ? "checkmark.circle.fill" : "arrow.down.circle.fill").font(.system(size: 25)).frame(width: 44, height: 44) }
             }
+            .buttonStyle(.plain).tint(LearnAlertStyle.appAccentForeground)
+            .disabled(isAdded || isDownloading).accessibilityLabel(isAdded ? "Already in your library" : "Add \(deck.name) to your library")
+        }
+        .overlay(alignment: .bottomTrailing) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down").font(.system(size: 10, weight: .semibold))
+                Text(deck.downloadCount.formatted()).monospacedDigit()
+            }
+            .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(deck.downloadCount) downloads")
+            .allowsHitTesting(false)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
     }
