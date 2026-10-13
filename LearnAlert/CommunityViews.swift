@@ -143,7 +143,7 @@ struct CommunityFeedView: View {
 
     private var pageSelector: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 pageArrow(forward: false)
                 ForEach(pageItems, id: \.self) { page in
                     if page < 0 {
@@ -151,10 +151,16 @@ struct CommunityFeedView: View {
                             .frame(width: 16).accessibilityHidden(true)
                     } else {
                         Button { changePage(page) } label: {
-                            Text("\(page)").font(.subheadline.weight(.semibold)).monospacedDigit()
+                            Text("\(page)").font(.caption.weight(.semibold)).monospacedDigit()
                                 .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
                                 .frame(width: 44, height: 44)
-                                .background(page == store.currentPage ? LearnAlertStyle.appAccent : Color.clear, in: RoundedRectangle(cornerRadius: 14))
+                                .background {
+                                    if page == store.currentPage {
+                                        RoundedRectangle(cornerRadius: 8).fill(LearnAlertStyle.appAccent)
+                                            .frame(width: 28, height: 24)
+                                    }
+                                }
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Page \(page) of \(store.pageCount)")
@@ -163,14 +169,16 @@ struct CommunityFeedView: View {
                 }
                 pageArrow(forward: true)
             }
-            .padding(8).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 22))
+            .padding(.horizontal, 4)
+            .background { Capsule().fill(LearnAlertStyle.insetSurface).frame(height: 30) }
             .fixedSize(horizontal: true, vertical: false)
             HStack(spacing: 16) {
                 pageArrow(forward: false)
-                Text("\(store.currentPage) / \(store.pageCount)").font(.subheadline.weight(.semibold)).monospacedDigit()
+                Text("\(store.currentPage) / \(store.pageCount)").font(.caption.weight(.semibold)).monospacedDigit()
                 pageArrow(forward: true)
             }
-            .padding(8).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 22))
+            .padding(.horizontal, 4)
+            .background { Capsule().fill(LearnAlertStyle.insetSurface).frame(height: 30) }
         }
         .disabled(!store.canChangePage)
         .frame(maxWidth: .infinity)
@@ -182,7 +190,8 @@ struct CommunityFeedView: View {
     private func pageArrow(forward: Bool) -> some View {
         Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
             Image(systemName: forward ? "chevron.right" : "chevron.left")
-                .font(.system(size: 13, weight: .semibold)).frame(width: 44, height: 44)
+                .font(.system(size: 11, weight: .semibold)).frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(forward ? store.currentPage >= store.pageCount : store.currentPage <= 1)
