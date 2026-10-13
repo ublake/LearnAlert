@@ -178,11 +178,12 @@ private struct NavigationDock: View {
         let trailingEdge = index == 3
         let outerEdge = leadingEdge || trailingEdge
 
-        // The outer highlights reach the screen edges; icon positions and tap areas stay fixed.
+        // Outer highlights reach the screen corners; inner highlights reach the bottom edge.
+        // Icon positions and tap areas stay fixed.
         return UnevenRoundedRectangle(
             topLeadingRadius: leadingEdge ? 0 : 12,
-            bottomLeadingRadius: leadingEdge ? 0 : 12,
-            bottomTrailingRadius: trailingEdge ? 0 : 12,
+            bottomLeadingRadius: leadingEdge || !outerEdge ? 0 : 12,
+            bottomTrailingRadius: trailingEdge || !outerEdge ? 0 : 12,
             topTrailingRadius: trailingEdge ? 0 : 12,
             style: .continuous
         )
@@ -191,7 +192,7 @@ private struct NavigationDock: View {
         .padding(.leading, leadingEdge ? -20 : 0)
         .padding(.trailing, trailingEdge ? -20 : 0)
         .padding(.top, outerEdge ? -8 : 0)
-        .padding(.bottom, outerEdge ? -48 : 0)
+        .padding(.bottom, -48)
         .allowsHitTesting(false)
     }
 
