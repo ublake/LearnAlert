@@ -178,20 +178,20 @@ private struct NavigationDock: View {
         let trailingEdge = index == 3
         let outerEdge = leadingEdge || trailingEdge
 
-        // Outer highlights reach the screen corners; inner highlights reach the bottom edge.
+        // Highlights fill the bar vertically; outer highlights also reach the screen corners.
         // Icon positions and tap areas stay fixed.
         return UnevenRoundedRectangle(
-            topLeadingRadius: leadingEdge ? 0 : 12,
+            topLeadingRadius: leadingEdge || !outerEdge ? 0 : 12,
             bottomLeadingRadius: leadingEdge || !outerEdge ? 0 : 12,
             bottomTrailingRadius: trailingEdge || !outerEdge ? 0 : 12,
-            topTrailingRadius: trailingEdge ? 0 : 12,
+            topTrailingRadius: trailingEdge || !outerEdge ? 0 : 12,
             style: .continuous
         )
         .fill(LearnAlertStyle.appAccent.opacity(0.18))
         .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
         .padding(.leading, leadingEdge ? -20 : 0)
         .padding(.trailing, trailingEdge ? -20 : 0)
-        .padding(.top, outerEdge ? -8 : 0)
+        .padding(.top, -8)
         .padding(.bottom, -48)
         .allowsHitTesting(false)
     }

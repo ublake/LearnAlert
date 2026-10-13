@@ -8,6 +8,7 @@ struct DeckDetailView: View {
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
 
     @State private var showingCreateCard = false
+    @State private var showingCommunityShare = false
     @State private var showingCreateCategory = false
     @State private var isEditingDeck = false
     @State private var cardToEdit: Flashcard?
@@ -265,7 +266,33 @@ struct DeckDetailView: View {
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
+                    .contentMargins(.bottom, homeTutorialStep == 2 ? 0 : 80, for: .scrollContent)
                 }
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if homeTutorialStep != 2 {
+                Button {
+                    HapticFeedback.impact(.light)
+                    InteractionSoundPlayer.shared.play(.click)
+                    showingCreateCard = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(LearnAlertStyle.appAccentInk)
+                        .frame(width: 56, height: 56)
+                        .background {
+                            Circle().fill(LearnAlertStyle.courseSurface)
+                                .overlay { Circle().fill(LearnAlertStyle.appAccent) }
+                        }
+                        .overlay { Circle().strokeBorder(LearnAlertStyle.surfaceOutline(darkOpacity: 0.5), lineWidth: 1) }
+                        .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add a flashcard")
+                .accessibilityHint("Create a new card in \(deck.name)")
+                .padding(16)
             }
         }
         .navigationTitle(deck.name)
@@ -301,6 +328,13 @@ struct DeckDetailView: View {
 
                         Divider()
 
+                        if deck.canShareToCommunity {
+                            Button { showingCommunityShare = true } label: {
+                                Label("Share to Community", systemImage: "square.and.arrow.up")
+                            }
+                            .disabled(deck.cards.isEmpty)
+                        }
+
                         Button {
                             withAnimation { isEditingDeck.toggle() }
                         } label: {
@@ -327,6 +361,9 @@ struct DeckDetailView: View {
         }
         .sheet(isPresented: $showingCreateCard) {
             CreateCardView(deck: deck)
+        }
+        .sheet(isPresented: $showingCommunityShare) {
+            ShareDeckToCommunitySheet(libraryDecks: [deck], initialDeckID: deck.id)
         }
         .sheet(isPresented: $showingCreateCategory) {
             CreateCategoryView(deck: deck)

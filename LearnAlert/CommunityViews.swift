@@ -64,9 +64,6 @@ struct CommunityFeedView: View {
                 else { sortSelector }
                 Spacer(minLength: 4)
                 categoryFilter
-                Button(action: onShare) {
-                    Image(systemName: "square.and.arrow.up").font(.subheadline.weight(.semibold)).frame(width: 44, height: 44)
-                }.accessibilityLabel("Share a deck")
             }
             if showsTitle { sortSelector }
             if showsSearchField {
@@ -90,11 +87,10 @@ struct CommunityFeedView: View {
             } else if store.decks.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "rectangle.stack").font(.system(size: 30)).foregroundStyle(LearnAlertStyle.appAccentForeground)
-                    Text(store.search.isEmpty && store.category == "All" ? "Be the first to share" : "No matching decks").font(.headline)
-                    Button(store.search.isEmpty && store.category == "All" ? "Share a deck" : "Clear filters") {
-                        if store.search.isEmpty && store.category == "All" { onShare() }
-                        else { store.search = ""; store.category = "All" }
-                    }.frame(minHeight: 44)
+                    Text(store.search.isEmpty && store.category == "All" ? "No community decks yet" : "No matching decks").font(.headline)
+                    if !store.search.isEmpty || store.category != "All" {
+                        Button("Clear filters") { store.search = ""; store.category = "All" }.frame(minHeight: 44)
+                    }
                 }.frame(maxWidth: .infinity).padding(24).appCardSurface(cornerRadius: 20)
             }
             LazyVStack(spacing: 12) {
@@ -165,8 +161,9 @@ struct CommunityFeedView: View {
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
             }
             .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 44)
-            .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Filter community decks").accessibilityValue(store.category)
     }
 
