@@ -43,6 +43,8 @@ LearnAlert is a native Apple-platform app built with **Swift**, **SwiftUI**, and
 
 Open `LearnAlert.xcworkspace` in Xcode and select the **LearnAlert** scheme. Keep local API configuration in the gitignored `Config.xcconfig` file.
 
+For command-line simulator builds that exercise Sign in with Apple, keep `CODE_SIGNING_ALLOWED=YES`; `CODE_SIGN_IDENTITY=-` supplies simulator ad-hoc signing. Disabling signing skips Xcode’s simulated entitlements and can cause authorization to fail before the community API is contacted. Verify real Apple sign-in on a provisioned iPhone before distribution.
+
 TikTok advertising measurement is disabled by default. Its integration code is retained, but disabled builds exclude the SDK and tracking permission prompt. `pod install` builds this default configuration. To intentionally enable it later, run `LEARNALERT_ENABLE_TIKTOK=1 pod install`, then rebuild; this also updates the tracking privacy declarations. To disable it again, run `LEARNALERT_ENABLE_TIKTOK=0 pod install` and rebuild.
 
 ## Privacy

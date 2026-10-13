@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AuthenticationServices
+import OSLog
 
 struct CommunityAvatar: Codable, Equatable {
     var hair = 0
@@ -131,12 +132,27 @@ struct CommunitySignInButton: View {
                     if await session.signIn(identityToken: token, nonce: signInNonce, givenName: nil) { onSignedIn() }
                 }
             case .failure(let error):
-                if (error as? ASAuthorizationError)?.code != .canceled { session.errorMessage = "Apple sign-in could not finish. Please try again." }
+                handleFailure(error)
             }
         }
         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
         .frame(height: 48)
         .disabled(session.isSigningIn)
+    }
+
+    private func handleFailure(_ error: Error) {
+        guard (error as? ASAuthorizationError)?.code != .canceled else { return }
+        let detail = error as NSError
+        let underlying = detail.userInfo[NSUnderlyingErrorKey] as? NSError
+        // Log error identifiers only; never Apple credentials, identity tokens, or nonces.
+        Logger(subsystem: "com.learnalert.app", category: "AppleSignIn").error(
+            "Apple authorization failed: \(detail.domain, privacy: .public) code \(detail.code, privacy: .public); underlying \(underlying?.domain ?? "none", privacy: .public) code \(underlying?.code ?? 0, privacy: .public)"
+        )
+        #if targetEnvironment(simulator)
+        session.errorMessage = "Apple sign-in couldn’t finish in the simulator. If retrying fails, try the app on your iPhone."
+        #else
+        session.errorMessage = "Apple sign-in could not finish. Please try again."
+        #endif
     }
 }
 
