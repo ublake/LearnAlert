@@ -120,6 +120,12 @@ shows pending, approved, or needs-changes status in My community decks. Rejectio
 notes are visible there, with an option to edit and resubmit. Approval never happens
 automatically; updates temporarily remove the community copy from public listings.
 
+My community decks refreshes on opening, foregrounding, pull-to-refresh, and every
+30 seconds while visible. Admin edits, hiding/restoring, and removals can include a
+private note to the author. Removed community copies leave a dismissible notice;
+personal decks and study history remain intact. Refresh errors keep the last loaded
+list, while changing accounts clears the previous author's data.
+
 Before App Store distribution, verify Apple sign-in, shared app/extension progress,
 checkpoint handoffs, and notification layouts on a provisioned iPhone, and update
 App Store privacy answers for community identifiers, content, images, and audio.

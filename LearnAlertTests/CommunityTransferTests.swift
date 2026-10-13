@@ -202,6 +202,29 @@ struct CommunityTransferTests {
         #expect(deck.publishedCommunityID == previousID)
     }
 
+    @Test("A removed community notice is not reused as a deck ID when submitting again")
+    func removedPublication() async throws {
+        let deck = Deck(name: "My deck")
+        let previousID = UUID().uuidString
+        let newID = UUID().uuidString
+        deck.publishedCommunityID = previousID
+        deck.cards = [Flashcard(question: "Q", correctAnswer: "A", cardType: .tapReveal)]
+        CommunityTestProtocol.response = { request in
+            let path = request.url!.path
+            if path == "/v1/community/account/decks" {
+                return (200, try json(["decks": [["id": previousID, "name": "Removed deck", "description": "",
+                    "authorHandle": "@buddy", "categoryTag": "General", "colorHex": "#4868F8", "deckType": "Quiz",
+                    "cardCount": 1, "downloadCount": 0, "status": "deleted", "adminAction": "removed"]], "nextOffset": NSNull()]))
+            }
+            if path == "/v1/community/decks/drafts" { return (201, try json(["id": newID])) }
+            #expect(path == "/v1/community/decks/\(newID)")
+            return (202, try json(["id": newID, "success": true]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "owner", api: api()) { _ in }
+        #expect(id == newID)
+    }
+
     @Test("Characters without a stored skin tone use the middle shade; chosen tones survive encoding")
     func skinToneCompatibility() throws {
         let legacy = try JSONDecoder().decode(CommunityAvatar.self, from: json(["hair": 2, "eyes": 4, "mouth": 5]))
@@ -318,6 +341,64 @@ struct CommunityTransferTests {
             "id": "legacy", "name": "Published deck", "description": "", "authorHandle": "@buddy", "categoryTag": "General",
             "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 5, "downloadCount": 4]))
         #expect(legacy.reviewStatus == nil && legacy.reviewMessage == nil && legacy.submittedAt == nil)
+        #expect(legacy.adminNote == nil && !legacy.isRemoved)
+    }
+
+    @Test("Refreshing owned decks replaces admin edits with removal notices and keeps data on connection failure")
+    func refreshesAdminChanges() async throws {
+        var removed = false
+        var failing = false
+        CommunityTestProtocol.response = { request in
+            #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+            if failing { throw URLError(.notConnectedToInternet) }
+            return (200, try json(["decks": [[
+                "id": "moderated-deck", "name": removed ? "Corrected deck" : "Original deck", "description": "",
+                "authorHandle": "@cozy_otter", "categoryTag": "General", "colorHex": "#4868F8", "deckType": "Quiz",
+                "cardCount": 5, "downloadCount": 0, "status": removed ? "deleted" : "published",
+                "adminNote": removed ? "Removed due to inappropriate content." : "Corrected the title.",
+                "adminAction": removed ? "removed" : "edited", "adminUpdatedAt": 1791900000, "isHidden": false
+            ]], "nextOffset": NSNull()]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let store = CommunityOwnedDeckStore(api: api())
+        await store.load(token: "owner")
+        #expect(store.decks.first?.adminNote == "Corrected the title.")
+        #expect(store.decks.first?.isRemoved == false)
+        removed = true
+        await store.load(token: "owner")
+        #expect(store.decks.count == 1 && store.decks.first?.name == "Corrected deck")
+        #expect(store.decks.first?.isRemoved == true)
+        #expect(store.decks.first?.adminAction == "removed")
+        #expect(store.decks.first?.adminNote == "Removed due to inappropriate content.")
+        failing = true
+        await store.load(token: "owner")
+        #expect(store.decks.count == 1 && store.errorMessage != nil && !store.isLoading)
+        // A different account must never keep the previous author's notices, even offline.
+        await store.load(token: "another-owner")
+        #expect(store.decks.isEmpty && store.errorMessage != nil)
+        store.clear()
+        #expect(store.errorMessage == nil && !store.isLoading)
+    }
+
+    @Test("Owned deck pagination includes older admin notices and authenticates every page")
+    func ownedDeckPagination() async throws {
+        var offsets: [String?] = []
+        CommunityTestProtocol.response = { request in
+            let offset = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first?.value
+            offsets.append(offset)
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer owner")
+            #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+            return (200, try json(["decks": [[
+                "id": offset == nil ? "active" : "removed", "name": "My deck", "description": "",
+                "authorHandle": "@buddy", "categoryTag": "General", "colorHex": "#4868F8", "deckType": "Quiz",
+                "cardCount": 5, "downloadCount": 0, "status": offset == nil ? "published" : "deleted"
+            ]], "nextOffset": offset == nil ? 50 : NSNull()]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let page = try await api().myDecks(token: "owner")
+        #expect(offsets == [nil, "50"])
+        #expect(page.decks.map(\.id) == ["active", "removed"])
+        #expect(page.decks.last?.isRemoved == true && page.nextOffset == nil)
     }
 
 }

@@ -55,6 +55,45 @@ final class CommunityFeedStore: ObservableObject {
     }
 }
 
+@MainActor
+final class CommunityOwnedDeckStore: ObservableObject {
+    @Published private(set) var decks: [CommunityDeckPayload] = []
+    @Published private(set) var isLoading = true
+    @Published private(set) var errorMessage: String?
+    private var requestID = UUID()
+    private var ownerToken: String?
+    private let api: CommunityAPI
+
+    init(api: CommunityAPI = CommunityAPI()) { self.api = api }
+
+    func clear() {
+        requestID = UUID(); ownerToken = nil
+        decks = []; isLoading = false; errorMessage = nil
+    }
+
+    func load(token: String, onError: ((Error) -> Void)? = nil) async {
+        if ownerToken != token { clear(); ownerToken = token }
+        let id = UUID(); requestID = id
+        isLoading = decks.isEmpty
+        defer { if requestID == id { isLoading = false } }
+        do {
+            let page = try await api.myDecks(token: token)
+            guard !Task.isCancelled, requestID == id else { return }
+            decks = page.decks; errorMessage = nil
+        } catch {
+            guard !Task.isCancelled, requestID == id else { return }
+            errorMessage = error.localizedDescription
+            onError?(error)
+        }
+    }
+
+    func remove(id: String) {
+        // Invalidate an older refresh so it cannot reinsert a dismissed notice.
+        requestID = UUID(); isLoading = false
+        decks.removeAll { $0.id == id }
+    }
+}
+
 struct CommunityFeedView: View {
     @ObservedObject var store: CommunityFeedStore
     let libraryDecks: [Deck]
@@ -597,25 +636,32 @@ struct MySharedDecksSheet: View {
     let libraryDecks: [Deck]
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var session = CommunitySession.shared
-    @State private var decks: [CommunityDeckPayload] = []
-    @State private var isLoading = true
+    @StateObject private var store = CommunityOwnedDeckStore()
     @State private var message: String?
     @State private var editingDeck: Deck?
     @State private var removingDeck: CommunityDeckPayload?
     @State private var isRemoving = false
+    private var refreshID: String { "\(scenePhase)-\(session.token ?? "signed-out")" }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    if isLoading { ProgressView("Loading your decks…").frame(minHeight: 120) }
-                    else if decks.isEmpty { ContentUnavailableView("No submissions yet", systemImage: "rectangle.stack") }
-                    ForEach(decks) { deck in
+                    if store.isLoading { ProgressView("Loading your decks…").frame(minHeight: 120) }
+                    else if store.decks.isEmpty && store.errorMessage == nil { ContentUnavailableView("No submissions yet", systemImage: "rectangle.stack") }
+                    ForEach(store.decks) { deck in
                         VStack(alignment: .leading, spacing: 12) {
                             Text(deck.name).font(.headline)
-                            Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
-                            if deck.reviewStatus == "pending" {
+                            if !deck.isRemoved {
+                                Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            }
+                            if deck.isRemoved {
+                                Label("Removed by admin", systemImage: "trash").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.destructiveRed)
+                            } else if deck.isHidden == true {
+                                Label("Hidden by admin", systemImage: "eye.slash").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.destructiveRed)
+                            } else if deck.reviewStatus == "pending" {
                                 Label("Pending review", systemImage: "clock").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.appAccentForeground)
                                 Text("Review can take up to 3 days.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             } else if deck.reviewStatus == "rejected" {
@@ -626,19 +672,37 @@ struct MySharedDecksSheet: View {
                             } else if deck.reviewStatus == "approved" {
                                 Label("Approved", systemImage: "checkmark.circle").font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.appAccentForeground)
                             }
+                            if let note = deck.adminNote, !note.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Admin note").font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
+                                    Text(note).font(.subheadline)
+                                }
+                            } else if deck.adminAction == "edited" {
+                                Label("Updated by admin", systemImage: "pencil").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            }
                             HStack {
-                                if let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
-                                Button("Remove", systemImage: "trash", role: .destructive) { removingDeck = deck }.frame(minHeight: 44)
+                                Button(deck.isRemoved ? "Dismiss notice" : "Remove", systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
+                                    if deck.isRemoved { Task { await remove(deck) } } else { removingDeck = deck }
+                                }.frame(minHeight: 44)
                             }.disabled(isRemoving)
                         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
                     }
-                    if let message { Text(message).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
+                    if let error = message ?? store.errorMessage { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
                 }.padding(20)
             }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
                 .navigationTitle("My community decks").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isRemoving) } }
-                .task { await load() }.refreshable { await load() }
+                .task(id: refreshID) {
+                    guard session.token != nil else { store.clear(); return }
+                    guard scenePhase == .active else { return }
+                    await load()
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                        if !isRemoving && editingDeck == nil { await load() }
+                    }
+                }.refreshable { await load() }
                 .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
                 .sheet(item: $editingDeck) { ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: $0.id) }
                 .confirmationDialog("Remove this community deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
@@ -648,15 +712,11 @@ struct MySharedDecksSheet: View {
         }
     }
     @MainActor private func load() async {
-        guard let token = session.token else { isLoading = false; message = "Sign in with Apple to see your community decks."; return }
-        isLoading = true; message = nil
-        defer { isLoading = false }
-        do {
-            let page = try await CommunityAPI().myDecks(token: token)
-            guard session.token == token else { return }
-            decks = page.decks
+        guard let token = session.token else { store.clear(); message = "Sign in with Apple to see your community decks."; return }
+        message = nil
+        await store.load(token: token) { error in
+            if session.token == token { session.handle(error) }
         }
-        catch { session.handle(error); message = error.localizedDescription }
     }
     @MainActor private func remove(_ deck: CommunityDeckPayload) async {
         guard let token = session.token, !isRemoving else { return }
@@ -664,8 +724,9 @@ struct MySharedDecksSheet: View {
         defer { isRemoving = false; removingDeck = nil }
         do {
             try await CommunityAPI().remove(deckID: deck.id, token: token)
+            guard session.token == token else { return }
             for local in libraryDecks where local.publishedCommunityID == deck.id { local.publishedCommunityID = nil }
-            try context.save(); decks.removeAll { $0.id == deck.id }
+            try context.save(); store.remove(id: deck.id)
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); message = error.localizedDescription }
     }

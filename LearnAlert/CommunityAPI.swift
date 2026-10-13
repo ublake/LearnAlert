@@ -36,6 +36,13 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var reviewStatus: String? = nil
     var reviewMessage: String? = nil
     var submittedAt: Int? = nil
+    var status: String? = nil
+    var adminNote: String? = nil
+    var adminAction: String? = nil
+    var adminUpdatedAt: Int? = nil
+    var isHidden: Bool? = nil
+
+    var isRemoved: Bool { status == "deleted" }
 }
 
 enum CommunityDeckSort: String, CaseIterable {
@@ -136,9 +143,24 @@ struct CommunityAPI {
     }
 
     func myDecks(token: String) async throws -> CommunityDeckPage {
-        var request = URLRequest(url: endpoint("account/decks"))
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return try await decoded(request)
+        var decks: [CommunityDeckPayload] = []
+        var offset = 0
+        var totalCount: Int?
+        while true {
+            try Task.checkCancellation()
+            var components = URLComponents(url: endpoint("account/decks"), resolvingAgainstBaseURL: false)!
+            if offset > 0 { components.queryItems = [URLQueryItem(name: "offset", value: String(offset))] }
+            var request = URLRequest(url: components.url!)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let page: CommunityDeckPage = try await decoded(request)
+            decks.append(contentsOf: page.decks)
+            totalCount = page.totalCount ?? totalCount
+            guard let next = page.nextOffset else { break }
+            guard next > offset else { throw URLError(.cannotParseResponse) }
+            offset = next
+        }
+        return CommunityDeckPage(decks: decks, nextOffset: nil, totalCount: totalCount)
     }
 
     func preview(deckID: String) async throws -> CommunityDeckPayload {
@@ -394,7 +416,7 @@ enum CommunityDeckTransfer {
             // A device library can outlive an Apple account change or a public removal.
             // Only update an existing publication when it belongs to the signed-in account.
             let owned = try await api.myDecks(token: token)
-            existingID = owned.decks.contains { $0.id == previousID } ? previousID : nil
+            existingID = owned.decks.contains { $0.id == previousID && !$0.isRemoved } ? previousID : nil
         } else { existingID = nil }
         let id: String
         if let existingID { id = existingID }
