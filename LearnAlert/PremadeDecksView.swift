@@ -256,7 +256,6 @@ enum PremadeDeckCatalog {
 struct PremadeDecksView: View {
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
-    @ObservedObject private var progressManager = CourseProgressManager.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var addedDeckName: String?
@@ -265,18 +264,7 @@ struct PremadeDecksView: View {
     @StateObject private var communityFeed = CommunityFeedStore()
     @State private var showingExamPrep = false
     @State private var showingShareSheet = false
-    @State private var activeCourseForPath: CourseDefinition?
     @State private var searchedCourse: CourseDefinition?
-
-    private var enrolledCourse: CourseDefinition? {
-        guard let activeId = progressManager.activeCourseId else { return nil }
-        return CourseCurriculumCatalog.course(for: activeId)
-    }
-
-    private var activeCompletionPercentage: Double {
-        guard let course = enrolledCourse else { return 0 }
-        return progressManager.completionPercentage(for: course)
-    }
 
     @State private var discoverSearch = ""
     @State private var showingSearch = false
@@ -328,19 +316,6 @@ struct PremadeDecksView: View {
                     onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false, showsPageSelector: false)
 
                 if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    if let course = enrolledCourse {
-                        StudyDestinationCard(
-                            eyebrow: "CONTINUE LEARNING",
-                            title: course.title,
-                            subtitle: progressManager.currentLesson(for: course)?.title ?? "Explore your learning path",
-                            badge: "\(Int(activeCompletionPercentage * 100))% complete",
-                            color: StudyStudioStyle.violet,
-                            actionTitle: "Continue"
-                        ) {
-                            activeCourseForPath = course
-                        }
-                    }
-
                     HStack {
                         Text("Explore categories")
                             .font(StudyStudioStyle.heading(17))
@@ -391,9 +366,6 @@ struct PremadeDecksView: View {
         }
         .navigationDestination(isPresented: $showingExamPrep) {
             ExamPrepHubView(libraryDecks: libraryDecks, onAddDeck: add)
-        }
-        .navigationDestination(item: $activeCourseForPath) { course in
-            CoursePathView(course: course)
         }
         .navigationDestination(item: $searchedCourse) { course in
             CourseOverviewView(course: course)
