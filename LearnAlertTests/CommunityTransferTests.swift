@@ -202,4 +202,16 @@ struct CommunityTransferTests {
         #expect(deck.publishedCommunityID == previousID)
     }
 
+    @Test("Characters without a stored skin tone use the middle shade; chosen tones survive encoding")
+    func skinToneCompatibility() throws {
+        let legacy = try JSONDecoder().decode(CommunityAvatar.self, from: json(["hair": 2, "eyes": 4, "mouth": 5]))
+        #expect(legacy.skinTone == 3)
+        #expect(CommunityAvatar().skinTone == CommunityAvatar.skinTones.count / 2)
+        for tone in 0...6 {
+            let avatar = CommunityAvatar(hair: 2, eyes: 4, mouth: 5, skinTone: tone)
+            let restored = try JSONDecoder().decode(CommunityAvatar.self, from: JSONEncoder().encode(avatar))
+            #expect(restored == avatar)
+        }
+    }
+
 }

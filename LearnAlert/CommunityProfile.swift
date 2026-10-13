@@ -7,6 +7,31 @@ struct CommunityAvatar: Codable, Equatable {
     var hair = 0
     var eyes = 0
     var mouth = 0
+    var skinTone = 3
+
+    static let skinTones: [Color] = [
+        Color(red: 1, green: 0.95, blue: 0.90),
+        Color(red: 1, green: 0.91, blue: 0.83),
+        Color(red: 1, green: 0.85, blue: 0.73),
+        Color(red: 1, green: 0.79, blue: 0.64),
+        Color(red: 0.79, green: 0.57, blue: 0.41),
+        Color(red: 0.55, green: 0.35, blue: 0.25),
+        Color(red: 0.31, green: 0.20, blue: 0.15)
+    ]
+
+    init(hair: Int = 0, eyes: Int = 0, mouth: Int = 0, skinTone: Int = 3) {
+        self.hair = hair; self.eyes = eyes; self.mouth = mouth; self.skinTone = skinTone
+    }
+
+    private enum CodingKeys: String, CodingKey { case hair, eyes, mouth, skinTone }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        hair = try values.decode(Int.self, forKey: .hair)
+        eyes = try values.decode(Int.self, forKey: .eyes)
+        mouth = try values.decode(Int.self, forKey: .mouth)
+        skinTone = try values.decodeIfPresent(Int.self, forKey: .skinTone) ?? 3
+    }
 
     static let hairNames = ["Bedhead", "Noodle", "Sprout", "Side swoop", "Tiny crown", "Bald-ish"]
     static let eyeNames = ["Wide awake", "Sleepy", "Side-eye", "Tiny dots", "Wink", "Dizzy"]
@@ -28,7 +53,7 @@ struct CommunityAvatarView: View {
             var g = context
             g.scaleBy(x: size.width / 100, y: size.height / 100)
             let ink = Color(red: 0.18, green: 0.21, blue: 0.27)
-            let skin = Color(red: 1, green: 0.79, blue: 0.64)
+            let skin = CommunityAvatar.skinTones[min(max(avatar.skinTone, 0), CommunityAvatar.skinTones.count - 1)]
             let hair = Color(red: 0.33, green: 0.25, blue: 0.25)
             func oval(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ color: Color) {
                 g.fill(Path(ellipseIn: CGRect(x: x, y: y, width: w, height: h)), with: .color(color))
@@ -184,7 +209,7 @@ struct SettingsProfileCard: View {
                         CommunityAvatarView().frame(width: 52, height: 52)
                         Text("Your profile").font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
                     }
-                    CommunitySignInButton { showingProfile = true }
+                    CommunitySignInButton { showingProfile = session.needsProfileSetup }
                     if let error = session.errorMessage { Text(error).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
                 }
                 .padding(16)
@@ -230,12 +255,19 @@ struct CommunityProfileSheet: View {
                                 Text("@").foregroundStyle(LearnAlertStyle.textSecondary)
                                 TextField("your_username", text: $username)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                    .disabled(isSaving || deletingAccount)
+                                    .disabled(session.profile.isComplete || isSaving || deletingAccount)
+                                    .foregroundStyle(session.profile.isComplete ? LearnAlertStyle.textSecondary : LearnAlertStyle.textPrimary)
+                                if session.profile.isComplete {
+                                    Image(systemName: "lock.fill").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                                        .accessibilityLabel("Username is permanent")
+                                }
                             }
                             .font(.body.weight(.medium)).padding(16).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                            Text("3–24 letters, numbers or underscores.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            Text(session.profile.isComplete ? "Your username is permanent." : "3–24 letters, numbers or underscores. Permanent once saved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                         }
                         VStack(spacing: 0) {
+                            skinTonePicker
+                            Divider().padding(.horizontal, 16)
                             partPicker("Hair", selection: $avatar.hair, names: CommunityAvatar.hairNames)
                             Divider().padding(.horizontal, 16)
                             partPicker("Eyes", selection: $avatar.eyes, names: CommunityAvatar.eyeNames)
@@ -251,7 +283,7 @@ struct CommunityProfileSheet: View {
                     } else {
                         Text("Make yourself at home.").font(.title2.weight(.semibold))
                         CommunitySignInButton {
-                            if session.profile.isComplete, let onSave { onSave(); dismiss() }
+                            if session.profile.isComplete { onSave?(); dismiss() }
                             else { loadDraft() }
                         }
                         if session.isSigningIn { ProgressView("Signing in…") }
@@ -292,6 +324,47 @@ struct CommunityProfileSheet: View {
         username = session.handle.hasPrefix("@") ? String(session.handle.dropFirst()) : session.handle
         avatar = session.profile.avatar
         loadedDraft = true
+    }
+
+    private var skinTonePicker: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Skin tone").font(.subheadline.weight(.medium)).accessibilityHidden(true)
+            GeometryReader { proxy in
+                let travel = max(proxy.size.width - 28, 1)
+                let selection = min(max(avatar.skinTone, 0), 6)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(LinearGradient(colors: CommunityAvatar.skinTones, startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 18).padding(.horizontal, 14)
+                    Circle().fill(CommunityAvatar.skinTones[selection])
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 3))
+                        .shadow(color: .black.opacity(0.24), radius: 3, y: 1)
+                        .frame(width: 28, height: 28)
+                        .offset(x: travel * CGFloat(selection) / 6)
+                }
+                .frame(height: 44).contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    let selected = min(max(Int(((value.location.x - 14) / travel * 6).rounded()), 0), 6)
+                    if avatar.skinTone != selected {
+                        avatar.skinTone = selected
+                        HapticFeedback.impact(.light)
+                    }
+                })
+            }
+            .frame(height: 44)
+            .accessibilityElement(children: .ignore).accessibilityLabel("Skin tone")
+            .accessibilityValue("Shade \(min(max(avatar.skinTone, 0), 6) + 1) of 7")
+            .accessibilityAdjustableAction { direction in
+                guard !isSaving, !deletingAccount else { return }
+                switch direction {
+                case .increment: avatar.skinTone = min(avatar.skinTone + 1, 6)
+                case .decrement: avatar.skinTone = max(avatar.skinTone - 1, 0)
+                @unknown default: break
+                }
+            }
+            .allowsHitTesting(!isSaving && !deletingAccount)
+            .disabled(isSaving || deletingAccount)
+        }
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 4)
     }
 
     private func partPicker(_ title: String, selection: Binding<Int>, names: [String]) -> some View {
