@@ -159,3 +159,22 @@ study data stays on the device. Physical-device notification/extension checks an
 signed Apple server notification delivery remain unverified.
 The AI consent screen was intentionally left unchanged; its third-party disclosure
 must still be considered when assessing App Review readiness.
+
+October 15 follow-up: all six notification appearance/routing tests passed, including
+two new regression tests for Customize preview taps, legacy test alerts, dismissal,
+and preserving unrelated real study handoffs. Tapping a Customize test alert now opens
+an animated gesture guide instead of navigating to its synthetic deck ID. The guide
+supports touch-and-hold and swipe-left/View, with a static Reduce Motion alternative.
+Tutorial notifications no longer write study handoffs. In the iPhone 18 Pro simulator,
+the delivered expanded Sunset alert showed its selected colors, hint, and correct-answer
+feedback; a new preview tap opened the guide, verified in both light and dark appearance.
+Leaving the Korean course after one response resumed at card 2 of 38 with 3% saved.
+The updated simulator build, signed stable Release archive, distribution export, and
+signature verification passed. The refreshed local IPA is
+`~/Desktop/LearnAlert-Releases/1.1-3/LearnAlert-1.1-3.ipa`.
+App Store Connect's Paid Apps Agreement is Active; version 1.1 remains Prepare for
+Submission with manual release selected, updated review instructions, and no build
+uploaded or review submitted by these checks. Actual signed Apple notification delivery
+is still unverified (the latest receipt count was zero); there is no documented SIWA
+test-event API. Physical-device checks remain unverified because testing was limited
+to the simulator at the owner's request.

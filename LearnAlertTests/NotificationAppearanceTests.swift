@@ -6,6 +6,64 @@ import UserNotifications
 @MainActor
 @Suite("Notification appearance")
 struct NotificationAppearanceTests {
+    @Test("Opening a Customize preview shows gesture help and clears only its synthetic handoff")
+    func customizationPreviewRouting() throws {
+        let suite = "test-preview-routing-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = NotificationManager(registerForNotifications: false)
+        let cardId = UUID(), deckId = UUID()
+        let content = NotificationManager.tutorialAlertContent(
+            deckTitle: "Example", question: "Which planet?", options: ["Saturn", "Mars"],
+            correctAnswer: "Saturn", hint: "Rings", cardId: cardId, deckId: deckId,
+            appearance: .saved(), isCustomizationTest: true)
+        defaults.set(deckId.uuidString, forKey: "handoffDeckId")
+        defaults.set(cardId.uuidString, forKey: "handoffCardId")
+        defaults.set(true, forKey: "handoffFromNotificationUI")
+        manager.pendingStudyHandoff = StudyHandoff(deckId: deckId, cardId: cardId,
+            selectedAnswer: nil, wasCorrect: nil, wasGraded: false, wasHintVisible: false)
+
+        #expect(manager.handleCustomizationTestResponse(content: content,
+            actionIdentifier: UNNotificationDefaultActionIdentifier, defaults: defaults))
+        #expect(manager.shouldShowCustomizationTestGuide)
+        #expect(manager.pendingStudyHandoff == nil)
+        #expect(defaults.string(forKey: "handoffDeckId") == nil)
+        #expect(defaults.object(forKey: "handoffFromNotificationUI") == nil)
+
+        let realDeckId = UUID(), realCardId = UUID()
+        defaults.set(realDeckId.uuidString, forKey: "handoffDeckId")
+        defaults.set(realCardId.uuidString, forKey: "handoffCardId")
+        let realHandoff = StudyHandoff(deckId: realDeckId, cardId: realCardId,
+            selectedAnswer: "Answer", wasCorrect: true, wasGraded: true, wasHintVisible: false)
+        manager.pendingStudyHandoff = realHandoff
+        manager.handleCustomizationTestResponse(content: content,
+            actionIdentifier: UNNotificationDefaultActionIdentifier, defaults: defaults)
+        #expect(defaults.string(forKey: "handoffDeckId") == realDeckId.uuidString)
+        #expect(manager.pendingStudyHandoff == realHandoff)
+    }
+
+    @Test("Preview routing handles old test alerts without intercepting real decks or onboarding")
+    func legacyPreviewAndRealCardRouting() {
+        let manager = NotificationManager(registerForNotifications: false)
+        let legacy = UNMutableNotificationContent()
+        legacy.categoryIdentifier = "FLASHCARD_TEST"
+        legacy.userInfo = ["deckName": "Example"]
+        #expect(manager.handleCustomizationTestResponse(content: legacy,
+            actionIdentifier: UNNotificationDismissActionIdentifier, defaults: nil))
+        #expect(!manager.shouldShowCustomizationTestGuide)
+        #expect(manager.handleCustomizationTestResponse(content: legacy,
+            actionIdentifier: UNNotificationDefaultActionIdentifier, defaults: nil))
+        #expect(manager.shouldShowCustomizationTestGuide)
+
+        legacy.categoryIdentifier = "FLASHCARD_REVEAL"
+        #expect(!manager.handleCustomizationTestResponse(content: legacy,
+            actionIdentifier: UNNotificationDefaultActionIdentifier, defaults: nil))
+        legacy.categoryIdentifier = "FLASHCARD_TEST"
+        legacy.userInfo = ["deckName": "Example", "isCustomizationTest": false]
+        #expect(!manager.handleCustomizationTestResponse(content: legacy,
+            actionIdentifier: UNNotificationDefaultActionIdentifier, defaults: nil))
+    }
+
     @Test("Test alerts carry all themes, layouts and appearance modes without a shared container")
     func testAlertAppearancePayload() throws {
         let cardId = UUID(), deckId = UUID()

@@ -17,6 +17,7 @@ struct NotificationCustomizeView: View {
     @State private var showingPermissionAlert = false
     @State private var testScheduledSuccess = false
     @State private var testSchedulingError: String?
+    @State private var showingTestGuide = false
 
     private var isLight: Bool { colorScheme == .light }
 
@@ -87,13 +88,14 @@ struct NotificationCustomizeView: View {
                             systemImage: testScheduledSuccess ? "checkmark" : "bell")
                             .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
                     }.buttonStyle(.bordered).tint(StudyStudioStyle.ink)
-                    Text("Touch and hold the alert to see your color and answer.")
-                        .font(.footnote).foregroundStyle(StudyStudioStyle.secondary)
+                    Button("How to open the alert", systemImage: "hand.draw") { showingTestGuide = true }
+                        .font(.footnote).frame(minHeight: 44)
                 }
             }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 112)
                 .frame(maxWidth: 600).frame(maxWidth: .infinity)
         }.background(StudyStudioStyle.canvas.ignoresSafeArea())
             .tint(StudyStudioStyle.blue)
+            .sheet(isPresented: $showingTestGuide) { NotificationTestGuideView() }
             .alert("Notifications Not Allowed", isPresented: $showingPermissionAlert) {
                 Button("Open Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) } }
                 Button("Cancel", role: .cancel) { }
@@ -151,7 +153,8 @@ struct NotificationCustomizeView: View {
             correctAnswer: "Saturn",
             hint: "It is the sixth planet from the Sun.",
             delay: 3,
-            appearance: NotificationAppearance(theme: currentTheme, layout: currentLayout, mode: appearanceMode)
+            appearance: NotificationAppearance(theme: currentTheme, layout: currentLayout, mode: appearanceMode),
+            isCustomizationTest: true
         ) { error in
             Task { @MainActor in
                 if let error {

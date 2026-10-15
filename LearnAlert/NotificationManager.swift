@@ -34,9 +34,15 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     @Published var pendingCourseHandoff: CourseHandoff?
     @Published var pendingStudyHandoff: StudyHandoff?
     @Published var shouldShowNotificationOpeningTip = false
+    @Published var shouldShowCustomizationTestGuide = false
     
-    override init() {
+    override convenience init() {
+        self.init(registerForNotifications: true)
+    }
+
+    init(registerForNotifications: Bool) {
         super.init()
+        guard registerForNotifications else { return }
         UNUserNotificationCenter.current().delegate = self
         setupCategories()
         checkPermission()
@@ -181,11 +187,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         deckId: UUID = UUID(),
         delay: TimeInterval = 0.8,
         appearance: NotificationAppearance = .saved(),
+        isCustomizationTest: Bool = false,
         completion: ((Error?) -> Void)? = nil
     ) {
         setupCategories()
         let content = Self.tutorialAlertContent(deckTitle: deckTitle, question: question, options: options,
-            correctAnswer: correctAnswer, hint: hint, cardId: cardId, deckId: deckId, appearance: appearance)
+            correctAnswer: correctAnswer, hint: hint, cardId: cardId, deckId: deckId, appearance: appearance,
+            isCustomizationTest: isCustomizationTest)
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 0.5), repeats: false)
         let request = UNNotificationRequest(
@@ -204,7 +212,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     static func tutorialAlertContent(
         deckTitle: String, question: String, options: [String], correctAnswer: String, hint: String,
-        cardId: UUID, deckId: UUID, appearance: NotificationAppearance
+        cardId: UUID, deckId: UUID, appearance: NotificationAppearance, isCustomizationTest: Bool = false
     ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = "LearnAlert: \(deckTitle)"
@@ -225,6 +233,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "deckType": "Quiz",
             "isRandom": false,
             "isTutorial": true,
+            "isCustomizationTest": isCustomizationTest,
             "progress": "Tutorial \u{2022} Card 1",
             "question": question,
             "cardType": "multiple_choice",
@@ -259,6 +268,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 return
             }
             let userInfo = response.notification.request.content.userInfo
+            if self.handleCustomizationTestResponse(content: response.notification.request.content,
+                actionIdentifier: response.actionIdentifier,
+                defaults: UserDefaults(suiteName: "group.com.learnalert.shared")) {
+                completionHandler()
+                return
+            }
             if let courseId = userInfo["courseId"] as? String,
                response.actionIdentifier != UNNotificationDismissActionIdentifier {
                 CourseProgressManager.shared.reloadFromSharedDefaults()
@@ -320,6 +335,33 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             completionHandler()
         }
+    }
+
+    /// Preview IDs are deliberately synthetic and must never become study destinations.
+    @MainActor
+    @discardableResult
+    func handleCustomizationTestResponse(content: UNNotificationContent, actionIdentifier: String,
+        defaults: UserDefaults?) -> Bool {
+        guard content.categoryIdentifier == "FLASHCARD_TEST",
+              content.userInfo["isCustomizationTest"] as? Bool == true ||
+                (content.userInfo["isCustomizationTest"] == nil &&
+                 content.userInfo["deckName"] as? String == "Example") else { return false }
+        guard actionIdentifier != UNNotificationDismissActionIdentifier else { return true }
+
+        // Older extensions wrote preview handoffs on appearance. Remove only this alert's
+        // synthetic IDs, leaving any unrelated real study handoff untouched.
+        if defaults?.string(forKey: "handoffDeckId") == content.userInfo["deckId"] as? String,
+           defaults?.string(forKey: "handoffCardId") == content.userInfo["cardId"] as? String {
+            ["handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffWasCorrect",
+             "handoffWasGraded", "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp"]
+                .forEach { defaults?.removeObject(forKey: $0) }
+        }
+        if pendingStudyHandoff?.deckId.uuidString == content.userInfo["deckId"] as? String {
+            pendingStudyHandoff = nil
+        }
+        shouldShowNotificationOpeningTip = false
+        shouldShowCustomizationTestGuide = true
+        return true
     }
 
     @MainActor

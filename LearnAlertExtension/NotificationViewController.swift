@@ -984,7 +984,7 @@ struct FlashcardNotificationView: View {
     }
 
     private func persistStudyHandoff() {
-        guard !activeDeckId.isEmpty, !activeCardId.isEmpty,
+        guard !isTutorial, !activeDeckId.isEmpty, !activeCardId.isEmpty,
               let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") else { return }
         defaults.set(activeDeckId, forKey: "handoffDeckId")
         defaults.set(activeCardId, forKey: "handoffCardId")

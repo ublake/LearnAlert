@@ -85,6 +85,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }
+            .sheet(isPresented: $notificationManager.shouldShowCustomizationTestGuide) {
+                NotificationTestGuideView()
+            }
             .fullScreenCover(isPresented: Binding(
                 get: { !hasCompletedOnboarding },
                 set: { if $0 { hasCompletedOnboarding = false } }
@@ -103,6 +106,9 @@ struct ContentView: View {
             .onChange(of: notificationManager.pendingStudyHandoff) { _, handoff in
                 guard handoff != nil else { return }
                 selectedTab = 0
+            }
+            .onChange(of: notificationManager.shouldShowCustomizationTestGuide, initial: true) { _, showing in
+                if showing { selectedTab = 2 }
             }
             .navigationDestination(item: $notificationManager.pendingCourseHandoff) { handoff in
                 if let course = CourseCurriculumCatalog.course(for: handoff.id) { CoursePathView(course: course, initialCheckpointSectionId: handoff.sectionId) }
