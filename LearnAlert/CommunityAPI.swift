@@ -4,6 +4,7 @@ import Combine
 import Security
 import CryptoKit
 import UIKit
+import AuthenticationServices
 
 struct CommunityCardPayload: Codable, Identifiable {
     let id: String
@@ -41,6 +42,7 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var adminAction: String? = nil
     var adminUpdatedAt: Int? = nil
     var isHidden: Bool? = nil
+    var authorID: String? = nil
 
     var isRemoved: Bool { status == "deleted" }
 }
@@ -54,6 +56,11 @@ struct CommunityDeckPage: Decodable {
     let decks: [CommunityDeckPayload]
     let nextOffset: Int?
     var totalCount: Int? = nil
+}
+
+struct CommunityBlockedUser: Codable, Identifiable, Equatable {
+    let id: String
+    let handle: String
 }
 
 extension Deck {
@@ -78,6 +85,7 @@ extension Deck {
 struct CommunityAPIError: LocalizedError {
     let status: Int
     let message: String
+    var code: String? = nil
     var errorDescription: String? { message }
 }
 
@@ -95,6 +103,7 @@ struct CommunityAPI {
         let expiresAt: Int
         var handle: String
         var profile: CommunityProfile? = nil
+        var appleUserID: String? = nil
     }
     struct IDResult: Decodable { let id: String }
     struct SuccessResult: Decodable { let success: Bool }
@@ -116,19 +125,25 @@ struct CommunityAPI {
         var origin = "personal"
     }
 
-    func signIn(identityToken: String, nonce: String, givenName: String?) async throws -> SignInResult {
-        struct Body: Encodable { let identityToken: String; let nonce: String; let givenName: String? }
-        return try await jsonRequest("auth/apple", method: "POST", body: Body(identityToken: identityToken, nonce: nonce, givenName: givenName))
+    struct AppleReauthentication: Encodable {
+        let identityToken: String
+        let authorizationCode: String
+        let nonce: String
     }
 
-    func list(search: String, category: String, offset: Int = 0, sort: CommunityDeckSort = .recent, limit: Int = 30) async throws -> CommunityDeckPage {
+    func signIn(identityToken: String, nonce: String, givenName: String?, authorizationCode: String? = nil) async throws -> SignInResult {
+        struct Body: Encodable { let identityToken: String; let nonce: String; let givenName: String?; let authorizationCode: String? }
+        return try await jsonRequest("auth/apple", method: "POST", body: Body(identityToken: identityToken, nonce: nonce, givenName: givenName, authorizationCode: authorizationCode))
+    }
+
+    func list(search: String, category: String, offset: Int = 0, sort: CommunityDeckSort = .recent, limit: Int = 30, token: String? = nil) async throws -> CommunityDeckPage {
         var components = URLComponents(url: endpoint("decks"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "q", value: search),
                                  URLQueryItem(name: "category", value: category == "All" ? "" : category),
                                  URLQueryItem(name: "offset", value: String(offset)),
                                  URLQueryItem(name: "sort", value: sort.rawValue),
                                  URLQueryItem(name: "limit", value: String(limit))]
-        return try await decoded(URLRequest(url: components.url!))
+        return try await decoded(viewerRequest(components.url!, token: token))
     }
 
     func profile(token: String) async throws -> CommunityProfile {
@@ -163,8 +178,8 @@ struct CommunityAPI {
         return CommunityDeckPage(decks: decks, nextOffset: nil, totalCount: totalCount)
     }
 
-    func preview(deckID: String) async throws -> CommunityDeckPayload {
-        let result: DeckResult = try await decoded(URLRequest(url: endpoint("decks/\(deckID)/preview")))
+    func preview(deckID: String, token: String? = nil) async throws -> CommunityDeckPayload {
+        let result: DeckResult = try await decoded(viewerRequest(endpoint("decks/\(deckID)/preview"), token: token))
         return result.deck
     }
 
@@ -195,15 +210,36 @@ struct CommunityAPI {
         let _: SuccessResult = try await decoded(request)
     }
 
-    func deleteAccount(token: String) async throws {
+    func deleteAccount(token: String, reauthentication: AppleReauthentication? = nil) async throws {
         var request = URLRequest(url: endpoint("account"))
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let reauthentication {
+            request.httpBody = try JSONEncoder().encode(reauthentication)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let _: SuccessResult = try await decoded(request)
     }
 
-    func detail(deckID: String) async throws -> CommunityDeckPayload {
-        let result: DeckResult = try await decoded(URLRequest(url: endpoint("decks/\(deckID)")))
+    func blockedUsers(token: String) async throws -> [CommunityBlockedUser] {
+        struct Result: Decodable { let users: [CommunityBlockedUser] }
+        let result: Result = try await decoded(viewerRequest(endpoint("account/blocks"), token: token))
+        return result.users
+    }
+
+    func block(authorID: String, token: String) async throws {
+        struct Body: Encodable { let authorID: String }
+        let _: SuccessResult = try await jsonRequest("account/blocks", method: "POST", body: Body(authorID: authorID), token: token)
+    }
+
+    func unblock(authorID: String, token: String) async throws {
+        var request = viewerRequest(endpoint("account/blocks/\(authorID)"), token: token)
+        request.httpMethod = "DELETE"
+        let _: SuccessResult = try await decoded(request)
+    }
+
+    func detail(deckID: String, token: String? = nil) async throws -> CommunityDeckPayload {
+        let result: DeckResult = try await decoded(viewerRequest(endpoint("decks/\(deckID)"), token: token))
         return result.deck
     }
 
@@ -212,14 +248,20 @@ struct CommunityAPI {
         let _: SuccessResult = try await jsonRequest("decks/\(deckID)/reports", method: "POST", body: Body(reason: reason), token: token)
     }
 
-    func media(id: String, maximumBytes: Int) async throws -> Data {
-        let (data, response) = try await session.data(for: URLRequest(url: endpoint("media/\(id)")))
+    func media(id: String, maximumBytes: Int, token: String? = nil) async throws -> Data {
+        let (data, response) = try await session.data(for: viewerRequest(endpoint("media/\(id)"), token: token))
         try validate(data, response: response)
         guard data.count <= maximumBytes else { throw CommunityAPIError(status: 413, message: "This attachment is too large.") }
         return data
     }
 
     private func endpoint(_ path: String) -> URL { baseURL.appendingPathComponent("v1/community/\(path)") }
+
+    private func viewerRequest(_ url: URL, token: String?) -> URLRequest {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        return request
+    }
 
     private func jsonRequest<Body: Encodable, Result: Decodable>(_ path: String, method: String, body: Body, token: String? = nil) async throws -> Result {
         var request = URLRequest(url: endpoint(path))
@@ -239,10 +281,11 @@ struct CommunityAPI {
     private func validate(_ data: Data, response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else {
-            struct Envelope: Decodable { struct Failure: Decodable { let message: String }; let error: Failure }
-            let message = (try? JSONDecoder().decode(Envelope.self, from: data))?.error.message
+            struct Envelope: Decodable { struct Failure: Decodable { let message: String; let code: String? }; let error: Failure }
+            let failure = try? JSONDecoder().decode(Envelope.self, from: data)
+            let message = failure?.error.message
                 ?? "The community library is unavailable. Please try again."
-            throw CommunityAPIError(status: http.statusCode, message: message)
+            throw CommunityAPIError(status: http.statusCode, message: message, code: failure?.error.code)
         }
     }
 }
@@ -253,15 +296,24 @@ final class CommunitySession: ObservableObject {
     @Published private(set) var credentials: CommunityAPI.SignInResult?
     @Published var isSigningIn = false
     @Published var errorMessage: String?
-    private let service = "com.learnalert.community"
+    private let service: String
+    private let api: CommunityAPI
+    private let credentialState: (String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 
     var isSignedIn: Bool { credentials.map { $0.expiresAt > Int(Date().timeIntervalSince1970) } ?? false }
     var handle: String { credentials?.handle ?? "" }
     var token: String? { isSignedIn ? credentials?.token : nil }
     var profile: CommunityProfile { credentials?.profile ?? CommunityProfile(handle: handle, avatar: .init(), isComplete: false) }
     var needsProfileSetup: Bool { isSignedIn && !profile.isComplete }
+    var isRestricted: Bool { profile.accountStatus == "banned" || profile.accountStatus == "suspended" }
 
-    private init() {
+    init(service: String = "com.learnalert.community", api: CommunityAPI? = nil,
+         credentialState: @escaping (String) async throws -> ASAuthorizationAppleIDProvider.CredentialState = { userID in
+             try await ASAuthorizationAppleIDProvider().credentialState(forUserID: userID)
+         }) {
+        self.service = service
+        self.api = api ?? CommunityAPI()
+        self.credentialState = credentialState
         var query = keychainQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -293,12 +345,13 @@ final class CommunitySession: ObservableObject {
     }
 
     @discardableResult
-    func signIn(identityToken: String, nonce: String, givenName: String?) async -> Bool {
+    func signIn(identityToken: String, nonce: String, givenName: String?, authorizationCode: String? = nil, appleUserID: String? = nil) async -> Bool {
         isSigningIn = true
         errorMessage = nil
         defer { isSigningIn = false }
         do {
-            let result = try await CommunityAPI().signIn(identityToken: identityToken, nonce: nonce, givenName: givenName)
+            var result = try await api.signIn(identityToken: identityToken, nonce: nonce, givenName: givenName, authorizationCode: authorizationCode)
+            result.appleUserID = appleUserID
             try persist(result)
             return true
         } catch { errorMessage = error.localizedDescription; return false }
@@ -307,17 +360,40 @@ final class CommunitySession: ObservableObject {
     func refreshProfile() async {
         guard let token else { return }
         do {
-            let profile = try await CommunityAPI().profile(token: token)
+            let profile = try await api.profile(token: token)
             guard var result = credentials, self.token == token else { return }
             result.profile = profile; result.handle = profile.handle
             try persist(result)
         } catch { if self.token == token { handle(error) } }
     }
 
+    func validateAppleCredential() async {
+        guard let token else { return }
+        if let userID = credentials?.appleUserID {
+            do {
+                let state = try await credentialState(userID)
+                guard self.token == token, !Task.isCancelled else { return }
+                if state == .revoked || state == .notFound || state == .transferred {
+                    appleCredentialRevoked()
+                    return
+                }
+            } catch {
+                // A temporary Apple connectivity failure must not delete a valid local session.
+            }
+        }
+        guard self.token == token, !Task.isCancelled else { return }
+        await refreshProfile()
+    }
+
+    func appleCredentialRevoked() {
+        signOut()
+        errorMessage = "Apple access changed. Sign in again to use your community account."
+    }
+
     func saveProfile(username: String, avatar: CommunityAvatar) async throws {
         guard let token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple to save your profile.") }
         do {
-            let profile = try await CommunityAPI().saveProfile(username: username, avatar: avatar, token: token)
+            let profile = try await api.saveProfile(username: username, avatar: avatar, token: token)
             guard var result = credentials, self.token == token else { throw CancellationError() }
             result.profile = profile; result.handle = profile.handle
             try persist(result)
@@ -336,6 +412,14 @@ final class CommunitySession: ObservableObject {
         if let apiError = error as? CommunityAPIError, apiError.status == 401 {
             SecItemDelete(keychainQuery as CFDictionary)
             credentials = nil
+        } else if let apiError = error as? CommunityAPIError,
+                  ["ACCOUNT_BANNED", "ACCOUNT_SUSPENDED"].contains(apiError.code?.uppercased() ?? ""),
+                  var result = credentials {
+            var profile = self.profile
+            profile.accountStatus = apiError.code?.uppercased() == "ACCOUNT_BANNED" ? "banned" : "suspended"
+            profile.restrictionMessage = apiError.message
+            result.profile = profile
+            try? persist(result)
         }
         errorMessage = error.localizedDescription
     }
@@ -443,9 +527,9 @@ enum CommunityDeckTransfer {
         }
     }
 
-    static func download(_ summary: CommunityDeckPayload, api: CommunityAPI? = nil, progress: @escaping (String) -> Void) async throws -> PremadeDeck {
+    static func download(_ summary: CommunityDeckPayload, api: CommunityAPI? = nil, token: String? = nil, progress: @escaping (String) -> Void) async throws -> PremadeDeck {
         let api = api ?? CommunityAPI()
-        let detail = try await api.detail(deckID: summary.id)
+        let detail = try await api.detail(deckID: summary.id, token: token)
         guard let cards = detail.cards else { throw URLError(.cannotParseResponse) }
         var images: [String: String] = [:]
         var audio: [String: String] = [:]
@@ -453,7 +537,7 @@ enum CommunityDeckTransfer {
         func imageName(_ id: String?) async throws -> String? {
             guard let id else { return nil }
             if let name = images[id] { return name }
-            let data = try await api.media(id: id, maximumBytes: 10 * 1024 * 1024)
+            let data = try await api.media(id: id, maximumBytes: 10 * 1024 * 1024, token: token)
             guard let image = UIImage(data: data), let name = CardImageStore.saveImage(image) else {
                 throw CommunityAPIError(status: 400, message: "A deck image could not be downloaded.")
             }
@@ -464,7 +548,7 @@ enum CommunityDeckTransfer {
         func audioName(_ id: String?) async throws -> String? {
             guard let id else { return nil }
             if let name = audio[id] { return name }
-            let data = try await api.media(id: id, maximumBytes: CardAudioStore.maximumBytes)
+            let data = try await api.media(id: id, maximumBytes: CardAudioStore.maximumBytes, token: token)
             let name = try CardAudioStore.saveDownloaded(data)
             audio[id] = name
             savedFiles.append(CardAudioStore.url(named: name))

@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import AuthenticationServices
 #if TIKTOK_TRACKING_AVAILABLE
 import AppTrackingTransparency
 import TikTokBusinessSDK
@@ -48,6 +49,13 @@ struct LearnAlertApp: App {
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newPhase == .active, forKey: "isAppInForeground")
+                }
+                .task(id: scenePhase == .active) {
+                    guard scenePhase == .active else { return }
+                    await CommunitySession.shared.validateAppleCredential()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
+                    CommunitySession.shared.appleCredentialRevoked()
                 }
         }
     }

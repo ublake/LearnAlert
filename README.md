@@ -129,3 +129,29 @@ list, while changing accounts clears the previous author's data.
 Before App Store distribution, verify Apple sign-in, shared app/extension progress,
 checkpoint handoffs, and notification layouts on a provisioned iPhone, and update
 App Store privacy answers for community identifiers, content, images, and audio.
+
+## Community account safeguards (1.1)
+
+Signed-in learners can block a community author from the feed or deck preview and
+manage blocked authors from their profile. Feed, preview, download, and media requests
+include viewer authentication so the server can enforce blocks and account restrictions.
+Changing accounts clears the previous viewer's feed and private owner lists.
+
+Apple sign-in passes the short-lived authorization code to the backend for token
+revocation support. Account deletion requires fresh confirmation from the same Apple
+account. The app checks Apple's credential state on foregrounding and clears revoked
+sessions. Restricted users retain account management and deletion access; restrictions
+are enforced by the backend and survive profile deletion. Backend Apple signing and
+token-encryption secrets must be configured for live authorization revocation.
+
+Version 1.1 (build 3) includes App Group UserDefaults reason 1C8F.1 in both privacy
+manifests. Community identifiers, shared text, images, and audio are declared as linked
+app-functionality data. Advertising measurement remains disabled.
+
+Release validation on October 14, 2026: all 88 app tests passed. The final simulator
+build and signed Release archive passed, and an App Store Connect distribution export
+succeeded after refreshing provisioning profiles for Sign in with Apple. The export is
+local only; no build was uploaded or submitted by this validation. Physical-device
+notification/extension and end-to-end Apple revocation checks remain release gates.
+The AI consent screen was intentionally left unchanged; its third-party disclosure
+must still be considered when assessing App Review readiness.

@@ -20,17 +20,25 @@ final class CommunityFeedStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     private var requestID = UUID()
     private let api: CommunityAPI
+    private var viewerToken: String?
     private struct Query: Equatable {
         let search: String
         let category: String
         let sort: CommunityDeckSort
+        let token: String?
     }
     private var loadedQuery: Query?
-    private var query: Query { Query(search: search, category: category, sort: sort) }
+    private var query: Query { Query(search: search, category: category, sort: sort, token: viewerToken) }
     var pageCount: Int { max(1, (totalCount + Self.pageSize - 1) / Self.pageSize) }
     var canChangePage: Bool { !isLoading && loadedQuery == query }
 
-    init(api: CommunityAPI = CommunityAPI()) { self.api = api }
+    init(api: CommunityAPI? = nil) { self.api = api ?? CommunityAPI() }
+
+    func setViewer(token: String?) {
+        guard viewerToken != token else { return }
+        requestID = UUID(); viewerToken = token
+        decks = []; totalCount = 0; currentPage = 1; loadedQuery = nil; errorMessage = nil
+    }
 
     func load(page requestedPage: Int = 1) async {
         let id = UUID(); requestID = id
@@ -40,7 +48,7 @@ final class CommunityFeedStore: ObservableObject {
         defer { if requestID == id { isLoading = false } }
         do {
             let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
-                offset: (target - 1) * Self.pageSize, sort: selectedQuery.sort, limit: Self.pageSize)
+                offset: (target - 1) * Self.pageSize, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
             guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
             let count = max(0, page.totalCount ?? ((target - 1) * Self.pageSize + page.decks.count + (page.nextOffset == nil ? 0 : 1)))
             let lastPage = max(1, (count + Self.pageSize - 1) / Self.pageSize)
@@ -64,7 +72,7 @@ final class CommunityOwnedDeckStore: ObservableObject {
     private var ownerToken: String?
     private let api: CommunityAPI
 
-    init(api: CommunityAPI = CommunityAPI()) { self.api = api }
+    init(api: CommunityAPI? = nil) { self.api = api ?? CommunityAPI() }
 
     func clear() {
         requestID = UUID(); ownerToken = nil
@@ -109,6 +117,8 @@ struct CommunityFeedView: View {
     @State private var downloadingID: String?
     @State private var downloadProgress = ""
     @State private var message: String?
+    @State private var blockingDeck: CommunityDeckPayload?
+    @State private var isBlocking = false
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
     var body: some View {
@@ -153,22 +163,39 @@ struct CommunityFeedView: View {
                         CommunityDeckCard(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
                             progress: downloadingID == deck.id ? downloadProgress : "",
                             open: { selectedPreview = deck }, download: { Task { await download(deck) } })
-                            .contextMenu { Button("Report deck", systemImage: "flag") { Task { await report(deck) } } }
+                            .contextMenu {
+                                Button("Report deck", systemImage: "flag") { Task { await report(deck) } }
+                                if canBlock(deck) {
+                                    Button("Block author", systemImage: "person.slash", role: .destructive) { blockingDeck = deck }.disabled(isBlocking)
+                                }
+                            }
                     }
                 }
                 if showsPageSelector && store.totalCount > 0 { CommunityDeckPageSelector(store: store) }
             }
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-        .task(id: "\(store.sort.rawValue):\(store.category):\(store.search)") {
+        .task(id: "\(store.sort.rawValue):\(store.category):\(store.search):\(session.token ?? "anonymous")") {
+            store.setViewer(token: session.token)
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             await store.load()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await store.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in
+            store.setViewer(token: session.token)
+            Task { await store.load() }
+        }
         .sheet(item: $selectedPreview) { deck in
             CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
-                progress: downloadProgress, download: { Task { await download(deck) } })
+                progress: downloadProgress, download: { Task { await download(deck) } },
+                blockAuthor: canBlock(deck) ? { try await performBlock(deck) } : nil)
         }
+        .confirmationDialog("Block \(blockingDeck?.authorHandle ?? "this author")?", isPresented: Binding(get: { blockingDeck != nil }, set: { if !$0 { blockingDeck = nil } }), titleVisibility: .visible) {
+            Button("Block author", role: .destructive) {
+                if let deck = blockingDeck {
+                    Task { do { try await performBlock(deck) } catch { session.handle(error); message = error.localizedDescription } }
+                }
+            }
+        } message: { Text("Hides their community decks. Copies in your library stay. You can unblock them in your profile.") }
         .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
@@ -225,9 +252,23 @@ struct CommunityFeedView: View {
         downloadingID = deck.id; downloadProgress = "Downloading deck…"
         defer { downloadingID = nil }
         do {
-            let downloaded = try await CommunityDeckTransfer.download(deck) { downloadProgress = $0 }
+            let downloaded = try await CommunityDeckTransfer.download(deck, token: session.token) { downloadProgress = $0 }
             selectedPreview = nil; onAddDeck(downloaded)
         } catch { message = error.localizedDescription }
+    }
+    private func canBlock(_ deck: CommunityDeckPayload) -> Bool {
+        deck.authorID != nil && deck.authorID != session.profile.authorID
+    }
+    @MainActor private func performBlock(_ deck: CommunityDeckPayload) async throws {
+        guard let authorID = deck.authorID else { return }
+        guard let token = session.token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple in Settings to block an author.") }
+        guard !isBlocking else { return }
+        isBlocking = true
+        defer { isBlocking = false }
+        try await CommunityAPI().block(authorID: authorID, token: token)
+        guard session.token == token else { return }
+        selectedPreview = nil
+        NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
     }
     @MainActor private func report(_ deck: CommunityDeckPayload) async {
         guard let token = session.token else { message = "Sign in with Apple in Settings before reporting a deck."; return }
@@ -381,9 +422,14 @@ struct CommunityDeckPreviewSheet: View {
     var isDownloading = false
     var progress = ""
     let download: () -> Void
+    var blockAuthor: (() async throws -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var session = CommunitySession.shared
     @State private var preview: CommunityDeckPayload?
     @State private var error: String?
+    @State private var confirmingBlock = false
+    @State private var isBlocking = false
+    @State private var blockError: String?
 
     var body: some View {
         NavigationStack {
@@ -403,7 +449,30 @@ struct CommunityDeckPreviewSheet: View {
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
             .navigationTitle("Deck preview").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isBlocking) }
+                if blockAuthor != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Menu { Button("Block author", systemImage: "person.slash", role: .destructive) { confirmingBlock = true } }
+                            label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                            .accessibilityLabel("Deck options").disabled(isBlocking)
+                    }
+                }
+            }
+            .confirmationDialog("Block \(deck.authorHandle)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+                Button("Block author", role: .destructive) {
+                    isBlocking = true
+                    Task {
+                        defer { isBlocking = false }
+                        do { try await blockAuthor?(); dismiss() }
+                        catch { session.handle(error); blockError = error.localizedDescription }
+                    }
+                }
+            } message: { Text("Hides their community decks. Copies in your library stay.") }
+            .alert("Block author", isPresented: Binding(get: { blockError != nil }, set: { if !$0 { blockError = nil } })) {
+                Button("OK", role: .cancel) { blockError = nil }
+            } message: { Text(blockError ?? "") }
+            .interactiveDismissDisabled(isBlocking)
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
                     if isDownloading { ProgressView(progress).font(.caption) }
@@ -416,13 +485,14 @@ struct CommunityDeckPreviewSheet: View {
     }
     @MainActor private func load() async {
         error = nil
-        do { preview = try await CommunityAPI().preview(deckID: deck.id) }
+        do { preview = try await CommunityAPI().preview(deckID: deck.id, token: session.token) }
         catch { if !Task.isCancelled { self.error = error.localizedDescription } }
     }
 }
 
 private struct CommunityRemoteImage: View {
     let id: String
+    @ObservedObject private var session = CommunitySession.shared
     @State private var image: UIImage?
     var body: some View {
         Group {
@@ -430,13 +500,17 @@ private struct CommunityRemoteImage: View {
             else { Image(systemName: "photo").font(.largeTitle).foregroundStyle(LearnAlertStyle.textSecondary).frame(maxWidth: .infinity, minHeight: 64) }
         }
         .frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12))
-        .task(id: id) { if let data = try? await CommunityAPI().media(id: id, maximumBytes: 10 * 1024 * 1024), !Task.isCancelled { image = UIImage(data: data) } }
+        .task(id: "\(id):\(session.token ?? "anonymous")") {
+            image = nil
+            if let data = try? await CommunityAPI().media(id: id, maximumBytes: 10 * 1024 * 1024, token: session.token), !Task.isCancelled { image = UIImage(data: data) }
+        }
     }
 }
 
 private struct CommunityPreviewAudio: View {
     var mediaID: String? = nil
     var localName: String? = nil
+    @ObservedObject private var session = CommunitySession.shared
     @State private var player: AVAudioPlayer?
     @State private var task: Task<Void, Never>?
     @State private var isLoading = false
@@ -449,7 +523,7 @@ private struct CommunityPreviewAudio: View {
                     defer { isLoading = false }
                     do {
                         let data: Data
-                        if let mediaID { data = try await CommunityAPI().media(id: mediaID, maximumBytes: CardAudioStore.maximumBytes) }
+                        if let mediaID { data = try await CommunityAPI().media(id: mediaID, maximumBytes: CardAudioStore.maximumBytes, token: session.token) }
                         else if let localName { data = try Data(contentsOf: CardAudioStore.url(named: localName)) }
                         else { return }
                         try Task.checkCancellation()

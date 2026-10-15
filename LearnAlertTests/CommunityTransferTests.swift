@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import UIKit
+import AuthenticationServices
 @testable import LearnAlert
 
 private final class CommunityTestProtocol: URLProtocol, @unchecked Sendable {
@@ -399,6 +400,105 @@ struct CommunityTransferTests {
         #expect(offsets == [nil, "50"])
         #expect(page.decks.map(\.id) == ["active", "removed"])
         #expect(page.decks.last?.isRemoved == true && page.nextOffset == nil)
+    }
+
+    @Test("Blocking and unblocking authenticate requests without exposing an Apple identifier")
+    func authorBlocks() async throws {
+        let authorID = UUID().uuidString
+        var calls: [String] = []
+        CommunityTestProtocol.response = { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer viewer")
+            let path = request.url!.path
+            calls.append("\(request.httpMethod ?? "GET") \(path)")
+            if request.httpMethod == "POST" {
+                let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: String]
+                #expect(body == ["authorID": authorID])
+            }
+            if request.httpMethod == "GET" { return (200, try json(["users": [["id": authorID, "handle": "@cozy_otter"]]])) }
+            return (200, try json(["success": true]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let client = api()
+        try await client.block(authorID: authorID, token: "viewer")
+        let users = try await client.blockedUsers(token: "viewer")
+        #expect(users == [.init(id: authorID, handle: "@cozy_otter")])
+        try await client.unblock(authorID: authorID, token: "viewer")
+        #expect(calls == ["POST /v1/community/account/blocks", "GET /v1/community/account/blocks", "DELETE /v1/community/account/blocks/\(authorID)"])
+    }
+
+    @Test("Switching viewers clears the feed and reloads using that viewer's blocks")
+    func viewerSpecificFeed() async throws {
+        CommunityTestProtocol.response = { request in
+            let token = request.value(forHTTPHeaderField: "Authorization")
+            return (200, try json(["decks": [[
+                "id": token == "Bearer first" ? "first" : "second", "name": "Deck", "description": "", "authorHandle": "@buddy",
+                "authorID": "public-author", "categoryTag": "General", "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 5, "downloadCount": 0
+            ]], "nextOffset": NSNull(), "totalCount": 1]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let store = CommunityFeedStore(api: api())
+        store.setViewer(token: "first")
+        await store.load()
+        #expect(store.decks.first?.id == "first")
+        store.setViewer(token: "second")
+        #expect(store.decks.isEmpty && !store.canChangePage)
+        await store.load()
+        #expect(store.decks.first?.id == "second" && store.decks.first?.authorID == "public-author")
+    }
+
+    @Test("Apple confirmation is included in account deletion without signing into a different account")
+    func accountDeletionConfirmation() async throws {
+        CommunityTestProtocol.response = { request in
+            #expect(request.httpMethod == "DELETE" && request.url?.path == "/v1/community/account")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer original-session")
+            let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: String]
+            #expect(body == ["identityToken": "fresh-identity", "authorizationCode": "fresh-code", "nonce": "fresh-nonce"])
+            return (200, try json(["success": true]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        try await api().deleteAccount(token: "original-session", reauthentication: .init(identityToken: "fresh-identity", authorizationCode: "fresh-code", nonce: "fresh-nonce"))
+    }
+
+    @Test("Revoked Apple credentials clear a session; transient Apple errors preserve it")
+    func appleCredentialLifecycle() async throws {
+        var state: ASAuthorizationAppleIDProvider.CredentialState = .authorized
+        var appleOffline = false
+        var checkedIDs: [String] = []
+        CommunityTestProtocol.response = { request in
+            if request.httpMethod == "POST" {
+                let body = try JSONSerialization.jsonObject(with: requestBody(request)) as! [String: String]
+                #expect(body["authorizationCode"] == "single-use-code")
+                return (200, try json(["token": "local-session", "expiresAt": Int(Date().timeIntervalSince1970) + 3600, "handle": "@buddy"]))
+            }
+            return (200, try json(["handle": "@buddy", "avatar": ["hair": 0, "eyes": 0, "mouth": 0], "isComplete": true, "authorID": "public-id"]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api()) { id in
+            checkedIDs.append(id)
+            if appleOffline { throw URLError(.notConnectedToInternet) }
+            return state
+        }
+        defer { session.signOut() }
+        let signedIn = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil, authorizationCode: "single-use-code", appleUserID: "apple-user")
+        #expect(signedIn && session.credentials?.appleUserID == "apple-user")
+        await session.validateAppleCredential()
+        #expect(session.isSignedIn && session.profile.authorID == "public-id")
+        appleOffline = true
+        await session.validateAppleCredential()
+        #expect(session.isSignedIn)
+        appleOffline = false; state = .revoked
+        await session.validateAppleCredential()
+        #expect(!session.isSignedIn && session.credentials == nil)
+        #expect(checkedIDs == ["apple-user", "apple-user", "apple-user"])
+        #expect(session.errorMessage?.contains("Apple access changed") == true)
+        let signedInAgain = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil, authorizationCode: "single-use-code", appleUserID: "apple-user")
+        #expect(signedInAgain)
+        session.handle(CommunityAPIError(status: 403, message: "Community access restricted.", code: "ACCOUNT_BANNED"))
+        #expect(session.isSignedIn && session.isRestricted)
+        #expect(session.profile.restrictionMessage == "Community access restricted.")
+        // A restored account gets its current status from the owner-only profile endpoint.
+        await session.refreshProfile()
+        #expect(session.isSignedIn && !session.isRestricted)
     }
 
 }

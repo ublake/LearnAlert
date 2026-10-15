@@ -42,6 +42,9 @@ struct CommunityProfile: Codable, Equatable {
     var handle: String
     var avatar: CommunityAvatar
     var isComplete: Bool
+    var authorID: String? = nil
+    var accountStatus: String? = nil
+    var restrictionMessage: String? = nil
 }
 
 /// Coordinated colors keep line-only features visible on every skin tone.
@@ -288,7 +291,8 @@ struct CommunitySignInButton: View {
                 }
                 let signInNonce = nonce
                 Task {
-                    if await session.signIn(identityToken: token, nonce: signInNonce, givenName: nil) { onSignedIn() }
+                    let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+                    if await session.signIn(identityToken: token, nonce: signInNonce, givenName: nil, authorizationCode: code, appleUserID: credential.user) { onSignedIn() }
                 }
             case .failure(let error):
                 handleFailure(error)
@@ -372,6 +376,8 @@ struct CommunityProfileSheet: View {
     @State private var showingMyDecks = false
     @State private var deletingAccount = false
     @State private var confirmingDelete = false
+    @State private var showingDeletionSignIn = false
+    @State private var showingBlockedUsers = false
 
     var body: some View {
         NavigationStack {
@@ -413,7 +419,7 @@ struct CommunityProfileSheet: View {
                             HStack { if isSaving { ProgressView() }; Text(saveTitle) }.frame(maxWidth: .infinity, minHeight: 50)
                         }
                         .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk)
-                        .disabled(isSaving || username.trimmingCharacters(in: .whitespaces).count < 3)
+                        .disabled(isSaving || session.isRestricted || username.trimmingCharacters(in: .whitespaces).count < 3)
                     } else {
                         Text("Make yourself at home.").font(.title2.weight(.semibold))
                         CommunitySignInButton {
@@ -422,7 +428,7 @@ struct CommunityProfileSheet: View {
                         }
                         if session.isSigningIn { ProgressView("Signing in…") }
                     }
-                    if let error = message ?? session.errorMessage { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
+                    if let error = message ?? session.profile.restrictionMessage ?? session.errorMessage { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
                 }
                 .foregroundStyle(LearnAlertStyle.textPrimary)
                 .padding(24)
@@ -436,6 +442,7 @@ struct CommunityProfileSheet: View {
                     if session.isSignedIn {
                         Menu {
                             Button("My community decks", systemImage: "rectangle.stack") { showingMyDecks = true }
+                            Button("Blocked authors", systemImage: "person.slash") { showingBlockedUsers = true }
                             Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut(); dismiss() }
                             Button("Delete community account", role: .destructive) { confirmingDelete = true }
                         } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
@@ -445,11 +452,17 @@ struct CommunityProfileSheet: View {
             }
             .interactiveDismissDisabled(isSaving || deletingAccount)
             .sheet(isPresented: $showingMyDecks) { MySharedDecksSheet(libraryDecks: libraryDecks) }
+            .sheet(isPresented: $showingBlockedUsers) { CommunityBlockedAuthorsSheet() }
+            .sheet(isPresented: $showingDeletionSignIn) {
+                CommunityAccountDeletionSheet { reauthentication, userID in
+                    try await deleteAccount(reauthentication: reauthentication, appleUserID: userID)
+                }
+            }
             .task {
                 if !loadedDraft { await session.refreshProfile(); loadDraft() }
             }
             .confirmationDialog("Delete your community account?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("Delete community account", role: .destructive) { Task { await deleteAccount() } }
+                Button("Delete community account", role: .destructive) { showingDeletionSignIn = true }
             } message: { Text("Removes your profile and public decks. Your personal library stays on this device.") }
         }
     }
@@ -541,17 +554,149 @@ struct CommunityProfileSheet: View {
         } catch { message = error.localizedDescription }
     }
 
-    @MainActor private func deleteAccount() async {
+    @MainActor private func deleteAccount(reauthentication: CommunityAPI.AppleReauthentication, appleUserID: String) async throws {
         guard let token = session.token else { return }
+        if let expectedID = session.credentials?.appleUserID, expectedID != appleUserID {
+            throw CommunityAPIError(status: 403, message: "Use the Apple account you signed in with to delete this community account.")
+        }
         deletingAccount = true; message = nil
         defer { deletingAccount = false }
         do {
             let mine = try await CommunityAPI().myDecks(token: token)
-            try await CommunityAPI().deleteAccount(token: token)
+            try await CommunityAPI().deleteAccount(token: token, reauthentication: reauthentication)
+            guard session.token == token else { return }
             let ids = Set(mine.decks.map(\.id))
             for deck in libraryDecks where deck.publishedCommunityID.map({ ids.contains($0) }) == true { deck.publishedCommunityID = nil }
             try? context.save()
+            showingDeletionSignIn = false
             session.signOut(); dismiss()
+            NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
+        } catch { session.handle(error); throw error }
+    }
+}
+
+private struct CommunityAccountDeletionSheet: View {
+    let onAuthorize: (CommunityAPI.AppleReauthentication, String) async throws -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var nonce = ""
+    @State private var isWorking = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Confirm with Apple").font(.title2.weight(.semibold))
+                Text("Use the same Apple account to finish deleting your community profile and submissions. Your personal library stays on this device.")
+                    .font(.body).foregroundStyle(LearnAlertStyle.textSecondary)
+                SignInWithAppleButton(.continue) { request in
+                    nonce = CommunitySession.makeNonce()
+                    request.nonce = CommunitySession.hashedNonce(nonce)
+                    errorMessage = nil
+                } onCompletion: { result in
+                    switch result {
+                    case .success(let authorization):
+                        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                              let identityData = credential.identityToken,
+                              let identity = String(data: identityData, encoding: .utf8),
+                              let codeData = credential.authorizationCode,
+                              let code = String(data: codeData, encoding: .utf8) else {
+                            errorMessage = "Apple did not provide confirmation. Please try again."
+                            return
+                        }
+                        let confirmation = CommunityAPI.AppleReauthentication(identityToken: identity, authorizationCode: code, nonce: nonce)
+                        isWorking = true
+                        Task {
+                            defer { isWorking = false }
+                            do { try await onAuthorize(confirmation, credential.user) }
+                            catch { errorMessage = error.localizedDescription }
+                        }
+                    case .failure(let error):
+                        if (error as? ASAuthorizationError)?.code != .canceled { errorMessage = "Apple confirmation could not finish. Please try again." }
+                    }
+                }
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(height: 48).disabled(isWorking)
+                if isWorking { ProgressView("Deleting your community account…") }
+                if let errorMessage { Text(errorMessage).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
+                Spacer()
+            }
+            .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
+            .navigationTitle("Delete account").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isWorking) } }
+            .interactiveDismissDisabled(isWorking)
+        }
+    }
+}
+
+struct CommunityBlockedAuthorsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var session = CommunitySession.shared
+    @State private var users: [CommunityBlockedUser] = []
+    @State private var isLoading = true
+    @State private var changingID: String?
+    @State private var message: String?
+    @State private var loadID = UUID()
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if isLoading { ProgressView("Loading blocked authors…").frame(minHeight: 120) }
+                    else if users.isEmpty && message == nil { ContentUnavailableView("No blocked authors", systemImage: "person.slash") }
+                    ForEach(users) { user in
+                        HStack(spacing: 16) {
+                            Text(user.handle).font(.body.weight(.medium)).frame(maxWidth: .infinity, alignment: .leading)
+                            Button("Unblock") { Task { await unblock(user) } }.frame(minHeight: 44).disabled(changingID != nil)
+                            if changingID == user.id { ProgressView() }
+                        }
+                        .padding(16).appCardSurface(cornerRadius: 20)
+                    }
+                    if let message {
+                        Text(message).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed)
+                        Button("Try again") { Task { await load() } }.frame(minHeight: 44)
+                    }
+                }.padding(20)
+            }
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
+            .navigationTitle("Blocked authors").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(changingID != nil) } }
+            .task(id: "\(scenePhase)-\(session.token ?? "signed-out")") {
+                guard session.token != nil else { loadID = UUID(); users = []; isLoading = false; return }
+                if scenePhase == .active { await load() }
+            }
+            .refreshable { await load() }
+            .interactiveDismissDisabled(changingID != nil)
+        }
+    }
+
+    @MainActor private func load() async {
+        guard let token = session.token else { users = []; isLoading = false; return }
+        guard changingID == nil else { return }
+        let id = UUID(); loadID = id
+        isLoading = users.isEmpty; message = nil
+        defer { if loadID == id { isLoading = false } }
+        do {
+            let rows = try await CommunityAPI().blockedUsers(token: token)
+            guard session.token == token, loadID == id, !Task.isCancelled else { return }
+            users = rows
+        } catch {
+            guard session.token == token, loadID == id, !Task.isCancelled else { return }
+            session.handle(error); message = error.localizedDescription
+        }
+    }
+
+    @MainActor private func unblock(_ user: CommunityBlockedUser) async {
+        guard let token = session.token, changingID == nil else { return }
+        loadID = UUID(); isLoading = false
+        changingID = user.id; message = nil
+        defer { changingID = nil }
+        do {
+            try await CommunityAPI().unblock(authorID: user.id, token: token)
+            guard session.token == token else { return }
+            users.removeAll { $0.id == user.id }
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); message = error.localizedDescription }
     }
