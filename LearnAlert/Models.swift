@@ -61,6 +61,12 @@ class Deck {
     var publishedCommunityID: String?
     var communityCategory: String?
     var communityDescription: String?
+    var alertSettingsData: Data?
+
+    var alertSettings: DeckAlertSettings? {
+        get { alertSettingsData.flatMap { try? JSONDecoder().decode(DeckAlertSettings.self, from: $0) } }
+        set { alertSettingsData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
 
     // AI & Source Context Caching Fields
     var sourceId: String?

@@ -24,25 +24,42 @@ class StudyEngine: ObservableObject {
     @Published var activeSectionId: UUID?
     @Published var activeSectionName: String = "All Categories"
     
-    // Engine Settings
-    @AppStorage("smartSRS") var smartSRS: Bool = true
-    @AppStorage("stopCondition") var stopCondition: String = "Until Deck Learnt"
-    @AppStorage("startHour") var startHour: Int = 10 // 10 AM
-    @AppStorage("startMinute") var startMinute: Int = 0
-    @AppStorage("endHour") var endHour: Int = 19     // 7 PM
-    @AppStorage("endMinute") var endMinute: Int = 0
-    
-    // Volume State
-    @AppStorage("volumeSelectionIndex") var volumeSelectionIndex: Int = 3 // Defaults to 10 cards
-    @AppStorage("customVolume") var customVolume: Int = 20
-    
+    @Published private var defaultSettings = DeckAlertSettings.defaults()
+    @Published private(set) var settingsDeck: Deck?
+    @AppStorage("customVolume") private var storedCustomVolume: Int = 20
     let volumeOptions = [3, 5, 7, 10, 15]
-    
-    var activeVolume: Int {
-        if volumeSelectionIndex == 5 { return min(60, max(1, customVolume)) }
-        return volumeOptions[min(max(0, volumeSelectionIndex), volumeOptions.count - 1)]
+
+    var settings: DeckAlertSettings {
+        get { settingsDeck?.alertSettings ?? defaultSettings }
+        set {
+            objectWillChange.send()
+            if let deck = settingsDeck, deck.alertSettings != nil {
+                deck.alertSettings = newValue
+                try? deck.modelContext?.save()
+            } else {
+                defaultSettings = newValue
+                UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: "defaultDeckAlertSettings")
+            }
+        }
     }
-    
+    func selectSettings(for deck: Deck?) { settingsDeck = deck }
+    var globalSettings: DeckAlertSettings { defaultSettings }
+    var smartSRS: Bool { get { settings.smartSRS } set { settings.smartSRS = newValue } }
+    var stopCondition: String { get { settings.stopCondition } set { settings.stopCondition = newValue } }
+    var startHour: Int { get { settings.startHour } set { settings.startHour = newValue } }
+    var startMinute: Int { get { settings.startMinute } set { settings.startMinute = newValue } }
+    var endHour: Int { get { settings.endHour } set { settings.endHour = newValue } }
+    var endMinute: Int { get { settings.endMinute } set { settings.endMinute = newValue } }
+    var activeVolume: Int { min(50, max(1, settings.dailyCount)) }
+    var volumeSelectionIndex: Int {
+        get { volumeOptions.firstIndex(of: activeVolume) ?? 5 }
+        set { settings.dailyCount = newValue == 5 ? min(50, max(1, storedCustomVolume)) : volumeOptions[min(4, max(0, newValue))] }
+    }
+    var customVolume: Int {
+        get { volumeSelectionIndex == 5 ? activeVolume : storedCustomVolume }
+        set { storedCustomVolume = min(50, max(1, newValue)); settings.dailyCount = storedCustomVolume }
+    }
+
     // Persistent Storage for Active Sessions
     @AppStorage("savedIsActive") private var savedIsActive: Bool = false
     @AppStorage("savedDeckId") private var savedDeckId: String = ""
@@ -51,13 +68,31 @@ class StudyEngine: ObservableObject {
     @AppStorage("savedSectionName") private var savedSectionName: String = "All Categories"
     @AppStorage("savedDatesData") private var savedDatesData: Data = Data()
     
-    init() {
-        restoreSession()
+    init(restoreSavedSession: Bool = true) {
+        if restoreSavedSession { restoreSession() }
     }
     
     private var restoringCourse = false
 
     func restoreSession() {
+        if let plan = DailyDeckAlertScheduler.activePlan, savedIsActive {
+            guard !restoringCourse else { return }
+            restoringCourse = true
+            activeDeckId = plan.deckId
+            activeDeckName = savedDeckName
+            activeSectionId = plan.sectionId
+            activeSectionName = savedSectionName
+            isActive = true
+            Task {
+                defer { restoringCourse = false }
+                do {
+                    scheduledDates = try await DailyDeckAlertScheduler.replenish()
+                    savedDatesData = try JSONEncoder().encode(scheduledDates)
+                    if scheduledDates.isEmpty { stopAlerts() }
+                } catch { print("Daily alerts could not be restored: \(error.localizedDescription)") }
+            }
+            return
+        }
         if let plan = CourseNotificationScheduler.activePlan, savedIsActive {
             guard !restoringCourse else { return }
             restoringCourse = true
@@ -134,10 +169,12 @@ class StudyEngine: ObservableObject {
         guard !enrollment.selectedDays.isEmpty else {
             throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
         }
+        selectSettings(for: nil)
+        DailyDeckAlertScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
         let plan = CourseAlertPlan(courseId: course.id, deckId: linkedDeckId,
-            startHour: startHour, startMinute: startMinute, endHour: endHour, endMinute: endMinute,
+            startHour: activeVolume == 1 ? settings.dailyHour : startHour, startMinute: activeVolume == 1 ? settings.dailyMinute : startMinute, endHour: endHour, endMinute: endMinute,
             weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt")
         let dates = try await CourseNotificationScheduler.activate(plan)
         guard !dates.isEmpty else {
@@ -165,7 +202,9 @@ class StudyEngine: ObservableObject {
            let enrollment = manager.enrollment(for: course.id) {
             return try await startAlerts(for: course, enrollment: enrollment, courseReviewOnly: courseReviewOnly)
         }
+        selectSettings(for: deck)
         CourseNotificationScheduler.clear()
+        DailyDeckAlertScheduler.clear()
         let cards = fetchCardsToStudy(from: deck, section: section)
         
         // If "Until Deck Learnt" is selected and all cards are mastered
@@ -202,17 +241,33 @@ class StudyEngine: ObservableObject {
         let interval = max(60.0, totalDuration / Double(max(1, cards.count)))
         
         var newScheduledDates: [Date] = []
-        
-        for (index, card) in cards.enumerated() {
-            let triggerDate = startTime.addingTimeInterval(interval * Double(index))
-            newScheduledDates.append(triggerDate)
-            try await NotificationManager.shared.scheduleRealCardAsync(
-                card,
-                at: triggerDate,
-                progress: "\(index + 1)/\(cards.count)"
-            )
+        if activeVolume == 1 {
+            let base = section?.cards ?? deck.cards
+            let ordered = smartSRS ? base.sorted { $0.studyPriority > $1.studyPriority } : orderedCards(deck: deck, section: section)
+            // Start with the next selected card, then rotate through the remaining material.
+            let first = cards[0]
+            let ids = [first.id] + ordered.filter { $0.id != first.id }.map(\.id)
+            guard let anchor = calendar.nextDate(after: now, matching: DateComponents(hour: settings.dailyHour,
+                minute: settings.dailyMinute, second: 0), matchingPolicy: .nextTime) else { return 0 }
+            let expiresAt = stopCondition == "Until Day Ends" ? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) : nil
+            let plan = DailyDeckAlertPlan(deckId: deck.id, sectionId: section?.id, cardIds: ids,
+                anchor: anchor, hour: settings.dailyHour, minute: settings.dailyMinute, expiresAt: expiresAt,
+                stopWhenMastered: stopCondition == "Until Deck Learnt", sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
+            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(false, forKey: "extensionDidStopAlerts")
+            newScheduledDates = try await DailyDeckAlertScheduler.activate(plan)
+            guard !newScheduledDates.isEmpty else {
+                DailyDeckAlertScheduler.clear()
+                throw NSError(domain: "LearnAlert.StudyEngine", code: 204,
+                    userInfo: [NSLocalizedDescriptionKey: "That time has passed today. Choose a later time or keep alerts running beyond today."])
+            }
+        } else {
+            for (index, card) in cards.enumerated() {
+                let triggerDate = startTime.addingTimeInterval(interval * Double(index))
+                newScheduledDates.append(triggerDate)
+                try await NotificationManager.shared.scheduleRealCardAsync(card, at: triggerDate, progress: "\(index + 1)/\(cards.count)")
+            }
         }
-        
+
         if !smartSRS {
             let ordered = orderedCards(deck: deck, section: section)
             if let last = cards.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
@@ -250,6 +305,7 @@ class StudyEngine: ObservableObject {
     }
     
     func stopAlerts() {
+        DailyDeckAlertScheduler.clear()
         CourseNotificationScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         withAnimation(.spring) {
@@ -284,7 +340,7 @@ class StudyEngine: ObservableObject {
         }
         
         // 1. "Until Day Ends" condition: stop scheduling automatically when the day finishes
-        if stopCondition == "Until Day Ends" {
+        if (UserDefaults(suiteName: "group.com.learnalert.shared")?.string(forKey: "extensionStopCondition") ?? stopCondition) == "Until Day Ends" {
             stopAlerts()
             return
         }
@@ -323,6 +379,7 @@ class StudyEngine: ObservableObject {
             section = deck.sections.first(where: { $0.id == sectionUUID })
         }
         
+        selectSettings(for: deck)
         // Check "Until Deck Learnt" condition
         if stopCondition == "Until Deck Learnt" {
             let baseCards = section?.cards ?? deck.cards

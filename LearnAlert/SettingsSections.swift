@@ -132,30 +132,7 @@ struct SettingsLearningSection: View {
 
                 Divider().padding(.leading, 50).opacity(0.45)
 
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "sun.max.fill")
-                    Text("Starts receiving")
-                        .font(.custom("Poppins-Medium", size: 13))
-                    Spacer()
-                    DatePicker("", selection: startTimeBinding, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .tint(LearnAlertStyle.appAccentForeground)
-                }
-                .padding(14)
-
-                Divider().padding(.leading, 50).opacity(0.45)
-
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "moon.stars.fill")
-                    Text("Finishes receiving")
-                        .font(.custom("Poppins-Medium", size: 13))
-                    Spacer()
-                    DatePicker("", selection: endTimeBinding, displayedComponents: .hourAndMinute)
-                        .labelsHidden()
-                        .tint(LearnAlertStyle.appAccentForeground)
-                }
-                .padding(14)
-
+                DeckScheduleTimingFields(settings: $engine.settings).padding(14)
                 Divider().padding(.leading, 50).opacity(0.45)
 
                 HStack(spacing: 12) {
@@ -167,7 +144,7 @@ struct SettingsLearningSection: View {
                         Picker("Stop alerts", selection: $engine.stopCondition) {
                             Text("Deck Learnt").tag("Until Deck Learnt")
                             Text("Day Ends").tag("Until Day Ends")
-                            Text("Manually").tag("Until I say so")
+                            Text("Until I say so").tag("Until I say so")
                         }
                     } label: {
                         SettingsMenuLabel(text: stopLabel)
@@ -179,49 +156,14 @@ struct SettingsLearningSection: View {
             .nativeGlass(cornerRadius: 16)
         }
         .padding(.horizontal)
-    }
-
-    private var startTimeBinding: Binding<Date> {
-        Binding<Date>(
-            get: {
-                Calendar.current.date(
-                    bySettingHour: engine.startHour,
-                    minute: engine.startMinute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                if let hour = components.hour { engine.startHour = hour }
-                if let minute = components.minute { engine.startMinute = minute }
-            }
-        )
-    }
-
-    private var endTimeBinding: Binding<Date> {
-        Binding<Date>(
-            get: {
-                Calendar.current.date(
-                    bySettingHour: engine.endHour,
-                    minute: engine.endMinute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                if let hour = components.hour { engine.endHour = hour }
-                if let minute = components.minute { engine.endMinute = minute }
-            }
-        )
+        .onAppear { engine.selectSettings(for: nil) }
     }
 
     private var stopLabel: String {
         switch engine.stopCondition {
         case "Until Deck Learnt": return "Deck learnt"
         case "Until Day Ends": return "Day ends"
-        default: return "Manually"
+        default: return "Until I say so"
         }
     }
 }

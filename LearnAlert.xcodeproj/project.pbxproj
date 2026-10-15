@@ -122,6 +122,8 @@
 				KoreanSpeechManager.swift,
 				KoreanLexicon.swift,
 				Models.swift,
+				DeckAlertSettings.swift,
+				DailyDeckAlertScheduler.swift,
 				SharedDatabase.swift,
 			);
 			target = 254C85122F47BFAF0026450E /* LearnAlertExtension */;

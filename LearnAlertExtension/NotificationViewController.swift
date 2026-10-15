@@ -908,6 +908,7 @@ struct FlashcardNotificationView: View {
     }
 
     private func stopScheduledAlerts() {
+        DailyDeckAlertScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
         sharedDefaults?.set(true, forKey: "extensionDidStopAlerts")
@@ -972,7 +973,7 @@ struct FlashcardNotificationView: View {
                 }
 
                 let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-                let stopCondition = sharedDefaults?.string(forKey: "extensionStopCondition") ?? "Until Deck Learnt"
+                let stopCondition = sharedDefaults?.string(forKey: "extensionStopCondition") ?? "Until I say so"
                 if stopCondition == "Until Deck Learnt" {
                     let allLearned = deck.cards.allSatisfy { $0.isLearned || $0.interval >= 6 }
                     if allLearned {
@@ -1211,6 +1212,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     func didReceive(_ notification: UNNotification) {
+        Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
         let userInfo = content.userInfo
 

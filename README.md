@@ -183,3 +183,18 @@ uploaded or review submitted by these checks. Actual signed Apple notification d
 is still unverified (the latest receipt count was zero); there is no documented SIWA
 test-event API. Physical-device checks remain unverified because testing was limited
 to the simulator at the owner's request.
+
+## Deck alert schedules
+
+Open a deck's menu → Deck schedule to save its own alert pace, daily window, card
+order, and stop condition. Turning off Use deck schedule returns it to the app's
+settings. Saving an inactive deck does not start alerts; saving an active deck's
+schedule updates its queued alerts. Starting a different deck switches the active
+schedule to that deck's preferences.
+
+At one alert per day, Daily schedule offers Set a specific time (optional), initially
+5 PM. Daily alerts use calendar time, including daylight-saving changes; a time that
+has already passed starts tomorrow. Up to 60 daily cards are queued ahead and rotate
+through the deck. The queue refills when the app or an interactive notification opens.
+New defaults use Until I say so; existing saved stop choices are preserved. Deck
+schedules stay personal and are not included in community publishing payloads.

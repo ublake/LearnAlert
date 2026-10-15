@@ -7,6 +7,7 @@ struct DeckDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
 
+    @State private var showingScheduleSettings = false
     @State private var showingCreateCard = false
     @State private var showingCommunityShare = false
     @State private var showingCreateCategory = false
@@ -341,6 +342,10 @@ struct DeckDetailView: View {
                             Label("Rename Deck", systemImage: "pencil")
                         }
 
+                        Button { showingScheduleSettings = true } label: {
+                            Label("Deck schedule", systemImage: "bell.badge")
+                        }
+
                         Button(role: .destructive) {
                             showingResetConfirmation = true
                         } label: {
@@ -359,6 +364,7 @@ struct DeckDetailView: View {
                 homeTutorialStep = 3
             }
         }
+        .sheet(isPresented: $showingScheduleSettings) { DeckScheduleSettingsView(deck: deck) }
         .sheet(isPresented: $showingCreateCard) {
             CreateCardView(deck: deck)
         }

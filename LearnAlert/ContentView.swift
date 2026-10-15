@@ -2765,42 +2765,6 @@ struct SetupAlertsView: View {
         selectedSection?.cards.count ?? selectedDeck?.cards.count ?? 0
     }
 
-    private var startTimeBinding: Binding<Date> {
-        Binding<Date>(
-            get: {
-                Calendar.current.date(
-                    bySettingHour: engine.startHour,
-                    minute: engine.startMinute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                if let hour = components.hour { engine.startHour = hour }
-                if let minute = components.minute { engine.startMinute = minute }
-            }
-        )
-    }
-
-    private var endTimeBinding: Binding<Date> {
-        Binding<Date>(
-            get: {
-                Calendar.current.date(
-                    bySettingHour: engine.endHour,
-                    minute: engine.endMinute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                if let hour = components.hour { engine.endHour = hour }
-                if let minute = components.minute { engine.endMinute = minute }
-            }
-        )
-    }
-    
     var body: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
@@ -2845,31 +2809,9 @@ struct SetupAlertsView: View {
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(spacing: 0) {
-                    HStack {
-                        Label("Starts Daily", systemImage: "sun.max.fill")
-                            .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
-                        Spacer()
-                        DatePicker("", selection: startTimeBinding, displayedComponents: .hourAndMinute)
-                            .labelsHidden()
-                            .tint(LearnAlertStyle.indigo)
-                    }
+                DeckScheduleTimingFields(settings: $engine.settings)
                     .padding(16)
-
-                    Divider().background(LearnAlertStyle.hairline.opacity(0.35))
-
-                    HStack {
-                        Label("Finishes Daily", systemImage: "moon.stars.fill")
-                            .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
-                        Spacer()
-                        DatePicker("", selection: endTimeBinding, displayedComponents: .hourAndMinute)
-                            .labelsHidden()
-                            .tint(LearnAlertStyle.indigo)
-                    }
-                    .padding(16)
-                }
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-                .cleanSettingsCard()
+                    .cleanSettingsCard()
             }
             .padding(.horizontal)
 
@@ -2936,9 +2878,11 @@ struct SetupAlertsView: View {
             if decks.contains(where: { $0.id.uuidString == targetDeckId }) {
                 selectedDeckId = targetDeckId
             }
+            engine.selectSettings(for: selectedDeck)
         }
         .onChange(of: selectedDeckId) { _, newValue in
             targetDeckId = newValue
+            engine.selectSettings(for: selectedDeck)
             selectedSectionId = "ALL"
         }
         .onChange(of: alertSound) { _, newValue in
@@ -3060,7 +3004,7 @@ struct VolumeSnappingSliderView: View {
                 PaceSummaryValue(value: "\(engine.activeVolume)", label: "CARDS PER DAY")
                 Divider()
                     .frame(height: 34)
-                PaceSummaryValue(value: selectedIntervalLabel, label: "BETWEEN ALERTS")
+                PaceSummaryValue(value: engine.activeVolume == 1 ? "Daily" : selectedIntervalLabel, label: engine.activeVolume == 1 ? "FREQUENCY" : "BETWEEN ALERTS")
             }
             .padding(.vertical, 12)
             .background(LearnAlertStyle.indigo.opacity(0.08))
