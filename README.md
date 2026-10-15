@@ -169,6 +169,11 @@ Tutorial notifications no longer write study handoffs. In the iPhone 18 Pro simu
 the delivered expanded Sunset alert showed its selected colors, hint, and correct-answer
 feedback; a new preview tap opened the guide, verified in both light and dark appearance.
 Leaving the Korean course after one response resumed at card 2 of 38 with 3% saved.
+Its scheduling bell successfully scheduled a real local course alert, which arrived
+and opened the correct learning path when tapped. The temporary schedule was stopped,
+and the original 9 AM–6 PM timing, selected deck, and appearance were restored.
+Expanded course-question answering and checkpoint handoff were not completed in this
+runtime check; the simulator controls did not reliably expose that alert's View action.
 The updated simulator build, signed stable Release archive, distribution export, and
 signature verification passed. The refreshed local IPA is
 `~/Desktop/LearnAlert-Releases/1.1-3/LearnAlert-1.1-3.ipa`.
