@@ -112,8 +112,8 @@ private struct AlertGestureIllustration: View {
     let gesture: AlertPreviewGesture
     let phase: Int
 
-    private var expanded: Bool { phase == 2 || phase == 3 }
-    private var swiped: Bool { gesture == .swipe && phase == 1 }
+    private var expanded: Bool { gesture == .hold && (phase == 2 || phase == 3) }
+    private var swiped: Bool { gesture == .swipe && phase > 0 }
 
     var body: some View {
         ZStack {
