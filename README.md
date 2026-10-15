@@ -151,7 +151,11 @@ app-functionality data. Advertising measurement remains disabled.
 Release validation on October 14, 2026: all 88 app tests passed. The final simulator
 build and signed Release archive passed, and an App Store Connect distribution export
 succeeded after refreshing provisioning profiles for Sign in with Apple. The export is
-local only; no build was uploaded or submitted by this validation. Physical-device
-notification/extension and end-to-end Apple revocation checks remain release gates.
+local only; no build was uploaded or submitted by this validation. A live Apple
+sign-out/re-sign-in and user-approved test-account deletion confirmed encrypted token
+storage and a cleared Apple revocation queue. All 20 community tests passed after fixing
+a race where Apple revoked the session before the delete response returned. Personal
+study data stays on the device. Physical-device notification/extension checks and live
+signed Apple server notification delivery remain unverified.
 The AI consent screen was intentionally left unchanged; its third-party disclosure
 must still be considered when assessing App Review readiness.

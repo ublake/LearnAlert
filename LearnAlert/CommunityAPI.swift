@@ -408,6 +408,13 @@ final class CommunitySession: ObservableObject {
         errorMessage = nil
     }
 
+    /// Apple can revoke the local credential before the successful DELETE response arrives.
+    func completeAccountDeletion(token: String) -> Bool {
+        guard credentials == nil || credentials?.token == token else { return false }
+        signOut()
+        return true
+    }
+
     func handle(_ error: Error) {
         if let apiError = error as? CommunityAPIError, apiError.status == 401 {
             SecItemDelete(keychainQuery as CFDictionary)

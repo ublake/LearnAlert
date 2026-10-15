@@ -459,6 +459,30 @@ struct CommunityTransferTests {
         try await api().deleteAccount(token: "original-session", reauthentication: .init(identityToken: "fresh-identity", authorizationCode: "fresh-code", nonce: "fresh-nonce"))
     }
 
+    @Test("Deletion finishes after Apple's revocation notification without clearing another account")
+    func deletionRevocationRace() async throws {
+        var responseToken = "deleting-session"
+        CommunityTestProtocol.response = { _ in
+            (200, try json(["token": responseToken, "expiresAt": Int(Date().timeIntervalSince1970) + 3600, "handle": "@buddy"]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api()) { _ in .authorized }
+        defer { session.signOut() }
+        let signedIn = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil)
+        #expect(signedIn)
+        session.appleCredentialRevoked()
+        #expect(session.completeAccountDeletion(token: "deleting-session"))
+        #expect(session.credentials == nil && session.errorMessage == nil)
+
+        responseToken = "other-account-session"
+        let switched = await session.signIn(identityToken: "other-identity", nonce: "nonce", givenName: nil)
+        #expect(switched)
+        #expect(!session.completeAccountDeletion(token: "deleting-session"))
+        #expect(session.token == "other-account-session")
+        #expect(session.completeAccountDeletion(token: "other-account-session"))
+        #expect(session.credentials == nil)
+    }
+
     @Test("Revoked Apple credentials clear a session; transient Apple errors preserve it")
     func appleCredentialLifecycle() async throws {
         var state: ASAuthorizationAppleIDProvider.CredentialState = .authorized

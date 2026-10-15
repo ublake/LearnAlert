@@ -564,12 +564,12 @@ struct CommunityProfileSheet: View {
         do {
             let mine = try await CommunityAPI().myDecks(token: token)
             try await CommunityAPI().deleteAccount(token: token, reauthentication: reauthentication)
-            guard session.token == token else { return }
+            guard session.completeAccountDeletion(token: token) else { return }
             let ids = Set(mine.decks.map(\.id))
             for deck in libraryDecks where deck.publishedCommunityID.map({ ids.contains($0) }) == true { deck.publishedCommunityID = nil }
             try? context.save()
             showingDeletionSignIn = false
-            session.signOut(); dismiss()
+            dismiss()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); throw error }
     }
