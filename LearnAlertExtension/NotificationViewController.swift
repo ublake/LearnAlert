@@ -297,7 +297,7 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Question Box & Prompt Image
-                if activeCardType != "matching" {
+                if activeCardType != "matching" && activeCardType != "images" {
                     VStack(spacing: 12) {
                         if let promptImg = activePromptImageName, !promptImg.isEmpty,
                            let uiImage = CardImageStore.loadImage(named: promptImg) {
@@ -321,8 +321,49 @@ struct FlashcardNotificationView: View {
                     .notificationLiquidGlass(cornerRadius: 20, isLight: isLight)
                 }
 
+                // Image cards are self-review, before the empty-options reveal fallback.
+                if activeCardType == "images" {
+                    VStack(spacing: 14) {
+                        if let image = CardImageStore.loadImage(named: activePromptImageName) {
+                            Image(uiImage: image)
+                                .resizable().scaledToFit()
+                                .frame(maxHeight: isCompactLayout ? 280 : 340)
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        } else {
+                            VStack(spacing: 8) {
+                                Label("Image unavailable", systemImage: "photo")
+                                    .font(.headline)
+                                Text("Open the app to add the picture again.")
+                                    .font(.subheadline)
+                            }
+                            .foregroundStyle(textColorSecondary)
+                            .frame(maxWidth: .infinity, minHeight: 160)
+                        }
+
+                        if isGraded {
+                            Label("Reviewed", systemImage: "checkmark")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(textColorSecondary)
+                        } else {
+                            Button {
+                                guard !isGraded, CardImageStore.loadImage(named: activePromptImageName) != nil else { return }
+                                gradeCard(isCorrect: true, playFeedback: false)
+                            } label: {
+                                Label("Reviewed", systemImage: "checkmark")
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(textColorPrimary)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(CardImageStore.loadImage(named: activePromptImageName) == nil)
+                        }
+                    }
+                }
+
                 // Card Type Presentation: Matching Pairs
-                if activeCardType == "matching" {
+                else if activeCardType == "matching" {
                     VStack(spacing: 14) {
                         if !activeQuestion.isEmpty {
                             Text(activeQuestion)
@@ -924,9 +965,11 @@ struct FlashcardNotificationView: View {
         gradeCard(isCorrect: correct)
     }
 
-    private func gradeCard(isCorrect: Bool) {
+    private func gradeCard(isCorrect: Bool, playFeedback: Bool = true) {
         isAnswerFieldFocused = false
-        NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect")
+        if playFeedback {
+            NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect")
+        }
         lastAnswerWasCorrect = isCorrect
 
         if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {

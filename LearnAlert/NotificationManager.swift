@@ -103,7 +103,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let deckType = card.cardType.title
         
         content.title = "LearnAlert: \(deckName)"
-        content.body = card.cardType == .vocabulary ? "Press and hold to review" : "Press and hold to answer"
+        content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
         content.categoryIdentifier = "FLASHCARD_REVEAL"
         
         // NEW: Custom Sound Engine!
@@ -148,7 +148,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let deckType = card.cardType.title
 
         content.title = "LearnAlert: \(deckName)"
-        content.body = card.cardType == .vocabulary ? "Press and hold to review" : "Press and hold to answer"
+        content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
         content.categoryIdentifier = "FLASHCARD_REVEAL"
 
         let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"

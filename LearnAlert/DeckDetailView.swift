@@ -500,6 +500,18 @@ struct DeckDetailView: View {
 
     private func cardRow(_ card: Flashcard) -> some View {
         HStack(alignment: .top, spacing: 12) {
+            if card.cardType == .images {
+                Group {
+                    if let image = CardImageStore.loadImage(named: card.promptImageName) {
+                        Image(uiImage: image).resizable().scaledToFit()
+                    } else {
+                        Image(systemName: "photo").font(.title2).foregroundStyle(LearnAlertStyle.textSecondary)
+                            .accessibilityLabel("Image unavailable")
+                    }
+                }
+                .frame(width: 92, height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
                     if let section = card.section {
@@ -535,15 +547,17 @@ struct DeckDetailView: View {
                     }
                 }
 
-                Text(card.question)
-                    .font(.custom("Poppins-Medium", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .lineLimit(3)
+                if card.cardType != .images {
+                    Text(card.question)
+                        .font(.custom("Poppins-Medium", size: 14))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .lineLimit(3)
 
-                Text("Answer: \(card.correctAnswer)")
-                    .font(.custom("Poppins-Regular", size: 12))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                    .lineLimit(2)
+                    Text("Answer: \(card.correctAnswer)")
+                        .font(.custom("Poppins-Regular", size: 12))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .lineLimit(2)
+                }
             }
 
             Spacer()
@@ -730,18 +744,24 @@ struct CardInteractivePreviewSheet: View {
                                 Image(uiImage: uiImage)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(maxHeight: 160)
+                                    .frame(maxHeight: card.cardType == .images ? 340 : 160)
                                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
                                     )
                                     .frame(maxWidth: .infinity, alignment: .center)
+                            } else if card.cardType == .images {
+                                ContentUnavailableView("Image unavailable", systemImage: "photo",
+                                    description: Text("Edit this card to upload the picture again."))
+                                    .frame(maxWidth: .infinity, minHeight: 180)
                             }
 
-                            Text(card.question)
-                                .font(.custom("Poppins-SemiBold", size: 18))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
+                            if card.cardType != .images && !card.question.isEmpty {
+                                Text(card.question)
+                                    .font(.custom("Poppins-SemiBold", size: 18))
+                                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                            }
 
                             if !card.hint.isEmpty {
                                 if showHint {
@@ -795,7 +815,7 @@ struct CardInteractivePreviewSheet: View {
                                     .buttonStyle(.plain)
                                 }
                             }
-                        } else {
+                        } else if card.cardType != .images {
                             VStack(spacing: 12) {
                                 if isRevealed {
                                     Text(card.correctAnswer)

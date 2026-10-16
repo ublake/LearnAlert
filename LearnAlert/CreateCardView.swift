@@ -34,6 +34,11 @@ struct CreateCardView: View {
     @State private var showingAudioImporter = false
     @State private var audioError: String?
     @State private var didSave = false
+    @State private var didSetUpData = false
+    @State private var pendingImageCrop: CardImageCropRequest?
+    @State private var imageLoadID = UUID()
+    @State private var isLoadingImage = false
+    @State private var imageError: String?
 
     private var selectedSection: DeckSection? {
         guard let id = UUID(uuidString: selectedSectionId) else { return nil }
@@ -49,7 +54,7 @@ struct CreateCardView: View {
     }
 
     private var isFormValid: Bool {
-        guard let selectedType else { return false }
+        guard let selectedType, !isLoadingImage else { return false }
         switch selectedType {
         case .vocabulary, .tapReveal, .fillBlank:
             return !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
@@ -63,6 +68,8 @@ struct CreateCardView: View {
                 !matchingLeft[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                 !matchingRight[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+        case .images:
+            return promptImage != nil
         }
     }
 
@@ -82,7 +89,11 @@ struct CreateCardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        imageLoadID = UUID()
+                        discardUnsavedAudio()
+                        dismiss()
+                    }
                         .font(.custom("Poppins-Regular", size: 15))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -99,31 +110,29 @@ struct CreateCardView: View {
             .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
             .onAppear(perform: setupData)
             .onChange(of: promptPhotoPickerItem) { _, newItem in
-                Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
-                       let uiImage = UIImage(data: data) {
-                        await MainActor.run {
-                            self.promptImage = uiImage
-                        }
-                    }
-                }
+                if let newItem { loadImageForCropping(newItem, target: .prompt) }
             }
-            .onChange(of: optionPhotoPickerItems) { _, newItems in
-                for (index, item) in newItems.enumerated() {
+            .onChange(of: optionPhotoPickerItems) { oldItems, newItems in
+                for (index, item) in newItems.enumerated() where item != oldItems[index] {
                     if let item {
-                        Task {
-                            if let data = try? await item.loadTransferable(type: Data.self),
-                               let uiImage = UIImage(data: data) {
-                                await MainActor.run {
-                                    if index < self.optionImages.count {
-                                        self.optionImages[index] = uiImage
-                                    }
-                                }
-                            }
-                        }
+                        loadImageForCropping(item, target: .option(index))
                     }
                 }
             }
+            .fullScreenCover(item: $pendingImageCrop, onDismiss: resetPhotoSelections) { request in
+                CardImageCropView(image: request.image, onCancel: {
+                    pendingImageCrop = nil
+                }, onConfirm: { image in
+                    switch request.target {
+                    case .prompt: promptImage = image
+                    case .option(let index): optionImages[index] = image
+                    }
+                    pendingImageCrop = nil
+                })
+            }
+            .alert("Card Image", isPresented: Binding(get: { imageError != nil }, set: { if !$0 { imageError = nil } })) {
+                Button("OK", role: .cancel) { }
+            } message: { Text(imageError ?? "") }
             .fileImporter(isPresented: $showingAudioImporter,
                           allowedContentTypes: [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "m4a"), UTType(filenameExtension: "wav")].compactMap { $0 }) { result in
                 do {
@@ -136,7 +145,13 @@ struct CreateCardView: View {
             .alert("Audio Attachment", isPresented: Binding(get: { audioError != nil }, set: { if !$0 { audioError = nil } })) {
                 Button("OK", role: .cancel) { }
             } message: { Text(audioError ?? "") }
-            .onDisappear { if !didSave { discardUnsavedAudio() } }
+            .onDisappear {
+                // Presenting the crop editor must not discard an attached audio file.
+                if !didSave && pendingImageCrop == nil {
+                    imageLoadID = UUID()
+                    discardUnsavedAudio()
+                }
+            }
         }
     }
 
@@ -244,10 +259,13 @@ struct CreateCardView: View {
                     matchingEditor
                 case .fillBlank:
                     fillBlankEditor
+                case .images:
+                    imagesEditor
                 case .none:
                     EmptyView()
                 }
 
+                if selectedType != .images {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Audio (optional)")
                         .font(.headline)
@@ -275,9 +293,10 @@ struct CreateCardView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+                }
 
                 // Hint (Optional - Hidden for Vocabulary)
-                if selectedType != .vocabulary {
+                if selectedType?.isReviewOnly == false {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("HINT (OPTIONAL)")
                             .font(.custom("Poppins-SemiBold", size: 11))
@@ -362,6 +381,41 @@ struct CreateCardView: View {
     }
 
     // MARK: - Vocabulary Editor
+    private var imagesEditor: some View {
+        VStack(spacing: 14) {
+            if let promptImage {
+                Button {
+                    pendingImageCrop = CardImageCropRequest(image: promptImage, target: .prompt)
+                } label: {
+                    Image(uiImage: promptImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 380)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Adjust image frame")
+            }
+            PhotosPicker(selection: $promptPhotoPickerItem, matching: .images) {
+                Label(promptImage == nil ? "Upload image" : "Change image", systemImage: "photo.badge.plus")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: promptImage == nil ? 180 : 48)
+                    .foregroundStyle(LearnAlertStyle.indigo)
+                    .background(LearnAlertStyle.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+            }
+            if promptImage != nil {
+                Button("Adjust frame") {
+                    if let promptImage { pendingImageCrop = CardImageCropRequest(image: promptImage, target: .prompt) }
+                }
+                .font(.subheadline.weight(.semibold))
+                .tint(LearnAlertStyle.indigo)
+            }
+        }
+        .padding(14)
+        .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(LearnAlertStyle.hairline, lineWidth: 1))
+    }
+
     private var vocabularyEditor: some View {
         VStack(alignment: .leading, spacing: 14) {
             PromptInputField(
@@ -499,6 +553,7 @@ struct CreateCardView: View {
                                 Button {
                                     optionImages[index] = nil
                                     optionPhotoPickerItems[index] = nil
+                                    if optionImageNames.indices.contains(index) { optionImageNames[index] = "" }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .font(.system(size: 13))
@@ -714,6 +769,7 @@ struct CreateCardView: View {
         case .tapReveal: LearnAlertStyle.aqua
         case .matching: Color.purple
         case .fillBlank: Color.orange
+        case .images: LearnAlertStyle.cyan
         }
     }
 
@@ -724,10 +780,13 @@ struct CreateCardView: View {
         case .tapReveal: "Active recall card: prompt & answer."
         case .matching: "Connect corresponding word pairs."
         case .fillBlank: "Type the missing word in the sentence."
+        case .images: "Just a picture. No question or answer text."
         }
     }
 
     private func setupData() {
+        guard !didSetUpData else { return }
+        didSetUpData = true
         guard let card = cardToEdit else { return }
         selectedType = card.cardType
         question = card.question
@@ -760,14 +819,15 @@ struct CreateCardView: View {
     }
 
     private func saveCard() {
-        guard let selectedType else { return }
-        let finalQuestion = effectiveQuestion
+        guard let selectedType, isFormValid else { return }
+        let finalQuestion = selectedType == .images ? "" : effectiveQuestion
         let finalOptions = selectedType == .multipleChoice
             ? options.prefix(visibleOptionCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             : []
         let finalAnswer = selectedType == .multipleChoice
             ? (finalOptions.indices.contains(correctOptionIndex) ? finalOptions[correctOptionIndex] : "")
-            : answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            : (selectedType == .images ? "" : answer.trimmingCharacters(in: .whitespacesAndNewlines))
+        let finalHint = selectedType == .images ? "" : hint.trimmingCharacters(in: .whitespacesAndNewlines)
         let left = selectedType == .matching
             ? matchingLeft.prefix(visiblePairCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             : []
@@ -776,12 +836,15 @@ struct CreateCardView: View {
             : []
 
         // Process prompt image
-        var finalPromptImageName: String? = promptImageName
+        var newImageNames: [String] = []
+        var finalPromptImageName = promptImageName
         if let promptImage {
-            finalPromptImageName = CardImageStore.saveImage(promptImage, name: promptImageName)
-        } else if cardToEdit?.promptImageName != nil {
-            CardImageStore.deleteImage(named: cardToEdit?.promptImageName)
-            finalPromptImageName = nil
+            guard let saved = CardImageStore.saveImage(promptImage) else {
+                imageError = "Your image couldn’t be saved. Please try again."
+                return
+            }
+            finalPromptImageName = saved
+            newImageNames.append(saved)
         }
 
         // Process option images
@@ -789,14 +852,16 @@ struct CreateCardView: View {
         if selectedType == .multipleChoice {
             for index in 0..<visibleOptionCount {
                 if let optImg = optionImages[index] {
-                    let existingName = (index < optionImageNames.count) ? optionImageNames[index] : nil
-                    if let saved = CardImageStore.saveImage(optImg, name: existingName) {
+                    if let saved = CardImageStore.saveImage(optImg) {
                         finalOptionImageNames.append(saved)
+                        newImageNames.append(saved)
                     } else {
-                        finalOptionImageNames.append("")
+                        newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
+                        imageError = "An answer image couldn’t be saved. Please try again."
+                        return
                     }
                 } else {
-                    finalOptionImageNames.append("")
+                    finalOptionImageNames.append(optionImageNames.indices.contains(index) ? optionImageNames[index] : "")
                 }
             }
         }
@@ -805,26 +870,58 @@ struct CreateCardView: View {
             question: finalQuestion,
             options: finalOptions,
             correctAnswer: finalAnswer,
-            hint: hint.trimmingCharacters(in: .whitespacesAndNewlines),
+            hint: finalHint,
             cardType: selectedType,
             matchingLeftItems: left,
             matchingRightItems: right,
             promptImageName: finalPromptImageName,
             optionImageNames: finalOptionImageNames
         )
+        let previous = (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
+                        card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
+                        card.optionImageNames, card.promptAudioName, card.section)
         card.question = finalQuestion
         card.options = finalOptions
         card.correctAnswer = finalAnswer
-        card.hint = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        card.hint = finalHint
         card.cardType = selectedType
         card.matchingLeftItems = left
         card.matchingRightItems = right
         card.promptImageName = finalPromptImageName
         card.optionImageNames = finalOptionImageNames
-        card.promptAudioName = promptAudioName
+        card.promptAudioName = selectedType == .images ? nil : promptAudioName
         card.section = selectedSection
         if cardToEdit == nil { deck.cards.append(card) }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            if cardToEdit == nil { deck.cards.removeAll { $0.id == card.id }; context.delete(card) }
+            else {
+                (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
+                 card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
+                 card.optionImageNames, card.promptAudioName, card.section) = previous
+            }
+            newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
+            imageError = "Your card couldn’t be saved. Please try again."
+            return
+        }
+        // A community download can reuse one local file across several cards.
+        // Only remove replaced attachments after checking every stored reference.
+        if let storedCards = try? context.fetch(FetchDescriptor<Flashcard>()) {
+            let oldImages = ([previous.7].compactMap { $0 } + previous.8).filter { !$0.isEmpty }
+            for name in Set(oldImages) where !storedCards.contains(where: { $0.promptImageName == name || $0.optionImageNames.contains(name) }) {
+                CardImageStore.deleteImage(named: name)
+            }
+            if selectedType == .images, let oldAudio = previous.9,
+               !storedCards.contains(where: { $0.promptAudioName == oldAudio }) {
+                CardAudioStore.delete(named: oldAudio)
+            }
+        }
+        if selectedType == .images {
+            if let promptAudioName, promptAudioName != previous.9 { CardAudioStore.delete(named: promptAudioName) }
+            promptAudioName = nil
+        }
+        imageLoadID = UUID()
         didSave = true
         dismiss()
     }
@@ -834,6 +931,40 @@ struct CreateCardView: View {
             CardAudioStore.delete(named: promptAudioName)
         }
     }
+
+    private func resetPhotoSelections() {
+        promptPhotoPickerItem = nil
+        optionPhotoPickerItems = [nil, nil, nil, nil]
+    }
+
+    private func loadImageForCropping(_ item: PhotosPickerItem, target: CardImageCropRequest.Target) {
+        let requestID = UUID()
+        imageLoadID = requestID
+        isLoadingImage = true
+        Task { @MainActor in
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self),
+                      let image = CardImageCropRenderer.preparedImage(from: data) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                guard imageLoadID == requestID else { return }
+                isLoadingImage = false
+                pendingImageCrop = CardImageCropRequest(image: image, target: target)
+            } catch {
+                guard imageLoadID == requestID else { return }
+                isLoadingImage = false
+                resetPhotoSelections()
+                imageError = "This photo couldn’t be opened. Please choose another image."
+            }
+        }
+    }
+}
+
+private struct CardImageCropRequest: Identifiable {
+    enum Target { case prompt, option(Int) }
+    let id = UUID()
+    let image: UIImage
+    let target: Target
 }
 
 // MARK: - Prompt Input Field with Embedded Photo Picker

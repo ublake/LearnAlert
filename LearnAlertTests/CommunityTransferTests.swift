@@ -59,6 +59,73 @@ struct CommunityTransferTests {
         return data
     }
 
+    @Test("Image-only cards publish without invented question or answer text")
+    func publishesImageOnlyCard() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 20)).image { context in
+            UIColor.green.setFill(); context.fill(CGRect(x: 0, y: 0, width: 30, height: 20))
+        }
+        let name = try #require(CardImageStore.saveImage(image))
+        defer { CardImageStore.deleteImage(named: name); CommunityTestProtocol.response = nil }
+        let deck = Deck(name: "Visual review")
+        deck.cards = [Flashcard(question: "", correctAnswer: "", cardType: .images, promptImageName: name)]
+        let draftID = UUID().uuidString
+        let imageID = UUID().uuidString
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.hasSuffix("/drafts") { return (201, try json(["id": draftID])) }
+            if request.url!.path.hasSuffix("/media") { return (201, try json(["id": imageID])) }
+            let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any])
+            let cards = try #require(body["cards"] as? [[String: Any]])
+            #expect(cards.count == 1)
+            #expect(cards[0]["cardType"] as? String == "images")
+            #expect(cards[0]["question"] as? String == "")
+            #expect(cards[0]["correctAnswer"] as? String == "")
+            #expect(cards[0]["promptImageID"] as? String == imageID)
+            #expect(cards[0]["promptAudioID"] == nil || cards[0]["promptAudioID"] is NSNull)
+            return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
+        }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        #expect(id == draftID)
+    }
+
+    @Test("Image-only downloads retain their media and text-free type")
+    func downloadsImageOnlyCard() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image { context in
+            UIColor.yellow.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 30))
+        }
+        let imageData = try #require(image.jpegData(compressionQuality: 0.8))
+        let imageID = UUID().uuidString
+        let id = UUID().uuidString
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.hasSuffix(imageID) { return (200, imageData) }
+            return (200, try json(["deck": ["id": id, "name": "Pictures", "description": "", "authorHandle": "@buddy",
+                "categoryTag": "General", "colorHex": "#5B70E0", "deckType": "Mixed", "cardCount": 1, "downloadCount": 0,
+                "cards": [["id": "picture", "question": "", "correctAnswer": "", "options": [], "hint": "", "cardType": "images",
+                           "matchingLeftItems": [], "matchingRightItems": [], "sectionName": "", "promptImageID": imageID, "optionImageIDs": []]]]]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let summary = CommunityDeckPayload(id: id, name: "Pictures", description: "", authorHandle: "@buddy", categoryTag: "General", colorHex: "#5B70E0", deckType: "Mixed", cardCount: 1, downloadCount: 0, publishedAt: nil)
+        let downloaded = try await CommunityDeckTransfer.download(summary, api: api()) { _ in }
+        let card = try #require(downloaded.cards.first)
+        defer { CardImageStore.deleteImage(named: card.promptImageName) }
+        #expect(card.cardType == .images)
+        #expect(card.question.isEmpty && card.correctAnswer.isEmpty && card.options.isEmpty)
+        let picture = try #require(CardImageStore.loadImage(named: card.promptImageName))
+        #expect(abs(picture.size.width / picture.size.height - 2.0 / 3.0) < 0.01)
+    }
+
+    @Test("AI refinement preserves image-only cards outside its text context")
+    func aiContextExcludesImageOnlyCards() {
+        let deck = Deck(name: "Mixed")
+        let picture = Flashcard(question: "", correctAnswer: "", cardType: .images, promptImageName: "picture.jpg")
+        let word = Flashcard(question: "Hello", correctAnswer: "A greeting", cardType: .vocabulary)
+        deck.cards = [picture, word]
+        let generated = deck.toGeneratedDeck()
+        #expect(generated.cards.count == 1)
+        #expect(generated.cards.first?.id == word.id.uuidString)
+        #expect(picture.cardType.isReviewOnly)
+        #expect(!FlashcardType.multipleChoice.isReviewOnly)
+    }
+
     @Test("Accepted review submissions include image/audio references and exclude private study material")
     func publishesMedia() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in

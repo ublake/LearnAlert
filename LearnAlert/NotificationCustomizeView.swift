@@ -289,6 +289,8 @@ private struct NotificationSimulatedContainer: View {
 
     private var questionText: String {
         switch cardType {
+        case .images:
+            return ""
         case .vocabulary:
             return "Ephemeral"
         case .multipleChoice:
@@ -327,7 +329,7 @@ private struct NotificationSimulatedContainer: View {
             return "It is the sixth planet from the Sun."
         case .tapReveal:
             return "Chosen as a compromise between Sydney and Melbourne."
-        case .vocabulary:
+        case .vocabulary, .images:
             return ""
         case .matching:
             return "Connect cognitive techniques to their core definitions."
@@ -394,7 +396,7 @@ private struct NotificationSimulatedContainer: View {
                         Spacer()
 
                         HStack(spacing: 6) {
-                            if cardType != .vocabulary && !hintText.isEmpty && !isGraded {
+                            if !cardType.isReviewOnly && !hintText.isEmpty && !isGraded {
                                 Button {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                         showingHint.toggle()
@@ -416,6 +418,8 @@ private struct NotificationSimulatedContainer: View {
                     // Interactive Card Area based on Card Type
                     VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
                         switch cardType {
+                        case .images:
+                            imagePreview
                         case .vocabulary:
                             vocabularyPreview
                         case .multipleChoice:
@@ -430,7 +434,7 @@ private struct NotificationSimulatedContainer: View {
                     }
 
                     // Bottom Hint / Skip Controls
-                    if cardType != .vocabulary && !isGraded {
+                    if !cardType.isReviewOnly && !isGraded {
                         if showingHint && !hintText.isEmpty {
                             Text("Hint: \(hintText)")
                                 .font(.system(size: 11, weight: .medium, design: .serif))
@@ -500,6 +504,27 @@ private struct NotificationSimulatedContainer: View {
     }
 
     // MARK: - Vocabulary Preview
+    private var imagePreview: some View {
+        VStack(spacing: 12) {
+            if let image = CardImageStore.loadImage(named: "course-vocab-apple") {
+                Image(uiImage: image)
+                    .resizable().scaledToFit()
+                    .frame(maxHeight: isCompact ? 200 : 280)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            if !isGraded {
+                Button("Reviewed", systemImage: "checkmark") {
+                    withAnimation(.snappy) { isGraded = true }
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .buttonStyle(.bordered)
+                .tint(textColorPrimary)
+            }
+        }
+    }
+
     private var vocabularyPreview: some View {
         VStack(spacing: isCompact ? 8 : 12) {
             Text(questionText)

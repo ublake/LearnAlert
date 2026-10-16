@@ -2,7 +2,6 @@ import SwiftUI
 
 struct BottomNavigationBar: View {
     @Binding var selectedTab: Int
-    @Binding var tabDragOffset: CGFloat
     @Binding var showingCreationActions: Bool
     let createDeck: () -> Void
     let importWithAI: () -> Void
@@ -31,25 +30,6 @@ struct BottomNavigationBar: View {
             .transition(.opacity)
             .disabled(homeTutorialStep > 0)
             .opacity(homeTutorialStep > 0 ? 0.30 : 1)
-            .offset(x: reduceMotion ? 0 : tabDragOffset)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 24)
-                    .onChanged { value in
-                        guard homeTutorialStep == 0, abs(value.translation.width) > abs(value.translation.height) else { return }
-                        tabDragOffset = value.translation.width / 4
-                    }
-                    .onEnded { value in
-                        guard homeTutorialStep == 0 else { return }
-                        withAnimation(motion) {
-                            if abs(value.translation.width) > abs(value.translation.height) {
-                                if value.translation.width > 40 { selectedTab = max(0, selectedTab - 1) }
-                                if value.translation.width < -40 { selectedTab = min(3, selectedTab + 1) }
-                            }
-                            tabDragOffset = 0
-                            showingCreationActions = false
-                        }
-                    }
-            )
         }
         .frame(maxWidth: 560)
         .onChange(of: selectedTab) { _, _ in showingCreationActions = false }

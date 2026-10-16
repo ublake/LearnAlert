@@ -492,6 +492,7 @@ struct CommunityDeckPreviewSheet: View {
 
 private struct CommunityRemoteImage: View {
     let id: String
+    var maximumHeight: CGFloat = 160
     @ObservedObject private var session = CommunitySession.shared
     @State private var image: UIImage?
     var body: some View {
@@ -499,7 +500,7 @@ private struct CommunityRemoteImage: View {
             if let image { Image(uiImage: image).resizable().scaledToFit() }
             else { Image(systemName: "photo").font(.largeTitle).foregroundStyle(LearnAlertStyle.textSecondary).frame(maxWidth: .infinity, minHeight: 64) }
         }
-        .frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12))
+        .frame(maxHeight: maximumHeight).clipShape(RoundedRectangle(cornerRadius: 12))
         .task(id: "\(id):\(session.token ?? "anonymous")") {
             image = nil
             if let data = try? await CommunityAPI().media(id: id, maximumBytes: 10 * 1024 * 1024, token: session.token), !Task.isCancelled { image = UIImage(data: data) }
@@ -540,27 +541,30 @@ private struct CommunityPreviewAudio: View {
 struct CommunitySampleCardView: View {
     let card: CommunityCardPayload
     var localCard: Flashcard? = nil
+    private var isImageCard: Bool { card.cardType == "images" }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(card.question).font(.body.weight(.medium))
-            if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 12)) }
-            else if let id = card.promptImageID { CommunityRemoteImage(id: id) }
-            if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
-            else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
-            ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
-                HStack(spacing: 12) {
-                    if let localCard, localCard.optionImageNames.indices.contains(index), let image = CardImageStore.loadImage(named: localCard.optionImageNames[index]) { Image(uiImage: image).resizable().scaledToFit().frame(width: 54, height: 54) }
-                    else if card.optionImageIDs.indices.contains(index), let id = card.optionImageIDs[index] { CommunityRemoteImage(id: id).frame(width: 54, height: 54) }
-                    Text(option).font(.subheadline)
-                }
-            }
-            DisclosureGroup("Show answer") {
-                if card.cardType == "matching" {
-                    ForEach(Array(card.matchingLeftItems.enumerated()), id: \.offset) { index, item in
-                        if card.matchingRightItems.indices.contains(index) { Text("\(item) → \(card.matchingRightItems[index])").frame(maxWidth: .infinity, alignment: .leading) }
+            if !isImageCard && !card.question.isEmpty { Text(card.question).font(.body.weight(.medium)) }
+            if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: isImageCard ? 340 : 160).frame(maxWidth: .infinity).clipShape(RoundedRectangle(cornerRadius: 12)) }
+            else if let id = card.promptImageID { CommunityRemoteImage(id: id, maximumHeight: isImageCard ? 340 : 160) }
+            if !isImageCard {
+                if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
+                else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
+                ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
+                    HStack(spacing: 12) {
+                        if let localCard, localCard.optionImageNames.indices.contains(index), let image = CardImageStore.loadImage(named: localCard.optionImageNames[index]) { Image(uiImage: image).resizable().scaledToFit().frame(width: 54, height: 54) }
+                        else if card.optionImageIDs.indices.contains(index), let id = card.optionImageIDs[index] { CommunityRemoteImage(id: id).frame(width: 54, height: 54) }
+                        Text(option).font(.subheadline)
                     }
-                } else { Text(card.correctAnswer).frame(maxWidth: .infinity, alignment: .leading) }
-            }.font(.subheadline).tint(LearnAlertStyle.appAccentForeground)
+                }
+                DisclosureGroup("Show answer") {
+                    if card.cardType == "matching" {
+                        ForEach(Array(card.matchingLeftItems.enumerated()), id: \.offset) { index, item in
+                            if card.matchingRightItems.indices.contains(index) { Text("\(item) → \(card.matchingRightItems[index])").frame(maxWidth: .infinity, alignment: .leading) }
+                        }
+                    } else { Text(card.correctAnswer).frame(maxWidth: .infinity, alignment: .leading) }
+                }.font(.subheadline).tint(LearnAlertStyle.appAccentForeground)
+            }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
     }
 }

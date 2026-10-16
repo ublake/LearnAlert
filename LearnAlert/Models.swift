@@ -15,6 +15,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
     case tapReveal = "tap_reveal"
     case matching = "matching"
     case fillBlank = "fill_blank"
+    case images = "images"
 
     var id: String { rawValue }
     var title: String {
@@ -24,6 +25,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .tapReveal: "Tap to Reveal"
         case .matching: "Match Pairs"
         case .fillBlank: "Fill in the Blank"
+        case .images: "Images"
         }
     }
     var icon: String {
@@ -33,6 +35,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .tapReveal: "rectangle.on.rectangle"
         case .matching: "arrow.left.arrow.right"
         case .fillBlank: "text.cursor"
+        case .images: "photo.on.rectangle"
         }
     }
 
@@ -43,8 +46,11 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .vocabulary: "Word, pronunciation, and dictionary definition"
         case .fillBlank: "Type the missing keyword in context"
         case .matching: "Connect paired terms and definitions"
+        case .images: "Review a picture without any text"
         }
     }
+
+    var isReviewOnly: Bool { self == .vocabulary || self == .images }
 }
 
 @Model
@@ -511,7 +517,9 @@ public enum CardImageStore {
             targetSize = size
         }
 
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         let resizedImage = renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }

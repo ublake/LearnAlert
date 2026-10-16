@@ -518,9 +518,11 @@ struct DeckAIAssistantSheet: View {
                 if let returnedDeck = result.deck, !returnedDeck.cards.isEmpty {
                     var updatedCount = 0
                     var addedCount = 0
+                    let textCards = deck.cards.filter { $0.cardType != .images }
 
                     for (index, card) in returnedDeck.cards.enumerated() {
                         let cleanPrompt = card.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleanPrompt.isEmpty else { continue }
                         let options = card.type == .multipleChoice ? card.options : []
                         let correctAnswer: String
                         if card.type == .multipleChoice, options.indices.contains(card.correctAnswerIndex) {
@@ -531,8 +533,8 @@ struct DeckAIAssistantSheet: View {
                         let cleanAnswer = correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
                         let cleanHint = card.hint.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                        if let existingIndex = deck.cards.firstIndex(where: { $0.question.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == cleanPrompt.lowercased() }) {
-                            let existing = deck.cards[existingIndex]
+                        if let existing = textCards.first(where: { $0.id.uuidString == card.id })
+                            ?? textCards.first(where: { $0.question.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == cleanPrompt.lowercased() }) {
                             var changed = false
                             if !cleanHint.isEmpty && existing.hint != cleanHint {
                                 existing.hint = cleanHint
@@ -547,8 +549,8 @@ struct DeckAIAssistantSheet: View {
                                 changed = true
                             }
                             if changed { updatedCount += 1 }
-                        } else if returnedDeck.cards.count == deck.cards.count && index < deck.cards.count {
-                            let existing = deck.cards[index]
+                        } else if returnedDeck.cards.count == textCards.count && index < textCards.count {
+                            let existing = textCards[index]
                             existing.question = cleanPrompt
                             existing.correctAnswer = cleanAnswer
                             existing.options = options

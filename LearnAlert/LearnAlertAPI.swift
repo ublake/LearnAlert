@@ -1016,7 +1016,9 @@ extension Deck {
     }
 
     func toGeneratedDeck() -> GeneratedDeck {
-        let genCards = cards.map { card in
+        // Image-only review cards have no text to refine. Keep their media local
+        // instead of coercing them into empty multiple-choice cards.
+        let genCards = cards.filter { $0.cardType != .images }.map { card in
             let pairs: [GeneratedMatchingPair]? = (card.cardType == .matching && !card.matchingLeftItems.isEmpty)
                 ? zip(card.matchingLeftItems, card.matchingRightItems).map { GeneratedMatchingPair(left: $0, right: $1) }
                 : nil

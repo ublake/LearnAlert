@@ -14,7 +14,6 @@ struct ContentView: View {
     @State private var showingAIComposer = false
     @State private var searchText = ""
     @State private var isSearching = false
-    @State private var tabDragOffset: CGFloat = 0
     @State private var showingCreationActions = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("appearanceMode") private var appearanceMode = "system"
@@ -76,12 +75,13 @@ struct ContentView: View {
                     Spacer()
                     BottomNavigationBar(
                         selectedTab: $selectedTab,
-                        tabDragOffset: $tabDragOffset,
                         showingCreationActions: $showingCreationActions,
                         createDeck: { showingCreateDeck = true },
                         importWithAI: { showingAIComposer = true }
                     )
                 }
+                // Only the dock ignores the keyboard; the current page still avoids it.
+                .ignoresSafeArea(.keyboard, edges: .bottom)
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }

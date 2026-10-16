@@ -57,6 +57,7 @@ struct DeckStudyView: View {
                     score: correctCount * 30,
                     correctCount: correctCount,
                     totalCount: deck.cards.count,
+                    isReviewOnly: deck.cards.allSatisfy { $0.cardType.isReviewOnly },
                     onRestart: restartCycle,
                     onClose: dismiss.callAsFunction
                 )
@@ -155,10 +156,14 @@ struct DeckStudyView: View {
     }
 
     private func submitAndAdvance(_ card: Flashcard) {
-        if card.cardType == .vocabulary {
-            card.processAnswer(isCorrect: true)
-            correctCount += 1
-            try? context.save()
+        guard card.cardType != .images || CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
+        if card.cardType.isReviewOnly {
+            // A notification may already have recorded this review before handing off.
+            if !isGraded {
+                card.processAnswer(isCorrect: true)
+                correctCount += 1
+                try? context.save()
+            }
             advance()
             return
         }
@@ -240,8 +245,14 @@ private struct QuizSessionView: View {
     let onContinue: () -> Void
     let onClose: () -> Void
 
-    private var canContinue: Bool { cardType == .vocabulary || isGraded }
-    private var actionTitle: LocalizedStringKey { cardNumber >= cardCount ? "FINISH" : "CONTINUE" }
+    private var canContinue: Bool {
+        if cardType == .images { return CardImageStore.loadImage(named: promptImageName) != nil }
+        return cardType.isReviewOnly || isGraded
+    }
+    private var actionTitle: LocalizedStringKey {
+        if cardType == .images { return "REVIEWED" }
+        return cardNumber >= cardCount ? "FINISH" : "CONTINUE"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -260,25 +271,33 @@ private struct QuizSessionView: View {
                         Image(uiImage: uiImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 200)
+                            .frame(maxHeight: cardType == .images ? 420 : 200)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .stroke(QuizTheme.border, lineWidth: 1)
                             )
                             .frame(maxWidth: .infinity, alignment: .center)
+                    } else if cardType == .images {
+                        ContentUnavailableView("Image unavailable", systemImage: "photo",
+                            description: Text("Open the card editor to upload the picture again."))
+                            .frame(maxWidth: .infinity, minHeight: 220)
                     }
 
-                    Text(question)
-                        .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
-                        .foregroundStyle(QuizTheme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if cardType != .images && !question.isEmpty {
+                        Text(question)
+                            .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
+                            .foregroundStyle(QuizTheme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                    if let promptAudioName {
+                    if cardType != .images, let promptAudioName {
                         CardAudioPlaybackButton(name: promptAudioName)
                     }
 
                     switch cardType {
+                    case .images:
+                        EmptyView()
                     case .vocabulary:
                         QuizVocabularyCard(definition: correctAnswer)
                     case .multipleChoice:
@@ -309,7 +328,7 @@ private struct QuizSessionView: View {
                         )
                     }
 
-                    if cardType != .vocabulary {
+                    if !cardType.isReviewOnly {
                         QuizUtilityControls(
                             hint: hint,
                             showingHint: showingHint,
@@ -789,6 +808,7 @@ private struct QuizResultsView: View {
     let score: Int
     let correctCount: Int
     let totalCount: Int
+    let isReviewOnly: Bool
     let onRestart: () -> Void
     let onClose: () -> Void
 
@@ -828,7 +848,7 @@ private struct QuizResultsView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 18)
 
-            QuizResultsCard(score: score, correctCount: correctCount, totalCount: totalCount)
+            QuizResultsCard(score: score, correctCount: correctCount, totalCount: totalCount, isReviewOnly: isReviewOnly)
                 .padding(.horizontal, 20)
                 .padding(.top, 52)
 
@@ -853,14 +873,17 @@ private struct QuizResultsCard: View {
     let score: Int
     let correctCount: Int
     let totalCount: Int
+    let isReviewOnly: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            QuizResultRow(icon: "star.fill", title: "SCORE GAINED", value: "\(score)")
-            Divider().opacity(0.4)
+            if !isReviewOnly {
+                QuizResultRow(icon: "star.fill", title: "SCORE GAINED", value: "\(score)")
+                Divider().opacity(0.4)
+            }
             QuizResultRow(
                 icon: "checkmark",
-                title: "CORRECT ANSWERS",
+                title: isReviewOnly ? "CARDS REVIEWED" : "CORRECT ANSWERS",
                 value: "\(correctCount)/\(totalCount)"
             )
         }
