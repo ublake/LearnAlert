@@ -613,21 +613,35 @@ struct CommunitySampleCardView: View {
                 if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
                 else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
                 ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
-                    HStack(spacing: 12) {
-                        if let localCard, localCard.optionImageNames.indices.contains(index), let image = CardImageStore.loadImage(named: localCard.optionImageNames[index]) { Image(uiImage: image).resizable().scaledToFit().frame(width: 54, height: 54) }
-                        else if card.optionImageIDs.indices.contains(index), let id = card.optionImageIDs[index] { CommunityRemoteImage(id: id).frame(width: 54, height: 54) }
-                        Text(option).font(.subheadline)
-                    }
+                    fieldPreview("option:\(index)", text: option)
                 }
                 DisclosureGroup("Show answer") {
                     if card.cardType == "matching" {
                         ForEach(Array(card.matchingLeftItems.enumerated()), id: \.offset) { index, item in
-                            if card.matchingRightItems.indices.contains(index) { Text("\(item) → \(card.matchingRightItems[index])").frame(maxWidth: .infinity, alignment: .leading) }
+                            HStack { fieldPreview("left:\(index)", text: item); Image(systemName: "arrow.right"); fieldPreview("right:\(index)", text: card.matchingRightItems.indices.contains(index) ? card.matchingRightItems[index] : "") }
                         }
-                    } else { Text(card.correctAnswer).frame(maxWidth: .infinity, alignment: .leading) }
+                    } else if card.cardType == "multiple_choice" {
+                        if let index = card.correctOptionIndex ?? card.options.firstIndex(of: card.correctAnswer), card.options.indices.contains(index) { fieldPreview("option:\(index)", text: card.options[index]) }
+                    } else { fieldPreview("answer", text: card.correctAnswer) }
                 }.font(.subheadline).tint(LearnAlertStyle.appAccentForeground)
+                if !card.hint.isEmpty || card.fieldMedia?["hint"] != nil {
+                    DisclosureGroup("Hint") { fieldPreview("hint", text: card.hint) }.font(.subheadline)
+                }
             }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+    }
+
+    private func fieldPreview(_ key: String, text: String) -> some View {
+        let remote = card.fieldMedia?[key]
+        let local = localCard?.fieldMedia[key]
+        return VStack(alignment: .leading, spacing: 6) {
+            if !text.isEmpty { Text(text).font(.subheadline) }
+            if let name = local?.image, let image = CardImageStore.loadImage(named: name) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 120) }
+            else if let id = remote?.imageID { CommunityRemoteImage(id: id, maximumHeight: 120) }
+            else if key.hasPrefix("option:"), let index = Int(key.dropFirst(7)), card.optionImageIDs.indices.contains(index), let id = card.optionImageIDs[index] { CommunityRemoteImage(id: id, maximumHeight: 120) }
+            if let name = local?.audio { CommunityPreviewAudio(localName: name) }
+            else if let id = remote?.audioID { CommunityPreviewAudio(mediaID: id) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private func imageFace(localName: String?, remoteID: String?) -> some View {
@@ -724,8 +738,8 @@ struct ShareDeckToCommunitySheet: View {
     }
 
     private func listingPreview(_ deck: Deck) -> some View {
-        let images = deck.cards.reduce(0) { $0 + ($1.promptImageName == nil ? 0 : 1) + ($1.answerImageName == nil ? 0 : 1) + $1.optionImageNames.filter { !$0.isEmpty }.count }
-        let audio = deck.cards.filter { $0.promptAudioName != nil }.count
+        let images = deck.cards.reduce(0) { $0 + $1.fieldMedia.values.filter { $0.image != nil }.count }
+        let audio = deck.cards.reduce(0) { $0 + $1.fieldMedia.values.filter { $0.audio != nil }.count }
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }

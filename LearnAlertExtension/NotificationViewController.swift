@@ -27,6 +27,8 @@ private struct NotificationSessionCard {
     var promptImageName: String? = nil
     var answerImageName: String? = nil
     var ankiContentData: Data? = nil
+    var fieldMedia: [String: CardFieldMedia] = [:]
+    var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
 }
 
@@ -87,6 +89,8 @@ struct FlashcardNotificationView: View {
     var promptImageName: String? = nil
     var answerImageName: String? = nil
     var ankiContentData: Data? = nil
+    var fieldMedia: [String: CardFieldMedia] = [:]
+    var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
     var previewMode = false
     var isTutorial = false
@@ -193,6 +197,16 @@ struct FlashcardNotificationView: View {
         return !hasImageBack || (hasViewedImageBack && CardImageStore.loadImage(named: activeAnswerImageName) != nil)
     }
     private var activeOptionImageNames: [String] { sessionCard?.optionImageNames ?? optionImageNames }
+    private var activeMedia: [String: CardFieldMedia] {
+        var fields = sessionCard?.fieldMedia ?? fieldMedia
+        if fields["prompt"] == nil { fields["prompt"] = .init(image: activePromptImageName) }
+        if fields["answer"] == nil { fields["answer"] = .init(image: activeAnswerImageName) }
+        for (i, name) in activeOptionImageNames.enumerated() where fields["option:\(i)"] == nil && !name.isEmpty { fields["option:\(i)"] = .init(image: name) }
+        return fields
+    }
+    private var activeCorrectIndex: Int? { sessionCard?.correctOptionIndex ?? correctOptionIndex ?? activeOptions.firstIndex(of: activeCorrectAnswer) }
+    private var hasHint: Bool { (activeMedia["hint"] ?? .init()).hasContent(activeHint) }
+
 
     private var isAppOpen: Bool {
         UserDefaults(suiteName: "group.com.learnalert.shared")?.bool(forKey: "isAppInForeground") ?? false
@@ -284,7 +298,7 @@ struct FlashcardNotificationView: View {
                     Spacer()
 
                     HStack(spacing: 8) {
-                        if !activeHint.isEmpty && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
+                        if hasHint && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
                             Button {
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                                     showingHint.toggle()
@@ -319,24 +333,12 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Question Box & Prompt Image
-                if activeCardType != "matching" && activeCardType != "images" && activeCardType != "anki" {
+                if activeCardType != "images" && activeCardType != "anki" {
                     VStack(spacing: 12) {
-                        if let promptImg = activePromptImageName, !promptImg.isEmpty,
-                           let uiImage = CardImageStore.loadImage(named: promptImg) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(maxHeight: 180)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                .shadow(color: Color.black.opacity(0.12), radius: 6, y: 3)
-                        }
-
-                        Text(activeQuestion)
+                        CardFieldContent(text: activeQuestion, media: activeMedia["prompt"] ?? .init(), imageHeight: 160)
                             .font(.system(size: isCompactLayout ? 16 : 18, weight: .bold))
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(textColorPrimary)
-                            .lineSpacing(3)
-                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(textColorPrimary).frame(maxWidth: .infinity)
+
                     }
                     .padding(.vertical, isCompactLayout ? 12 : 20)
                     .padding(.horizontal, isCompactLayout ? 14 : 18)
@@ -399,122 +401,13 @@ struct FlashcardNotificationView: View {
 
                 // Card Type Presentation: Matching Pairs
                 else if activeCardType == "matching" {
-                    VStack(spacing: 14) {
-                        if !activeQuestion.isEmpty {
-                            Text(activeQuestion)
-                                .font(.system(size: 15, weight: .semibold))
-                                .multilineTextAlignment(.leading)
-                                .foregroundStyle(textColorPrimary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 4)
-                        }
-
-                        HStack(alignment: .top, spacing: 10) {
-                            // Left column (terms)
-                            VStack(spacing: 8) {
-                                ForEach(activeMatchingLeftItems, id: \.self) { item in
-                                    let isMatched = isCorrectlyMatched(item)
-                                    let isSelected = selectedMatchingLeft == item
-                                    Button {
-                                        guard !isMatched else { return }
-                                        withAnimation(.snappy) {
-                                            selectedMatchingLeft = isSelected ? nil : item
-                                        }
-                                    } label: {
-                                        Text(item)
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .foregroundStyle(textColorPrimary)
-                                            .multilineTextAlignment(.center)
-                                            .padding(10)
-                                            .frame(maxWidth: .infinity, minHeight: 48)
-                                            .notificationLiquidGlass(
-                                                cornerRadius: 12,
-                                                tint: matchingLeftTint(item),
-                                                isLight: isLight,
-                                                customBorderColor: matchingLeftBorder(item)
-                                            )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(isMatched || isGraded)
-                                }
-                            }
-
-                            // Right column (definitions/targets)
-                            VStack(spacing: 8) {
-                                ForEach(activeMatchingRightItems, id: \.self) { target in
-                                    let assignedTerm = matchingAssignments[target]
-                                    let isCorrect = matchingResults[target] == true
-                                    Button {
-                                        guard let left = selectedMatchingLeft else { return }
-                                        let matchCorrect = isCorrectMatch(left: left, right: target)
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
-                                            matchingAssignments[target] = left
-                                            matchingResults[target] = matchCorrect
-                                            selectedMatchingLeft = nil
-                                            if !matchCorrect {
-                                                hadMatchingMistake = true
-                                                NotificationFeedbackSoundPlayer.shared.play(named: "incorrect")
-                                            } else {
-                                                NotificationFeedbackSoundPlayer.shared.play(named: "correct")
-                                            }
-                                            if matchingAssignments.count == activeMatchingRightItems.count &&
-                                                matchingResults.values.allSatisfy({ $0 }) {
-                                                gradeCard(isCorrect: !hadMatchingMistake)
-                                            }
-                                        }
-                                    } label: {
-                                        VStack(spacing: 2) {
-                                            Text(target)
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundStyle(textColorPrimary)
-                                                .lineLimit(2)
-                                                .minimumScaleFactor(0.8)
-                                            if let assigned = assignedTerm {
-                                                Text("→ \(assigned)")
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .foregroundStyle(isCorrect ? Color.green : Color.red)
-                                            }
-                                        }
-                                        .padding(10)
-                                        .frame(maxWidth: .infinity, minHeight: 48)
-                                        .notificationLiquidGlass(
-                                            cornerRadius: 12,
-                                            tint: matchingRightTint(target),
-                                            isLight: isLight,
-                                            customBorderColor: matchingRightBorder(target)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(matchingAssignments[target] != nil && matchingResults[target] == true || selectedMatchingLeft == nil || isGraded)
-                                }
-                            }
-                        }
-
-                        if hadMatchingMistake && !isGraded {
-                            Button {
-                                withAnimation(.snappy) {
-                                    matchingAssignments.removeAll()
-                                    matchingResults.removeAll()
-                                    selectedMatchingLeft = nil
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.counterclockwise")
-                                    Text("Reset Mismatches")
-                                }
-                                .font(.caption.bold())
-                                .foregroundStyle(textColorSecondary)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
-                                .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    CardMediaMatchingBoard(left: activeMatchingLeftItems, right: activeMatchingRightItems,
+                        fields: activeMedia, isGraded: isGraded, onGrade: { gradeCard(isCorrect: $0) }).id(activeCardId)
+                        .environment(\.colorScheme, isLight ? .light : .dark)
                 }
 
                 // Card Type Presentation: Fill in the Blank
-                else if activeCardType == "fill_blank" {
+                else if activeCardType == "fill_blank" && !activeCorrectAnswer.isEmpty {
                     VStack(spacing: 14) {
                         HStack(spacing: 10) {
                             TextField("Type your answer...", text: $typedAnswer)
@@ -556,58 +449,15 @@ struct FlashcardNotificationView: View {
 
                 // Card Type Presentation: Multiple Choice Options
                 else if !activeOptions.isEmpty && activeCardType != "tap_reveal" {
-                    VStack(spacing: 11) {
-                        ForEach(Array(activeOptions.enumerated()), id: \.offset) { index, option in
-                            Button {
-                                guard selectedAnswer == nil else { return }
-                                isAnswerFieldFocused = false
-                                withAnimation(.spring(response: 0.38, dampingFraction: 0.72)) {
-                                    selectedAnswer = option
-                                    let correct = (option == activeCorrectAnswer)
-                                    gradeCard(isCorrect: correct)
-                                }
-                            } label: {
-                                HStack(spacing: 12) {
-                                    if activeOptionImageNames.indices.contains(index),
-                                       let optImg = CardImageStore.loadImage(named: activeOptionImageNames[index]) {
-                                        Image(uiImage: optImg)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 44, height: 44)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    }
-
-                                    Text(option)
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .multilineTextAlignment(.leading)
-                                        .foregroundStyle(optionTextColor(for: option))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                                    if selectedAnswer != nil {
-                                        if option == activeCorrectAnswer {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.system(size: 18, weight: .bold))
-                                                .foregroundStyle(Color.green)
-                                        } else if option == selectedAnswer {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 18, weight: .bold))
-                                                .foregroundStyle(Color.red)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 15)
-                                .padding(.horizontal, 18)
-                                .notificationLiquidGlass(
-                                    cornerRadius: 16,
-                                    tint: optionGlassTint(for: option),
-                                    isLight: isLight,
-                                    customBorderColor: optionBorderColor(for: option)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(selectedAnswer != nil)
+                    CardMediaChoiceList(options: activeOptions, fields: activeMedia, correctIndex: activeCorrectIndex,
+                        selection: selectedAnswer, isGraded: isGraded) { value in
+                        guard selectedAnswer == nil else { return }
+                        isAnswerFieldFocused = false
+                        withAnimation(.snappy) {
+                            selectedAnswer = value
+                            gradeCard(isCorrect: CardChoiceIdentity.index(value, options: activeOptions) == activeCorrectIndex)
                         }
-                    }
+                    }.environment(\.colorScheme, isLight ? .light : .dark)
                 }
 
                 // Card Type Presentation: Tap to Reveal
@@ -632,7 +482,7 @@ struct FlashcardNotificationView: View {
                             .buttonStyle(.plain)
                         } else {
                             VStack(spacing: 14) {
-                                Text(activeCorrectAnswer)
+                                CardFieldContent(text: activeCorrectAnswer, media: activeMedia["answer"] ?? .init())
                                     .font(.title3.bold())
                                     .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
                                     .multilineTextAlignment(.center)
@@ -679,8 +529,8 @@ struct FlashcardNotificationView: View {
                     }
                 }
 
-                if showingHint && !activeHint.isEmpty {
-                    Text(activeHint)
+                if showingHint && hasHint {
+                    CardFieldContent(text: activeHint, media: activeMedia["hint"] ?? .init())
                         .font(.subheadline.italic())
                         .foregroundStyle(Color.orange)
                         .padding(12)
@@ -987,6 +837,7 @@ struct FlashcardNotificationView: View {
                 promptImageName: cardToStudy.promptImageName,
                 answerImageName: cardToStudy.answerImageName,
                 ankiContentData: cardToStudy.ankiContentData,
+                fieldMedia: cardToStudy.fieldMedia, correctOptionIndex: cardToStudy.resolvedCorrectOptionIndex,
                 optionImageNames: cardToStudy.optionImageNames
             )
             selectedAnswer = nil
@@ -1384,6 +1235,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             matchingRightItems: userInfo["matchingRightItems"] as? [String] ?? [],
             promptImageName: userInfo["promptImageName"] as? String,
             answerImageName: userInfo["answerImageName"] as? String,
+            correctOptionIndex: userInfo["correctOptionIndex"] as? Int,
             optionImageNames: userInfo["optionImageNames"] as? [String] ?? []
         )
 
@@ -1409,6 +1261,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                     promptImageName: card.promptImageName, answerImageName: card.answerImageName,
                     ankiContentData: card.ankiContentData,
+                    fieldMedia: card.fieldMedia, correctOptionIndex: card.resolvedCorrectOptionIndex,
                     optionImageNames: card.optionImageNames
                 )
             }
@@ -1431,6 +1284,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             promptImageName: snapshot.promptImageName,
             answerImageName: snapshot.answerImageName,
             ankiContentData: snapshot.ankiContentData,
+            fieldMedia: snapshot.fieldMedia, correctOptionIndex: snapshot.correctOptionIndex,
             optionImageNames: snapshot.optionImageNames,
             isTutorial: isTutorial,
             appearance: .resolve(userInfo: userInfo),

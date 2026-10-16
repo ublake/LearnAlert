@@ -205,6 +205,8 @@ class Flashcard {
     var promptImageName: String?
     var answerImageName: String?
     var promptAudioName: String?
+    var fieldMediaData: Data?
+    var correctOptionIndex: Int?
     @Attribute(.externalStorage) var ankiContentData: Data?
     var sourceAnkiCardID: String?
 
@@ -213,6 +215,31 @@ class Flashcard {
         set { ankiContentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
     }
     var optionImageNamesData: Data = Data()
+
+    var fieldMedia: [String: CardFieldMedia] {
+        get {
+            var fields = fieldMediaData.flatMap { try? JSONDecoder().decode([String: CardFieldMedia].self, from: $0) } ?? [:]
+            // Existing cards and community downloads retain their original attachment columns.
+            fields["prompt", default: .init()].image = promptImageName
+            fields["prompt", default: .init()].audio = promptAudioName
+            fields["answer", default: .init()].image = answerImageName
+            for (index, name) in optionImageNames.enumerated() { fields["option:\(index)", default: .init()].image = name.isEmpty ? nil : name }
+            return fields.filter { !$0.value.isEmpty }
+        }
+        set {
+            let fields = newValue.filter { !$0.value.isEmpty }
+            fieldMediaData = try? JSONEncoder().encode(fields)
+            promptImageName = fields["prompt"]?.image
+            promptAudioName = fields["prompt"]?.audio
+            answerImageName = fields["answer"]?.image
+            optionImageNames = options.indices.map { fields["option:\($0)"]?.image ?? "" }
+        }
+    }
+
+    var resolvedCorrectOptionIndex: Int? {
+        if let correctOptionIndex, options.indices.contains(correctOptionIndex) { return correctOptionIndex }
+        return options.firstIndex(of: correctAnswer)
+    }
 
     // Study state
     var reviewCount: Int = 0

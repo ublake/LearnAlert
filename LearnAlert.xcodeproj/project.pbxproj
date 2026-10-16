@@ -123,6 +123,8 @@
 				CourseMatchingPanel.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
+				CardFieldMedia.swift,
+				CardAudioStore.swift,
 				CourseActivity.swift,
 				CourseActivityPanel.swift,
 				"CourseCurriculum+FoundationWorkshop.swift",

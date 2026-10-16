@@ -277,6 +277,8 @@ struct CommunityProfileDeckPreview: View {
                                     promptImageName: item.promptImageName, answerImageName: item.answerImageName,
                                     optionImageNames: item.optionImageNames)
                 card.orderIndex = index; card.promptAudioName = item.promptAudioName
+                if !item.fieldMedia.isEmpty { card.fieldMedia = item.fieldMedia }
+                card.correctOptionIndex = item.correctOptionIndex
                 imported.cards.append(card)
                 imported.assignCardToSection(card: card, suggestedCategory: item.sectionName)
             }
@@ -293,8 +295,8 @@ struct CommunityProfileDeckPreview: View {
     }
 
     private func removeDownloadedMedia(_ source: PremadeDeck) {
-        let images = source.cards.flatMap { [$0.promptImageName, $0.answerImageName].compactMap { $0 } + $0.optionImageNames }
+        let images = source.cards.flatMap { [$0.promptImageName, $0.answerImageName].compactMap { $0 } + $0.optionImageNames + $0.fieldMedia.values.compactMap(\.image) }
         Set(images.filter { !$0.isEmpty }).forEach { CardImageStore.deleteImage(named: $0) }
-        Set(source.cards.compactMap(\.promptAudioName)).forEach { CardAudioStore.delete(named: $0) }
+        Set(source.cards.compactMap(\.promptAudioName) + source.cards.flatMap { $0.fieldMedia.values.compactMap(\.audio) }).forEach { CardAudioStore.delete(named: $0) }
     }
 }

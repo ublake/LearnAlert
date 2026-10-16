@@ -6,6 +6,11 @@ import CryptoKit
 import UIKit
 import AuthenticationServices
 
+struct CommunityFieldMedia: Codable {
+    var imageID: String? = nil
+    var audioID: String? = nil
+}
+
 struct CommunityCardPayload: Codable, Identifiable {
     let id: String
     let question: String
@@ -20,6 +25,8 @@ struct CommunityCardPayload: Codable, Identifiable {
     var optionImageIDs: [String?]
     var promptAudioID: String?
     var answerImageID: String? = nil
+    var fieldMedia: [String: CommunityFieldMedia]? = nil
+    var correctOptionIndex: Int? = nil
 }
 
 struct CommunityDeckPayload: Codable, Identifiable {
@@ -534,12 +541,16 @@ enum CommunityDeckTransfer {
         }
         var cards: [CommunityCardPayload] = []
         for card in deck.cards {
+            var fields: [String: CommunityFieldMedia] = [:]
+            for (key, attachment) in card.fieldMedia {
+                fields[key] = .init(imageID: try imageKey(attachment.image), audioID: try audioKey(attachment.audio))
+            }
             cards.append(CommunityCardPayload(id: card.id.uuidString, question: card.question, correctAnswer: card.correctAnswer,
                 options: card.options, hint: card.hint, cardType: card.cardType.rawValue,
                 matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
-                sectionName: card.section?.name ?? "", promptImageID: try imageKey(card.promptImageName),
-                optionImageIDs: try card.optionImageNames.map { try imageKey($0) }, promptAudioID: try audioKey(card.promptAudioName),
-                answerImageID: try imageKey(card.answerImageName)))
+                sectionName: card.section?.name ?? "", promptImageID: fields["prompt"]?.imageID,
+                optionImageIDs: card.options.indices.map { fields["option:\($0)"]?.imageID }, promptAudioID: fields["prompt"]?.audioID,
+                answerImageID: fields["answer"]?.imageID, fieldMedia: fields, correctOptionIndex: card.resolvedCorrectOptionIndex))
         }
         guard uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
             throw CommunityAPIError(status: 413, message: "A shared deck can contain up to 100 MB of images and audio.")
@@ -567,6 +578,8 @@ enum CommunityDeckTransfer {
                 cards[index].optionImageIDs = cards[index].optionImageIDs.map { $0.flatMap { remoteIDs[$0] } }
                 cards[index].promptAudioID = cards[index].promptAudioID.flatMap { remoteIDs[$0] }
                 cards[index].answerImageID = cards[index].answerImageID.flatMap { remoteIDs[$0] }
+                cards[index].fieldMedia = cards[index].fieldMedia?.mapValues { .init(imageID: $0.imageID.flatMap { remoteIDs[$0] }, audioID: $0.audioID.flatMap { remoteIDs[$0] }) }
+
             }
             progress("Submitting for review…")
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
@@ -615,11 +628,20 @@ enum CommunityDeckTransfer {
                 var options: [String] = []
                 for id in card.optionImageIDs { options.append(try await imageName(id) ?? "") }
                 let clip = try await audioName(card.promptAudioID)
+                var fields: [String: CardFieldMedia] = [:]
+                for (key, attachment) in card.fieldMedia ?? [:] {
+                    fields[key] = .init(image: try await imageName(attachment.imageID), audio: try await audioName(attachment.audioID))
+                }
+                // Older public decks have only the original attachment columns.
+                fields["prompt"] = fields["prompt"] ?? .init(image: prompt, audio: clip)
+                fields["answer"] = fields["answer"] ?? .init(image: answer)
+                for (i, name) in options.enumerated() where !name.isEmpty && fields["option:\(i)"] == nil { fields["option:\(i)"] = .init(image: name) }
+
                 imported.append(PremadeCard(id: card.id, question: card.question, options: card.options,
                     correctAnswer: card.correctAnswer, hint: card.hint,
                     cardType: FlashcardType(rawValue: card.cardType) ?? .tapReveal,
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
-                    promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, sectionName: card.sectionName))
+                    promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, fieldMedia: fields, correctOptionIndex: card.correctOptionIndex, sectionName: card.sectionName))
             }
             return PremadeDeck(id: detail.id, name: detail.name, category: detail.categoryTag, subcategory: detail.categoryTag,
                 description: detail.description, colorHex: detail.colorHex, deckType: detail.deckType, cards: imported, communitySourceID: detail.id)

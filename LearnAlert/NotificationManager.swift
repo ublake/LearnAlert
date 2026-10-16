@@ -133,7 +133,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "matchingRightItems": card.matchingRightItems,
             "promptImageName": card.promptImageName ?? "",
             "answerImageName": card.answerImageName ?? "",
-            "optionImageNames": card.optionImageNames
+            "optionImageNames": card.optionImageNames,
+            "correctOptionIndex": card.resolvedCorrectOptionIndex ?? -1
         ]
         
         let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
@@ -177,7 +178,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "matchingRightItems": card.matchingRightItems,
             "promptImageName": card.promptImageName ?? "",
             "answerImageName": card.answerImageName ?? "",
-            "optionImageNames": card.optionImageNames
+            "optionImageNames": card.optionImageNames,
+            "correctOptionIndex": card.resolvedCorrectOptionIndex ?? -1
         ]
 
         let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)

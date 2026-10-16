@@ -1027,9 +1027,11 @@ struct HomeLibraryView: View {
                 guard let deckPendingDeletion else { return }
                 InteractionSoundPlayer.shared.play(.deleteDeck)
                 let ankiFolders = Set(deckPendingDeletion.cards.compactMap { $0.ankiContent?.mediaFolder })
+                let media = deckPendingDeletion.cards.flatMap { $0.fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
                 context.delete(deckPendingDeletion)
                 if (try? context.save()) != nil {
                     AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
+                    CardAttachmentCleanup.removeUnreferenced(media, context: context)
                 }
                 self.deckPendingDeletion = nil
             }

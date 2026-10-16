@@ -3,6 +3,11 @@ import AVFoundation
 import SwiftUI
 import Combine
 
+struct CardAudioError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 enum CardAudioStore {
     static let maximumBytes = 20 * 1024 * 1024
     static var directory: URL {
@@ -20,7 +25,7 @@ enum CardAudioStore {
         case "mp3": return "audio/mpeg"
         case "m4a": return "audio/mp4"
         case "wav": return "audio/wav"
-        default: throw CommunityAPIError(status: 415, message: "Choose an MP3, M4A, or WAV audio file.")
+        default: throw CardAudioError(message: "Choose an MP3, M4A, or WAV audio file.")
         }
     }
 
@@ -29,7 +34,7 @@ enum CardAudioStore {
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         _ = try contentType(for: source.lastPathComponent)
         let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= maximumBytes else { throw CommunityAPIError(status: 413, message: "Choose an audio clip under 20 MB.") }
+        guard size > 0, size <= maximumBytes else { throw CardAudioError(message: "Choose an audio clip under 20 MB.") }
         let data = try Data(contentsOf: source)
         return try save(data, extension: source.pathExtension.lowercased())
     }
@@ -44,10 +49,10 @@ enum CardAudioStore {
     }
 
     private static func save(_ data: Data, extension ext: String) throws -> String {
-        guard !data.isEmpty, data.count <= maximumBytes else { throw CommunityAPIError(status: 413, message: "Choose an audio clip under 20 MB.") }
+        guard !data.isEmpty, data.count <= maximumBytes else { throw CardAudioError(message: "Choose an audio clip under 20 MB.") }
         // Reject corrupt files before attaching them to a card.
         let player = try AVAudioPlayer(data: data)
-        guard player.duration > 0 else { throw CommunityAPIError(status: 400, message: "This audio file could not be played.") }
+        guard player.duration > 0 else { throw CardAudioError(message: "This audio file could not be played.") }
         let name = "\(UUID().uuidString).\(ext)"
         try data.write(to: url(named: name), options: .atomic)
         return name
@@ -60,10 +65,13 @@ enum CardAudioStore {
 final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
     @Published var errorMessage: String?
+    private static weak var active: CardAudioPlayer?
     private var player: AVAudioPlayer?
 
     func toggle(name: String) {
         if isPlaying { stop(); return }
+        Self.active?.stop()
+        Self.active = self
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
@@ -77,7 +85,7 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
         } catch { errorMessage = "This audio clip could not be played. Try attaching it again." }
     }
 
-    func stop() { player?.stop(); player = nil; isPlaying = false }
+    func stop() { player?.stop(); player = nil; isPlaying = false; if Self.active === self { Self.active = nil } }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in self.isPlaying = false }
@@ -94,7 +102,7 @@ struct CardAudioPlaybackButton: View {
                 .font(.body.weight(.medium))
                 .frame(minHeight: 44)
         }
-        .tint(LearnAlertStyle.indigo)
+        .tint(Color.accentColor)
         .onDisappear { player.stop() }
         .onChange(of: name) { _, _ in player.stop() }
         .alert("Audio Unavailable", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {

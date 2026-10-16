@@ -2,1131 +2,362 @@ import PhotosUI
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import Combine
 
 struct CreateCardView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-
     let deck: Deck
     var cardToEdit: Flashcard?
-
     @State private var selectedType: FlashcardType?
     @State private var question = ""
     @State private var answer = ""
     @State private var options = ["", "", "", ""]
     @State private var correctOptionIndex = 0
     @State private var visibleOptionCount = 4
-    @State private var matchingLeft = ["", "", "", ""]
-    @State private var matchingRight = ["", "", "", ""]
+    @State private var matchingLeft = Array(repeating: "", count: 20)
+    @State private var matchingRight = Array(repeating: "", count: 20)
     @State private var visiblePairCount = 2
     @State private var hint = ""
+    @State private var hintEnabled = false
     @State private var selectedSectionId = "NONE"
-
-    // Image Support
-    @State private var promptImage: UIImage?
-    @State private var promptPhotoPickerItem: PhotosPickerItem?
-    @State private var promptImageName: String?
-    @State private var answerImage: UIImage?
-    @State private var answerImageName: String?
-    @State private var answerPhotoPickerItem: PhotosPickerItem?
-    @State private var imageCardLayout: ImageCardLayout = .single
-
-    @State private var optionImages: [UIImage?] = [nil, nil, nil, nil]
-    @State private var optionPhotoPickerItems: [PhotosPickerItem?] = [nil, nil, nil, nil]
-    @State private var optionImageNames: [String] = []
-    @State private var promptAudioName: String?
+    @State private var fields: [String: CardFieldMedia] = [:]
+    @State private var images: [String: UIImage] = [:]
+    @State private var imageCardLayout = ImageCardLayout.single
+    @State private var audioTarget: String?
     @State private var showingAudioImporter = false
-    @State private var audioError: String?
-    @State private var didSave = false
+    @State private var error: String?
     @State private var didSetUpData = false
     @State private var pendingImageCrop: CardImageCropRequest?
     @State private var imageLoadID = UUID()
     @State private var isLoadingImage = false
-    @State private var imageError: String?
+    @StateObject private var draftAudio = CardDraftAudioFiles()
 
-    private var selectedSection: DeckSection? {
-        guard let id = UUID(uuidString: selectedSectionId) else { return nil }
-        return deck.sections.first { $0.id == id }
+    private func hasContent(_ key: String, _ text: String) -> Bool {
+        images[key] != nil || (fields[key] ?? .init()).hasContent(text)
     }
-
-    private var effectiveQuestion: String {
-        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        if selectedType == .matching && trimmed.isEmpty {
-            return "Match the correct pairs"
-        }
-        return trimmed
-    }
-
     private var isFormValid: Bool {
         guard let selectedType, !isLoadingImage else { return false }
         switch selectedType {
         case .vocabulary, .tapReveal, .fillBlank, .anki:
-            return !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                   !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            return hasContent("prompt", question) && hasContent("answer", answer)
         case .multipleChoice:
-            guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-            return correctOptionIndex < visibleOptionCount &&
-                   options.prefix(visibleOptionCount).allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            return hasContent("prompt", question) && correctOptionIndex < visibleOptionCount &&
+                (0..<visibleOptionCount).allSatisfy { hasContent("option:\($0)", options[$0]) }
         case .matching:
-            return (0..<visiblePairCount).allSatisfy {
-                !matchingLeft[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                !matchingRight[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
+            return (0..<visiblePairCount).allSatisfy { hasContent("left:\($0)", matchingLeft[$0]) && hasContent("right:\($0)", matchingRight[$0]) }
         case .images:
-            return promptImage != nil && (imageCardLayout == .single || answerImage != nil)
+            return (images["prompt"] != nil || fields["prompt"]?.image != nil) && (imageCardLayout == .single || images["answer"] != nil || fields["answer"]?.image != nil)
         }
     }
-
     var body: some View {
         NavigationStack {
             ZStack {
-                LearnAlertStyle.courseCanvas
-                    .ignoresSafeArea()
-
-                if selectedType == nil {
-                    typePicker
-                } else {
-                    editor
-                }
+                LearnAlertStyle.courseCanvas.ignoresSafeArea()
+                if selectedType == nil { typePicker } else { editor }
             }
             .navigationTitle(cardToEdit == nil ? "New Card" : "Edit Card")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
-                        imageLoadID = UUID()
-                        discardUnsavedAudio()
-                        dismiss()
-                    }
-                        .font(.custom("Poppins-Regular", size: 15))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
+                ToolbarItem(placement: .topBarLeading) { Button("Cancel") { imageLoadID = UUID(); dismiss() } }
                 if selectedType != nil && cardToEdit == nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Change Type") {
-                            withAnimation(.snappy) { selectedType = nil }
-                        }
-                        .font(.custom("Poppins-Medium", size: 13))
-                        .foregroundStyle(LearnAlertStyle.indigo)
-                    }
+                    ToolbarItem(placement: .topBarTrailing) { Button("Change Type") { withAnimation(.snappy) { selectedType = nil } }.font(.subheadline) }
                 }
             }
+            .tint(LearnAlertStyle.indigo)
             .toolbarBackground(LearnAlertStyle.courseCanvas, for: .navigationBar)
             .onAppear(perform: setupData)
-            .onChange(of: promptPhotoPickerItem) { _, newItem in
-                if let newItem { loadImageForCropping(newItem, target: .prompt) }
-            }
-            .onChange(of: answerPhotoPickerItem) { _, newItem in
-                if let newItem { loadImageForCropping(newItem, target: .answer) }
-            }
-            .onChange(of: optionPhotoPickerItems) { oldItems, newItems in
-                for (index, item) in newItems.enumerated() where item != oldItems[index] {
-                    if let item {
-                        loadImageForCropping(item, target: .option(index))
-                    }
-                }
-            }
-            .fullScreenCover(item: $pendingImageCrop, onDismiss: resetPhotoSelections) { request in
-                CardImageCropView(image: request.image, onCancel: {
-                    pendingImageCrop = nil
-                }, onConfirm: { image in
-                    switch request.target {
-                    case .prompt: promptImage = image
-                    case .answer: answerImage = image
-                    case .option(let index): optionImages[index] = image
-                    }
-                    pendingImageCrop = nil
+            .fullScreenCover(item: $pendingImageCrop) { request in
+                CardImageCropView(image: request.image, onCancel: { pendingImageCrop = nil }, onConfirm: { image in
+                    images[request.key] = image; pendingImageCrop = nil
                 })
             }
-            .alert("Card Image", isPresented: Binding(get: { imageError != nil }, set: { if !$0 { imageError = nil } })) {
-                Button("OK", role: .cancel) { }
-            } message: { Text(imageError ?? "") }
             .fileImporter(isPresented: $showingAudioImporter,
-                          allowedContentTypes: [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "m4a"), UTType(filenameExtension: "wav")].compactMap { $0 }) { result in
+                allowedContentTypes: ["mp3", "m4a", "wav"].compactMap { UTType(filenameExtension: $0) }) { result in
                 do {
                     let source = try result.get()
+                    guard let audioTarget else { return }
                     let name = try CardAudioStore.importFile(source)
-                    discardUnsavedAudio()
-                    promptAudioName = name
-                } catch { audioError = error.localizedDescription }
+                    draftAudio.names.insert(name)
+                    fields[audioTarget, default: .init()].audio = name
+                } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
             }
-            .alert("Audio Attachment", isPresented: Binding(get: { audioError != nil }, set: { if !$0 { audioError = nil } })) {
+            .alert("Card Attachment", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) { }
-            } message: { Text(audioError ?? "") }
-            .onDisappear {
-                // Presenting the crop editor must not discard an attached audio file.
-                if !didSave && pendingImageCrop == nil {
-                    imageLoadID = UUID()
-                    discardUnsavedAudio()
-                }
-            }
+            } message: { Text(error ?? "") }
         }
     }
 
-    // MARK: - Type Picker
     private var typePicker: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Select Card Type")
-                        .font(.custom("Poppins-SemiBold", size: 20, relativeTo: .title2))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Choose how this card will appear in alerts & study.")
-                        .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
-                .padding(.top, 4)
-
+            VStack(spacing: 10) {
                 ForEach(FlashcardType.allCases.filter { $0 != .anki }) { type in
-                    Button {
-                        selectType(type)
-                    } label: {
+                    Button { withAnimation(.snappy) { selectedType = type } } label: {
                         HStack(spacing: 14) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(typeColor(type).opacity(0.14))
-                                    .frame(width: 44, height: 44)
-                                Image(systemName: type.icon)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(typeColor(type))
+                            Image(systemName: type.icon).font(.title3).foregroundStyle(LearnAlertStyle.indigo)
+                                .frame(width: 42, height: 42).background(LearnAlertStyle.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(type.title).font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
+                                Text(type.subtitle).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(type.title)
-                                        .font(.custom("Poppins-SemiBold", size: 15))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
-                                }
-                                Text(typeDescription(type))
-                                    .font(.custom("Poppins-Regular", size: 12))
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                                    .multilineTextAlignment(.leading)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .padding(14)
-                        .background(LearnAlertStyle.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(LearnAlertStyle.textSecondary)
+                        }.padding(14).editorSurface()
+                    }.buttonStyle(.plain)
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            }.padding(16)
         }
     }
 
-    private func selectType(_ type: FlashcardType) {
-        withAnimation(.snappy) {
-            selectedType = type
-            if type == .matching && question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                question = "Match the correct pairs"
-            }
-        }
-    }
-
-    // MARK: - Card Editor
     private var editor: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                // Sleek Type Banner (Without duplicate switch button)
-                if let selectedType {
-                    HStack(spacing: 8) {
-                        Image(systemName: selectedType.icon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(typeColor(selectedType))
-                        Text(selectedType.title)
-                            .font(.custom("Poppins-SemiBold", size: 12))
-                            .foregroundStyle(typeColor(selectedType))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(typeColor(selectedType).opacity(0.08))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(typeColor(selectedType).opacity(0.2), lineWidth: 1))
-                }
-
-                // Core Form Content
+            VStack(alignment: .leading, spacing: 12) {
+                if let selectedType { Label(selectedType.title, systemImage: selectedType.icon).font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.indigo) }
                 switch selectedType {
-                case .vocabulary:
-                    vocabularyEditor
-                case .multipleChoice:
-                    multipleChoiceEditor
-                case .tapReveal, .anki:
-                    tapRevealEditor
-                case .matching:
-                    matchingEditor
-                case .fillBlank:
-                    fillBlankEditor
-                case .images:
-                    imagesEditor
-                case .none:
-                    EmptyView()
+                case .images: imagesEditor
+                case .multipleChoice: multipleChoiceEditor
+                case .matching: matchingEditor
+                default: frontBackEditor
                 }
-
                 if selectedType != .images {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Audio (optional)")
-                        .font(.headline)
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Attach a pronunciation, question, or explanation. MP3, M4A, or WAV up to 20 MB.")
-                        .font(.subheadline)
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    HStack(spacing: 16) {
-                        if let promptAudioName {
-                            CardAudioPlaybackButton(name: promptAudioName)
-                            Spacer()
-                            Button("Remove", role: .destructive) {
-                                discardUnsavedAudio()
-                                self.promptAudioName = nil
-                            }.frame(minHeight: 44)
-                        } else {
-                            Button { showingAudioImporter = true } label: {
-                                Label("Attach audio", systemImage: "waveform.badge.plus")
-                                    .frame(minHeight: 44)
-                            }
-                            .tint(LearnAlertStyle.indigo)
-                        }
-                    }
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-                }
-
-                // Hint (Optional - Hidden for Vocabulary)
-                if selectedType?.isReviewOnly == false {
+                    Text("Swipe left on \(selectedType == .multipleChoice ? "answer choices" : "fields") to add images or audio files.")
+                        .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("HINT (OPTIONAL)")
-                            .font(.custom("Poppins-SemiBold", size: 11))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                        TextField("A small clue...", text: $hint, axis: .vertical)
-                            .lineLimit(1...2)
-                            .font(.custom("Poppins-Regular", size: 14))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                            .glassCardField()
-                    }
-                    .padding(14)
-                    .background(LearnAlertStyle.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-                    )
+                        Button { withAnimation(.snappy) { hintEnabled.toggle() } } label: {
+                            Label("Hint", systemImage: hintEnabled ? "checkmark.square.fill" : "square")
+                                .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                        }.buttonStyle(.plain).foregroundStyle(hintEnabled ? LearnAlertStyle.indigo : LearnAlertStyle.textSecondary)
+                            .accessibilityValue(hintEnabled ? "On" : "Off")
+                        if hintEnabled { mediaField("hint", title: "", placeholder: "A small clue…", text: $hint) }
+                    }.padding(.horizontal, 12).padding(.vertical, 6).editorSurface()
                 }
-
-                // Category Section (Optional)
                 if !deck.sections.isEmpty {
                     HStack {
-                        Text("Category")
-                            .font(.custom("Poppins-Medium", size: 13))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                        Text("Category").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                         Spacer()
                         Picker("Category", selection: $selectedSectionId) {
                             Text("None").tag("NONE")
-                            ForEach(deck.sections.sorted { $0.orderIndex < $1.orderIndex }) { section in
-                                Text(section.name).tag(section.id.uuidString)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(LearnAlertStyle.indigo)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(LearnAlertStyle.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-                    )
+                            ForEach(deck.sections) { Text($0.name).tag($0.id.uuidString) }
+                        }.pickerStyle(.menu)
+                    }.padding(.horizontal, 12).padding(.vertical, 4).editorSurface()
                 }
-
-                // Primary Action Button
                 Button(action: saveCard) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text(cardToEdit == nil ? "Save Card" : "Update Card")
-                            .font(.custom("Poppins-SemiBold", size: 15))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                }
-                .foregroundStyle(.white)
-                .background(
-                    isFormValid
-                        ? AnyShapeStyle(
-                            LinearGradient(
-                                colors: [LearnAlertStyle.indigo, LearnAlertStyle.indigo.opacity(0.85)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        : AnyShapeStyle(Color.gray.opacity(0.25))
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(
-                    color: isFormValid ? LearnAlertStyle.indigo.opacity(0.25) : Color.clear,
-                    radius: 8,
-                    y: 3
-                )
-                .disabled(!isFormValid)
-                .padding(.top, 4)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
+                    Label(cardToEdit == nil ? "Save Card" : "Update Card", systemImage: "checkmark.circle.fill")
+                        .font(.headline).frame(maxWidth: .infinity, minHeight: 46)
+                }.buttonStyle(.borderedProminent).disabled(!isFormValid)
+            }.padding(16)
+        }.scrollDismissesKeyboard(.interactively)
     }
 
-    // MARK: - Vocabulary Editor
-    private var imagesEditor: some View {
-        VStack(spacing: 14) {
-            Picker("Image layout", selection: $imageCardLayout) {
-                Text("Single").tag(ImageCardLayout.single)
-                Text("Front & back").tag(ImageCardLayout.frontAndBack)
+    private var frontBackEditor: some View {
+        VStack(spacing: 12) {
+            if selectedType == .fillBlank {
+                Button { if !question.contains("___") { question += question.isEmpty ? "___" : " ___" } } label: { Label("Insert blank", systemImage: "plus.square.dashed").font(.caption) }.frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .pickerStyle(.segmented)
-
-            imageAttachment(image: promptImage, picker: $promptPhotoPickerItem, target: .prompt,
-                            title: imageCardLayout == .frontAndBack ? "Front" : nil)
-            if imageCardLayout == .frontAndBack {
-                imageAttachment(image: answerImage, picker: $answerPhotoPickerItem, target: .answer, title: "Back")
-            }
-        }
-        .animation(.snappy, value: imageCardLayout)
+            mediaField("prompt", title: selectedType == .vocabulary ? "TERM" : selectedType == .fillBlank ? "SENTENCE" : "FRONT", placeholder: selectedType == .fillBlank ? "Sentence with a ___ blank" : "Text, image or audio", text: $question)
+            mediaField("answer", title: selectedType == .vocabulary ? "DEFINITION" : "ANSWER", placeholder: "Text, image or audio", text: $answer)
+        }.padding(12).editorSurface()
     }
-
-    private func imageAttachment(image: UIImage?, picker: Binding<PhotosPickerItem?>,
-                                 target: CardImageCropRequest.Target, title: String?) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let title {
-                Text(title).font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
-            }
-            if let image {
-                Button {
-                    pendingImageCrop = CardImageCropRequest(image: image, target: target)
-                } label: {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: imageCardLayout == .single ? 380 : 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title.map { "Adjust \($0.lowercased()) image frame" } ?? "Adjust image frame")
-            }
-            PhotosPicker(selection: picker, matching: .images) {
-                Label(image == nil ? "Upload image" : "Change image", systemImage: "photo.badge.plus")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: image == nil ? 150 : 48)
-                    .foregroundStyle(LearnAlertStyle.indigo)
-                    .background(LearnAlertStyle.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-            }
-            .accessibilityLabel(title.map { "\(image == nil ? "Upload" : "Change") \($0.lowercased()) image" } ?? (image == nil ? "Upload image" : "Change image"))
-            if let image {
-                Button("Adjust frame") {
-                    pendingImageCrop = CardImageCropRequest(image: image, target: target)
-                }
-                .font(.subheadline.weight(.semibold))
-                .tint(LearnAlertStyle.indigo)
-                .frame(maxWidth: .infinity)
-            }
-        }
-        .padding(14)
-        .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(LearnAlertStyle.hairline, lineWidth: 1))
-    }
-
-    private var vocabularyEditor: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PromptInputField(
-                title: "TERM",
-                placeholder: "Term or word",
-                text: $question,
-                axis: .vertical,
-                lineLimit: 1...2,
-                promptImage: $promptImage,
-                promptImageName: $promptImageName,
-                promptPhotoPickerItem: $promptPhotoPickerItem
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("DEFINITION")
-                    .font(.custom("Poppins-SemiBold", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                TextField("Definition or explanation", text: $answer, axis: .vertical)
-                    .lineLimit(2...4)
-                    .font(.custom("Poppins-Regular", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .glassCardField()
-            }
-        }
-        .padding(16)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-    }
-
-    // MARK: - Multiple Choice Editor
     private var multipleChoiceEditor: some View {
-        VStack(spacing: 14) {
-            // Question Field with embedded prompt photo picker
-            VStack(alignment: .leading, spacing: 6) {
-                PromptInputField(
-                    title: "QUESTION",
-                    placeholder: "Question prompt",
-                    text: $question,
-                    axis: .vertical,
-                    lineLimit: 1...3,
-                    promptImage: $promptImage,
-                    promptImageName: $promptImageName,
-                    promptPhotoPickerItem: $promptPhotoPickerItem
-                )
+        VStack(spacing: 12) {
+            mediaField("prompt", title: "QUESTION", placeholder: "Text, image or audio", text: $question)
+            HStack {
+                Text("CHOICES").font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
+                Spacer()
+                countSelector(value: $visibleOptionCount) { if correctOptionIndex >= visibleOptionCount { correctOptionIndex = 0 } }
             }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-
-            // Choices Section
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("CHOICES")
-                        .font(.custom("Poppins-SemiBold", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                    Spacer()
-
-                    // Compact segmented pills (never wraps on mini)
-                    HStack(spacing: 4) {
-                        ForEach(2...4, id: \.self) { count in
-                            Button {
-                                withAnimation(.snappy) {
-                                    visibleOptionCount = count
-                                    if correctOptionIndex >= count { correctOptionIndex = 0 }
-                                }
-                            } label: {
-                                Text("\(count)")
-                                    .font(.custom("Poppins-SemiBold", size: 12))
-                                    .frame(width: 28, height: 26)
-                                    .background(visibleOptionCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
-                                    .foregroundStyle(visibleOptionCount == count ? Color.white : LearnAlertStyle.textPrimary)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+            ForEach(0..<visibleOptionCount, id: \.self) { index in
+                HStack(alignment: .top, spacing: 8) {
+                    Button { correctOptionIndex = index } label: {
+                        Image(systemName: correctOptionIndex == index ? "checkmark.circle.fill" : "circle")
+                            .font(.title3).foregroundStyle(correctOptionIndex == index ? .green : LearnAlertStyle.textSecondary)
+                            .frame(width: 32, height: 44)
+                    }.buttonStyle(.plain).accessibilityLabel("Choice \(index + 1) is correct").accessibilityAddTraits(correctOptionIndex == index ? .isSelected : [])
+                    mediaField("option:\(index)", title: "", placeholder: "Choice \(index + 1)", text: $options[index])
                 }
-
-                VStack(spacing: 8) {
-                    ForEach(0..<visibleOptionCount, id: \.self) { index in
-                        HStack(spacing: 8) {
-                            Button {
-                                correctOptionIndex = index
-                            } label: {
-                                Image(systemName: correctOptionIndex == index ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(correctOptionIndex == index ? Color.green : LearnAlertStyle.textSecondary.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-
-                            TextField("Choice \(index + 1)", text: $options[index])
-                                .font(.custom("Poppins-Medium", size: 14))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                                .glassCardField()
-
-                            PhotosPicker(
-                                selection: Binding(
-                                    get: { optionPhotoPickerItems[index] },
-                                    set: { optionPhotoPickerItems[index] = $0 }
-                                ),
-                                matching: .images,
-                                photoLibrary: .shared()
-                            ) {
-                                if let optImg = optionImages[index] {
-                                    Image(uiImage: optImg)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 36, height: 36)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                .stroke(LearnAlertStyle.indigo, lineWidth: 1.5)
-                                        )
-                                } else {
-                                    Image(systemName: "photo.badge.plus")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                                        .frame(width: 36, height: 36)
-                                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-                                }
-                            }
-                            .buttonStyle(.plain)
-
-                            if optionImages[index] != nil {
-                                Button {
-                                    optionImages[index] = nil
-                                    optionPhotoPickerItems[index] = nil
-                                    if optionImageNames.indices.contains(index) { optionImageNames[index] = "" }
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Color.red.opacity(0.7))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-
-                Text("Tap the circle next to the correct answer.")
-                    .font(.custom("Poppins-Regular", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
             }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-        }
+        }.padding(12).editorSurface()
     }
-
-    // MARK: - Tap to Reveal Editor
-    private var tapRevealEditor: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PromptInputField(
-                title: "FRONT (PROMPT)",
-                placeholder: "Question or prompt",
-                text: $question,
-                axis: .vertical,
-                lineLimit: 1...3,
-                promptImage: $promptImage,
-                promptImageName: $promptImageName,
-                promptPhotoPickerItem: $promptPhotoPickerItem
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("BACK (REVEALED ANSWER)")
-                    .font(.custom("Poppins-SemiBold", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                TextField("Answer revealed on tap", text: $answer, axis: .vertical)
-                    .lineLimit(2...4)
-                    .font(.custom("Poppins-Regular", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .glassCardField()
-            }
-        }
-        .padding(16)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-    }
-
-    // MARK: - Match Pairs Editor (Responsive for iPhone mini)
     private var matchingEditor: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                PromptInputField(
-                    title: "PROMPT",
-                    placeholder: "Match the correct pairs",
-                    text: $question,
-                    axis: .horizontal,
-                    lineLimit: 1...1,
-                    promptImage: $promptImage,
-                    promptImageName: $promptImageName,
-                    promptPhotoPickerItem: $promptPhotoPickerItem
-                )
-            }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("PAIRS")
-                        .font(.custom("Poppins-SemiBold", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                    Spacer()
-
-                    // Compact segmented pills (never wraps on mini)
-                    HStack(spacing: 4) {
-                        ForEach(2...4, id: \.self) { count in
-                            Button {
-                                withAnimation(.snappy) { visiblePairCount = count }
-                            } label: {
-                                Text("\(count)")
-                                    .font(.custom("Poppins-SemiBold", size: 12))
-                                    .frame(width: 28, height: 26)
-                                    .background(visiblePairCount == count ? LearnAlertStyle.indigo : Color.primary.opacity(0.06))
-                                    .foregroundStyle(visiblePairCount == count ? Color.white : LearnAlertStyle.textPrimary)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-
-                VStack(spacing: 8) {
-                    ForEach(0..<visiblePairCount, id: \.self) { index in
-                        HStack(spacing: 6) {
-                            TextField("Left item", text: $matchingLeft[index])
-                                .font(.custom("Poppins-Medium", size: 13))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                                .glassCardField()
-
-                            Image(systemName: "arrow.left.arrow.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(LearnAlertStyle.indigo)
-                                .frame(width: 18)
-
-                            TextField("Match", text: $matchingRight[index])
-                                .font(.custom("Poppins-Medium", size: 13))
-                                .foregroundStyle(LearnAlertStyle.textPrimary)
-                                .glassCardField()
-                        }
-                    }
+        VStack(spacing: 12) {
+            mediaField("prompt", title: "PROMPT", placeholder: "Match the pairs (optional)", text: $question)
+            HStack { Text("PAIRS").font(.caption.weight(.semibold)); Spacer(); Picker("Pairs", selection: $visiblePairCount) { ForEach(2...20, id: \.self) { Text("\($0)").tag($0) } }.pickerStyle(.menu) }
+            ForEach(0..<visiblePairCount, id: \.self) { index in
+                HStack(alignment: .top, spacing: 8) {
+                    mediaField("left:\(index)", title: "", placeholder: "Left \(index + 1)", text: $matchingLeft[index])
+                    Image(systemName: "arrow.left.arrow.right").font(.caption).padding(.top, 16).foregroundStyle(LearnAlertStyle.indigo)
+                    mediaField("right:\(index)", title: "", placeholder: "Match \(index + 1)", text: $matchingRight[index])
                 }
             }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
+        }.padding(12).editorSurface()
+    }
+    private var imagesEditor: some View {
+        VStack(spacing: 12) {
+            Picker("Image layout", selection: $imageCardLayout) {
+                Text("Single").tag(ImageCardLayout.single); Text("Front & back").tag(ImageCardLayout.frontAndBack)
+            }.pickerStyle(.segmented)
+            imageOnlyField("prompt", title: "Front")
+            if imageCardLayout == .frontAndBack { imageOnlyField("answer", title: "Back") }
+        }.padding(12).editorSurface().animation(.snappy, value: imageCardLayout)
+    }
+    private func imageOnlyField(_ key: String, title: String) -> some View {
+        CardEditorMediaField(title: title, placeholder: "", text: .constant(""), image: images[key] ?? CardImageStore.loadImage(named: fields[key]?.image), audio: nil, imageOnly: true,
+            onPhoto: { loadImage($0, key: key) }, onAudio: {}, onRemoveImage: { images[key] = nil; fields[key]?.image = nil }, onRemoveAudio: {},
+            onCrop: { if let image = images[key] ?? CardImageStore.loadImage(named: fields[key]?.image) { pendingImageCrop = .init(image: image, key: key) } })
+    }
+    private func mediaField(_ key: String, title: String, placeholder: String, text: Binding<String>) -> some View {
+        CardEditorMediaField(title: title, placeholder: placeholder, text: text,
+            image: images[key] ?? CardImageStore.loadImage(named: fields[key]?.image), audio: fields[key]?.audio,
+            onPhoto: { loadImage($0, key: key) }, onAudio: { audioTarget = key; showingAudioImporter = true },
+            onRemoveImage: { images[key] = nil; fields[key]?.image = nil }, onRemoveAudio: { fields[key]?.audio = nil },
+            onCrop: { if let image = images[key] ?? CardImageStore.loadImage(named: fields[key]?.image) { pendingImageCrop = .init(image: image, key: key) } })
+    }
+    private func countSelector(value: Binding<Int>, changed: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            ForEach(2...4, id: \.self) { count in
+                Button { withAnimation(.snappy) { value.wrappedValue = count; changed() } } label: {
+                    Text("\(count)").font(.caption.bold()).frame(width: 28, height: 26)
+                        .background(value.wrappedValue == count ? LearnAlertStyle.indigo.opacity(0.28) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                }.buttonStyle(.plain)
+            }
         }
     }
-
-    // MARK: - Fill in the Blank Editor
-    private var fillBlankEditor: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("SENTENCE")
-                        .font(.custom("Poppins-SemiBold", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    Spacer()
-                    Button {
-                        if !question.contains("___") {
-                            if question.isEmpty {
-                                question = "___"
-                            } else {
-                                question += " ___"
-                            }
-                        }
-                    } label: {
-                        Label("Insert Blank", systemImage: "plus.square.dashed")
-                            .font(.custom("Poppins-SemiBold", size: 11))
-                            .foregroundStyle(LearnAlertStyle.indigo)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(LearnAlertStyle.indigo.opacity(0.1), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                PromptInputField(
-                    title: "",
-                    placeholder: "Sentence with a ___ blank",
-                    text: $question,
-                    axis: .vertical,
-                    lineLimit: 2...3,
-                    promptImage: $promptImage,
-                    promptImageName: $promptImageName,
-                    promptPhotoPickerItem: $promptPhotoPickerItem
-                )
-            }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("TARGET ANSWER")
-                    .font(.custom("Poppins-SemiBold", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                TextField("Word that fills the blank", text: $answer)
-                    .font(.custom("Poppins-Medium", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .glassCardField()
-            }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
-        }
-    }
-
-    // MARK: - Helper Methods
-    private func typeColor(_ type: FlashcardType) -> Color {
-        switch type {
-        case .vocabulary: LearnAlertStyle.cyan
-        case .multipleChoice: LearnAlertStyle.indigo
-        case .tapReveal: LearnAlertStyle.aqua
-        case .matching: Color.purple
-        case .fillBlank: Color.orange
-        case .images, .anki: LearnAlertStyle.cyan
-        }
-    }
-
-    private func typeDescription(_ type: FlashcardType) -> String {
-        switch type {
-        case .vocabulary: "Key term & definition flashcard."
-        case .multipleChoice: "Quiz question with 2–4 choices."
-        case .tapReveal: "Active recall card: prompt & answer."
-        case .matching: "Connect corresponding word pairs."
-        case .fillBlank: "Type the missing word in the sentence."
-        case .images: "One picture or front & back. No text needed."
-        case .anki: "Imported Anki card."
-        }
-    }
-
-    private func setupData() {
-        guard !didSetUpData else { return }
-        didSetUpData = true
-        guard let card = cardToEdit else { return }
-        selectedType = card.cardType
-        question = card.question
-        answer = card.correctAnswer
-        hint = card.hint
-        selectedSectionId = card.section?.id.uuidString ?? "NONE"
-
-        promptImageName = card.promptImageName
-        answerImageName = card.answerImageName
-        answerImage = CardImageStore.loadImage(named: card.answerImageName)
-        imageCardLayout = card.answerImageName == nil ? .single : .frontAndBack
-        promptAudioName = card.promptAudioName
-        if let pName = card.promptImageName {
-            promptImage = CardImageStore.loadImage(named: pName)
-        }
-
-        optionImageNames = card.optionImageNames
-        for (idx, optName) in card.optionImageNames.enumerated() where idx < 4 {
-            if !optName.isEmpty {
-                optionImages[idx] = CardImageStore.loadImage(named: optName)
-            }
-        }
-
-        if card.cardType == .multipleChoice {
-            visibleOptionCount = min(4, max(2, card.options.count))
-            for (index, option) in card.options.prefix(4).enumerated() { options[index] = option }
-            correctOptionIndex = options.firstIndex(of: card.correctAnswer) ?? 0
-        } else if card.cardType == .matching {
-            visiblePairCount = min(4, max(2, card.matchingLeftItems.count))
-            for (index, value) in card.matchingLeftItems.prefix(4).enumerated() { matchingLeft[index] = value }
-            for (index, value) in card.matchingRightItems.prefix(4).enumerated() { matchingRight[index] = value }
-        }
-    }
-
-    private func saveCard() {
-        guard let selectedType, isFormValid else { return }
-        let finalQuestion = selectedType == .images ? "" : effectiveQuestion
-        let finalOptions = selectedType == .multipleChoice
-            ? options.prefix(visibleOptionCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            : []
-        let finalAnswer = selectedType == .multipleChoice
-            ? (finalOptions.indices.contains(correctOptionIndex) ? finalOptions[correctOptionIndex] : "")
-            : (selectedType == .images ? "" : answer.trimmingCharacters(in: .whitespacesAndNewlines))
-        let finalHint = selectedType == .images ? "" : hint.trimmingCharacters(in: .whitespacesAndNewlines)
-        let left = selectedType == .matching
-            ? matchingLeft.prefix(visiblePairCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            : []
-        let right = selectedType == .matching
-            ? matchingRight.prefix(visiblePairCount).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            : []
-
-        // Process prompt image
-        var newImageNames: [String] = []
-        var finalPromptImageName = promptImageName
-        if let promptImage {
-            guard let saved = CardImageStore.saveImage(promptImage) else {
-                imageError = "Your image couldn’t be saved. Please try again."
-                return
-            }
-            finalPromptImageName = saved
-            newImageNames.append(saved)
-        }
-
-        var finalAnswerImageName: String?
-        if selectedType == .images && imageCardLayout == .frontAndBack, let answerImage {
-            guard let saved = CardImageStore.saveImage(answerImage) else {
-                newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
-                imageError = "Your back image couldn’t be saved. Please try again."
-                return
-            }
-            finalAnswerImageName = saved
-            newImageNames.append(saved)
-        }
-
-        // Process option images
-        var finalOptionImageNames: [String] = []
-        if selectedType == .multipleChoice {
-            for index in 0..<visibleOptionCount {
-                if let optImg = optionImages[index] {
-                    if let saved = CardImageStore.saveImage(optImg) {
-                        finalOptionImageNames.append(saved)
-                        newImageNames.append(saved)
-                    } else {
-                        newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
-                        imageError = "An answer image couldn’t be saved. Please try again."
-                        return
-                    }
-                } else {
-                    finalOptionImageNames.append(optionImageNames.indices.contains(index) ? optionImageNames[index] : "")
-                }
-            }
-        }
-
-        let card = cardToEdit ?? Flashcard(
-            question: finalQuestion,
-            options: finalOptions,
-            correctAnswer: finalAnswer,
-            hint: finalHint,
-            cardType: selectedType,
-            matchingLeftItems: left,
-            matchingRightItems: right,
-            promptImageName: finalPromptImageName,
-            answerImageName: finalAnswerImageName,
-            optionImageNames: finalOptionImageNames
-        )
-        let previous = (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
-                        card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
-                        card.optionImageNames, card.promptAudioName, card.section)
-        let previousAnswerImageName = card.answerImageName
-        card.question = finalQuestion
-        card.options = finalOptions
-        card.correctAnswer = finalAnswer
-        card.hint = finalHint
-        card.cardType = selectedType
-        card.matchingLeftItems = left
-        card.matchingRightItems = right
-        card.promptImageName = finalPromptImageName
-        card.answerImageName = finalAnswerImageName
-        card.optionImageNames = finalOptionImageNames
-        card.promptAudioName = selectedType == .images ? nil : promptAudioName
-        card.section = selectedSection
-        if cardToEdit == nil { deck.cards.append(card) }
-        do {
-            try context.save()
-        } catch {
-            if cardToEdit == nil { deck.cards.removeAll { $0.id == card.id }; context.delete(card) }
-            else {
-                (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
-                 card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
-                 card.optionImageNames, card.promptAudioName, card.section) = previous
-                card.answerImageName = previousAnswerImageName
-            }
-            newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
-            imageError = "Your card couldn’t be saved. Please try again."
-            return
-        }
-        // A community download can reuse one local file across several cards.
-        // Only remove replaced attachments after checking every stored reference.
-        if let storedCards = try? context.fetch(FetchDescriptor<Flashcard>()) {
-            let oldImages = ([previous.7, previousAnswerImageName].compactMap { $0 } + previous.8).filter { !$0.isEmpty }
-            for name in Set(oldImages) where !storedCards.contains(where: { $0.promptImageName == name || $0.answerImageName == name || $0.optionImageNames.contains(name) }) {
-                CardImageStore.deleteImage(named: name)
-            }
-            if selectedType == .images, let oldAudio = previous.9,
-               !storedCards.contains(where: { $0.promptAudioName == oldAudio }) {
-                CardAudioStore.delete(named: oldAudio)
-            }
-        }
-        if selectedType == .images {
-            if let promptAudioName, promptAudioName != previous.9 { CardAudioStore.delete(named: promptAudioName) }
-            promptAudioName = nil
-        }
-        imageLoadID = UUID()
-        didSave = true
-        dismiss()
-    }
-
-    private func discardUnsavedAudio() {
-        if let promptAudioName, promptAudioName != cardToEdit?.promptAudioName {
-            CardAudioStore.delete(named: promptAudioName)
-        }
-    }
-
-    private func resetPhotoSelections() {
-        promptPhotoPickerItem = nil
-        answerPhotoPickerItem = nil
-        optionPhotoPickerItems = [nil, nil, nil, nil]
-    }
-
-    private func loadImageForCropping(_ item: PhotosPickerItem, target: CardImageCropRequest.Target) {
-        let requestID = UUID()
-        imageLoadID = requestID
-        isLoadingImage = true
+    private func loadImage(_ item: PhotosPickerItem, key: String) {
+        let id = UUID(); imageLoadID = id; isLoadingImage = true
         Task { @MainActor in
             do {
-                guard let data = try await item.loadTransferable(type: Data.self),
-                      let image = CardImageCropRenderer.preparedImage(from: data) else {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                guard imageLoadID == requestID else { return }
-                isLoadingImage = false
-                pendingImageCrop = CardImageCropRequest(image: image, target: target)
+                guard let data = try await item.loadTransferable(type: Data.self), let image = CardImageCropRenderer.preparedImage(from: data) else { throw CocoaError(.fileReadCorruptFile) }
+                guard id == imageLoadID else { return }
+                isLoadingImage = false; pendingImageCrop = .init(image: image, key: key)
             } catch {
-                guard imageLoadID == requestID else { return }
-                isLoadingImage = false
-                resetPhotoSelections()
-                imageError = "This photo couldn’t be opened. Please choose another image."
+                guard id == imageLoadID else { return }
+                isLoadingImage = false; self.error = "This photo couldn’t be opened. Please choose another image."
             }
         }
     }
+    private func setupData() {
+        guard !didSetUpData else { return }; didSetUpData = true
+        guard let card = cardToEdit else { return }
+        selectedType = card.cardType; question = card.question; answer = card.correctAnswer; hint = card.hint
+        fields = card.fieldMedia; hintEnabled = hasContent("hint", hint)
+        selectedSectionId = card.section?.id.uuidString ?? "NONE"
+        imageCardLayout = card.answerImageName == nil ? .single : .frontAndBack
+        for (i, text) in card.options.prefix(4).enumerated() { options[i] = text }
+        visibleOptionCount = min(4, max(2, card.options.count)); correctOptionIndex = card.resolvedCorrectOptionIndex ?? 0
+        for (i, text) in card.matchingLeftItems.prefix(20).enumerated() { matchingLeft[i] = text }
+        for (i, text) in card.matchingRightItems.prefix(20).enumerated() { matchingRight[i] = text }
+        visiblePairCount = min(20, max(2, card.matchingLeftItems.count))
+    }
+    private func saveCard() {
+        guard let type = selectedType, isFormValid else { return }
+        var final = fields
+        var savedImages: [String] = []
+        let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : type == .multipleChoice ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
+        for (key, image) in images where allowed.contains(key) {
+            guard let name = CardImageStore.saveImage(image) else {
+                savedImages.forEach { CardImageStore.deleteImage(named: $0) }; error = "Your image couldn’t be saved. Please try again."; return
+            }
+            savedImages.append(name); final[key, default: .init()].image = name
+        }
+        final = final.filter { allowed.contains($0.key) && !$0.value.isEmpty }
+        if type == .images { for key in final.keys { final[key]?.audio = nil } }
+        func trim(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let card = cardToEdit ?? Flashcard(question: "", cardType: type)
+        let old = (card.question, card.correctAnswer, card.options, card.hint, card.matchingLeftItems, card.matchingRightItems, card.fieldMedia, card.correctOptionIndex, card.section)
+        card.question = type == .images ? "" : trim(question)
+        card.options = type == .multipleChoice ? options.prefix(visibleOptionCount).map(trim) : []
+        card.correctAnswer = type == .multipleChoice ? trim(options[correctOptionIndex]) : type == .matching || type == .images ? "" : trim(answer)
+        card.correctOptionIndex = type == .multipleChoice ? correctOptionIndex : nil
+        card.hint = hintEnabled && type != .images ? trim(hint) : ""
+        card.matchingLeftItems = type == .matching ? matchingLeft.prefix(visiblePairCount).map(trim) : []
+        card.matchingRightItems = type == .matching ? matchingRight.prefix(visiblePairCount).map(trim) : []
+        card.fieldMedia = final
+        card.section = deck.sections.first { $0.id.uuidString == selectedSectionId }
+        if cardToEdit == nil { deck.cards.append(card) }
+        do { try context.save() }
+        catch {
+            if cardToEdit == nil { deck.cards.removeAll { $0.id == card.id }; context.delete(card) }
+            else {
+                (card.question, card.correctAnswer, card.options, card.hint, card.matchingLeftItems, card.matchingRightItems, card.fieldMedia, card.correctOptionIndex, card.section) = old
+            }
+            savedImages.forEach { CardImageStore.deleteImage(named: $0) }; self.error = "Your card couldn’t be saved. Please try again."; return
+        }
+        draftAudio.names.subtract(final.values.compactMap(\.audio))
+        CardAttachmentCleanup.removeUnreferenced(old.6, context: context)
+        imageLoadID = UUID(); dismiss()
+    }
 }
 
-private struct CardImageCropRequest: Identifiable {
-    enum Target { case prompt, answer, option(Int) }
-    let id = UUID()
-    let image: UIImage
-    let target: Target
+private struct CardImageCropRequest: Identifiable { let id = UUID(); let image: UIImage; let key: String }
+private enum ImageCardLayout { case single, frontAndBack }
+private final class CardDraftAudioFiles: ObservableObject {
+    var names = Set<String>()
+    deinit { names.forEach { CardAudioStore.delete(named: $0) } }
 }
 
-private enum ImageCardLayout: Hashable { case single, frontAndBack }
-
-// MARK: - Prompt Input Field with Embedded Photo Picker
-private struct PromptInputField: View {
-    var title: String = ""
+private struct CardEditorMediaField: View {
+    let title: String
     let placeholder: String
     @Binding var text: String
-    var axis: Axis = .vertical
-    var lineLimit: ClosedRange<Int> = 1...3
-    @Binding var promptImage: UIImage?
-    @Binding var promptImageName: String?
-    @Binding var promptPhotoPickerItem: PhotosPickerItem?
-
+    let image: UIImage?
+    let audio: String?
+    var imageOnly = false
+    let onPhoto: (PhotosPickerItem) -> Void
+    let onAudio: () -> Void
+    let onRemoveImage: () -> Void
+    let onRemoveAudio: () -> Void
+    let onCrop: () -> Void
+    @State private var photo: PhotosPickerItem?
+    @State private var open = false
+    @GestureState private var drag: CGFloat = 0
+    private let reveal: CGFloat = 100
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !title.isEmpty {
-                Text(title)
-                    .font(.custom("Poppins-SemiBold", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+            if !title.isEmpty { Text(title).font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary) }
+            if imageOnly {
+                photoButton.frame(maxWidth: .infinity, minHeight: image == nil ? 100 : 36)
+            } else {
+                ZStack(alignment: .trailing) {
+                    HStack(spacing: 4) { photoButton; Button(action: onAudio) { Image(systemName: "waveform.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Attach audio") }
+                        .foregroundStyle(LearnAlertStyle.indigo).frame(width: reveal).opacity(open || drag < -8 ? 1 : 0)
+                        .accessibilityHidden(!open)
+                    TextField(placeholder, text: $text, axis: .vertical).lineLimit(1...3)
+                        .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 11)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(LearnAlertStyle.courseCanvas, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(LearnAlertStyle.hairline, lineWidth: 1))
+                        .offset(x: max(-reveal, min(0, (open ? -reveal : 0) + drag)))
+                        .simultaneousGesture(DragGesture(minimumDistance: 18).updating($drag) { value, state, _ in
+                            if abs(value.translation.width) > abs(value.translation.height) * 1.4 { state = value.translation.width }
+                        }.onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { open = value.translation.width < -25 || (open && value.translation.width < 25) }
+                        })
+                        .accessibilityAction(named: "Show attachments") { withAnimation(.snappy) { open = true } }
+                }.clipped()
             }
-
-            VStack(spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    TextField(placeholder, text: $text, axis: axis)
-                        .lineLimit(lineLimit)
-                        .font(.custom("Poppins-Medium", size: 15))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-
-                    // Embedded Image Attachment Button / Thumbnail
-                    PhotosPicker(
-                        selection: $promptPhotoPickerItem,
-                        matching: .images,
-                        photoLibrary: .shared()
-                    ) {
-                        if let promptImage {
-                            Image(uiImage: promptImage)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: 32, height: 32)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .stroke(LearnAlertStyle.indigo, lineWidth: 1.5)
-                                )
-                        } else {
-                            Image(systemName: "photo.badge.plus")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                                .frame(width: 32, height: 32)
-                                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    if promptImage != nil {
-                        Button {
-                            promptImage = nil
-                            promptImageName = nil
-                            promptPhotoPickerItem = nil
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Color.red.opacity(0.75))
-                                .frame(width: 20, height: 32)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            if let image {
+                HStack(spacing: 8) {
+                    Button(action: onCrop) { Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: imageOnly ? .infinity : 72, maxHeight: imageOnly ? 220 : 44).clipShape(RoundedRectangle(cornerRadius: 6)) }.buttonStyle(.plain).accessibilityLabel("Adjust image frame")
+                    Spacer(minLength: 0)
+                    Button(action: onRemoveImage) { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(LearnAlertStyle.textSecondary).accessibilityLabel("Remove image")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.35), lineWidth: 0.75)
-                )
-
-                // Inline Preview Strip when image is selected
-                if let promptImage {
-                    HStack(spacing: 8) {
-                        Image(uiImage: promptImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 90)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.4), lineWidth: 0.75)
-                            )
-                        Spacer()
-                    }
-                    .padding(.top, 2)
-                }
+            }
+            if let audio {
+                HStack { CardAudioPlaybackButton(name: audio).font(.caption); Spacer(minLength: 0); Button(action: onRemoveAudio) { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Remove audio") }.buttonStyle(.plain)
             }
         }
+        .onChange(of: photo) { _, item in if let item { onPhoto(item); photo = nil; withAnimation(.snappy) { open = false } } }
+    }
+    private var photoButton: some View {
+        PhotosPicker(selection: $photo, matching: .images) {
+            Group { if imageOnly { Label(image == nil ? "Upload image" : "Change image", systemImage: "photo.badge.plus") } else { Image(systemName: "photo.badge.plus").frame(width: 44, height: 44) } }
+        }.accessibilityLabel("Attach image")
     }
 }
-
-// MARK: - Glass Field View Extension
 private extension View {
-    func glassCardField() -> some View {
-        self
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.35), lineWidth: 0.75)
-            )
+    func editorSurface() -> some View {
+        background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(LearnAlertStyle.hairline, lineWidth: 1))
     }
 }

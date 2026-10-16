@@ -83,6 +83,8 @@ struct DeckStudyView: View {
                     optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName,
                     ankiContent: card.ankiContent,
+                    fieldMedia: card.fieldMedia,
+                    correctOptionIndex: card.resolvedCorrectOptionIndex,
                     cardNumber: cardIndex + 1,
                     cardCount: studyQueue.count,
                     correctCount: correctCount,
@@ -128,7 +130,7 @@ struct DeckStudyView: View {
         // Lock answer once clicked: ignore any subsequent clicks
         guard !isGraded && selectedAnswer == nil else { return }
         selectedAnswer = option
-        let isCorrect = option == card.correctAnswer
+        let isCorrect = CardChoiceIdentity.index(option, options: card.options) == card.resolvedCorrectOptionIndex
         grade(card, isCorrect: isCorrect)
     }
 
@@ -251,6 +253,8 @@ private struct QuizSessionView: View {
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
     var ankiContent: AnkiCardContent? = nil
+    var fieldMedia: [String: CardFieldMedia] = [:]
+    var correctOptionIndex: Int? = nil
     let cardNumber: Int
     let cardCount: Int
     let correctCount: Int
@@ -348,38 +352,34 @@ private struct QuizSessionView: View {
                     case .images, .anki:
                         EmptyView()
                     case .vocabulary:
-                        QuizVocabularyCard(definition: correctAnswer)
+                        CardFieldContent(text: correctAnswer, media: fieldMedia["answer"] ?? .init()).font(.title3.weight(.semibold))
                     case .multipleChoice:
-                        QuizOptions(
-                            options: options,
-                            optionImageNames: optionImageNames,
-                            selectedAnswer: selectedAnswer,
-                            correctAnswer: correctAnswer,
-                            isGraded: isGraded,
-                            onSelect: onSelect
-                        )
+                        CardMediaChoiceList(options: options, fields: fieldMedia, correctIndex: correctOptionIndex,
+                            selection: selectedAnswer, isGraded: isGraded, onSelect: onSelect)
                     case .tapReveal:
                         QuizRevealCard(
                             answer: correctAnswer,
+                            media: fieldMedia["answer"] ?? .init(),
                             isRevealed: isRevealed,
                             isGraded: isGraded,
                             onReveal: onReveal,
                             onGrade: onGrade
                         )
                     case .fillBlank:
-                        QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)
+                        if correctAnswer.isEmpty {
+                            QuizRevealCard(answer: "", media: fieldMedia["answer"] ?? .init(), isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
+                        } else {
+                            QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)
+                            if isGraded { CardFieldContent(media: fieldMedia["answer"] ?? .init()) }
+                        }
                     case .matching:
-                        QuizMatchingCard(
-                            leftItems: matchingLeftItems,
-                            rightItems: matchingRightItems,
-                            isGraded: isGraded,
-                            onGrade: onGrade
-                        )
+                        CardMediaMatchingBoard(left: matchingLeftItems, right: matchingRightItems, fields: fieldMedia, isGraded: isGraded, onGrade: onGrade)
                     }
 
-                    if !cardType.isReviewOnly {
+                    if !cardType.isReviewOnly || (fieldMedia["hint"] ?? .init()).hasContent(hint) {
                         QuizUtilityControls(
                             hint: hint,
+                            media: fieldMedia["hint"] ?? .init(),
                             showingHint: showingHint,
                             isGraded: isGraded,
                             onToggleHint: onToggleHint,
@@ -468,160 +468,9 @@ private struct QuizProgress: View {
     }
 }
 
-private struct QuizOptions: View {
-    let options: [String]
-    var optionImageNames: [String] = []
-    let selectedAnswer: String?
-    let correctAnswer: String
-    let isGraded: Bool
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                let optImgName = (optionImageNames.indices.contains(index) && !optionImageNames[index].isEmpty) ? optionImageNames[index] : nil
-                Button {
-                    onSelect(option)
-                } label: {
-                    QuizOptionRow(
-                        letter: String(UnicodeScalar(65 + index) ?? "A"),
-                        option: option,
-                        imageName: optImgName,
-                        isSelected: selectedAnswer == option,
-                        isCorrect: option == correctAnswer,
-                        isGraded: isGraded
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isGraded || selectedAnswer != nil) // Locked once an answer is selected
-            }
-        }
-    }
-}
-
-private struct QuizOptionRow: View {
-    let letter: String
-    let option: String
-    var imageName: String? = nil
-    let isSelected: Bool
-    let isCorrect: Bool
-    let isGraded: Bool
-
-    private var backgroundColor: Color {
-        if !isGraded {
-            return isSelected ? QuizTheme.selected : QuizTheme.surface
-        }
-        // When graded: show correct answer in green, chosen wrong answer in red, others dimmed
-        if isCorrect {
-            return QuizTheme.green
-        }
-        if isSelected && !isCorrect {
-            return LearnAlertStyle.coral
-        }
-        return QuizTheme.surface.opacity(0.55)
-    }
-
-    private var borderColor: Color {
-        if !isGraded {
-            return isSelected ? Color.clear : QuizTheme.border
-        }
-        if isCorrect {
-            return QuizTheme.green
-        }
-        if isSelected && !isCorrect {
-            return LearnAlertStyle.coral
-        }
-        return QuizTheme.border.opacity(0.3)
-    }
-
-    private var textColor: Color {
-        if !isGraded {
-            return isSelected ? Color.white : QuizTheme.ink
-        }
-        if isCorrect || (isSelected && !isCorrect) {
-            return Color.white
-        }
-        return QuizTheme.inkSecondary.opacity(0.65)
-    }
-
-    private var badgeFill: Color {
-        if !isGraded {
-            return isSelected ? Color.white.opacity(0.24) : QuizTheme.canvas
-        }
-        if isCorrect || (isSelected && !isCorrect) {
-            return Color.white.opacity(0.25)
-        }
-        return QuizTheme.canvas.opacity(0.6)
-    }
-
-    var body: some View {
-        let optUIImage = CardImageStore.loadImage(named: imageName)
-
-        HStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(badgeFill)
-                    .frame(width: 36, height: 36)
-
-                if isGraded {
-                    if isCorrect {
-                        Image(systemName: "checkmark")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(.white)
-                    } else if isSelected {
-                        Image(systemName: "xmark")
-                            .font(.body.weight(.bold))
-                            .foregroundStyle(.white)
-                    } else {
-                        Text(letter)
-                            .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .body))
-                            .foregroundStyle(QuizTheme.inkSecondary.opacity(0.65))
-                    }
-                } else if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(.white)
-                } else {
-                    Text(letter)
-                        .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .body))
-                        .foregroundStyle(QuizTheme.ink)
-                }
-            }
-
-            if let optUIImage {
-                Image(uiImage: optUIImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 48, height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                    )
-            }
-
-            Text(option)
-                .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .body))
-                .foregroundStyle(textColor)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-        .background(backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(borderColor, lineWidth: isGraded && (isCorrect || isSelected) ? 2 : 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .animation(.easeOut(duration: 0.16), value: isSelected)
-        .animation(.easeOut(duration: 0.2), value: isGraded)
-    }
-}
-
 private struct QuizRevealCard: View {
     let answer: String
+    var media = CardFieldMedia()
     let isRevealed: Bool
     let isGraded: Bool
     let onReveal: () -> Void
@@ -630,7 +479,7 @@ private struct QuizRevealCard: View {
     var body: some View {
         VStack(spacing: 16) {
             if isRevealed {
-                Text(answer)
+                CardFieldContent(text: answer, media: media)
                     .font(.custom("Poppins-SemiBold", size: 20, relativeTo: .title3))
                     .foregroundStyle(QuizTheme.ink)
                     .frame(maxWidth: .infinity, minHeight: 100)
@@ -709,124 +558,9 @@ private struct QuizFillBlankCard: View {
     }
 }
 
-private struct QuizMatchingCard: View {
-    let leftItems: [String]
-    let rightItems: [String]
-    let isGraded: Bool
-    let onGrade: (Bool) -> Void
-    @State private var shuffledRightItems: [String] = []
-    @State private var assignments: [String: String] = [:]
-    @State private var selectedLeftItem: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Tap or drag each item onto its match.")
-                .font(.custom("Poppins-Medium", size: 13, relativeTo: .subheadline))
-                .foregroundStyle(QuizTheme.inkSecondary)
-
-            HStack(alignment: .top, spacing: 12) {
-                // Left Column
-                VStack(spacing: 10) {
-                    ForEach(leftItems, id: \.self) { item in
-                        let isSelected = selectedLeftItem == item
-                        let isAssigned = assignments.values.contains(item)
-                        Button {
-                            guard !isGraded else { return }
-                            withAnimation(.snappy) {
-                                selectedLeftItem = (selectedLeftItem == item ? nil : item)
-                            }
-                        } label: {
-                            Text(item)
-                                .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .subheadline))
-                                .foregroundStyle(QuizTheme.ink)
-                                .frame(maxWidth: .infinity, minHeight: 54)
-                                .padding(.horizontal, 10)
-                                .background(isSelected ? Color.purple.opacity(0.18) : QuizTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(isSelected ? Color.purple : QuizTheme.border, lineWidth: isSelected ? 2 : 1)
-                                )
-                                .opacity(isAssigned && !isSelected ? 0.4 : 1)
-                        }
-                        .buttonStyle(.plain)
-                        .draggable(item)
-                    }
-                }
-
-                // Right Column
-                VStack(spacing: 10) {
-                    ForEach(shuffledRightItems, id: \.self) { target in
-                        let assignedTerm = assignments[target]
-                        let isTargetCorrect = isGraded && assignedTerm != nil && leftItems.firstIndex(of: assignedTerm!) == rightItems.firstIndex(of: target)
-                        Button {
-                            guard !isGraded else { return }
-                            withAnimation(.snappy) {
-                                if let selected = selectedLeftItem {
-                                    assignments = assignments.filter { $0.value != selected }
-                                    assignments[target] = selected
-                                    selectedLeftItem = nil
-                                } else if assignments[target] != nil {
-                                    assignments.removeValue(forKey: target)
-                                }
-                            }
-                        } label: {
-                            VStack(spacing: 3) {
-                                Text(target)
-                                    .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .subheadline))
-                                if let term = assignedTerm {
-                                    Text(term)
-                                        .font(.custom("Poppins-Medium", size: 12, relativeTo: .caption))
-                                        .foregroundStyle(isGraded ? (isTargetCorrect ? QuizTheme.green : LearnAlertStyle.coral) : QuizTheme.green)
-                                } else {
-                                    Text("Tap / Drop match")
-                                        .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption2))
-                                        .foregroundStyle(QuizTheme.inkSecondary)
-                                }
-                            }
-                            .foregroundStyle(QuizTheme.ink)
-                            .frame(maxWidth: .infinity, minHeight: 54)
-                            .padding(.horizontal, 10)
-                            .background(QuizTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(
-                                        isGraded && assignedTerm != nil
-                                            ? (isTargetCorrect ? QuizTheme.green : LearnAlertStyle.coral)
-                                            : QuizTheme.border,
-                                        lineWidth: isGraded && assignedTerm != nil ? 2 : 1
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .dropDestination(for: String.self) { items, _ in
-                            guard !isGraded, let item = items.first, leftItems.contains(item) else { return false }
-                            assignments = assignments.filter { $0.value != item }
-                            assignments[target] = item
-                            return true
-                        }
-                    }
-                }
-            }
-
-            if !isGraded {
-                Button("CHECK MATCHES") { onGrade(matchesAreCorrect) }
-                    .buttonStyle(QuizActionButtonStyle())
-                    .disabled(assignments.count != min(leftItems.count, rightItems.count))
-            }
-        }
-        .onAppear {
-            if shuffledRightItems.isEmpty { shuffledRightItems = rightItems.shuffled() }
-        }
-    }
-
-    private var matchesAreCorrect: Bool {
-        guard leftItems.count == rightItems.count else { return false }
-        return rightItems.indices.allSatisfy { assignments[rightItems[$0]] == leftItems[$0] }
-    }
-}
-
 private struct QuizUtilityControls: View {
     let hint: String
+    var media = CardFieldMedia()
     let showingHint: Bool
     let isGraded: Bool
     let onToggleHint: () -> Void
@@ -836,7 +570,7 @@ private struct QuizUtilityControls: View {
         if !isGraded {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    if !hint.isEmpty {
+                    if media.hasContent(hint) {
                         Button(showingHint ? "HIDE HINT" : "HINT", action: onToggleHint)
                     }
                     Button("SKIP", action: onSkip)
@@ -844,8 +578,8 @@ private struct QuizUtilityControls: View {
                 .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .caption))
                 .foregroundStyle(QuizTheme.inkSecondary)
 
-                if showingHint, !hint.isEmpty {
-                    Label(hint, systemImage: "lightbulb.fill")
+                if showingHint, media.hasContent(hint) {
+                    CardFieldContent(text: hint, media: media)
                         .font(.custom("Poppins-Regular", size: 14, relativeTo: .subheadline))
                         .foregroundStyle(QuizTheme.ink)
                         .padding(14)

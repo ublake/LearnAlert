@@ -545,12 +545,12 @@ struct DeckDetailView: View {
                 }
 
                 if card.cardType != .images {
-                    Text(card.question)
+                    Text(card.question.isEmpty ? (card.promptAudioName != nil ? "Audio prompt" : "Image prompt") : card.question)
                         .font(.custom("Poppins-Medium", size: 14))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                         .lineLimit(3)
 
-                    Text("Answer: \(card.correctAnswer)")
+                    Text(card.correctAnswer.isEmpty ? (card.cardType == .multipleChoice ? "\(card.options.count) choices" : "Media answer") : "Answer: \(card.correctAnswer)")
                         .font(.custom("Poppins-Regular", size: 12))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                         .lineLimit(2)
@@ -602,6 +602,7 @@ struct DeckDetailView: View {
 
     private func delete(_ offsets: IndexSet, from list: [Flashcard]) {
         let ankiFolders = Set(offsets.compactMap { list[$0].ankiContent?.mediaFolder })
+        let media = offsets.flatMap { list[$0].fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
         for index in offsets {
             let card = list[index]
             if let idx = deck.cards.firstIndex(where: { $0.id == card.id }) {
@@ -611,6 +612,7 @@ struct DeckDetailView: View {
         }
         if (try? context.save()) != nil {
             AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
+            CardAttachmentCleanup.removeUnreferenced(media, context: context)
         }
     }
 
@@ -726,6 +728,7 @@ struct CardInteractivePreviewSheet: View {
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
     @State private var showHint = false
+    @State private var matchingGraded = false
     private var hasImageBack: Bool { card.answerImageName?.isEmpty == false }
 
     var body: some View {
@@ -768,29 +771,14 @@ struct CardInteractivePreviewSheet: View {
                                 }
                                 .frame(maxWidth: .infinity).frame(height: 340)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            } else if let promptImg = card.promptImageName, !promptImg.isEmpty,
-                               let uiImage = CardImageStore.loadImage(named: promptImg) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fit)
-                                    .frame(maxHeight: 160)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
-                                    )
-                                    .frame(maxWidth: .infinity, alignment: .center)
+                            } else {
+                                CardFieldContent(text: card.question, media: card.fieldMedia["prompt"] ?? .init())
+                                    .font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
                             }
 
-                            if card.cardType != .images && card.cardType != .anki && !card.question.isEmpty {
-                                Text(card.question)
-                                    .font(.custom("Poppins-SemiBold", size: 18))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                            }
-
-                            if !card.hint.isEmpty {
+                            if (card.fieldMedia["hint"] ?? .init()).hasContent(card.hint) {
                                 if showHint {
-                                    Text("💡 \(card.hint)")
+                                    CardFieldContent(text: card.hint, media: card.fieldMedia["hint"] ?? .init())
                                         .font(.custom("Poppins-Regular", size: 13))
                                         .foregroundStyle(LearnAlertStyle.textSecondary)
                                         .padding(8)
@@ -809,37 +797,12 @@ struct CardInteractivePreviewSheet: View {
 
                         // Options / Answer
                         if card.cardType == .multipleChoice {
-                            VStack(spacing: 10) {
-                                ForEach(card.options, id: \.self) { option in
-                                    Button {
-                                        selectedAnswer = option
-                                    } label: {
-                                        HStack {
-                                            Text(option)
-                                                .font(.custom("Poppins-Medium", size: 14))
-                                                .foregroundStyle(textColor(for: option))
-                                            Spacer()
-                                            if let selected = selectedAnswer {
-                                                if option == card.correctAnswer {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundStyle(.green)
-                                                } else if option == selected {
-                                                    Image(systemName: "xmark.circle.fill")
-                                                        .foregroundStyle(.red)
-                                                }
-                                            }
-                                        }
-                                        .padding(14)
-                                        .background(backgroundColor(for: option))
-                                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(borderColor(for: option), lineWidth: 1)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
+                            CardMediaChoiceList(options: card.options, fields: card.fieldMedia,
+                                correctIndex: card.resolvedCorrectOptionIndex, selection: selectedAnswer,
+                                isGraded: selectedAnswer != nil) { selectedAnswer = $0 }
+                        } else if card.cardType == .matching {
+                            CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
+                                fields: card.fieldMedia, isGraded: matchingGraded) { _ in matchingGraded = true }
                         } else if card.cardType == .anki {
                             Button(isRevealed ? "Show front" : "Show answer") {
                                 withAnimation(.snappy) { isRevealed.toggle() }
@@ -847,7 +810,7 @@ struct CardInteractivePreviewSheet: View {
                         } else if card.cardType != .images {
                             VStack(spacing: 12) {
                                 if isRevealed {
-                                    Text(card.correctAnswer)
+                                    CardFieldContent(text: card.correctAnswer, media: card.fieldMedia["answer"] ?? .init())
                                         .font(.custom("Poppins-SemiBold", size: 16))
                                         .foregroundStyle(LearnAlertStyle.aqua)
                                         .padding()

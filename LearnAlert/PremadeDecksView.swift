@@ -17,6 +17,8 @@ struct PremadeCard: Identifiable {
     var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
+    var fieldMedia: [String: CardFieldMedia] = [:]
+    var correctOptionIndex: Int? = nil
     var sectionName: String = ""
 }
 
@@ -466,6 +468,8 @@ struct PremadeDecksView: View {
             )
             card.orderIndex = index
             card.promptAudioName = sourceCard.promptAudioName
+            if !sourceCard.fieldMedia.isEmpty { card.fieldMedia = sourceCard.fieldMedia }
+            card.correctOptionIndex = sourceCard.correctOptionIndex
             deck.cards.append(card)
             deck.assignCardToSection(card: card, suggestedCategory: sourceCard.sectionName)
         }

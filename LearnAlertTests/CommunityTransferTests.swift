@@ -59,6 +59,62 @@ struct CommunityTransferTests {
         return data
     }
 
+    @Test("Media-only quiz, reveal, hint and matching fields round-trip through publishing and download")
+    func allFieldMediaRoundTrip() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        }
+        let name = try #require(CardImageStore.saveImage(image))
+        let audio = try CardAudioStore.saveDownloaded(waveData())
+        var downloaded: [PremadeCard] = []
+        defer {
+            CardImageStore.deleteImage(named: name); CardAudioStore.delete(named: audio)
+            for card in downloaded { for media in card.fieldMedia.values {
+                if let image = media.image { CardImageStore.deleteImage(named: image) }
+                if let audio = media.audio { CardAudioStore.delete(named: audio) }
+            } }
+            CommunityTestProtocol.response = nil
+        }
+        let quiz = Flashcard(question: "", options: ["", ""], cardType: .multipleChoice)
+        quiz.correctOptionIndex = 1
+        quiz.fieldMedia = ["prompt": .init(audio: audio), "option:0": .init(image: name), "option:1": .init(audio: audio), "hint": .init(image: name, audio: audio)]
+        let reveal = Flashcard(question: "", cardType: .tapReveal)
+        reveal.fieldMedia = ["prompt": .init(image: name), "answer": .init(image: name, audio: audio)]
+        let pairs = Flashcard(question: "", cardType: .matching, matchingLeftItems: ["", ""], matchingRightItems: ["", ""])
+        pairs.fieldMedia = ["left:0": .init(image: name), "left:1": .init(audio: audio), "right:0": .init(audio: audio), "right:1": .init(image: name)]
+        let deck = Deck(name: "Mixed media"); deck.cards = [quiz, reveal, pairs]
+        let draftID = UUID().uuidString
+        var published: [CommunityCardPayload] = [], mediaBytes: [String: Data] = [:]
+        CommunityTestProtocol.response = { request in
+            let path = request.url!.path
+            if path.hasSuffix("/drafts") { return (201, try json(["id": draftID])) }
+            if path.hasSuffix("/media") {
+                let id = UUID().uuidString; mediaBytes[id] = requestBody(request)
+                return (201, try json(["id": id]))
+            }
+            if request.httpMethod == "PUT" {
+                let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any])
+                published = try JSONDecoder().decode([CommunityCardPayload].self, from: json(body["cards"]!))
+                #expect(published[0].correctOptionIndex == 1)
+                #expect(published[0].options == ["", ""])
+                #expect(published[0].fieldMedia?["option:1"]?.audioID != nil)
+                return (202, try json(["success": true, "id": draftID]))
+            }
+            if let bytes = mediaBytes[request.url!.lastPathComponent] { return (200, bytes) }
+            let detail = CommunityDeckPayload(id: draftID, name: deck.name, description: "", authorHandle: "@tester", categoryTag: "General", colorHex: "#A9D7F5", deckType: "Mixed", cardCount: 3, downloadCount: 0, publishedAt: nil, cards: published)
+            return (200, try json(["deck": JSONSerialization.jsonObject(with: JSONEncoder().encode(detail))]))
+        }
+        _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        #expect(mediaBytes.count == 2)
+        let summary = CommunityDeckPayload(id: draftID, name: deck.name, description: "", authorHandle: "@tester", categoryTag: "General", colorHex: "#A9D7F5", deckType: "Mixed", cardCount: 3, downloadCount: 0, publishedAt: nil, cards: nil)
+        downloaded = try await CommunityDeckTransfer.download(summary, api: api()) { _ in }.cards
+        #expect(downloaded.count == 3 && downloaded[0].correctOptionIndex == 1)
+        #expect(downloaded[0].fieldMedia["option:1"]?.audio != nil)
+        #expect(downloaded[1].fieldMedia["answer"]?.image != nil && downloaded[1].fieldMedia["answer"]?.audio != nil)
+        #expect(downloaded[2].fieldMedia["right:0"]?.audio != nil)
+        #expect(downloaded[0].fieldMedia["hint"]?.audio == downloaded[2].fieldMedia["right:0"]?.audio)
+    }
+
     @Test("Image-only cards publish without invented question or answer text")
     func publishesImageOnlyCard() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 20)).image { context in
