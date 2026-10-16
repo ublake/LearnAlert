@@ -962,11 +962,6 @@ struct HomeLibraryView: View {
                 .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
                 .navigationTitle("Alert Settings")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showingAlertSettings = false }
-                    }
-                }
             }
         }
         .sheet(isPresented: $showingAIComposer) {
@@ -2741,28 +2736,28 @@ private extension View {
 struct SetupAlertsView: View {
     @Query private var decks: [Deck]
     @ObservedObject var engine: StudyEngine
-    @State private var selectedDeckId: String = "NONE"
-    @State private var selectedSectionId: String = "ALL"
-    @State private var showingWarning = false
-    @AppStorage("targetDeckId") private var targetDeckId: String = "ALL"
-    @AppStorage("alertSound") private var alertSound: String = "alert3.wav"
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = AlertScheduleEdit()
+    @State private var original: AlertScheduleEdit?
+    @State private var editingActiveSchedule = false
+    @State private var saving = false
+    @State private var errorMessage: String?
 
-    private let availableSounds: [AlertSoundOption] = AlertSoundOption.allSounds
-
-    private var selectedSoundName: String {
-        AlertSoundOption.displayName(for: alertSound)
+    private var courses: [CourseDefinition] { CourseProgressManager.shared.allEnrolledCourses }
+    private var selectedCourse: CourseDefinition? {
+        courses.first { "course:\($0.id)" == draft.targetId }
     }
-    
-    var selectedDeck: Deck? { decks.first { $0.id.uuidString == selectedDeckId } }
-
-    var selectedSection: DeckSection? {
-        guard selectedSectionId != "ALL",
-              let id = UUID(uuidString: selectedSectionId) else { return nil }
-        return selectedDeck?.sections.first { $0.id == id }
+    private var selectedDeck: Deck? {
+        let id = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId } ?? draft.targetId
+        return decks.first { $0.id.uuidString == id }
     }
-
-    var selectedCardCount: Int {
-        selectedSection?.cards.count ?? selectedDeck?.cards.count ?? 0
+    private var automaticCount: Int {
+        let target = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.dailyCardsTarget }
+        return DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cards.count, courseTarget: target)
+    }
+    private var hasChanges: Bool { original.map { $0 != draft } ?? false }
+    private var canSave: Bool {
+        hasChanges && !saving && (!editingActiveSchedule || selectedDeck != nil || selectedCourse != nil)
     }
 
     var body: some View {
@@ -2774,22 +2769,23 @@ struct SetupAlertsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Menu {
-                    Picker("Deck or Course", selection: $selectedDeckId) {
+                    Picker("Deck or Course", selection: $draft.targetId) {
                         Section("Decks") {
-                            Text("All Active Decks").tag("ALL")
+                            if !editingActiveSchedule { Text("All Active Decks").tag("ALL") }
                             ForEach(decks.filter { $0.deckType != "Course" }) { deck in
                                 Text(deck.name).tag(deck.id.uuidString)
                             }
                         }
                         Section("Courses") {
-                            ForEach(decks.filter { $0.deckType == "Course" }) { deck in
-                                Text(deck.name).tag(deck.id.uuidString)
+                            ForEach(courses) { course in
+                                Text("\(course.flagEmoji) \(course.title)").tag("course:\(course.id)")
                             }
                         }
                     }
                 } label: {
                     HStack {
-                        Text(selectedDeckId == "ALL" ? "All Active Decks" : (selectedDeck?.name ?? "None"))
+                        Text(selectedCourse.map { "\($0.flagEmoji) \($0.title)" }
+                            ?? selectedDeck?.name ?? "All Active Decks")
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
@@ -2808,8 +2804,7 @@ struct SetupAlertsView: View {
                     .font(.caption.bold())
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                DeckScheduleTimingFields(settings: $engine.settings)
+                DeckScheduleTimingFields(settings: $draft.settings)
                     .padding(16)
                     .cleanSettingsCard()
             }
@@ -2827,14 +2822,14 @@ struct SetupAlertsView: View {
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Menu {
-                            Picker("Stop Condition", selection: $engine.stopCondition) {
+                            Picker("Stop Condition", selection: $draft.settings.stopCondition) {
                                 Text("Until Deck Learnt").tag("Until Deck Learnt")
                                 Text("Until Day Ends").tag("Until Day Ends")
                                 Text("Until I say so").tag("Until I say so")
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(engine.stopCondition).lineLimit(1)
+                                Text(draft.settings.stopCondition).lineLimit(1)
                                 Image(systemName: "chevron.up.chevron.down").font(.caption2)
                             }
                             .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .body))
@@ -2842,23 +2837,24 @@ struct SetupAlertsView: View {
                         }
                     }
                     .padding(16)
-
                     Divider().background(LearnAlertStyle.hairline.opacity(0.35))
-
-                    // Custom Sound Engine Picker
                     HStack {
                         Text("Alert Sound")
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Menu {
-                            Picker("Sound", selection: $alertSound) {
-                                ForEach(availableSounds) { sound in
+                            Picker("Sound", selection: Binding(get: { draft.sound }, set: { sound in
+                                draft.sound = sound
+                                if sound == "Default" { AudioServicesPlaySystemSound(1007) }
+                                else { InteractionSoundPlayer.shared.previewSound(named: sound) }
+                            })) {
+                                ForEach(AlertSoundOption.allSounds) { sound in
                                     Text(sound.name).tag(sound.id)
                                 }
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(selectedSoundName).lineLimit(1)
+                                Text(AlertSoundOption.displayName(for: draft.sound)).lineLimit(1)
                                 Image(systemName: "chevron.up.chevron.down").font(.caption2)
                             }
                             .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .body))
@@ -2872,43 +2868,100 @@ struct SetupAlertsView: View {
             }
             .padding(.horizontal)
 
-            AlertPaceSettingsCard(engine: engine).padding(.horizontal)
-        }
-        .onAppear {
-            if decks.contains(where: { $0.id.uuidString == targetDeckId }) {
-                selectedDeckId = targetDeckId
+            AlertPaceControls(settings: $draft.settings, automaticCount: automaticCount)
+                .padding(18)
+                .cleanSettingsCard()
+                .padding(.horizontal)
+
+            Button(action: save) {
+                HStack(spacing: 10) {
+                    if saving { ProgressView().tint(LearnAlertStyle.appAccentInk) }
+                    Text(editingActiveSchedule ? "Save and reschedule alerts" : "Save alert settings")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .foregroundStyle(canSave ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                .background(canSave ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .lightModeOutline(cornerRadius: 14)
             }
-            engine.selectSettings(for: selectedDeck)
+            .buttonStyle(.plain)
+            .disabled(!canSave)
+            .padding(.horizontal)
         }
-        .onChange(of: selectedDeckId) { _, newValue in
-            targetDeckId = newValue
-            engine.selectSettings(for: selectedDeck)
-            selectedSectionId = "ALL"
+        .disabled(saving)
+        .onAppear(perform: load)
+        .onChange(of: draft.targetId) { _, _ in
+            draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
         }
-        .onChange(of: alertSound) { _, newValue in
-            previewAlertSound(named: newValue)
+        .onDisappear { InteractionSoundPlayer.shared.stopPreview() }
+        .interactiveDismissDisabled(saving)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }.disabled(saving)
+            }
         }
-        .onDisappear {
-            InteractionSoundPlayer.shared.stopPreview()
-        }
+        .alert("Couldn’t update alerts", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: { Text(errorMessage ?? "Please try again.") }
     }
 
-    private func previewAlertSound(named soundName: String) {
-        guard soundName != "Default" else {
-            AudioServicesPlaySystemSound(1007)
-            return
-        }
-        InteractionSoundPlayer.shared.previewSound(named: soundName)
+    private func course(for deckId: UUID?) -> CourseDefinition? {
+        courses.first { CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == deckId?.uuidString }
     }
-}
 
-struct AlertPaceSettingsCard: View {
-    @ObservedObject var engine: StudyEngine
+    private func load() {
+        guard original == nil else { return }
+        editingActiveSchedule = engine.isActive
+        let storedTarget = UserDefaults.standard.string(forKey: "targetDeckId") ?? "ALL"
+        let target = editingActiveSchedule ? engine.activeDeckId?.uuidString ?? storedTarget : storedTarget
+        let linkedCourse = courses.first {
+            "course:\($0.id)" == target || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == target
+        }
+        draft.targetId = linkedCourse.map { "course:\($0.id)" } ?? target
+        draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
+        draft.sound = UserDefaults.standard.string(forKey: "alertSound") ?? "alert3.wav"
+        original = draft
+    }
 
-    var body: some View {
-        AlertPaceControls(settings: $engine.settings, automaticCount: engine.automaticDailyCount)
-            .padding(18)
-            .cleanSettingsCard()
+    private func save() {
+        guard canSave else { return }
+        saving = true
+        InteractionSoundPlayer.shared.stopPreview()
+        let edit = draft
+        let deck = selectedDeck
+        let course = selectedCourse
+        let oldDeck = decks.first { $0.id == engine.activeDeckId }
+        let oldCourse = self.course(for: engine.activeDeckId)
+        let oldSection = oldDeck?.sections.first { $0.id == engine.activeSectionId }
+        let reviewOnly = CourseNotificationScheduler.activePlan?.reviewOnly ?? false
+        let section = deck?.id == oldDeck?.id ? oldSection : nil
+        Task { @MainActor in
+            defer { saving = false }
+            do {
+                try await engine.saveAlertSettings(edit.settings, sound: edit.sound, for: deck) {
+                    guard editingActiveSchedule else { return }
+                    if let course { _ = try await engine.startAlerts(for: course, courseReviewOnly: reviewOnly && course.id == oldCourse?.id) }
+                    else if let deck { _ = try await engine.startAlerts(for: deck, section: section) }
+                }
+                UserDefaults.standard.set(edit.targetId, forKey: "targetDeckId")
+                HapticFeedback.success()
+                dismiss()
+            } catch {
+                let schedulingError = error.localizedDescription
+                if editingActiveSchedule {
+                    do {
+                        if let oldCourse { _ = try await engine.startAlerts(for: oldCourse, courseReviewOnly: reviewOnly) }
+                        else if let oldDeck { _ = try await engine.startAlerts(for: oldDeck, section: oldSection) }
+                    } catch {
+                        engine.stopAlerts()
+                        errorMessage = "\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again."
+                        return
+                    }
+                }
+                errorMessage = "\(schedulingError) Your changes weren’t saved."
+            }
+        }
     }
 }
 

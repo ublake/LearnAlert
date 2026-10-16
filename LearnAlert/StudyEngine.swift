@@ -60,6 +60,39 @@ class StudyEngine: ObservableObject {
         return DeckAlertSettings.automaticDailyCount(cardCount: settingsDeck?.cards.count)
     }
     var globalSettings: DeckAlertSettings { defaultSettings }
+
+    /// Called only after an explicit save. Failed scheduling restores the preferences.
+    func saveAlertSettings(_ preferences: DeckAlertSettings, sound: String, for deck: Deck?,
+        reschedule: () async throws -> Void) async throws {
+        let previousDeckSettings = deck?.alertSettings
+        let previousDefaults = defaultSettings
+        let previousDefaultsData = UserDefaults.standard.object(forKey: "defaultDeckAlertSettings")
+        let previousSound = UserDefaults.standard.object(forKey: "alertSound")
+        let previousSelection = settingsDeck
+        let previousCourseTarget = automaticCourseTarget
+        do {
+            selectSettings(for: deck)
+            if let deck {
+                deck.alertSettings = preferences
+                try deck.modelContext?.save()
+            } else {
+                settings = preferences
+            }
+            UserDefaults.standard.set(sound, forKey: "alertSound")
+            try await reschedule()
+        } catch {
+            deck?.alertSettings = previousDeckSettings
+            try? deck?.modelContext?.save()
+            defaultSettings = previousDefaults
+            if let previousDefaultsData { UserDefaults.standard.set(previousDefaultsData, forKey: "defaultDeckAlertSettings") }
+            else { UserDefaults.standard.removeObject(forKey: "defaultDeckAlertSettings") }
+            if let previousSound { UserDefaults.standard.set(previousSound, forKey: "alertSound") }
+            else { UserDefaults.standard.removeObject(forKey: "alertSound") }
+            settingsDeck = previousSelection
+            automaticCourseTarget = previousCourseTarget
+            throw error
+        }
+    }
     var smartSRS: Bool { get { settings.smartSRS } set { settings.smartSRS = newValue } }
     var stopCondition: String { get { settings.stopCondition } set { settings.stopCondition = newValue } }
     var startHour: Int { get { settings.startHour } set { settings.startHour = newValue } }
@@ -185,14 +218,17 @@ class StudyEngine: ObservableObject {
         guard !enrollment.selectedDays.isEmpty else {
             throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
         }
-        selectSettings(for: nil)
+        let linkedDeck = settingsDeck?.id == deckId ? settingsDeck : try context.fetch(FetchDescriptor<Deck>(
+            predicate: #Predicate { $0.id == deckId })).first
+        selectSettings(for: linkedDeck)
         automaticCourseTarget = enrollment.dailyCardsTarget
         DailyDeckAlertScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
         let plan = CourseAlertPlan(courseId: course.id, deckId: linkedDeckId,
             startHour: activeVolume == 1 ? settings.dailyHour : startHour, startMinute: activeVolume == 1 ? settings.dailyMinute : startMinute, endHour: endHour, endMinute: endMinute,
-            weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt")
+            weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt",
+            sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
         let dates = try await CourseNotificationScheduler.activate(plan)
         guard !dates.isEmpty else {
             CourseNotificationScheduler.clear()

@@ -4,8 +4,64 @@ import Testing
 @testable import LearnAlert
 
 @MainActor
-@Suite("Deck schedules")
+@Suite("Deck schedules", .serialized)
 struct DeckSchedulingTests {
+    @Test("An explicit save applies the edited deck preferences before rescheduling and leaves defaults alone")
+    func saveAndReschedule() async throws {
+        let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = ModelContext(container)
+        let deck = Deck(name: "Edited schedule")
+        context.insert(deck)
+        try context.save()
+        let engine = StudyEngine(restoreSavedSession: false)
+        let defaults = engine.globalSettings
+        let previousSound = UserDefaults.standard.object(forKey: "alertSound")
+        defer {
+            if let previousSound { UserDefaults.standard.set(previousSound, forKey: "alertSound") }
+            else { UserDefaults.standard.removeObject(forKey: "alertSound") }
+        }
+        var edit = AlertScheduleEdit(targetId: deck.id.uuidString, settings: defaults, sound: "Default")
+        edit.settings.paceMode = .custom
+        edit.settings.dailyCount = 1
+        edit.settings.useSpecificTime = true
+        edit.settings.specificHour = 17
+        // Editing a draft must not mutate the engine, persisted deck, or sound.
+        #expect(deck.alertSettings == nil && engine.globalSettings == defaults)
+        #expect(UserDefaults.standard.object(forKey: "alertSound") as? String == previousSound as? String)
+        var scheduled = false
+        try await engine.saveAlertSettings(edit.settings, sound: edit.sound, for: deck) {
+            #expect(engine.settings == edit.settings && engine.activeVolume == 1)
+            #expect(engine.settings.dailyHour == 17)
+            #expect(UserDefaults.standard.string(forKey: "alertSound") == "Default")
+            scheduled = true
+        }
+        #expect(scheduled && engine.globalSettings == defaults)
+        let reloaded = try #require(ModelContext(container).fetch(FetchDescriptor<Deck>()).first)
+        #expect(reloaded.alertSettings == edit.settings)
+    }
+
+    @Test("A failed reschedule restores the prior preferences, deck inheritance, selection, and sound")
+    func failedReschedule() async throws {
+        enum Failure: Error { case scheduling }
+        let engine = StudyEngine(restoreSavedSession: false)
+        let deck = Deck(name: "Inherited schedule")
+        let other = Deck(name: "Other selection")
+        engine.selectSettings(for: other)
+        let defaults = engine.globalSettings
+        let previousSound = UserDefaults.standard.object(forKey: "alertSound") as? String
+        var edited = defaults
+        edited.paceMode = .custom
+        edited.dailyCount = 3
+        do {
+            try await engine.saveAlertSettings(edited, sound: "alert1.wav", for: deck) { throw Failure.scheduling }
+            Issue.record("The failed scheduling operation should throw")
+        } catch Failure.scheduling {}
+        #expect(deck.alertSettings == nil)
+        #expect(engine.globalSettings == defaults && engine.settingsDeck?.id == other.id)
+        #expect(UserDefaults.standard.string(forKey: "alertSound") == previousSound)
+    }
+
     @Test("Fresh defaults run until stopped; existing preferences migrate")
     func defaultsAndMigration() throws {
         let suite = "deck-schedule-\(UUID())"
@@ -75,7 +131,7 @@ struct DeckSchedulingTests {
     @Test("Each deck persists its schedule and switching does not overwrite another deck or defaults")
     func deckIsolation() throws {
         let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let context = ModelContext(container)
         let a = Deck(name: "Word a day"), b = Deck(name: "Exam")
         context.insert(a); context.insert(b)

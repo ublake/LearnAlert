@@ -71,6 +71,13 @@ extension DeckAlertSettings {
     }
 }
 
+/// An editor owns this value until Save; changing it never writes live preferences.
+nonisolated struct AlertScheduleEdit: Equatable {
+    var targetId = "ALL"
+    var settings = DeckAlertSettings()
+    var sound = "alert3.wav"
+}
+
 nonisolated struct DailyDeckAlertPlan: Codable, Equatable {
     var id = UUID().uuidString
     let deckId: UUID

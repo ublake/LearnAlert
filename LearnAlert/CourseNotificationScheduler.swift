@@ -13,6 +13,7 @@ struct CourseAlertPlan: Codable, Equatable {
     var expiresAt: Date? = nil
     var reviewOnly: Bool? = nil
     var stopWhenMastered: Bool? = nil
+    var sound: String? = nil
 
     func dates(now: Date = Date(), calendar: Calendar = .current) -> [Date] {
         var result: [Date] = []
@@ -75,7 +76,8 @@ enum CourseNotificationScheduler {
             content.title = course.title
             content.body = plan.reviewOnly == true ? "Review learned material · expand to practice" : snapshot.pendingCheckpoint(course: course) != nil ? "Checkpoint ready. Open the app to continue." : "Continue your course · expand to practice"
             content.categoryIdentifier = "FLASHCARD_REVEAL"
-            content.sound = .default
+            let sound = plan.sound ?? "Default"
+            content.sound = sound == "Default" ? .default : UNNotificationSound(named: UNNotificationSoundName(sound))
             content.userInfo = ["courseId": course.id, "deckId": plan.deckId, "courseReviewOnly": plan.reviewOnly == true]
             if existing[id]?.content.body == content.body { continue }
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: date), repeats: false)

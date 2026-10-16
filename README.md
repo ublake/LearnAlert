@@ -205,3 +205,9 @@ numeric schedules remain Custom. Selecting Custom expands tappable pace presets 
 an editable 1–50 amount field. The mode is saved separately from its number, so typing
 a preset value never closes the custom editor. One-per-day time controls appear for
 Custom schedules set to 1.
+
+Home’s Alert Settings editor keeps changes in a temporary draft. For an active
+schedule, Save and reschedule alerts is disabled until that draft changes; saving
+replaces the pending alerts and remembers the target’s settings. Cancel or dismiss
+discards all edits, including the selected target and sound. Before alerts start,
+Save alert settings remembers the preferences without starting notifications.
