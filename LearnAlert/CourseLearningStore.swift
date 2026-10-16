@@ -6,8 +6,19 @@ struct CoursePracticeSession: Codable {
     var id = UUID().uuidString
     var cardIds: [String]
     var answers: [String: Bool] = [:]
+    var groupIdsByCard: [String: String]? = nil
+    var attemptCounts: [String: Int]? = nil
 
-    var nextIndex: Int? { cardIds.firstIndex { answers[$0] == nil } }
+    var nextIndex: Int? {
+        for (index, id) in cardIds.enumerated() {
+            if let group = groupIdsByCard?[id] {
+                let indices = cardIds.indices.filter { groupIdsByCard?[cardIds[$0]] == group }
+                if let next = indices.first(where: { answers[cardIds[$0]] == nil }) { return next }
+                if let retry = indices.first(where: { answers[cardIds[$0]] == false }) { return retry }
+            } else if answers[id] == nil { return index }
+        }
+        return nil
+    }
     var missedCardIds: [String] { cardIds.filter { answers[$0] == false } }
 }
 
@@ -22,10 +33,11 @@ struct CourseLearningSnapshot: Codable {
     var srs: [String: CourseCardSRSRecord] = [:]
     var eventTokens: [String] = []
     var practiceSessions: [String: CoursePracticeSession] = [:]
+    var traceAttempts: [String: Int] = [:]
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, eventTokens, practiceSessions }
+    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, eventTokens, practiceSessions, traceAttempts }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         progress = try values.decodeIfPresent([String: [String: CourseLessonProgressRecord]].self, forKey: .progress) ?? [:]
@@ -33,6 +45,7 @@ struct CourseLearningSnapshot: Codable {
         srs = try values.decodeIfPresent([String: CourseCardSRSRecord].self, forKey: .srs) ?? [:]
         eventTokens = try values.decodeIfPresent([String].self, forKey: .eventTokens) ?? []
         practiceSessions = try values.decodeIfPresent([String: CoursePracticeSession].self, forKey: .practiceSessions) ?? [:]
+        traceAttempts = try values.decodeIfPresent([String: Int].self, forKey: .traceAttempts) ?? [:]
     }
 
     static func practiceKey(courseId: String, lessonId: String?, checkpointUnitId: String?) -> String? {
@@ -72,7 +85,26 @@ struct CourseLearningSnapshot: Codable {
         let ordered = checkpointUnitId == nil && course.language == "Korean"
             ? Self.orderedLearningCards(added) : added.shuffled()
         session.cardIds = survivingIds + ordered.map(\.id)
+        let groups = Dictionary(uniqueKeysWithValues: cards.compactMap { card in card.activity?.practiceGroup.map { (card.id, $0) } })
+        session.groupIdsByCard = checkpointUnitId == nil ? groups : nil
+        if !groups.isEmpty {
+            // Keep saved answers, but align older sessions with the new letter groups.
+            session.cardIds = Self.orderedLearningCards(cards, randomized: false).map(\.id)
+        }
         session.answers = session.answers.filter { session.cardIds.contains($0.key) }
+        if let lessonId, !groups.isEmpty {
+            // Older sessions can contain saved correct answers without a matching
+            // progress entry. Reconcile that evidence before applying letter gates.
+            var record = progress[course.id]?[lessonId] ?? CourseLessonProgressRecord(status: .current)
+            for (id, correct) in session.answers where correct && !record.masteredCardIds.contains(id) {
+                record.masteredCardIds.append(id)
+            }
+            if Set(record.masteredCardIds).isSuperset(of: validIds) {
+                record.status = .completed
+                record.completedDate = record.completedDate ?? Date()
+            }
+            progress[course.id, default: [:]][lessonId] = record
+        }
         if let lessonId, status(course: course, lessonId: lessonId) != .completed {
             // Existing saved answers, including notification answers, should not restart a lesson.
             for id in progress[course.id]?[lessonId]?.masteredCardIds ?? [] where session.cardIds.contains(id) && session.answers[id] == nil {
@@ -89,7 +121,10 @@ struct CourseLearningSnapshot: Codable {
               var session = practiceSessions[key], session.id == sessionId,
               let next = session.nextIndex, session.cardIds[next] == cardId,
               practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId)?.contains(where: { $0.id == cardId }) == true else { return false }
-        if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)") { return false }
+        let attempt = session.attemptCounts?[cardId] ?? 0
+        if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)-attempt-\(attempt)") { return false }
+        if session.attemptCounts == nil { session.attemptCounts = [:] }
+        session.attemptCounts?[cardId] = attempt + 1
         session.answers[cardId] = correct
         practiceSessions[key] = session
         return true
@@ -111,7 +146,7 @@ struct CourseLearningSnapshot: Codable {
     func completionFraction(course: CourseDefinition) -> Double {
         let lessonProgress = course.units.flatMap(\.lessons).reduce(0.0) { total, lesson in
             let record = progress[course.id]?[lesson.id]
-            if record?.status == .completed { return total + 1 }
+            if status(course: course, lessonId: lesson.id) == .completed { return total + 1 }
             let mastered = Set(record?.masteredCardIds ?? []).intersection(Set(lesson.cards.map(\.id))).count
             return total + Double(mastered) / Double(max(1, lesson.cards.count))
         }
@@ -126,10 +161,19 @@ struct CourseLearningSnapshot: Codable {
                 previous.checkpointQuiz != nil && checkpoints[course.id]?[previous.id]?.passed != true
             }) { return .locked }
             guard let lessonIndex = unit.lessons.firstIndex(where: { $0.id == lessonId }) else { return .locked }
-            if unit.lessons.prefix(lessonIndex).contains(where: { progress[course.id]?[$0.id]?.status != .completed }) { return .locked }
-            return progress[course.id]?[lessonId]?.status == .completed ? .completed : .current
+            if unit.lessons.prefix(lessonIndex).contains(where: { !hasCompleted($0, in: unit, course: course) }) { return .locked }
+            return hasCompleted(unit.lessons[lessonIndex], in: unit, course: course) ? .completed : .current
         }
         return .locked
+    }
+
+    /// A passed checkpoint preserves a returning learner's place. An unfinished
+    /// workshop requires its new activities without deleting any historical answers.
+    private func hasCompleted(_ lesson: CourseLesson, in unit: CourseUnit, course: CourseDefinition) -> Bool {
+        if checkpoints[course.id]?[unit.id]?.passed == true { return true }
+        guard let record = progress[course.id]?[lesson.id], record.status == .completed else { return false }
+        guard lesson.cards.contains(where: { $0.activity != nil }) else { return true }
+        return Set(record.masteredCardIds).isSuperset(of: Set(lesson.cards.map(\.id)))
     }
 
     func pendingCheckpoint(course: CourseDefinition) -> CourseUnit? {
@@ -146,15 +190,39 @@ struct CourseLearningSnapshot: Codable {
     func batch(course: CourseDefinition, count: Int, now: Date = Date(), reviewOnly: Bool = false, randomized: Bool = false) -> [CourseLessonCard] {
         guard count > 0 else { return [] }
         let due = course.units.flatMap(\.lessons).filter { status(course: course, lessonId: $0.id) == .completed }
-            .flatMap(\.cards).filter { srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true }
+            .flatMap { lesson in
+                let learned = Set(progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
+                return lesson.cards.filter { card in
+                    // Replacing a passed unit never turns unseen workshop material into due reviews.
+                    (card.activity == nil || srs[card.id] != nil || learned.contains(card.id)) &&
+                    (srs[card.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true)
+                }
+            }
             .sorted { (srs[$0.id]?.nextReviewDate ?? .distantPast) < (srs[$1.id]?.nextReviewDate ?? .distantPast) }
         let lesson = reviewOnly ? nil : currentLesson(course: course)
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
-        let fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
+        var fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
+        if let lesson, let focused = focusedLearningCards(lesson: lesson, mastered: mastered) {
+            // Missed tasks return within this letter's group; future letters stay gated.
+            fresh = focused.sorted {
+                let lhs = srs[$0.id]?.lastReviewedDate ?? .distantPast
+                let rhs = srs[$1.id]?.lastReviewedDate ?? .distantPast
+                return lhs == rhs ? $0.learningStage < $1.learningStage : lhs < rhs
+            }
+            return Array(fresh.prefix(count))
+        }
         let reviews = fresh.isEmpty ? count : max(1, count / 2)
         let learning = course.language == "Korean"
             ? Self.orderedLearningCards(fresh, randomized: randomized) : randomized ? fresh.shuffled() : fresh
         return Array((Array(due.prefix(reviews)) + learning).prefix(count))
+    }
+
+    private func focusedLearningCards(lesson: CourseLesson, mastered: Set<String>) -> [CourseLessonCard]? {
+        guard lesson.cards.contains(where: { $0.activity?.practiceGroup != nil }) else { return nil }
+        let ordered = Self.orderedLearningCards(lesson.cards, randomized: false)
+        guard let first = ordered.first(where: { !mastered.contains($0.id) }) else { return [] }
+        guard let group = first.activity?.practiceGroup else { return [first] }
+        return ordered.filter { $0.activity?.practiceGroup == group && !mastered.contains($0.id) }
     }
 
     func isFullyMastered(course: CourseDefinition) -> Bool {
@@ -172,6 +240,10 @@ struct CourseLearningSnapshot: Codable {
         guard !eventTokens.contains(token), status(course: course, lessonId: lessonId) != .locked,
               let lesson = course.units.flatMap(\.lessons).first(where: { $0.id == lessonId }),
               lesson.cards.contains(where: { $0.id == cardId }) else { return false }
+        if status(course: course, lessonId: lessonId) != .completed,
+           progress[course.id]?[lessonId]?.masteredCardIds.contains(cardId) != true,
+           let focused = focusedLearningCards(lesson: lesson, mastered: Set(progress[course.id]?[lessonId]?.masteredCardIds ?? [])),
+           !focused.contains(where: { $0.id == cardId }) { return false }
         eventTokens.append(token)
         var srsRecord = srs[cardId] ?? CourseCardSRSRecord(cardId: cardId)
         srsRecord.processAnswer(isCorrect: correct)

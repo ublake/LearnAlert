@@ -354,6 +354,8 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let readingPrompt: String?
     /// Old wording used only to find an existing course-deck card during sync.
     public let previousQuestion: String?
+    /// Course-only interaction metadata. Ordinary decks keep their existing card types.
+    public let activity: CourseActivity?
 
     public init(
         id: String,
@@ -373,7 +375,8 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         explanation: String? = nil,
         acceptedAnswers: [String]? = nil,
         readingPrompt: String? = nil,
-        previousQuestion: String? = nil
+        previousQuestion: String? = nil,
+        activity: CourseActivity? = nil
     ) {
         self.id = id
         self.question = question
@@ -393,9 +396,10 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         self.acceptedAnswers = acceptedAnswers
         self.readingPrompt = readingPrompt
         self.previousQuestion = previousQuestion
+        self.activity = activity
     }
 
-    public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" }
+    public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" || activity?.kind == .listenChoose }
     public var usesTypedAnswer: Bool { cardType == "fillBlank" || cardType == "listeningWrite" }
     public func questionText(audioEnabled: Bool) -> String {
         isListeningQuestion && !audioEnabled ? (readingPrompt ?? "What does ‘\(speechText ?? "")’ mean?") : question
@@ -443,6 +447,7 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
 
     /// Introduce the rule before recognition; leave recall exercises until later in the lesson.
     var learningStage: Int {
+        if let activity { return activity.sequence }
         if id.hasSuffix("-guide") { return 0 }
         switch cardType {
         case "vocabulary", "tapReveal": return 1

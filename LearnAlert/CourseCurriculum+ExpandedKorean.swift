@@ -496,8 +496,8 @@ extension CourseCurriculumCatalog {
                 subtitle: unit.subtitle, colorHex: unit.colorHex, badgeIcon: unit.badgeIcon,
                 lessons: lessons, checkpointQuiz: unit.checkpointQuiz)
         }
-        return enhancingPractice(CourseDefinition(id: course.id, title: course.title, language: course.language,
+        return foundationWorkshop(enhancingPractice(CourseDefinition(id: course.id, title: course.title, language: course.language,
             flagEmoji: course.flagEmoji, levelTag: course.levelTag, colorHex: course.colorHex,
-            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes, units: units))
+            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes, units: units)))
     }
 }

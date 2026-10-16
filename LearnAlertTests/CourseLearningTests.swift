@@ -12,6 +12,13 @@ import SwiftData
 @Suite("Course learning path")
 struct CourseLearningTests {
     private var course: CourseDefinition { CourseCurriculumCatalog.koreanCourse }
+    private var legacyCourse: CourseDefinition {
+        CourseDefinition(id: course.id, title: course.title, language: course.language,
+            flagEmoji: course.flagEmoji, levelTag: course.levelTag, colorHex: course.colorHex,
+            summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes,
+            units: Array(course.units.dropFirst()))
+    }
+    private var lessonCardCount: Int { course.units.flatMap(\.lessons).flatMap(\.cards).count }
 
     @Test("Curriculum IDs, answers and checkpoints are consistent")
     func curriculum() {
@@ -20,8 +27,11 @@ struct CourseLearningTests {
         let quizzes = course.units.compactMap(\.checkpointQuiz)
         let all = cards + quizzes.flatMap(\.questions)
         #expect(course.units.count == 10)
-        #expect(lessons.count == 41)
-        #expect(cards.count == 1410)
+        #expect(course.units.dropFirst().flatMap(\.lessons).count == 36)
+        #expect(lessons.count == course.totalLessonsCount)
+        #expect(legacyCourse.units.flatMap(\.lessons).flatMap(\.cards).count == 1220)
+        #expect(cards.count == 1220 + course.units[0].lessons.flatMap(\.cards).count)
+        #expect(course.totalCardsCount == cards.count + quizzes.flatMap(\.questions).count)
         #expect(quizzes.count == 10)
         #expect(Set(all.map(\.id)).count == all.count)
         #expect(Set(lessons.map(\.id)).count == lessons.count)
@@ -34,7 +44,7 @@ struct CourseLearningTests {
 
     @Test("Expanded lessons cover reading, listening, production, and matching")
     func variedPractice() {
-        for lesson in course.units.flatMap(\.lessons) {
+        for lesson in course.units.dropFirst().flatMap(\.lessons) {
             #expect(lesson.cards.count >= 33)
             let types = Set(lesson.cards.map(\.cardType))
             #expect(types.isSuperset(of: ["vocabulary", "multipleChoice", "fillBlank", "matching", "listening", "listeningWrite"]))
@@ -45,7 +55,10 @@ struct CourseLearningTests {
     @Test("Listening alternatives keep the learning task and accept the same answer")
     func listeningAlternatives() throws {
         let audioCards = course.units.flatMap(\.lessons).flatMap(\.cards).filter(\.isListeningQuestion)
-        #expect(audioCards.count == 492)
+        let legacyAudio = legacyCourse.units.flatMap(\.lessons).flatMap(\.cards).filter(\.isListeningQuestion)
+        let workshopAudio = course.units[0].lessons.flatMap(\.cards).filter(\.isListeningQuestion)
+        #expect(legacyAudio.count == 432 && !workshopAudio.isEmpty)
+        #expect(audioCards.count == legacyAudio.count + workshopAudio.count)
         for card in audioCards {
             #expect(card.speechText?.isEmpty == false)
             #expect(card.readingPrompt?.isEmpty == false)
@@ -55,7 +68,7 @@ struct CourseLearningTests {
             #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONEncoder().encode(card)) == card)
             if card.cardType == "listeningWrite" { #expect(card.usesTypedAnswer) }
         }
-        let legacy = course.units[0].lessons[0].cards[0]
+        let legacy = legacyCourse.units[0].lessons[0].cards[0]
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as? [String: Any])
         json.removeValue(forKey: "readingPrompt")
         #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: json)).readingPrompt == nil)
@@ -74,15 +87,15 @@ struct CourseLearningTests {
             #expect(!card.practiceQuestionText(audioEnabled: false).hasPrefix("Write"))
             #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONEncoder().encode(card)) == card)
         }
-        let beginner = try #require(all.first { $0.id == "kr-1-1-4" })
+        let beginner = try #require(all.first { $0.activity?.kind == .situation && $0.correctAnswer == "ㅇ" })
         #expect(beginner.cardType == "multipleChoice" && beginner.options == ["ㅇ", "ㄱ", "ㄴ", "ㅁ"])
-        #expect(beginner.question == "Which letter is silent at the start of 아 (ah)?")
+        #expect(beginner.question == "Which letter starts 아?")
         #expect(beginner.accepts("ㅇ") && !beginner.accepts("ㄱ"))
-        let sound = try #require(all.first { $0.id == "kr-1-1-extra-1-read" })
-        #expect(sound.practiceQuestionText(audioEnabled: false) == "How do you read ‘아’?")
-        #expect(sound.practiceOptionText(sound.correctAnswer) == "ah")
-        #expect(sound.practiceOptionText("the vowel sound u") == "oo")
-        #expect(sound.practiceOptionText("the syllable ga") == "ga")
+        let legacy = try #require(legacyCourse.units.flatMap(\.lessons).flatMap(\.cards).first { $0.cardType == "fillBlank" })
+        #expect(legacy.practiceQuestionText(audioEnabled: false).hasPrefix("Which spelling means: "))
+        #expect(legacy.practiceOptionText("the vowel sound a") == "ah")
+        #expect(legacy.practiceOptionText("the vowel sound u") == "oo")
+        #expect(legacy.practiceOptionText("the syllable ga") == "ga")
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(beginner)) as? [String: Any])
         json.removeValue(forKey: "previousQuestion")
         #expect(try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: json)).previousQuestion == nil)
@@ -105,8 +118,8 @@ struct CourseLearningTests {
                 let again = try #require(againValue)
                 #expect(again.cardIds == session.cardIds)
                 let fresh = state.batch(course: course, count: 8, randomized: true)
-                #expect(fresh.first?.id == lesson.id + "-extra-guide")
-                #expect(fresh.allSatisfy { $0.learningStage <= 2 })
+                #expect(fresh.map(\.id) == [ordered[0].id])
+                #expect(fresh.first?.activity?.kind == .teach)
             }
         }
     }
@@ -114,6 +127,7 @@ struct CourseLearningTests {
     @Test("Mastered recall remains optional and a missed review returns to guided practice")
     func recallProgression() throws {
         var state = CourseLearningSnapshot()
+        let course = legacyCourse
         let lesson = course.units[0].lessons[0]
         let card = try #require(lesson.cards.first { $0.cardType == "fillBlank" })
         for score in 0..<3 {
@@ -122,33 +136,41 @@ struct CourseLearningTests {
             #expect(saved)
         }
         #expect(card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
-        #expect(card.practiceQuestionText(audioEnabled: true) == "Choose the block for ‘ah’.")
-        #expect(card.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Type the block for ‘ah’.")
+        #expect(card.practiceQuestionText(audioEnabled: true) == "Which spelling means: student")
+        #expect(card.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Write in Korean: student")
         let missed = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: false, token: "recall-miss")
         #expect(missed)
         #expect(!card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
         let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
-        #expect(audio.practiceQuestionText(audioEnabled: true) == "Listen. Which block did you hear?")
-        #expect(audio.practiceQuestionText(audioEnabled: false) == "Find the block for ‘ah’.")
+        #expect(audio.practiceQuestionText(audioEnabled: true) == "Listen. Choose what you heard.")
+        #expect(audio.practiceQuestionText(audioEnabled: false) == "Find the Korean for: student")
         #expect(audio.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Listen and write what you hear.")
     }
 
-    @Test("A beginner wording upgrade resumes the same saved question and progress")
+    @Test("The workshop retires old questions and preserves surviving session answers")
     func beginnerWordingUpgrade() throws {
         var state = CourseLearningSnapshot()
         let lesson = course.units[0].lessons[0]
         let key = try #require(CourseLearningSnapshot.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil))
-        var old = CoursePracticeSession(cardIds: ["kr-1-1-1", "kr-1-1-2", "kr-1-1-3", "kr-1-1-4"])
-        old.answers = ["kr-1-1-1": true, "kr-1-1-2": true, "kr-1-1-3": false]
+        let survivor = lesson.cards[0].id
+        let retired = ["kr-1-1-1", "kr-1-1-2", "kr-1-1-3", "kr-1-1-4"]
+        var old = CoursePracticeSession(cardIds: retired + [survivor])
+        old.answers = [retired[0]: true, retired[1]: false, survivor: true]
         state.practiceSessions[key] = old
         let resumedValue = state.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
         let resumed = try #require(resumedValue)
-        #expect(resumed.id == old.id && resumed.answers == old.answers)
-        #expect(Array(resumed.cardIds.prefix(4)) == old.cardIds)
-        #expect(resumed.nextIndex == 3 && resumed.cardIds[3] == "kr-1-1-4")
-        let saved = state.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil, sessionId: resumed.id, cardId: "kr-1-1-4", correct: true)
+        #expect(resumed.id == old.id)
+        #expect(resumed.answers == [survivor: true])
+        #expect(state.progress[course.id]?[lesson.id]?.masteredCardIds.contains(survivor) == true)
+        #expect(Set(resumed.cardIds).isDisjoint(with: retired))
+        #expect(resumed.cardIds.first == survivor)
+        #expect(Array(resumed.cardIds.dropFirst()) == Array(lesson.cards.dropFirst()).map(\.id))
+        #expect(resumed.nextIndex == 1)
+        let next = resumed.cardIds[try #require(resumed.nextIndex)]
+        let saved = state.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
+            sessionId: resumed.id, cardId: next, correct: true)
         #expect(saved)
-        #expect(state.practiceSessions[key]?.answers["kr-1-1-4"] == true)
+        #expect(state.practiceSessions[key]?.answers[next] == true)
     }
 
     @Test("Playback starts and stops without a stale cancellation clearing a new utterance")
@@ -204,7 +226,7 @@ struct CourseLearningTests {
     @Test("Picture vocabulary resolves bundled art and keeps image choices aligned")
     func pictureVocabulary() throws {
         for course in CourseCurriculumCatalog.courses {
-            let cards = course.units.flatMap(\.lessons).flatMap(\.cards)
+            let cards = course.units.flatMap(\.lessons).flatMap(\.cards).filter { $0.activity == nil }
             let prompts = cards.filter { $0.promptImageName != nil }
             let choices = cards.filter { !$0.optionImageNames.isEmpty }
             #expect(prompts.count == 16 && choices.count == 16)
@@ -260,6 +282,7 @@ struct CourseLearningTests {
 
     @Test("Wrong answers wait before returning; all cards must be correct to advance")
     func masteryAndRetry() {
+        let course = legacyCourse
         var state = CourseLearningSnapshot()
         let lesson = course.units[0].lessons[0]
         let first = lesson.cards[0]
@@ -371,6 +394,7 @@ struct CourseLearningTests {
 
     @Test("Partial practice survives a relaunch before Continue and keeps wrong answers")
     func resumePartialPractice() throws {
+        let course = legacyCourse
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = CourseLearningStore(directory: directory, defaults: nil)
@@ -408,6 +432,7 @@ struct CourseLearningTests {
 
     @Test("A curriculum upgrade preserves the old shuffled order and surviving answers")
     func practiceUpgrade() throws {
+        let course = legacyCourse
         var state = CourseLearningSnapshot()
         let lesson = course.units[0].lessons[0]
         let ids = [lesson.cards[2].id, lesson.cards[0].id]
@@ -572,10 +597,10 @@ struct CourseLearningTests {
         first.reviewCount = 7
         let upgraded = manager.createOrSyncCourseDeck(for: course, in: context)
         #expect(upgraded.id == old.id)
-        #expect(upgraded.cards.count == 1410 && upgraded.sections.count == 10)
+        #expect(upgraded.cards.count == lessonCardCount && upgraded.sections.count == course.units.count)
         #expect(upgraded.cards.first?.id == first.id && first.reviewCount == 7)
         let repeated = manager.createOrSyncCourseDeck(for: course, in: context)
-        #expect(repeated.cards.count == 1410)
+        #expect(repeated.cards.count == lessonCardCount)
         #expect(try context.fetch(FetchDescriptor<Deck>()).count == 1)
     }
 
@@ -587,19 +612,22 @@ struct CourseLearningTests {
         let manager = CourseProgressManager.shared
         let deck = manager.createOrSyncCourseDeck(for: course, in: context)
         let ids = Set(deck.cards.map(\.id))
-        let foundation = try #require(deck.cards.first { $0.question == "Which letter is silent at the start of 아 (ah)?" })
-        foundation.question = "When a vowel stands alone as a syllable (e.g., '아' or '오'), the silent placeholder consonant is ___."
+        let definitions = legacyCourse.units[0].lessons[0].cards.filter { $0.cardType == "fillBlank" }
+        let firstDefinition = try #require(definitions.first)
+        let secondDefinition = try #require(definitions.dropFirst().first)
+        let foundation = try #require(deck.cards.first { $0.question == firstDefinition.practiceQuestionText(audioEnabled: false) })
+        foundation.question = firstDefinition.question
         foundation.cardType = .fillBlank; foundation.options = []
         foundation.reviewCount = 7; foundation.correctCount = 5
-        let write = try #require(deck.cards.first { $0.question == "Choose the block for ‘ah’." })
-        write.question = "Write in Korean: the vowel sound a"; write.cardType = .fillBlank; write.options = []
+        let write = try #require(deck.cards.first { $0.question == secondDefinition.practiceQuestionText(audioEnabled: false) })
+        write.question = secondDefinition.question; write.cardType = .fillBlank; write.options = []
         write.reviewCount = 9
         let upgraded = manager.createOrSyncCourseDeck(for: course, in: context)
-        #expect(Set(upgraded.cards.map(\.id)) == ids && upgraded.cards.count == 1410)
-        #expect(foundation.question == "Which letter is silent at the start of 아 (ah)?")
+        #expect(Set(upgraded.cards.map(\.id)) == ids && upgraded.cards.count == lessonCardCount)
+        #expect(foundation.question == firstDefinition.practiceQuestionText(audioEnabled: false))
         #expect(foundation.cardType == .multipleChoice && foundation.options.count == 4)
         #expect(foundation.reviewCount == 7 && foundation.correctCount == 5)
-        #expect(write.question == "Choose the block for ‘ah’.")
+        #expect(write.question == secondDefinition.practiceQuestionText(audioEnabled: false))
         #expect(write.cardType == .multipleChoice && write.options.count == 4 && write.reviewCount == 9)
         #expect(!upgraded.cards.contains { $0.cardType == .fillBlank })
         #expect(Set(manager.createOrSyncCourseDeck(for: course, in: context).cards.map(\.id)) == ids)
@@ -607,8 +635,8 @@ struct CourseLearningTests {
 
     @Test("Beginner and mastered-recall choices render without a keyboard")
     func keyboardFreeAppearance() throws {
-        let lesson = course.units[0].lessons[0]
-        let beginner = try #require(lesson.cards.first { $0.id == "kr-1-1-4" })
+        let lesson = legacyCourse.units[0].lessons[0]
+        let beginner = try #require(lesson.cards.first { $0.cardType == "multipleChoice" })
         let recall = try #require(lesson.cards.first { $0.cardType == "fillBlank" })
         let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
         for scheme in [ColorScheme.light, .dark] {
@@ -631,20 +659,23 @@ struct CourseLearningTests {
 
     @Test("Spacious picture questions render across appearances")
     func redesignedAppearance() throws {
-        let cards = course.units.flatMap(\.lessons).flatMap(\.cards)
+        let cards = legacyCourse.units.flatMap(\.lessons).flatMap(\.cards)
         let prompt = try #require(cards.first { $0.promptImageName != nil })
         let choices = try #require(cards.first { !$0.optionImageNames.isEmpty })
         let longMatch = try #require(course.units.last?.lessons.last?.cards.first { $0.cardType == "matching" })
+        let matching = try #require(cards.first { $0.cardType == "matching" })
+        let listening = try #require(cards.first { $0.cardType == "listening" })
+        let vocabulary = try #require(cards.first { $0.cardType == "vocabulary" })
         for scheme in [ColorScheme.light, .dark] {
             for (label, view) in [
                 ("picture-prompt", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in })),
                 ("picture-choices", AnyView(CourseQuestionPanel(card: choices, immersive: true) { _ in })),
                 ("long-matching", AnyView(CourseQuestionPanel(card: longMatch, immersive: true) { _ in })),
                 ("accessible-matching", AnyView(CourseQuestionPanel(card: longMatch, immersive: true) { _ in }.environment(\.dynamicTypeSize, .accessibility2))),
-                ("matching", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards[2], immersive: true) { _ in })),
-                ("reading-alternative", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards.first { $0.cardType == "listening" }!, immersive: true, prefersReading: true) { _ in })),
-                ("vocabulary", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards[1], immersive: true) { _ in })),
-                ("listening", AnyView(CourseQuestionPanel(card: course.units[0].lessons[0].cards.first { $0.cardType == "listening" }!, immersive: true) { _ in })),
+                ("matching", AnyView(CourseQuestionPanel(card: matching, immersive: true) { _ in })),
+                ("reading-alternative", AnyView(CourseQuestionPanel(card: listening, immersive: true, prefersReading: true) { _ in })),
+                ("vocabulary", AnyView(CourseQuestionPanel(card: vocabulary, immersive: true) { _ in })),
+                ("listening", AnyView(CourseQuestionPanel(card: listening, immersive: true) { _ in })),
                 ("guide", AnyView(CourseGuideContent(course: course, unit: course.units[0]))),
                 ("large-type", AnyView(CourseQuestionPanel(card: prompt, immersive: true) { _ in }.environment(\.dynamicTypeSize, .accessibility2)))
             ] {

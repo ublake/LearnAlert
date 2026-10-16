@@ -81,6 +81,14 @@ final class CourseProgressManager: ObservableObject {
 
     // MARK: - Enrolled Courses
 
+    var learningSnapshot: CourseLearningSnapshot {
+        var snapshot = CourseLearningSnapshot()
+        snapshot.progress = progressMap
+        snapshot.checkpoints = checkpointResults
+        snapshot.srs = srsRecords
+        return snapshot
+    }
+
     var allEnrolledCourses: [CourseDefinition] {
         enrolledCourseIds.compactMap { id in
             CourseCurriculumCatalog.course(for: id)
@@ -328,7 +336,6 @@ final class CourseProgressManager: ObservableObject {
               let unit = course.units.first(where: { $0.id == sectionId }) else {
             return false
         }
-        let map = progressMap[courseId] ?? loadProgressMap(for: courseId)
         let snapshot = CourseLearningStore.shared.snapshot()
         return unit.lessons.allSatisfy { snapshot.status(course: course, lessonId: $0.id) == .completed }
     }
@@ -466,8 +473,8 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func completedLessonsCount(for course: CourseDefinition) -> Int {
-        let map = progressMap[course.id] ?? loadProgressMap(for: course.id)
-        return course.units.flatMap(\.lessons).filter { map[$0.id]?.status == .completed }.count
+        let snapshot = learningSnapshot
+        return course.units.flatMap(\.lessons).filter { snapshot.status(course: course, lessonId: $0.id) == .completed }.count
     }
 
     func completionPercentage(for course: CourseDefinition) -> Double {
@@ -475,16 +482,13 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func completedCards(for course: CourseDefinition) -> [CourseLessonCard] {
-        let map = progressMap[course.id] ?? loadProgressMap(for: course.id)
-        var result: [CourseLessonCard] = []
-        for unit in course.units {
-            for lesson in unit.lessons {
-                if map[lesson.id]?.status == .completed {
-                    result.append(contentsOf: lesson.cards)
-                }
+        let snapshot = learningSnapshot
+        return course.units.flatMap(\.lessons)
+            .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
+            .flatMap { lesson in
+                let learned = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
+                return lesson.cards.filter { $0.activity == nil || learned.contains($0.id) || snapshot.srs[$0.id] != nil }
             }
-        }
-        return result
     }
 
     // MARK: - Scheduling Pointer & Notification Reconciliation (Requirements 6 & 14)

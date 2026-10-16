@@ -639,144 +639,119 @@ private struct PlanSummaryRow: View {
 struct CoursePathView: View {
     let course: CourseDefinition
     var initialCheckpointSectionId: String? = nil
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
-    @ObservedObject private var progressManager = CourseProgressManager.shared
-    @ObservedObject private var engine = StudyEngine.shared
-
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var manager = CourseProgressManager.shared
     @State private var guideUnit: CourseUnit?
-    @State private var selectedLessonForStudy: CourseLesson?
-    @State private var showingReviewSheet = false
+    @State private var selectedLesson: CourseLesson?
     @State private var selectedCheckpoint: CourseUnit?
-    @State private var showingScheduleAlertSuccess = false
-
-    private var completedCards: [CourseLessonCard] {
-        progressManager.completedCards(for: course)
-    }
+    @State private var showingReview = false
+    @State private var showingInfo = false
+    @State private var showingOnboarding = false
+    @State private var lessonAfterEnrollment: CourseLesson?
+    private var trail: CourseTrailProjection { CourseTrailProjection(course: course, snapshot: manager.learningSnapshot) }
+    private var enrolled: Bool { manager.isEnrolled(in: course.id) }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                // Course Header Card
-                HStack(spacing: 12) {
-                    Text(course.flagEmoji)
-                        .font(.system(size: 32))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(course.title)
-                            .font(.custom("Poppins-Bold", size: 17))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                        Text("\(progressManager.completedLessonsCount(for: course)) of \(course.totalLessonsCount) Lessons Completed")
-                            .font(.custom("Poppins-Regular", size: 12))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                    }
-                    Spacer()
-
-                    if !completedCards.isEmpty {
-                        Button {
-                            showingReviewSheet = true
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise.circle.fill")
-                                .font(.system(size: 26))
-                                .foregroundStyle(Color(hex: course.colorHex))
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 28) {
+                    HStack(spacing: 12) {
+                        Text(course.flagEmoji).font(.largeTitle)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(course.title).font(.title3.bold())
+                            Text("\(trail.milestones.filter { $0.status == .completed }.count) of \(trail.milestones.count) milestones")
+                                .font(.caption).foregroundStyle(.secondary).contentTransition(.numericText())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Review learned material")
-                    }
-                }
-                .padding(14)
-                .background(LearnAlertStyle.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-                )
-                .padding(.horizontal, 20)
-
-                // Units & Journey Nodes
-                ForEach(course.units) { unit in
-                    VStack(spacing: 14) {
-                        // Unit Header Pill
-                        HStack(spacing: 8) {
-                            Image(systemName: unit.badgeIcon)
-                                .font(.system(size: 11, weight: .bold))
-                            Text(unit.title)
-                                .font(.custom("Poppins-Bold", size: 12))
+                        Spacer()
+                        if !manager.completedCards(for: course).isEmpty {
+                            Button { showingReview = true } label: { Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44) }
+                                .accessibilityLabel("Review learned material")
                         }
-                        .foregroundStyle(Color(hex: unit.colorHex))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color(hex: unit.colorHex).opacity(0.14), in: Capsule())
-
-                        Button { guideUnit = unit } label: {
-                            Label("Section guide", systemImage: "book.closed").font(.subheadline.weight(.medium)).frame(minHeight: 44)
-                        }.accessibilityLabel("Section guide: \(unit.title)")
-
-                        // Staggered Path Nodes
-                        VStack(spacing: 16) {
-                            ForEach(Array(unit.lessons.enumerated()), id: \.element.id) { index, lesson in
-                                let status = progressManager.getLessonStatus(courseId: course.id, lessonId: lesson.id)
-                                let xOffset: CGFloat = (index % 3 == 1) ? 35 : ((index % 3 == 2) ? -35 : 0)
-
-                                CoursePathNodeView(
-                                    lesson: lesson,
-                                    status: status,
-                                    colorHex: unit.colorHex,
-                                    onTap: {
-                                        if status != .locked {
-                                            selectedLessonForStudy = lesson
-                                        }
-                                    }
-                                )
-                                .offset(x: xOffset)
-                            }
-                            if let quiz = unit.checkpointQuiz {
-                                let status = progressManager.getCheckpointStatus(courseId: course.id, sectionId: unit.id)
-                                Button { selectedCheckpoint = unit } label: {
-                                    VStack(spacing: 7) {
-                                        Image(systemName: status == .completed ? "checkmark.seal.fill" : status == .locked ? "lock.fill" : "checkmark.shield.fill")
-                                            .font(.system(size: 25)).frame(width: 68, height: 68)
-                                            .background(Color(hex: unit.colorHex).opacity(status == .locked ? 0.08 : 0.18), in: Circle())
-                                        Text("Checkpoint").font(.custom("Poppins-SemiBold", size: 12))
-                                        Text(status == .completed ? "Passed" : "\(quiz.questions.count) questions · \(Int(quiz.passingScoreThreshold * 100))% to pass")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }.foregroundStyle(status == .locked ? Color.gray : Color(hex: unit.colorHex))
-                                }.buttonStyle(.plain).disabled(status == .locked)
-                            }
+                    }.padding(.horizontal, 24)
+                    ForEach(course.units) { unit in
+                        VStack(spacing: 18) {
+                            HStack(spacing: 10) {
+                                Label(unit.title, systemImage: unit.badgeIcon).font(.subheadline.weight(.semibold))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 8)
+                                Button { guideUnit = unit } label: { Image(systemName: "book.closed").frame(width: 44, height: 44) }
+                                    .accessibilityLabel("Section guide: \(unit.title)")
+                            }.foregroundStyle(Color(hex: unit.colorHex)).padding(.horizontal, 24)
+                            CourseConnectedTrail(milestones: trail.milestones.filter { $0.unitId == unit.id },
+                                                 color: Color(hex: unit.colorHex), select: open)
+                                .padding(.horizontal, 12)
                         }
                     }
-                    .padding(.vertical, 6)
-                }
-
-                Spacer().frame(height: 80)
+                    Color.clear.frame(height: 12)
+                }.padding(.top, 18).padding(.bottom, 20)
             }
-            .padding(.top, 14)
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+            .onAppear {
+                manager.reloadFromSharedDefaults()
+                if let id = initialCheckpointSectionId, let unit = course.units.first(where: { $0.id == id }),
+                   manager.getCheckpointStatus(courseId: course.id, sectionId: id) == .available { selectedCheckpoint = unit }
+            }
+            .task { await Task.yield(); if let id = trail.focus?.id { proxy.scrollTo(id, anchor: .center) } }
+            .onChange(of: trail.focus?.id) { _, id in
+                guard let id else { return }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.65, dampingFraction: 0.88)) { proxy.scrollTo(id, anchor: .center) }
+            }
         }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .navigationTitle("Learning Path")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
-        .fullScreenCover(item: $selectedLessonForStudy) { lesson in
-            CourseLessonStudyView(course: course, lesson: lesson) {
-                selectedLessonForStudy = nil
-                progressManager.reloadFromSharedDefaults()
+        .navigationTitle("Learning Path").navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingInfo = true } label: { Image(systemName: "info.circle") }.accessibilityLabel("Course details and settings")
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Button {
+                if !enrolled { showingOnboarding = true }
+                else if let focus = trail.focus, focus.status != .completed { open(focus) }
+                else { showingReview = true }
+            } label: {
+                HStack {
+                    Text(!enrolled ? "Start \(course.language)" : trail.focus?.isCheckpoint == true && trail.focus?.status != .completed ? (trail.focus?.needsReview == true ? "Retry checkpoint" : "Take checkpoint") : trail.focus?.needsReview == true ? "Review lesson" : trail.focus?.status == .completed ? "Review" : "Continue")
+                    Image(systemName: "arrow.right")
+                }.font(.headline).frame(maxWidth: .infinity, minHeight: 52)
+            }.buttonStyle(.borderedProminent).tint(Color(hex: course.colorHex))
+                .padding(.horizontal, 24).padding(.vertical, 12).background(.regularMaterial)
+        }
+        .sheet(item: $guideUnit) { CourseGuideSheet(course: course, unit: $0) }
+        .sheet(isPresented: $showingInfo) {
+            NavigationStack {
+                CourseOverviewView(course: course).toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Done") { showingInfo = false } }
+                }
+            }
+        }
+        .sheet(isPresented: $showingOnboarding) {
+            CourseOnboardingSheet(course: course) {
+                showingOnboarding = false
+                manager.reloadFromSharedDefaults()
+                if let lessonAfterEnrollment { selectedLesson = lessonAfterEnrollment; self.lessonAfterEnrollment = nil }
+            }
+        }
+        .fullScreenCover(item: $selectedLesson) { lesson in
+            CourseLessonStudyView(course: course, lesson: lesson) { selectedLesson = nil; manager.reloadFromSharedDefaults() }
         }
         .fullScreenCover(item: $selectedCheckpoint) { unit in
-            CourseCheckpointStudyView(course: course, unit: unit) {
-                selectedCheckpoint = nil
-                progressManager.reloadFromSharedDefaults()
-            }
+            CourseCheckpointStudyView(course: course, unit: unit) { selectedCheckpoint = nil; manager.reloadFromSharedDefaults() }
         }
-        .onAppear {
-            progressManager.reloadFromSharedDefaults()
-            if let id = initialCheckpointSectionId, let unit = course.units.first(where: { $0.id == id }),
-               progressManager.getCheckpointStatus(courseId: course.id, sectionId: id) == .available { selectedCheckpoint = unit }
+        .fullScreenCover(isPresented: $showingReview) {
+            CourseReviewStudyView(course: course, cards: manager.completedCards(for: course)) { showingReview = false; manager.reloadFromSharedDefaults() }
         }
-        .fullScreenCover(isPresented: $showingReviewSheet) {
-            CourseReviewStudyView(course: course, cards: completedCards) {
-                showingReviewSheet = false
-                progressManager.reloadFromSharedDefaults()
-            }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { manager.reloadFromSharedDefaults() } }
+        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.88), value: trail)
+    }
+    private func open(_ node: CourseTrailMilestone) {
+        guard node.status != .locked else { return }
+        if node.isCheckpoint {
+            if enrolled { selectedCheckpoint = course.units.first { $0.id == node.unitId } }
+            else { showingOnboarding = true }
+        } else if let lesson = course.units.flatMap(\.lessons).first(where: { $0.id == node.id }) {
+            if enrolled { selectedLesson = lesson }
+            else { lessonAfterEnrollment = lesson; showingOnboarding = true }
         }
     }
 }

@@ -25,6 +25,12 @@ struct StudyHandoff: Identifiable, Hashable {
 struct CourseHandoff: Identifiable, Hashable {
     let id: String
     var sectionId: String? = nil
+
+    static func destination(course: CourseDefinition, snapshot: CourseLearningSnapshot, requestedSectionId: String? = nil, openPath: Bool = false) -> CourseHandoff {
+        guard !openPath, let pending = snapshot.pendingCheckpoint(course: course),
+              requestedSectionId == nil || requestedSectionId == pending.id else { return CourseHandoff(id: course.id) }
+        return CourseHandoff(id: course.id, sectionId: pending.id)
+    }
 }
 
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -277,10 +283,15 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             if let courseId = userInfo["courseId"] as? String,
                response.actionIdentifier != UNNotificationDismissActionIdentifier {
                 CourseProgressManager.shared.reloadFromSharedDefaults()
-                let course = CourseCurriculumCatalog.course(for: courseId)
-                let sectionId = course.flatMap { CourseLearningStore.shared.snapshot().pendingCheckpoint(course: $0)?.id }
-                self.pendingCourseHandoff = CourseHandoff(id: courseId, sectionId: sectionId)
-                UserDefaults(suiteName: "group.com.learnalert.shared")?.removeObject(forKey: "handoffCourseId")
+                let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+                let hasExplicitHandoff = defaults?.string(forKey: "handoffCourseId") == courseId
+                if let course = CourseCurriculumCatalog.course(for: courseId),
+                   hasExplicitHandoff || self.pendingCourseHandoff?.id != courseId {
+                    self.pendingCourseHandoff = CourseHandoff.destination(course: course, snapshot: CourseLearningStore.shared.snapshot(),
+                        requestedSectionId: hasExplicitHandoff ? defaults?.string(forKey: "handoffCourseSectionId") : userInfo["courseCheckpointSectionId"] as? String,
+                        openPath: hasExplicitHandoff && defaults?.bool(forKey: "handoffCourseOpenPath") == true)
+                }
+                ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults?.removeObject(forKey: $0) }
                 completionHandler()
                 return
             }
@@ -368,9 +379,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     func consumePendingStudyHandoff() {
         CourseProgressManager.shared.reloadFromSharedDefaults()
         if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"), let id = defaults.string(forKey: "handoffCourseId") {
-            let course = CourseCurriculumCatalog.course(for: id)
-            pendingCourseHandoff = CourseHandoff(id: id, sectionId: course.flatMap { CourseLearningStore.shared.snapshot().pendingCheckpoint(course: $0)?.id })
-            defaults.removeObject(forKey: "handoffCourseId")
+            if let course = CourseCurriculumCatalog.course(for: id) {
+                pendingCourseHandoff = CourseHandoff.destination(course: course, snapshot: CourseLearningStore.shared.snapshot(),
+                    requestedSectionId: defaults.string(forKey: "handoffCourseSectionId"), openPath: defaults.bool(forKey: "handoffCourseOpenPath"))
+            }
+            ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults.removeObject(forKey: $0) }
         }
         guard let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
               let deckString = defaults.string(forKey: "handoffDeckId"),

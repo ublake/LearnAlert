@@ -1211,16 +1211,34 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         super.viewDidLoad()
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        KoreanSpeechManager.shared.stop()
+        extensionContext?.mediaPlayingPaused()
+    }
+
+    func mediaPause() {
+        KoreanSpeechManager.shared.stop()
+        extensionContext?.mediaPlayingPaused()
+    }
+
     func didReceive(_ notification: UNNotification) {
         Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
         let userInfo = content.userInfo
 
         if let courseId = userInfo["courseId"] as? String, let course = CourseCurriculumCatalog.course(for: courseId) {
-            let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false) { [weak self] in
-                UserDefaults(suiteName: "group.com.learnalert.shared")?.set(courseId, forKey: "handoffCourseId")
+            let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false, openApp: { [weak self] sectionId in
+                let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+                defaults?.set(courseId, forKey: "handoffCourseId")
+                defaults?.set(sectionId, forKey: "handoffCourseSectionId")
+                defaults?.set(sectionId == nil, forKey: "handoffCourseOpenPath")
+                defaults?.synchronize()
                 self?.extensionContext?.performNotificationDefaultAction()
-            }
+            }, mediaPlaybackChanged: { [weak self] playing in
+                if playing { self?.extensionContext?.mediaPlayingStarted() }
+                else { self?.extensionContext?.mediaPlayingPaused() }
+            })
             show(AnyView(courseView))
             preferredContentSize = CGSize(width: view.bounds.width, height: 540)
             return

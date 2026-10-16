@@ -10,7 +10,7 @@ import AVFoundation
 import Combine
 
 @MainActor
-final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate {
     static let shared = KoreanSpeechManager()
 
     public enum PlaybackSpeed: Double {
@@ -26,7 +26,9 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     private var playbackRequestID: UUID?
     private let audioSessionQueue = DispatchQueue(label: "com.learnalert.korean-audio-session", qos: .default)
     private var koreanVoice: AVSpeechSynthesisVoice?
+    private var recordingPlayer: AVAudioPlayer?
     var hasVoice: Bool { koreanVoice != nil }
+    func canPlay(_ text: String) -> Bool { HangulAudio.url(for: text) != nil || hasVoice }
 
     private override init() {
         super.init()
@@ -47,13 +49,15 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
 
     /// Speaks Korean text with specified rate. Note: Never call automatically from notifications.
     func speak(_ text: String, speed: PlaybackSpeed = .normal) {
-        guard hasVoice, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard canPlay(text), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         let needsStop = activeUtteranceID != nil
         activeUtteranceID = nil
         let requestID = UUID()
         playbackRequestID = requestID
         if needsStop { synthesizer.stopSpeaking(at: .immediate) }
+        recordingPlayer?.stop()
+        recordingPlayer = nil
         currentSpeakingText = text
         isSpeaking = true
         let rate = Float(speed.rawValue)
@@ -67,6 +71,17 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
             } catch { print("Audio session configuration error: \(error)") }
             Task { @MainActor [weak self] in
                 guard let self, self.playbackRequestID == requestID else { return }
+                if let url = HangulAudio.url(for: text) {
+                    do {
+                        let player = try AVAudioPlayer(contentsOf: url)
+                        player.delegate = self
+                        player.enableRate = true
+                        player.rate = speed == .slow ? 0.72 : 1
+                        self.recordingPlayer = player
+                        guard player.play() else { self.stop(); return }
+                        return
+                    } catch { self.stop(); return }
+                }
                 let utterance = AVSpeechUtterance(string: text)
                 utterance.voice = self.koreanVoice
                 utterance.rate = rate
@@ -79,6 +94,8 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     }
 
     func stop() {
+        recordingPlayer?.stop()
+        recordingPlayer = nil
         if activeUtteranceID != nil { synthesizer.stopSpeaking(at: .immediate) }
         activeUtteranceID = nil
         playbackRequestID = nil
@@ -94,6 +111,18 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     }
 
     // MARK: - AVSpeechSynthesizerDelegate
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let identifier = ObjectIdentifier(player)
+        Task { @MainActor in
+            guard let current = self.recordingPlayer, ObjectIdentifier(current) == identifier else { return }
+            self.recordingPlayer = nil
+            self.playbackRequestID = nil
+            self.isSpeaking = false
+            self.currentSpeakingText = nil
+            self.releaseAudioSession()
+        }
+    }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let identifier = ObjectIdentifier(utterance)

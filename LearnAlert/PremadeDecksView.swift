@@ -368,7 +368,7 @@ struct PremadeDecksView: View {
             ExamPrepHubView(libraryDecks: libraryDecks, onAddDeck: add)
         }
         .navigationDestination(item: $searchedCourse) { course in
-            CourseOverviewView(course: course)
+            CoursePathView(course: course)
         }
         .sheet(isPresented: $showingShareSheet) {
             ShareDeckToCommunitySheet(libraryDecks: libraryDecks)
@@ -390,8 +390,8 @@ struct PremadeDecksView: View {
         ) {
             DiscoverCategoryTile(
                 title: "Language courses",
-                subtitle: "Spanish & Korean, one lesson at a time.",
-                badge: "\(CourseCurriculumCatalog.courses.count) courses",
+                subtitle: "Korean, Spanish & more coming soon.",
+                badge: "\(CourseCurriculumCatalog.courses.count) available",
                 symbol: "character.bubble.fill",
                 color: StudyStudioStyle.blue,
                 action: { showingCourses = true }
@@ -410,7 +410,10 @@ struct PremadeDecksView: View {
 
     private var searchResults: some View {
         let query = discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        let courses = CourseCurriculumCatalog.courses.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        let courses = CourseCurriculumCatalog.courses.filter {
+            $0.title.localizedCaseInsensitiveContains(query) || $0.language.localizedCaseInsensitiveContains(query)
+        }
+        let upcomingLanguages = ComingSoonCourseCatalog.languages.filter { $0.name.localizedCaseInsensitiveContains(query) }
         let decks = PremadeDeckCatalog.decks.filter {
             $0.name.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
                 || $0.subcategory.localizedCaseInsensitiveContains(query)
@@ -422,13 +425,16 @@ struct PremadeDecksView: View {
                     searchRow(title: course.title, subtitle: "Guided language course", symbol: "character.book.closed", action: "Open")
                 }.buttonStyle(.plain)
             }
+            ForEach(upcomingLanguages) { language in
+                ComingSoonLanguageCourseCard(language: language)
+            }
             ForEach(decks) { deck in
                 let added = libraryDecks.contains { $0.name == deck.name }
                 Button { add(deck) } label: {
                     searchRow(title: deck.name, subtitle: "\(deck.category) · \(deck.cards.count) cards", symbol: "rectangle.stack", action: added ? "Added" : "Add")
                 }.buttonStyle(.plain).disabled(added)
             }
-            if courses.isEmpty && decks.isEmpty {
+            if courses.isEmpty && upcomingLanguages.isEmpty && decks.isEmpty {
                 Text("No matching courses or exam decks.")
                     .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
@@ -488,6 +494,7 @@ struct PremadeDecksView: View {
 // MARK: - Dedicated Courses Catalog List View
 
 private struct CoursesCatalogListView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @State private var selectedCourse: CourseDefinition?
 
@@ -516,6 +523,22 @@ private struct CoursesCatalogListView: View {
                 }
                 .padding(.horizontal, 20)
 
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Coming soon")
+                        .font(.custom("Poppins-SemiBold", size: 15))
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2),
+                        spacing: 10
+                    ) {
+                        ForEach(ComingSoonCourseCatalog.languages) { language in
+                            ComingSoonLanguageCourseCard(language: language)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+
                 Spacer().frame(height: 60)
             }
         }
@@ -523,8 +546,72 @@ private struct CoursesCatalogListView: View {
         .navigationTitle("Courses")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedCourse) { course in
-            CourseOverviewView(course: course)
+            CoursePathView(course: course)
         }
+    }
+}
+
+// Availability previews deliberately have no curriculum, enrollment, or navigation action.
+private struct ComingSoonLanguageCourse: Identifiable {
+    let id: String
+    let name: String
+    let flag: String
+}
+
+private enum ComingSoonCourseCatalog {
+    static let languages: [ComingSoonLanguageCourse] = [
+        .init(id: "ja", name: "Japanese", flag: "🇯🇵"),
+        .init(id: "fr", name: "French", flag: "🇫🇷"),
+        .init(id: "zh-Hans", name: "Mandarin Chinese", flag: "🇨🇳"),
+        .init(id: "de", name: "German", flag: "🇩🇪"),
+        .init(id: "it", name: "Italian", flag: "🇮🇹"),
+        .init(id: "pt", name: "Portuguese", flag: "🇵🇹"),
+        .init(id: "ar", name: "Arabic", flag: "🌐"),
+        .init(id: "hi", name: "Hindi", flag: "🇮🇳"),
+        .init(id: "vi", name: "Vietnamese", flag: "🇻🇳"),
+        .init(id: "th", name: "Thai", flag: "🇹🇭"),
+        .init(id: "ru", name: "Russian", flag: "🇷🇺"),
+        .init(id: "tr", name: "Turkish", flag: "🇹🇷"),
+        .init(id: "id", name: "Indonesian", flag: "🇮🇩"),
+        .init(id: "nl", name: "Dutch", flag: "🇳🇱"),
+        .init(id: "el", name: "Greek", flag: "🇬🇷"),
+        .init(id: "sv", name: "Swedish", flag: "🇸🇪")
+    ]
+}
+
+private struct ComingSoonLanguageCourseCard: View {
+    let language: ComingSoonLanguageCourse
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(language.flag)
+                .font(.system(size: 25))
+                .saturation(0)
+                .opacity(0.65)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(language.name)
+                    .font(.custom("Poppins-SemiBold", size: 12))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Label("Coming soon", systemImage: "lock.fill")
+                    .font(.custom("Poppins-Regular", size: 10))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(language.name)
+        .accessibilityValue("Coming soon. Unavailable.")
+        .accessibilityAddTraits(.isStaticText)
     }
 }
 

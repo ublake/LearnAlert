@@ -37,6 +37,7 @@ struct CoursePracticeView: View {
     let onDismiss: () -> Void
     @ObservedObject private var manager = CourseProgressManager.shared
     @State private var index = 0
+    @State private var presentationId = UUID()
     @State private var answered = false
     @State private var missed: [String] = []
     @State private var finished = false
@@ -68,6 +69,11 @@ struct CoursePracticeView: View {
 
     private var isCheckpoint: Bool { checkpointUnit != nil }
     private var missedCards: [CourseLessonCard] { practiceCards.filter { missed.contains($0.id) } }
+    private var completedActivityCount: Int {
+        practiceCards.filter { card in
+            savedAnswers[card.id] == true || (card.activity?.practiceGroup == nil && savedAnswers[card.id] != nil)
+        }.count
+    }
 
     var body: some View {
         NavigationStack {
@@ -85,15 +91,17 @@ struct CoursePracticeView: View {
                 } else if practiceCards.indices.contains(index) {
                     ScrollView {
                         VStack(spacing: 16) {
+                            if practiceCards[index].activity == nil {
                             Text(isCheckpoint ? "CHECKPOINT" : practiceCards[index].isListeningQuestion && !prefersReading ? "LISTENING" : practiceCards[index].optionImageNames.isEmpty && practiceCards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
                                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
+                            }
                             CourseQuestionPanel(card: practiceCards[index], immersive: true, checkpoint: isCheckpoint,
                                 allowAudio: course.language == "Korean", prefersReading: prefersReading,
                                 allowTypedRecall: practiceCards[index].canOfferTypedRecall(
                                     masteryScore: manager.srsRecords[practiceCards[index].id]?.masteryScore ?? 0,
                                     checkpoint: isCheckpoint),
                                 onReadingRequested: { prefersReading = true }) { correct in record(correct: correct) }
-                                .id("\(session)-\(index)")
+                                .id("\(session)-\(index)-\(presentationId)")
                         }.padding(.horizontal, 24).padding(.vertical, 24)
                             .tint(Color(hex: course.colorHex))
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
@@ -148,7 +156,7 @@ struct CoursePracticeView: View {
                 }
             }
             if loaded && !finished {
-                ProgressView(value: Double(savesSession ? savedAnswers.count : index + (answered ? 1 : 0)), total: Double(max(1, practiceCards.count)))
+                ProgressView(value: Double(savesSession ? completedActivityCount : index + (answered ? 1 : 0)), total: Double(max(1, practiceCards.count)))
                     .tint(Color(hex: course.colorHex)).animation(.snappy, value: answered)
             }
         }.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 16)
@@ -268,9 +276,13 @@ struct CoursePracticeView: View {
     }
 
     private func advance() {
-        let next = savesSession ? practiceCards.indices.first { savedAnswers[practiceCards[$0].id] == nil } : (index + 1 < practiceCards.count ? index + 1 : nil)
-        if let next { index = next; answered = false; saveError = nil }
-        else { finishSession() }
+        presentationId = UUID()
+        if savesSession {
+            answered = false
+            restoreSession()
+        } else if index + 1 < practiceCards.count {
+            index += 1; answered = false; saveError = nil
+        } else { finishSession() }
     }
 
     private func finishSession() {

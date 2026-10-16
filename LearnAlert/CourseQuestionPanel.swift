@@ -36,11 +36,16 @@ struct CourseQuestionPanel: View {
             || (card.usesTypedAnswer && !card.options.isEmpty && !writingAnswer)
     }
     private var canTryTyping: Bool { allowTypedRecall && !checkpoint && card.usesTypedAnswer && !card.options.isEmpty }
-    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && speech.hasVoice }
+    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && speech.canPlay(card.speechText ?? "") }
     @State private var selectedWord: String?
 
     var body: some View {
         VStack(spacing: 16) {
+            if let activity = card.activity {
+                CourseActivityPanel(card: card, activity: activity, immersive: immersive, checkpoint: checkpoint,
+                    allowAudio: allowAudio, prefersReading: prefersReading,
+                    onReadingRequested: onReadingRequested, onAnswer: submit)
+            } else {
             Text(questionText).font(immersive ? .title.weight(.bold) : .title3.weight(.semibold)).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity).padding(immersive ? 0 : 16)
                 .background(immersive ? Color.clear : Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
@@ -74,7 +79,7 @@ struct CourseQuestionPanel: View {
             }
             if !checkpoint && (!listening || grade != nil) {
                 HStack(spacing: 8) {
-                    if let text = card.primaryKoreanText, allowAudio && speech.hasVoice && !prefersReading && !readingInstead && (!writingAnswer || grade != nil) {
+                    if let text = card.primaryKoreanText, allowAudio && speech.canPlay(text) && !prefersReading && !readingInstead && (!writingAnswer || grade != nil) {
                         Button { KoreanSpeechManager.shared.speak(text) } label: { Image(systemName: "speaker.wave.2.fill").frame(width: 44, height: 44) }
                             .accessibilityLabel("Pronounce in Korean")
                         Button { KoreanSpeechManager.shared.speak(text, speed: .slow) } label: { Image(systemName: "tortoise.fill").frame(width: 44, height: 44) }
@@ -190,6 +195,7 @@ struct CourseQuestionPanel: View {
                     } else { Text(card.correctAnswer).font(.headline).multilineTextAlignment(.center) }
                 }
                 if !checkpoint, let explanation = card.explanation { Text(explanation).font(.callout).foregroundStyle(.secondary) }
+            }
             }
         }
         .onAppear { if optionIndices.isEmpty { optionIndices = Array(card.options.indices).shuffled() } }

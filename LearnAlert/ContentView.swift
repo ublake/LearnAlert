@@ -101,9 +101,14 @@ struct ContentView: View {
             }
             .onReceive(enterForeground) { _ in
                 StudyEngine.shared.restoreSession()
+                CourseProgressManager.shared.reloadFromSharedDefaults()
                 notificationManager.consumePendingStudyHandoff()
             }
             .onChange(of: notificationManager.pendingStudyHandoff) { _, handoff in
+                guard handoff != nil else { return }
+                selectedTab = 0
+            }
+            .onChange(of: notificationManager.pendingCourseHandoff) { _, handoff in
                 guard handoff != nil else { return }
                 selectedTab = 0
             }
@@ -974,15 +979,8 @@ struct HomeLibraryView: View {
                 decks: ordinaryDecks
             )
         }
-        .sheet(item: $selectedCourseForOverview) { course in
-            NavigationStack {
-                CourseOverviewView(course: course)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { selectedCourseForOverview = nil }
-                        }
-                    }
-            }
+        .navigationDestination(item: $selectedCourseForOverview) { course in
+            CoursePathView(course: course)
         }
         .fullScreenCover(item: $selectedCourseStudy) { selection in
             CourseLessonStudyView(course: selection.course, lesson: selection.lesson,
@@ -1032,11 +1030,7 @@ struct HomeLibraryView: View {
     }
 
     private func resumeCourse(_ course: CourseDefinition) {
-        if let current = progressManager.currentLesson(for: course) {
-            selectedCourseStudy = HomeCourseStudySelection(course: course, lesson: current)
-        } else {
-            selectedCourseForOverview = course
-        }
+        selectedCourseForOverview = course
     }
 
     private func scheduleCourse(_ course: CourseDefinition) {
@@ -2155,6 +2149,8 @@ private struct HomeCourseCard: View {
         progressManager.currentLesson(for: course)
     }
 
+    private var trail: CourseTrailProjection { CourseTrailProjection(course: course, snapshot: progressManager.learningSnapshot) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Button(action: onOpenOverview) {
@@ -2171,7 +2167,7 @@ private struct HomeCourseCard: View {
                         Spacer(minLength: 0)
                         if isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Pinned") }
                     }
-                    Text(currentLesson?.title ?? "All lessons completed")
+                    Text(trail.focus?.status == .completed ? "Course complete" : trail.focus?.title ?? "Learning path")
                         .font(.subheadline).foregroundStyle(LearnAlertStyle.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -2193,12 +2189,16 @@ private struct HomeCourseCard: View {
                     }
                 }
                 .foregroundStyle(LearnAlertStyle.textSecondary)
-                ProgressView(value: completionPercent).tint(Color(hex: course.colorHex))
+                if isPinned {
+                    CourseMiniTrail(milestones: trail.currentUnit, color: Color(hex: course.colorHex))
+                } else {
+                    ProgressView(value: completionPercent).tint(Color(hex: course.colorHex))
+                }
             }
             HStack(spacing: 12) {
                 Button(action: onContinue) {
                     HStack(spacing: 8) {
-                        Text(currentLesson == nil ? "Review" : "Continue")
+                        Text(trail.focus?.isCheckpoint == true ? (trail.focus?.needsReview == true ? "Review checkpoint" : trail.focus?.status == .completed ? "Review" : "View checkpoint") : trail.focus?.needsReview == true || trail.focus?.status == .completed ? "Review" : "Continue")
                         Image(systemName: "arrow.right").font(.caption.weight(.bold))
                     }
                     .font(.subheadline.weight(.semibold))
