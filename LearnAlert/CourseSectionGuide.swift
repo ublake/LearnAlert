@@ -135,9 +135,9 @@ struct CourseGuideContent: View {
             ForEach(CourseSectionGuides.topics(course: course, unit: unit)) { topic in
                 VStack(alignment: .leading, spacing: 12) {
                     Text(topic.title).font(.headline)
-                    Text(topic.rule).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(CourseKoreanText.attributed(topic.rule)).font(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     ForEach(topic.examples, id: \.self) { example in
-                        Text(example).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                        Text(CourseKoreanText.attributed(example)).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -149,7 +149,7 @@ struct CourseGuideContent: View {
     }
 }
 
-private struct HangulStackingDiagram: View {
+struct HangulStackingDiagram: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("How the letters fit").font(.headline)

@@ -100,8 +100,17 @@ In-app Korean speech supports normal/slower playback and optional automatic
 pronunciation. Listening questions hide the transcript until answered. “I can’t listen
 right now” changes to a reading or written-recall alternative with the same card ID and
 grading, and disables listening for that session. A missing Korean voice also uses the
-written alternative. Notification speech is disabled pending signed-device verification.
+written alternative. Notification speech starts only on Play, with slower playback
+and a text alternative.
 Vocabulary sheets provide sentence meanings, grammar notes, and dictionary lookups.
+
+Expanded course alerts emphasize Korean inside teaching text in blue and bold.
+Read-through cards acknowledge Reviewed rather than grading a guessed answer.
+Their compact controls preserve readable text and 44-point touch targets; measured
+content requests additional notification height only when needed, within a phone-sized
+limit. Section guides show one complete topic per page. Long or enlarged text retains
+a scrolling fallback if iOS limits the available height. The drawing canvas and its
+gestures are unchanged.
 Validation on October 9, 2026: 61 tests passed with no failures, skips, or runtime
 warnings; the Release app and notification extension built successfully. Reviewed
 light/dark renders for matching, listening, reading alternatives, vocabulary, guides,

@@ -44,6 +44,8 @@ struct CourseMatchingPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.courseNotificationCompact) private var notificationCompact
+    private var compact: Bool { notificationCompact && !immersive }
     @State private var state: CourseMatchingState
     @State private var rightOrder: [Int]
     @State private var submitted = false
@@ -57,7 +59,7 @@ struct CourseMatchingPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: immersive ? 20 : 12) {
+        VStack(spacing: immersive ? 20 : compact ? 8 : 12) {
             HStack {
                 Label(statusText, systemImage: statusIcon)
                     .font(.subheadline.weight(.medium))
@@ -146,8 +148,8 @@ struct CourseMatchingPanel: View {
                 Image(systemName: matched ? "checkmark.circle.fill" : wrong ? "xmark.circle" : selected ? "circle.inset.filled" : "circle")
                     .font(.caption.bold()).foregroundStyle(color.opacity(matched || selected || wrong ? 1 : 0.3))
                     .accessibilityHidden(true)
-            }.foregroundStyle(.primary).padding(.horizontal, 12).padding(.vertical, immersive ? 20 : 12)
-                .frame(maxWidth: .infinity, minHeight: immersive ? 80 : 56)
+            }.foregroundStyle(.primary).padding(.horizontal, compact ? 8 : 12).padding(.vertical, immersive ? 20 : compact ? 8 : 12)
+                .frame(maxWidth: .infinity, minHeight: immersive ? 80 : compact ? 44 : 56)
                 .background(color.opacity(selected ? 0.22 : matched || wrong ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: immersive ? 20 : 12))
                 .overlay(RoundedRectangle(cornerRadius: immersive ? 20 : 12).stroke(border, lineWidth: selected ? 3 : 1.5))
                 .scaleEffect(selected ? 1.025 : 1)

@@ -171,10 +171,10 @@ struct CoursePracticeView: View {
             }
             if answered {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: lastCorrect ? "checkmark.circle.fill" : "arrow.counterclockwise.circle.fill")
-                        .font(.title2).foregroundStyle(lastCorrect ? Color.green : Color.orange)
+                    Image(systemName: lastCorrect ? (practiceCards[index].isReadThrough ? "book.closed.fill" : "checkmark.circle.fill") : "arrow.counterclockwise.circle.fill")
+                        .font(.title2).foregroundStyle(lastCorrect ? (practiceCards[index].isReadThrough ? CourseKoreanText.emphasisColor : Color.green) : Color.orange)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(lastCorrect ? "Nicely done!" : "Let’s remember this one").font(.headline)
+                        Text(practiceCards[index].isReadThrough ? practiceCards[index].feedbackTitle(isCorrect: lastCorrect) : (lastCorrect ? "Nicely done!" : "Let’s remember this one")).font(.headline)
                         if !lastCorrect {
                             if practiceCards[index].cardType == "matching" {
                                 ForEach(practiceCards[index].matchingLeftItems.indices, id: \.self) { item in
@@ -185,7 +185,7 @@ struct CoursePracticeView: View {
                             } else { Text(practiceCards[index].correctAnswer).font(.subheadline.weight(.semibold)) }
                         }
                         if !isCheckpoint, let explanation = practiceCards[index].explanation {
-                            Text(explanation).font(.subheadline).foregroundStyle(.secondary)
+                            Text(CourseKoreanText.attributed(explanation)).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }.accessibilityElement(children: .combine)

@@ -12,6 +12,7 @@ struct CourseActivityPanel: View {
     let onAnswer: (Bool) -> Void
     @ObservedObject private var speech = KoreanSpeechManager.shared
     @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.courseNotificationCompact) private var notificationCompact
     @State private var hints = false
     @State private var reading = false
     @State private var result: Bool?
@@ -32,9 +33,10 @@ struct CourseActivityPanel: View {
 
     private var audio: Bool { allowAudio && speech.canPlay(card.speechText ?? "") && !prefersReading && !reading }
     private var isPlacement: Bool { activity.kind == .buildBlock || activity.kind == .placeTokens }
+    private var compact: Bool { notificationCompact && !immersive && activity.kind != .trace }
 
     var body: some View {
-        VStack(spacing: immersive ? 24 : 14) {
+        VStack(spacing: immersive ? 24 : compact ? 8 : 14) {
             HStack {
                 Label(activityLabel, systemImage: activityIcon).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
@@ -45,7 +47,7 @@ struct CourseActivityPanel: View {
                         .accessibilityValue(hints ? "On" : "Off")
                 }
             }
-            Text(activity.kind == .listenChoose && !audio ? "Read and choose" : card.question)
+            Text(CourseKoreanText.attributed(activity.kind == .listenChoose && !audio ? "Read and choose" : card.question))
                 .font(immersive ? .title2.bold() : .headline).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             if let image = card.promptImageName {
@@ -55,7 +57,7 @@ struct CourseActivityPanel: View {
                 teaching
             } else {
                 if (hints || activity.kind == .trace), let rule = activity.rule {
-                    Text(rule).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(CourseKoreanText.attributed(rule)).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if activity.kind == .trace, let symbol = activity.symbol {
                     CourseTracePanel(symbol: symbol, options: card.options, compact: !immersive,
@@ -70,10 +72,10 @@ struct CourseActivityPanel: View {
                 }
             }
             if let result, !immersive {
-                Label(result ? "Correct" : "Keep practicing", systemImage: result ? "checkmark.circle.fill" : "arrow.counterclockwise")
-                    .foregroundStyle(result ? Color.green : .orange).font(.subheadline.weight(.semibold))
+                Label(card.feedbackTitle(isCorrect: result), systemImage: result ? (card.isReadThrough ? "book.closed.fill" : "checkmark.circle.fill") : "arrow.counterclockwise")
+                    .foregroundStyle(result ? (card.isReadThrough ? CourseKoreanText.emphasisColor : Color.green) : .orange).font(.subheadline.weight(.semibold))
                 if !result { Text(card.correctAnswer).font(.headline) }
-                if !checkpoint, let explanation = card.explanation { Text(explanation).font(.callout).foregroundStyle(.secondary) }
+                if !checkpoint, let explanation = card.explanation { Text(CourseKoreanText.attributed(explanation)).font(.callout).foregroundStyle(.secondary) }
             }
         }
         .onAppear { if choices.isEmpty { choices = (isPlacement ? activity.tokens : card.options).shuffled() } }
@@ -81,11 +83,11 @@ struct CourseActivityPanel: View {
     }
 
     private var teaching: some View {
-        VStack(spacing: 20) {
-            if let rule = activity.rule { Text(rule).font(immersive ? .title3 : .body).fixedSize(horizontal: false, vertical: true) }
+        VStack(spacing: compact ? 10 : 20) {
+            if let rule = activity.rule { Text(CourseKoreanText.attributed(rule)).font(immersive ? .title3 : .body).fixedSize(horizontal: false, vertical: true) }
             if let example = activity.example {
-                Text(example).font(immersive ? .title2.weight(.semibold) : .title3.weight(.semibold))
-                    .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(20)
+                Text(CourseKoreanText.attributed(example)).font(immersive ? .title2.weight(.semibold) : .title3.weight(.semibold))
+                    .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(compact ? 10 : 20)
                     .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
             }
             if allowAudio, let text = card.speechText, speech.canPlay(text) {
@@ -97,6 +99,19 @@ struct CourseActivityPanel: View {
 
     @ViewBuilder private var listeningControl: some View {
         if audio, let text = card.speechText {
+            if compact {
+                HStack(spacing: 8) {
+                    Button { speech.speak(text) } label: {
+                        Label(speech.isSpeaking ? "Again" : "Play", systemImage: speech.isSpeaking ? "waveform" : "play.fill")
+                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.borderedProminent).accessibilityLabel("Play Korean sound")
+                    Button { speech.speak(text, speed: .slow) } label: {
+                        Image(systemName: "tortoise.fill").frame(width: 44, height: 44)
+                    }.buttonStyle(.plain).accessibilityLabel("Play slowly")
+                    Button("Use text") { speech.stop(); reading = true; onReadingRequested() }
+                        .font(.subheadline).frame(minHeight: 44)
+                }
+            } else {
             VStack(spacing: 8) {
                 Button { speech.speak(text) } label: {
                     VStack(spacing: 10) {
@@ -112,29 +127,30 @@ struct CourseActivityPanel: View {
                     Button("Use text") { speech.stop(); reading = true; onReadingRequested() }.frame(minHeight: 44)
                 }.font(.subheadline)
             }
+            }
         } else {
             VStack(spacing: 6) {
-                Text(activity.readingCue ?? card.readingPrompt ?? "Choose the matching Korean.").font(.callout)
+                Text(CourseKoreanText.attributed(activity.readingCue ?? card.readingPrompt ?? "Choose the matching Korean.")).font(.callout)
                 if allowAudio && !speech.canPlay(card.speechText ?? "") { Text("Korean audio is unavailable. Using text practice.").font(.caption).foregroundStyle(.secondary) }
             }
         }
     }
 
     private var optionGrid: some View {
-        LazyVGrid(columns: optionColumns, spacing: 12) {
+        LazyVGrid(columns: optionColumns, spacing: compact ? 8 : 12) {
             ForEach(choices, id: \.self) { option in
                 Button { selected = option; finish(card.accepts(option)) } label: {
-                    VStack(spacing: 8) {
+                    VStack(spacing: compact ? 4 : 8) {
                         Text(option).font(option.count <= 3 ? .system(size: immersive ? 40 : 30, weight: .medium) : .body.weight(.medium))
                             .fixedSize(horizontal: false, vertical: true)
                         if hints, !checkpoint, let hint = activity.optionHints[option] {
-                            Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text(CourseKoreanText.attributed(hint)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         }
                         if result != nil && (selected == option || card.accepts(option)) {
                             Image(systemName: card.accepts(option) ? "checkmark.circle.fill" : "xmark.circle.fill")
                                 .foregroundStyle(card.accepts(option) ? Color.green : .orange)
                         }
-                    }.frame(maxWidth: .infinity, minHeight: immersive ? 96 : 68).padding(12)
+                    }.padding(compact ? 8 : 12).frame(maxWidth: .infinity, minHeight: immersive ? 120 : compact ? 56 : 92)
                         .background(optionBackground(option), in: RoundedRectangle(cornerRadius: 18))
                         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.16), lineWidth: 1))
                 }.buttonStyle(.plain).disabled(result != nil)
@@ -150,14 +166,14 @@ struct CourseActivityPanel: View {
     }
 
     private var placementPanel: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: compact ? 8 : 16) {
             if activity.kind == .buildBlock {
-                VStack(spacing: 8) {
+                VStack(spacing: compact ? 4 : 8) {
                     if activity.layout == .beside || activity.layout == .besideWithFinal {
                         HStack(spacing: 8) { slot(0); slot(1) }
                     } else { VStack(spacing: 8) { slot(0); slot(1) } }
                     if activity.slots.count > 2 { slot(2) }
-                }.frame(maxWidth: immersive ? 240 : 190).padding(12)
+                }.frame(maxWidth: immersive ? 240 : 190).padding(compact ? 6 : 12)
                     .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 24))
             } else {
                 HStack(spacing: 8) { ForEach(activity.slots.indices, id: \.self) { slot($0) } }
@@ -169,7 +185,7 @@ struct CourseActivityPanel: View {
                 ForEach(choices, id: \.self) { token in
                     Button { placement.selectedToken = placement.selectedToken == token ? nil : token; placementMessage = nil } label: {
                         Text(token).font(token.count <= 2 ? .title2.weight(.semibold) : .body.weight(.medium))
-                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .frame(maxWidth: .infinity, minHeight: compact ? 44 : 50)
                             .background(Color.accentColor.opacity(placement.selectedToken == token ? 0.22 : 0.07), in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(placement.selectedToken == token ? Color.accentColor : Color.clear, lineWidth: 2))
                     }.buttonStyle(.plain).draggable(token).disabled(result != nil)
@@ -183,7 +199,7 @@ struct CourseActivityPanel: View {
                     else { placementMessage = "Look at the positions and try again." }
                 }.buttonStyle(.borderedProminent).disabled(!placement.filled).controlSize(.large)
             } else if let example = activity.example {
-                Text(example).font(.title2.weight(.semibold))
+                Text(CourseKoreanText.attributed(example)).font(.title2.weight(.semibold))
             }
         }
     }
@@ -199,7 +215,7 @@ struct CourseActivityPanel: View {
             VStack(spacing: 3) {
                 Text(placement.values[index] ?? "+").font(.system(size: immersive ? 34 : 26, weight: .medium))
                 Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-            }.frame(maxWidth: .infinity, minHeight: immersive ? 78 : 60).padding(6)
+            }.padding(compact ? 4 : 6).frame(maxWidth: .infinity, minHeight: immersive ? 90 : compact ? 48 : 72)
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: placement.values[index] == nil ? [5] : [])))
         }.buttonStyle(.plain).disabled(result != nil)

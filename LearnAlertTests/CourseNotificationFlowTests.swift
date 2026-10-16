@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UIKit
 import Testing
 @testable import LearnAlert
 
@@ -6,6 +8,49 @@ import Testing
 @Suite("Course notification continuity")
 struct CourseNotificationFlowTests {
     private var course: CourseDefinition { CourseCurriculumCatalog.koreanCourse }
+
+    @Test("Course height grows only for overflow, remains bounded, and fits smaller phones")
+    func courseHeightBudget() {
+        #expect(CourseNotificationSizing.height(contentHeight: 400, screenHeight: 844) == 540)
+        #expect(CourseNotificationSizing.height(contentHeight: 570.2, screenHeight: 844) == 571)
+        #expect(CourseNotificationSizing.height(contentHeight: 1400, screenHeight: 844) == 624)
+        #expect(CourseNotificationSizing.height(contentHeight: 500, screenHeight: 667) == 447)
+        #expect(CourseNotificationSizing.height(contentHeight: .nan, screenHeight: 844) == 540)
+        #expect(CourseNotificationSizing.height(contentHeight: 2000, screenHeight: 1366) == 680)
+        #expect(CourseNotificationSizing.height(contentHeight: 900, screenHeight: 667, preserveDrawingHeight: true) == 540)
+    }
+
+    @Test("Foundation teaching, listening, choices and placement fit a phone notification without shrinking text")
+    func compactActivityFits() throws {
+        let cards = course.units[0].lessons.flatMap(\.cards)
+        let fixtures: [(String, CourseLessonCard)] = try [
+            ("listen", #require(cards.first { $0.activity?.kind == .listenChoose })),
+            ("teach", #require(cards.first { $0.activity?.kind == .teach && $0.promptImageName == nil })),
+            ("build-final", #require(cards.first { $0.activity?.layout == .belowWithFinal })),
+            ("matching", #require(cards.first { $0.activity?.kind == .matchPairs })),
+            ("picture", #require(cards.first { $0.activity?.kind == .situation && $0.promptImageName != nil }))
+        ]
+        for width in [CGFloat(320), 360, 393] {
+            for (name, card) in fixtures {
+                let content = CourseQuestionPanel(card: card, allowAudio: true) { _ in }
+                    .environment(\.courseNotificationCompact, true)
+                    .environment(\.dynamicTypeSize, .large)
+                    .environment(\.colorScheme, .dark)
+                    .padding(12).frame(width: width)
+                    .background(Color(white: 0.11))
+                let renderer = ImageRenderer(content: content)
+                let image = try #require(renderer.uiImage)
+                // Reserve 120pt for course identity, progress and the next-card action.
+                let total = image.size.height + 120
+                #expect(total <= CourseNotificationSizing.maximumHeight(screenHeight: 844),
+                    "\(name) at \(width)pt needs \(total)pt")
+                if name == "listen" { #expect(total <= 540, "The reported listening exercise should fit the existing height") }
+                if width == 360 {
+                    Attachment.record(image, named: "compact-\(name).png", as: .png)
+                }
+            }
+        }
+    }
 
     private func completeFirstUnit() -> CourseLearningSnapshot {
         var state = CourseLearningSnapshot()

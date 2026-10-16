@@ -14,6 +14,49 @@ struct CourseActivityTests {
     private var unit: CourseUnit { course.units[0] }
     private var practice: [CourseLessonCard] { unit.lessons.flatMap(\.cards) }
 
+    @Test("Read-through acknowledgments have neutral feedback while scored activities stay scored")
+    func readingFeedback() {
+        let teaching = practice.filter { $0.activity?.kind == .teach }
+        #expect(!teaching.isEmpty)
+        for card in teaching {
+            #expect(card.isReadThrough)
+            #expect(card.feedbackTitle(isCorrect: true) == "Reviewed")
+            #expect(card.feedbackTitle(isCorrect: false) == "Review later")
+        }
+        for card in practice where card.activity?.kind != .teach {
+            #expect(!card.isReadThrough)
+            #expect(card.feedbackTitle(isCorrect: true) == "Correct")
+        }
+        for type in ["vocabulary", "tapReveal"] {
+            let card = CourseLessonCard(id: type, question: "Read this", correctAnswer: "A lesson note", cardType: type)
+            #expect(card.isReadThrough)
+            #expect(card.feedbackTitle(isCorrect: true) == "Reviewed")
+        }
+    }
+
+    @Test("Korean emphasis preserves every character, repeated letters, links and surrounding formatting")
+    func koreanEmphasis() throws {
+        let plain = "Start with ㄱ + ㅏ = 가. Repeat ㄱ. 한 👩‍🎓."
+        var source = AttributedString(plain)
+        let english = try #require(source.range(of: "Start"))
+        source[english].inlinePresentationIntent = .emphasized
+        let linked = try #require(source.range(of: "가"))
+        let url = try #require(URL(string: "learnalert-word://lookup?word=가"))
+        source[linked].link = url
+        let emphasized = CourseKoreanText.attributed(source)
+        #expect(String(emphasized.characters) == plain)
+        #expect(emphasized[english].inlinePresentationIntent == .emphasized)
+        #expect(emphasized[english].foregroundColor == nil)
+        #expect(emphasized[linked].link == url)
+        for run in emphasized.runs {
+            let text = String(emphasized[run.range].characters)
+            if text.contains("ㄱ") || text.contains("ㅏ") || text.contains("가") || text.contains("한") {
+                #expect(run.foregroundColor == CourseKoreanText.emphasisColor)
+                #expect(run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true)
+            }
+        }
+    }
+
     @Test("Only the first Korean unit uses the course activity system")
     func activityScope() {
         #expect(unit.lessons.count == 5)
@@ -218,6 +261,7 @@ struct CourseActivityTests {
                 for (label, card) in fixtures {
                     let renderer = ImageRenderer(content: CourseQuestionPanel(card: card, immersive: immersive,
                         allowAudio: label == "listen") { _ in }
+                        .environment(\.courseNotificationCompact, !immersive && label != "trace")
                         .padding(immersive ? 24 : 16).frame(width: width)
                         .background(Color(.systemGroupedBackground)).environment(\.colorScheme, scheme))
                     renderer.scale = 2

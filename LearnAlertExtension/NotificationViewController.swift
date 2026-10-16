@@ -1206,6 +1206,24 @@ private extension View {
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
     private var hostingController: UIHostingController<AnyView>?
+    private var courseContentHeight: CGFloat?
+    private var coursePreservesDrawingHeight = false
+
+    private func fitCourseContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
+        courseContentHeight = height
+        coursePreservesDrawingHeight = preserveDrawingHeight
+        let screenHeight = view.window?.windowScene?.screen.bounds.height ?? 844
+        let targetHeight = CourseNotificationSizing.height(contentHeight: height, screenHeight: screenHeight,
+            preserveDrawingHeight: preserveDrawingHeight)
+        if abs(preferredContentSize.height - targetHeight) > 2 {
+            preferredContentSize = CGSize(width: view.bounds.width, height: targetHeight)
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let height = courseContentHeight { fitCourseContent(height, preserveDrawingHeight: coursePreservesDrawingHeight) }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1228,6 +1246,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let userInfo = content.userInfo
 
         if let courseId = userInfo["courseId"] as? String, let course = CourseCurriculumCatalog.course(for: courseId) {
+            fitCourseContent(540)
             let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false, openApp: { [weak self] sectionId in
                 let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
                 defaults?.set(courseId, forKey: "handoffCourseId")
@@ -1238,11 +1257,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             }, mediaPlaybackChanged: { [weak self] playing in
                 if playing { self?.extensionContext?.mediaPlayingStarted() }
                 else { self?.extensionContext?.mediaPlayingPaused() }
+            }, contentHeightChanged: { [weak self] height, preserveDrawingHeight in
+                self?.fitCourseContent(height, preserveDrawingHeight: preserveDrawingHeight)
             })
             show(AnyView(courseView))
-            preferredContentSize = CGSize(width: view.bounds.width, height: 540)
             return
         }
+
+        courseContentHeight = nil
 
         let cardId = userInfo["cardId"] as? String ?? ""
         let deckId = userInfo["deckId"] as? String ?? ""

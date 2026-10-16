@@ -401,6 +401,15 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
 
     public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" || activity?.kind == .listenChoose }
     public var usesTypedAnswer: Bool { cardType == "fillBlank" || cardType == "listeningWrite" }
+    /// Reading and self-review acknowledge the material rather than guessing an answer.
+    public var isReadThrough: Bool {
+        if let activity { return activity.kind == .teach }
+        return cardType == "vocabulary" || cardType == "tapReveal"
+    }
+    public func feedbackTitle(isCorrect: Bool) -> String {
+        if isReadThrough { return isCorrect ? "Reviewed" : "Review later" }
+        return isCorrect ? "Correct" : "Review later"
+    }
     public func questionText(audioEnabled: Bool) -> String {
         isListeningQuestion && !audioEnabled ? (readingPrompt ?? "What does ‘\(speechText ?? "")’ mean?") : question
     }
