@@ -12,12 +12,64 @@ struct DeckSchedulingTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(DeckAlertSettings.defaults(in: defaults).stopCondition == "Until I say so")
+        #expect(DeckAlertSettings.defaults(in: defaults).paceMode == .automatic)
         defaults.set("Until Day Ends", forKey: "stopCondition")
         defaults.set(5, forKey: "volumeSelectionIndex")
         defaults.set(1, forKey: "customVolume")
         defaults.set(9, forKey: "startHour")
         let migrated = DeckAlertSettings.defaults(in: defaults)
-        #expect(migrated.stopCondition == "Until Day Ends" && migrated.dailyCount == 1 && migrated.startHour == 9)
+        #expect(migrated.stopCondition == "Until Day Ends" && migrated.dailyCount == 1 && migrated.startHour == 9 && migrated.paceMode == .custom)
+    }
+
+    @Test("Custom mode stays selected when its number matches a preset and survives relaunch")
+    func customPaceIsExplicit() throws {
+        var settings = DeckAlertSettings()
+        settings.paceMode = .custom
+        for count in [20, 10, 5, 1, 15, 7] {
+            settings.dailyCount = count
+            let saved = try JSONDecoder().decode(DeckAlertSettings.self, from: JSONEncoder().encode(settings))
+            #expect(saved.paceMode == .custom)
+            #expect(saved.resolvedDailyCount(automaticCount: 3) == count)
+        }
+        settings.dailyCount = 1
+        settings.useSpecificTime = true
+        #expect(settings.isCustomDaily && settings.dailyHour == 17)
+        settings.paceMode = .automatic
+        #expect(!settings.isCustomDaily && settings.dailyHour == 10)
+        #expect(settings.resolvedDailyCount(automaticCount: 5) == 5)
+        settings.paceMode = .custom
+        #expect(settings.isCustomDaily && settings.dailyCount == 1 && settings.dailyHour == 17)
+    }
+
+    @Test("Old saved numeric schedules retain their exact pace and daily time")
+    func legacyNumericPace() throws {
+        let data = Data(#"{"dailyCount":1,"startHour":9,"useSpecificTime":true,"specificHour":17}"#.utf8)
+        let settings = try JSONDecoder().decode(DeckAlertSettings.self, from: data)
+        #expect(settings.paceMode == .custom && settings.resolvedDailyCount(automaticCount: 10) == 1)
+        #expect(settings.dailyHour == 17)
+    }
+
+    @Test("Automatic uses the course target or a manageable deck batch, bounded to the alert budget")
+    func automaticPace() throws {
+        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 4) == 4)
+        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100) == 10)
+        #expect(DeckAlertSettings.automaticDailyCount(cardCount: nil) == 10)
+        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100, courseTarget: 7) == 7)
+        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100, courseTarget: 100) == 50)
+        var settings = DeckAlertSettings()
+        #expect(settings.resolvedDailyCount(automaticCount: 7) == 7)
+        settings.dailyCount = 20
+        #expect(settings.resolvedDailyCount(automaticCount: 7) == 7)
+        let engine = StudyEngine(restoreSavedSession: false)
+        let deck = Deck(name: "Automatic")
+        let cards = (0..<4).map { Flashcard(question: "Q\($0)", options: ["A"], correctAnswer: "A") }
+        deck.cards = cards
+        deck.alertSettings = settings
+        engine.selectSettings(for: deck)
+        #expect(engine.activeVolume == 4)
+        engine.settings.paceMode = .custom
+        engine.settings.dailyCount = 10
+        #expect(engine.activeVolume == 10 && engine.settings.paceMode == .custom)
     }
 
     @Test("Each deck persists its schedule and switching does not overwrite another deck or defaults")
@@ -27,8 +79,8 @@ struct DeckSchedulingTests {
         let context = ModelContext(container)
         let a = Deck(name: "Word a day"), b = Deck(name: "Exam")
         context.insert(a); context.insert(b)
-        var daily = DeckAlertSettings(); daily.dailyCount = 1; daily.useSpecificTime = true
-        var frequent = DeckAlertSettings(); frequent.dailyCount = 15
+        var daily = DeckAlertSettings(); daily.paceMode = .custom; daily.dailyCount = 1; daily.useSpecificTime = true
+        var frequent = DeckAlertSettings(); frequent.paceMode = .custom; frequent.dailyCount = 15
         a.alertSettings = daily; b.alertSettings = frequent
         try context.save()
         let engine = StudyEngine(restoreSavedSession: false)

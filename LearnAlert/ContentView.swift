@@ -2872,7 +2872,7 @@ struct SetupAlertsView: View {
             }
             .padding(.horizontal)
 
-            VolumeSnappingSliderView(engine: engine).padding(.horizontal)
+            AlertPaceSettingsCard(engine: engine).padding(.horizontal)
         }
         .onAppear {
             if decks.contains(where: { $0.id.uuidString == targetDeckId }) {
@@ -2902,133 +2902,13 @@ struct SetupAlertsView: View {
     }
 }
 
-struct VolumeSnappingSliderView: View {
+struct AlertPaceSettingsCard: View {
     @ObservedObject var engine: StudyEngine
 
-    private var totalMinutes: Int {
-        let startMin = engine.startHour * 60 + engine.startMinute
-        var endMin = engine.endHour * 60 + engine.endMinute
-        if endMin <= startMin { endMin += 24 * 60 }
-        return max(endMin - startMin, 1)
-    }
-
-    private var volumeLabels: [String] {
-        engine.volumeOptions.map(String.init) + ["•••"]
-    }
-
-    private var selectedIntervalLabel: String {
-        intervalLabel(for: engine.activeVolume)
-    }
-
-    private func intervalLabel(for cardCount: Int) -> String {
-        let minutes = max(totalMinutes / max(cardCount, 1), 1)
-        let hours = minutes / 60
-        let remainder = minutes % 60
-        if hours > 0, remainder > 0 { return "\(hours)h\(remainder)" }
-        if hours > 0 { return "\(hours)h" }
-        return "\(minutes)m"
-    }
-    
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("ALERT PACE")
-                    .font(.caption.bold())
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                Spacer()
-                Label("\(engine.activeVolume) cards", systemImage: "rectangle.stack.fill")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(LearnAlertStyle.indigo)
-            }
-
-            GeometryReader { geo in
-                let itemWidth = geo.size.width / 6
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.primary.opacity(0.06))
-
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(LearnAlertStyle.indigo)
-                        .padding(3)
-                        .frame(width: itemWidth)
-                        .offset(x: CGFloat(engine.volumeSelectionIndex) * itemWidth)
-                        .animation(.interactiveSpring(response: 0.3, dampingFraction: 0.7), value: engine.volumeSelectionIndex)
-
-                    HStack(spacing: 0) {
-                        ForEach(0..<6, id: \.self) { index in
-                            Text(volumeLabels[index])
-                                .font(.caption2.bold().monospacedDigit())
-                                .foregroundStyle(index == engine.volumeSelectionIndex ? .white : LearnAlertStyle.textSecondary)
-                                .minimumScaleFactor(0.65)
-                                .frame(width: itemWidth)
-                        }
-                    }
-                }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0).onChanged { value in
-                        let newIndex = min(max(Int(value.location.x / itemWidth), 0), 5)
-                        if newIndex != engine.volumeSelectionIndex {
-                            HapticFeedback.impact(.light)
-                        }
-                        withAnimation(.interactiveSpring) {
-                            engine.volumeSelectionIndex = newIndex
-                        }
-                    }
-                )
-            }
-            .frame(height: 44)
-
-            if engine.volumeSelectionIndex == 5 {
-                HStack {
-                    Text("Custom cards per day")
-                        .font(.custom("Poppins-Regular", size: 14, relativeTo: .body))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    TextField("20", value: $engine.customVolume, format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(LearnAlertStyle.indigo)
-                        .font(.headline.bold())
-                        .onChange(of: engine.customVolume) { _, newValue in
-                            if newValue > 50 { engine.customVolume = 50 }
-                            else if newValue < 1 { engine.customVolume = 1 }
-                        }
-                }
-                .padding(14)
-                .background(Color.primary.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            HStack(spacing: 0) {
-                PaceSummaryValue(value: "\(engine.activeVolume)", label: "CARDS PER DAY")
-                Divider()
-                    .frame(height: 34)
-                PaceSummaryValue(value: engine.activeVolume == 1 ? "Daily" : selectedIntervalLabel, label: engine.activeVolume == 1 ? "FREQUENCY" : "BETWEEN ALERTS")
-            }
-            .padding(.vertical, 12)
-            .background(LearnAlertStyle.indigo.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .padding(18)
-        .cleanSettingsCard()
-    }
-}
-
-private struct PaceSummaryValue: View {
-    let value: String
-    let label: LocalizedStringKey
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.title3.bold().monospacedDigit())
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-            Text(label)
-                .font(.caption2.bold())
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
+        AlertPaceControls(settings: $engine.settings, automaticCount: engine.automaticDailyCount)
+            .padding(18)
+            .cleanSettingsCard()
     }
 }
 

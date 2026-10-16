@@ -25,14 +25,9 @@ struct DeckScheduleSettingsView: View {
                     Text("Remembers this deck’s pace and times. Alerts start when you schedule the deck.")
                 }
                 if useDeckSettings {
-                    Section("Alert pace") {
-                        HStack {
-                            Text("Alerts per day")
-                            TextField("10", value: $draft.dailyCount, format: .number)
-                                .keyboardType(.numberPad).multilineTextAlignment(.trailing)
-                                .accessibilityLabel("Alerts per day")
-                        }
-                        Stepper("\(draft.dailyCount) per day", value: $draft.dailyCount, in: 1...50)
+                    Section {
+                        AlertPaceControls(settings: $draft,
+                            automaticCount: DeckAlertSettings.automaticDailyCount(cardCount: deck.cards.count))
                     }
                     Section("Daily schedule") { DeckScheduleTimingFields(settings: $draft) }
                     Section {
@@ -48,7 +43,6 @@ struct DeckScheduleSettingsView: View {
                     }
                 }
             }
-            .onChange(of: draft.dailyCount) { _, count in draft.dailyCount = min(50, max(1, count)) }
             .navigationTitle("Deck schedule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -95,16 +89,16 @@ struct DeckScheduleTimingFields: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if settings.dailyCount == 1 {
+            if settings.isCustomDaily {
                 Toggle("Set a specific time (optional)", isOn: $settings.useSpecificTime)
                     .font(.subheadline)
                 if settings.useSpecificTime {
                     DatePicker("Daily at", selection: time(hour: \.specificHour, minute: \.specificMinute), displayedComponents: .hourAndMinute)
                 }
             }
-            if settings.dailyCount != 1 || !settings.useSpecificTime {
+            if !settings.isCustomDaily || !settings.useSpecificTime {
                 DatePicker("Starts daily", selection: time(hour: \.startHour, minute: \.startMinute), displayedComponents: .hourAndMinute)
-                if settings.dailyCount != 1 {
+                if !settings.isCustomDaily {
                     DatePicker("Finishes daily", selection: time(hour: \.endHour, minute: \.endMinute), displayedComponents: .hourAndMinute)
                 }
             }
@@ -112,7 +106,7 @@ struct DeckScheduleTimingFields: View {
         .font(.subheadline)
         .foregroundStyle(LearnAlertStyle.textPrimary)
         .tint(LearnAlertStyle.appAccentForeground)
-        .animation(.snappy, value: settings.dailyCount == 1)
+        .animation(.snappy, value: settings.isCustomDaily)
         .animation(.snappy, value: settings.useSpecificTime)
     }
 }

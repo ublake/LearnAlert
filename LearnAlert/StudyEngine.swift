@@ -42,7 +42,23 @@ class StudyEngine: ObservableObject {
             }
         }
     }
-    func selectSettings(for deck: Deck?) { settingsDeck = deck }
+    @Published private var automaticCourseTarget: Int?
+    func selectSettings(for deck: Deck?) {
+        settingsDeck = deck
+        automaticCourseTarget = nil
+    }
+    var automaticDailyCount: Int {
+        if let target = automaticCourseTarget {
+            return DeckAlertSettings.automaticDailyCount(cardCount: nil, courseTarget: target)
+        }
+        if let deck = settingsDeck, deck.deckType == "Course" {
+            let manager = CourseProgressManager.shared
+            let target = manager.allEnrolledCourses.compactMap { manager.enrollment(for: $0.id) }
+                .first { $0.linkedDeckId == deck.id.uuidString }?.dailyCardsTarget ?? 5
+            return DeckAlertSettings.automaticDailyCount(cardCount: nil, courseTarget: target)
+        }
+        return DeckAlertSettings.automaticDailyCount(cardCount: settingsDeck?.cards.count)
+    }
     var globalSettings: DeckAlertSettings { defaultSettings }
     var smartSRS: Bool { get { settings.smartSRS } set { settings.smartSRS = newValue } }
     var stopCondition: String { get { settings.stopCondition } set { settings.stopCondition = newValue } }
@@ -50,13 +66,13 @@ class StudyEngine: ObservableObject {
     var startMinute: Int { get { settings.startMinute } set { settings.startMinute = newValue } }
     var endHour: Int { get { settings.endHour } set { settings.endHour = newValue } }
     var endMinute: Int { get { settings.endMinute } set { settings.endMinute = newValue } }
-    var activeVolume: Int { min(50, max(1, settings.dailyCount)) }
+    var activeVolume: Int { settings.resolvedDailyCount(automaticCount: automaticDailyCount) }
     var volumeSelectionIndex: Int {
-        get { volumeOptions.firstIndex(of: activeVolume) ?? 5 }
+        get { volumeOptions.firstIndex(of: settings.dailyCount) ?? 5 }
         set { settings.dailyCount = newValue == 5 ? min(50, max(1, storedCustomVolume)) : volumeOptions[min(4, max(0, newValue))] }
     }
     var customVolume: Int {
-        get { volumeSelectionIndex == 5 ? activeVolume : storedCustomVolume }
+        get { volumeSelectionIndex == 5 ? settings.dailyCount : storedCustomVolume }
         set { storedCustomVolume = min(50, max(1, newValue)); settings.dailyCount = storedCustomVolume }
     }
 
@@ -170,6 +186,7 @@ class StudyEngine: ObservableObject {
             throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
         }
         selectSettings(for: nil)
+        automaticCourseTarget = enrollment.dailyCardsTarget
         DailyDeckAlertScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil

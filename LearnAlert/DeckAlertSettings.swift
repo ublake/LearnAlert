@@ -1,7 +1,14 @@
 import Foundation
 
+nonisolated enum AlertPaceMode: String, Codable, CaseIterable, Identifiable {
+    case automatic, custom
+    var id: Self { self }
+    var title: String { self == .automatic ? "Automatic" : "Custom" }
+}
+
 /// Personal scheduling preferences; community exports do not include these settings.
 nonisolated struct DeckAlertSettings: Codable, Equatable {
+    var paceMode = AlertPaceMode.automatic
     var dailyCount = 10
     var startHour = 10
     var startMinute = 0
@@ -18,7 +25,9 @@ nonisolated struct DeckAlertSettings: Codable, Equatable {
            let saved = try? JSONDecoder().decode(Self.self, from: data) { return saved }
         var result = Self()
         let options = [3, 5, 7, 10, 15]
-        let index = defaults.object(forKey: "volumeSelectionIndex") as? Int ?? 3
+        let savedIndex = defaults.object(forKey: "volumeSelectionIndex") as? Int
+        result.paceMode = savedIndex == nil ? .automatic : .custom
+        let index = savedIndex ?? 3
         result.dailyCount = index == 5 ? min(50, max(1, defaults.object(forKey: "customVolume") as? Int ?? 20)) : options[min(4, max(0, index))]
         result.startHour = defaults.object(forKey: "startHour") as? Int ?? 10
         result.startMinute = defaults.object(forKey: "startMinute") as? Int ?? 0
@@ -29,8 +38,37 @@ nonisolated struct DeckAlertSettings: Codable, Equatable {
         return result
     }
 
-    var dailyHour: Int { useSpecificTime ? specificHour : startHour }
-    var dailyMinute: Int { useSpecificTime ? specificMinute : startMinute }
+    var isCustomDaily: Bool { paceMode == .custom && dailyCount == 1 }
+    var dailyHour: Int { isCustomDaily && useSpecificTime ? specificHour : startHour }
+    var dailyMinute: Int { isCustomDaily && useSpecificTime ? specificMinute : startMinute }
+
+    func resolvedDailyCount(automaticCount: Int) -> Int {
+        min(50, max(1, paceMode == .automatic ? automaticCount : dailyCount))
+    }
+
+    static func automaticDailyCount(cardCount: Int?, courseTarget: Int? = nil) -> Int {
+        if let courseTarget { return min(50, max(1, courseTarget)) }
+        return min(10, max(1, cardCount ?? 10))
+    }
+}
+
+extension DeckAlertSettings {
+    /// Saved numeric schedules predate the mode selector and remain explicit choices.
+    nonisolated init(from decoder: Decoder) throws {
+        self.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        paceMode = try values.decodeIfPresent(AlertPaceMode.self, forKey: .paceMode) ?? .custom
+        dailyCount = try values.decodeIfPresent(Int.self, forKey: .dailyCount) ?? 10
+        startHour = try values.decodeIfPresent(Int.self, forKey: .startHour) ?? 10
+        startMinute = try values.decodeIfPresent(Int.self, forKey: .startMinute) ?? 0
+        endHour = try values.decodeIfPresent(Int.self, forKey: .endHour) ?? 19
+        endMinute = try values.decodeIfPresent(Int.self, forKey: .endMinute) ?? 0
+        useSpecificTime = try values.decodeIfPresent(Bool.self, forKey: .useSpecificTime) ?? false
+        specificHour = try values.decodeIfPresent(Int.self, forKey: .specificHour) ?? 17
+        specificMinute = try values.decodeIfPresent(Int.self, forKey: .specificMinute) ?? 0
+        stopCondition = try values.decodeIfPresent(String.self, forKey: .stopCondition) ?? "Until I say so"
+        smartSRS = try values.decodeIfPresent(Bool.self, forKey: .smartSRS) ?? true
+    }
 }
 
 nonisolated struct DailyDeckAlertPlan: Codable, Equatable {

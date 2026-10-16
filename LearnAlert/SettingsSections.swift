@@ -83,10 +83,6 @@ struct SettingsStatusSection: View {
 struct SettingsLearningSection: View {
     @ObservedObject var engine: StudyEngine
 
-    private var volumeLabel: String {
-        engine.volumeSelectionIndex == 5 ? "Custom · \(engine.customVolume)" : "\(engine.activeVolume) cards"
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("LEARNING")
@@ -103,33 +99,8 @@ struct SettingsLearningSection: View {
 
                 Divider().padding(.leading, 50).opacity(0.45)
 
-                HStack(spacing: 12) {
-                    SettingsRowIcon(systemName: "rectangle.stack.fill")
-                    Text("Cards per session")
-                        .font(.custom("Poppins-Medium", size: 13))
-                    Spacer()
-                    Menu {
-                        Picker("Cards per session", selection: $engine.volumeSelectionIndex) {
-                            ForEach(Array(engine.volumeOptions.enumerated()), id: \.offset) { index, count in
-                                Text("\(count) cards").tag(index)
-                            }
-                            Text("Custom").tag(5)
-                        }
-                    } label: {
-                        SettingsMenuLabel(text: volumeLabel)
-                    }
-                }
-                .padding(14)
-
-                if engine.volumeSelectionIndex == 5 {
-                    Divider().padding(.leading, 50).opacity(0.45)
-                    Stepper(value: $engine.customVolume, in: 1...50) {
-                        Text("Custom amount · \(engine.customVolume)")
-                            .font(.custom("Poppins-Regular", size: 12))
-                    }
+                AlertPaceControls(settings: $engine.settings, automaticCount: engine.automaticDailyCount)
                     .padding(14)
-                }
-
                 Divider().padding(.leading, 50).opacity(0.45)
 
                 DeckScheduleTimingFields(settings: $engine.settings).padding(14)

@@ -198,3 +198,10 @@ has already passed starts tomorrow. Up to 60 daily cards are queued ahead and ro
 through the deck. The queue refills when the app or an interactive notification opens.
 New defaults use Until I say so; existing saved stop choices are preserved. Deck
 schedules stay personal and are not included in community publishing payloads.
+
+Alert pace defaults to Automatic for new preferences: courses use their enrollment's
+daily target, and ordinary decks use up to 10 cards based on deck size. Existing saved
+numeric schedules remain Custom. Selecting Custom expands tappable pace presets and
+an editable 1–50 amount field. The mode is saved separately from its number, so typing
+a preset value never closes the custom editor. One-per-day time controls appear for
+Custom schedules set to 1.
