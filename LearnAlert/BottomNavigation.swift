@@ -5,6 +5,7 @@ struct BottomNavigationBar: View {
     @Binding var showingCreationActions: Bool
     let createDeck: () -> Void
     let importWithAI: () -> Void
+    let importAnki: () -> Void
     @AppStorage("homeTutorialStep") private var homeTutorialStep = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -39,11 +40,13 @@ struct BottomNavigationBar: View {
     }
 
     private var creationMenu: some View {
-        HStack(alignment: .bottom, spacing: 16) {
+        HStack(alignment: .bottom, spacing: 10) {
             if showingCreationActions && homeTutorialStep == 0 {
                 creationAction("Create Deck", icon: "rectangle.stack.badge.plus", action: createDeck)
                     .transition(creationActionTransition(isLeading: true))
                 creationAction("Import with AI", icon: "sparkles", action: importWithAI)
+                    .transition(creationActionTransition(isLeading: false))
+                creationAction("Import Anki", icon: "square.and.arrow.down.on.square", action: importAnki)
                     .transition(creationActionTransition(isLeading: false))
             }
         }
@@ -229,7 +232,7 @@ private struct NavigationDock: View {
         .buttonStyle(DockPressStyle())
         .accessibilityLabel(isExpanded ? "Close new deck options" : "New deck options")
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-        .accessibilityHint("Create a deck or import with AI")
+        .accessibilityHint("Create a deck, import with AI, or import an Anki file")
         .accessibilityShowsLargeContentViewer { Label("New deck", systemImage: "plus") }
     }
 

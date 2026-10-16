@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var showingCreateDeck = false
     @State private var showingAIComposer = false
+    @State private var showingAnkiImporter = false
+    @State private var incomingAnkiURL: URL?
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var showingCreationActions = false
@@ -77,7 +79,8 @@ struct ContentView: View {
                         selectedTab: $selectedTab,
                         showingCreationActions: $showingCreationActions,
                         createDeck: { showingCreateDeck = true },
-                        importWithAI: { showingAIComposer = true }
+                        importWithAI: { showingAIComposer = true },
+                        importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true }
                     )
                 }
                 // Only the dock ignores the keyboard; the current page still avoids it.
@@ -85,6 +88,14 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }
+            .sheet(isPresented: $showingAnkiImporter) {
+                AnkiImportView(initialURL: incomingAnkiURL, onFinish: { selectedTab = 0 })
+            }
+            .onOpenURL { url in
+                guard url.pathExtension.lowercased() == "apkg" else { return }
+                incomingAnkiURL = url
+                showingAnkiImporter = true
+            }
             .sheet(isPresented: $notificationManager.shouldShowCustomizationTestGuide) {
                 NotificationTestGuideView()
             }
@@ -1015,8 +1026,11 @@ struct HomeLibraryView: View {
             Button("Delete Deck", role: .destructive) {
                 guard let deckPendingDeletion else { return }
                 InteractionSoundPlayer.shared.play(.deleteDeck)
+                let ankiFolders = Set(deckPendingDeletion.cards.compactMap { $0.ankiContent?.mediaFolder })
                 context.delete(deckPendingDeletion)
-                try? context.save()
+                if (try? context.save()) != nil {
+                    AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
+                }
                 self.deckPendingDeletion = nil
             }
             Button("Cancel", role: .cancel) { deckPendingDeletion = nil }

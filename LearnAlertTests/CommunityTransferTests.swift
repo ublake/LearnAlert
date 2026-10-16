@@ -642,7 +642,7 @@ struct CommunityTransferTests {
         let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api()) { _ in .authorized }
         defer { session.signOut() }
         let signedIn = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil)
-        #expect(signedIn)
+        #expect(signedIn, "Session error: \(session.errorMessage ?? "none")")
         session.appleCredentialRevoked()
         #expect(session.completeAccountDeletion(token: "deleting-session"))
         #expect(session.credentials == nil && session.errorMessage == nil)
@@ -677,7 +677,7 @@ struct CommunityTransferTests {
         }
         defer { session.signOut() }
         let signedIn = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil, authorizationCode: "single-use-code", appleUserID: "apple-user")
-        #expect(signedIn && session.credentials?.appleUserID == "apple-user")
+        #expect(signedIn && session.credentials?.appleUserID == "apple-user", "Session error: \(session.errorMessage ?? "none")")
         await session.validateAppleCredential()
         #expect(session.isSignedIn && session.profile.authorID == "public-id")
         appleOffline = true

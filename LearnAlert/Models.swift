@@ -16,6 +16,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
     case matching = "matching"
     case fillBlank = "fill_blank"
     case images = "images"
+    case anki = "anki"
 
     var id: String { rawValue }
     var title: String {
@@ -26,6 +27,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .matching: "Match Pairs"
         case .fillBlank: "Fill in the Blank"
         case .images: "Images"
+        case .anki: "Anki"
         }
     }
     var icon: String {
@@ -36,6 +38,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .matching: "arrow.left.arrow.right"
         case .fillBlank: "text.cursor"
         case .images: "photo.on.rectangle"
+        case .anki: "rectangle.stack.badge.play"
         }
     }
 
@@ -47,6 +50,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .fillBlank: "Type the missing keyword in context"
         case .matching: "Connect paired terms and definitions"
         case .images: "Review one picture or reveal an image on the back"
+        case .anki: "Imported Anki templates, formatting, and media"
         }
     }
 
@@ -64,6 +68,7 @@ class Deck {
     var appearanceSeed: Int64?
     var sourcePremadeID: String?
     var sourceCommunityID: String?
+    var sourceAnkiDeckID: String?
     var publishedCommunityID: String?
     var communityCategory: String?
     var communityDescription: String?
@@ -200,6 +205,13 @@ class Flashcard {
     var promptImageName: String?
     var answerImageName: String?
     var promptAudioName: String?
+    @Attribute(.externalStorage) var ankiContentData: Data?
+    var sourceAnkiCardID: String?
+
+    var ankiContent: AnkiCardContent? {
+        get { ankiContentData.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) } }
+        set { ankiContentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
     var optionImageNamesData: Data = Data()
 
     // Study state

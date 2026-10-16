@@ -82,6 +82,7 @@ struct DeckStudyView: View {
                     answerImageName: card.answerImageName,
                     optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName,
+                    ankiContent: card.ankiContent,
                     cardNumber: cardIndex + 1,
                     cardCount: studyQueue.count,
                     correctCount: correctCount,
@@ -249,6 +250,7 @@ private struct QuizSessionView: View {
     var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
+    var ankiContent: AnkiCardContent? = nil
     let cardNumber: Int
     let cardCount: Int
     let correctCount: Int
@@ -291,7 +293,16 @@ private struct QuizSessionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if cardType == .images {
+                    if cardType == .anki {
+                        if let ankiContent {
+                            AnkiCardView(content: ankiContent, showingBack: isRevealed)
+                                .frame(height: 440)
+                                .clipShape(RoundedRectangle(cornerRadius: 20))
+                            AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
+                        } else {
+                            ContentUnavailableView("Card unavailable", systemImage: "rectangle.slash", description: Text("Re-import this Anki deck to restore its content."))
+                        }
+                    } else if cardType == .images {
                         Group {
                             if hasImageBack {
                                 ImageCardFlipView(isShowingBack: $isRevealed,
@@ -322,7 +333,7 @@ private struct QuizSessionView: View {
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
 
-                    if cardType != .images && !question.isEmpty {
+                    if cardType != .images && cardType != .anki && !question.isEmpty {
                         Text(question)
                             .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
                             .foregroundStyle(QuizTheme.ink)
@@ -334,7 +345,7 @@ private struct QuizSessionView: View {
                     }
 
                     switch cardType {
-                    case .images:
+                    case .images, .anki:
                         EmptyView()
                     case .vocabulary:
                         QuizVocabularyCard(definition: correctAnswer)

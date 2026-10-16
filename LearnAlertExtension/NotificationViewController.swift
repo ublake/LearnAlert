@@ -26,6 +26,7 @@ private struct NotificationSessionCard {
     let matchingRightItems: [String]
     var promptImageName: String? = nil
     var answerImageName: String? = nil
+    var ankiContentData: Data? = nil
     var optionImageNames: [String] = []
 }
 
@@ -85,6 +86,7 @@ struct FlashcardNotificationView: View {
     var matchingRightItems: [String] = []
     var promptImageName: String? = nil
     var answerImageName: String? = nil
+    var ankiContentData: Data? = nil
     var optionImageNames: [String] = []
     var previewMode = false
     var isTutorial = false
@@ -165,6 +167,11 @@ struct FlashcardNotificationView: View {
     private var activeDeckType: String { sessionCard?.deckType ?? deckType }
     private var activeCardType: String {
         sessionCard?.cardType ?? (cardType.isEmpty ? (activeOptions.count >= 2 ? "multiple_choice" : "tap_reveal") : cardType)
+    }
+
+    private var activeAnkiContent: AnkiCardContent? {
+        let data = sessionCard == nil ? ankiContentData : sessionCard?.ankiContentData
+        return data.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) }
     }
     private var activeQuestion: String { sessionCard?.question ?? question }
     private var activeOptions: [String] { sessionCard?.options ?? options }
@@ -312,7 +319,7 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Question Box & Prompt Image
-                if activeCardType != "matching" && activeCardType != "images" {
+                if activeCardType != "matching" && activeCardType != "images" && activeCardType != "anki" {
                     VStack(spacing: 12) {
                         if let promptImg = activePromptImageName, !promptImg.isEmpty,
                            let uiImage = CardImageStore.loadImage(named: promptImg) {
@@ -337,7 +344,19 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Image cards are self-review, before the empty-options reveal fallback.
-                if activeCardType == "images" {
+                if activeCardType == "anki" {
+                    if let content = activeAnkiContent {
+                        AnkiCardView(content: content, showingBack: isRevealed, compact: true)
+                            .frame(height: isCompactLayout ? 260 : 320)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
+                            onReveal: { withAnimation(.snappy) { isRevealed = true } },
+                            onGrade: { gradeReveal(correct: $0) })
+                    } else {
+                        Button("Open this Anki card in LearnAlert", action: openApp)
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else if activeCardType == "images" {
                     VStack(spacing: 14) {
                         Group {
                             if hasImageBack {
@@ -967,6 +986,7 @@ struct FlashcardNotificationView: View {
                 matchingRightItems: cardToStudy.matchingRightItems,
                 promptImageName: cardToStudy.promptImageName,
                 answerImageName: cardToStudy.answerImageName,
+                ankiContentData: cardToStudy.ankiContentData,
                 optionImageNames: cardToStudy.optionImageNames
             )
             selectedAnswer = nil
@@ -1388,6 +1408,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     options: card.options, correctAnswer: card.correctAnswer, hint: card.hint,
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                     promptImageName: card.promptImageName, answerImageName: card.answerImageName,
+                    ankiContentData: card.ankiContentData,
                     optionImageNames: card.optionImageNames
                 )
             }
@@ -1409,6 +1430,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             matchingRightItems: snapshot.matchingRightItems,
             promptImageName: snapshot.promptImageName,
             answerImageName: snapshot.answerImageName,
+            ankiContentData: snapshot.ankiContentData,
             optionImageNames: snapshot.optionImageNames,
             isTutorial: isTutorial,
             appearance: .resolve(userInfo: userInfo),

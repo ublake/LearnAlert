@@ -375,7 +375,8 @@ struct DeckDetailView: View {
             CreateCategoryView(deck: deck)
         }
         .sheet(item: $cardToEdit) { card in
-            CreateCardView(deck: deck, cardToEdit: card)
+            if card.cardType == .anki { AnkiCardEditorView(card: card) }
+            else { CreateCardView(deck: deck, cardToEdit: card) }
         }
         .sheet(item: $cardToPreview) { card in
             CardInteractivePreviewSheet(card: card) {
@@ -600,6 +601,7 @@ struct DeckDetailView: View {
     }
 
     private func delete(_ offsets: IndexSet, from list: [Flashcard]) {
+        let ankiFolders = Set(offsets.compactMap { list[$0].ankiContent?.mediaFolder })
         for index in offsets {
             let card = list[index]
             if let idx = deck.cards.firstIndex(where: { $0.id == card.id }) {
@@ -607,7 +609,9 @@ struct DeckDetailView: View {
                 context.delete(removed)
             }
         }
-        try? context.save()
+        if (try? context.save()) != nil {
+            AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
+        }
     }
 
     private func deleteSection(_ section: DeckSection) {
@@ -748,7 +752,9 @@ struct CardInteractivePreviewSheet: View {
                                 }
                             }
 
-                            if card.cardType == .images {
+                            if card.cardType == .anki, let content = card.ankiContent {
+                                AnkiCardView(content: content, showingBack: isRevealed).frame(height: 380)
+                            } else if card.cardType == .images {
                                 Group {
                                     if hasImageBack {
                                         ImageCardFlipView(isShowingBack: $isRevealed) {
@@ -776,7 +782,7 @@ struct CardInteractivePreviewSheet: View {
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
 
-                            if card.cardType != .images && !card.question.isEmpty {
+                            if card.cardType != .images && card.cardType != .anki && !card.question.isEmpty {
                                 Text(card.question)
                                     .font(.custom("Poppins-SemiBold", size: 18))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
@@ -834,6 +840,10 @@ struct CardInteractivePreviewSheet: View {
                                     .buttonStyle(.plain)
                                 }
                             }
+                        } else if card.cardType == .anki {
+                            Button(isRevealed ? "Show front" : "Show answer") {
+                                withAnimation(.snappy) { isRevealed.toggle() }
+                            }.buttonStyle(PrimaryActionButtonStyle())
                         } else if card.cardType != .images {
                             VStack(spacing: 12) {
                                 if isRevealed {

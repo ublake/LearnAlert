@@ -69,6 +69,9 @@ struct CommunityBlockedUser: Codable, Identifiable, Equatable {
 extension Deck {
     /// Provenance survives edits; content matching also catches built-in imports made before tracking existed.
     var communitySharingRestriction: String? {
+        if sourceAnkiDeckID != nil || cards.contains(where: { $0.sourceAnkiCardID != nil || $0.cardType == .anki }) {
+            return "Anki imports stay in your personal library. Publish a deck you created."
+        }
         if sourceCommunityID != nil { return "Downloaded community decks can’t be republished. Share a deck you created." }
         if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and courses can’t be published to the community." }
         func key(_ question: String, _ answer: String, _ left: [String], _ right: [String]) -> [String] {

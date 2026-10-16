@@ -60,7 +60,7 @@ struct CreateCardView: View {
     private var isFormValid: Bool {
         guard let selectedType, !isLoadingImage else { return false }
         switch selectedType {
-        case .vocabulary, .tapReveal, .fillBlank:
+        case .vocabulary, .tapReveal, .fillBlank, .anki:
             return !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                    !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .multipleChoice:
@@ -177,7 +177,7 @@ struct CreateCardView: View {
                 }
                 .padding(.top, 4)
 
-                ForEach(FlashcardType.allCases) { type in
+                ForEach(FlashcardType.allCases.filter { $0 != .anki }) { type in
                     Button {
                         selectType(type)
                     } label: {
@@ -261,7 +261,7 @@ struct CreateCardView: View {
                     vocabularyEditor
                 case .multipleChoice:
                     multipleChoiceEditor
-                case .tapReveal:
+                case .tapReveal, .anki:
                     tapRevealEditor
                 case .matching:
                     matchingEditor
@@ -800,7 +800,7 @@ struct CreateCardView: View {
         case .tapReveal: LearnAlertStyle.aqua
         case .matching: Color.purple
         case .fillBlank: Color.orange
-        case .images: LearnAlertStyle.cyan
+        case .images, .anki: LearnAlertStyle.cyan
         }
     }
 
@@ -812,6 +812,7 @@ struct CreateCardView: View {
         case .matching: "Connect corresponding word pairs."
         case .fillBlank: "Type the missing word in the sentence."
         case .images: "One picture or front & back. No text needed."
+        case .anki: "Imported Anki card."
         }
     }
 

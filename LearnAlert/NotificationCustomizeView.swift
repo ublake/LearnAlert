@@ -290,7 +290,7 @@ private struct NotificationSimulatedContainer: View {
 
     private var questionText: String {
         switch cardType {
-        case .images:
+        case .images, .anki:
             return ""
         case .vocabulary:
             return "Ephemeral"
@@ -330,7 +330,7 @@ private struct NotificationSimulatedContainer: View {
             return "It is the sixth planet from the Sun."
         case .tapReveal:
             return "Chosen as a compromise between Sydney and Melbourne."
-        case .vocabulary, .images:
+        case .vocabulary, .images, .anki:
             return ""
         case .matching:
             return "Connect cognitive techniques to their core definitions."
@@ -419,7 +419,7 @@ private struct NotificationSimulatedContainer: View {
                     // Interactive Card Area based on Card Type
                     VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
                         switch cardType {
-                        case .images:
+                        case .images, .anki:
                             imagePreview
                         case .vocabulary:
                             vocabularyPreview
