@@ -313,31 +313,15 @@ struct PremadeDecksView: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
 
-                CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
-                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false, showsPageSelector: false)
+                destinationCards
 
-                if discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    HStack {
-                        Text("Explore categories")
-                            .font(StudyStudioStyle.heading(17))
-                        Spacer()
-                    }
-                    .foregroundStyle(StudyStudioStyle.ink)
-
-                    VStack(spacing: 4) {
-                        destinationCards
-                        if communityFeed.totalCount > 0 {
-                            CommunityDeckPageSelector(store: communityFeed)
-                        }
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        searchResults
-                        if communityFeed.totalCount > 0 {
-                            CommunityDeckPageSelector(store: communityFeed)
-                        }
-                    }
+                if !discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    searchResults
                 }
+
+                CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
+                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false)
+
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)

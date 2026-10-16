@@ -19,6 +19,7 @@ struct StudyHandoff: Identifiable, Hashable {
     let wasGraded: Bool
     let wasHintVisible: Bool
     var wasRevealed: Bool = false
+    var wasImageBackViewed: Bool = false
 
     var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")" }
 }
@@ -402,12 +403,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             wasCorrect: defaults.object(forKey: "handoffWasCorrect") as? Bool,
             wasGraded: defaults.bool(forKey: "handoffWasGraded"),
             wasHintVisible: defaults.bool(forKey: "handoffHintVisible"),
-            wasRevealed: defaults.bool(forKey: "handoffWasRevealed")
+            wasRevealed: defaults.bool(forKey: "handoffWasRevealed"),
+            wasImageBackViewed: defaults.bool(forKey: "handoffImageBackViewed")
         )
 
         [
             "handoffDeckId", "handoffCardId", "handoffSelectedAnswer",
-            "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed",
+            "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffImageBackViewed",
             "handoffFromNotificationUI", "handoffTimestamp"
         ].forEach(defaults.removeObject(forKey:))
     }

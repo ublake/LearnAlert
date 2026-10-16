@@ -9,18 +9,21 @@ extension Notification.Name {
 
 @MainActor
 final class CommunityFeedStore: ObservableObject {
-    static let pageSize = 6
-    @Published var search = ""
-    @Published var category = "All"
-    @Published var sort: CommunityDeckSort = .popular
+    static let pageSize = 20
+    @Published var search = "" { didSet { if oldValue != search { invalidate() } } }
+    @Published var category = "All" { didSet { if oldValue != category { invalidate() } } }
+    @Published var sort: CommunityDeckSort = .popular { didSet { if oldValue != sort { invalidate() } } }
     @Published private(set) var decks: [CommunityDeckPayload] = []
-    @Published private(set) var currentPage = 1
     @Published private(set) var totalCount = 0
     @Published private(set) var isLoading = false
+    @Published private(set) var isLoadingMore = false
+    @Published private(set) var hasLoaded = false
     @Published private(set) var errorMessage: String?
+    @Published private(set) var loadMoreErrorMessage: String?
     private var requestID = UUID()
     private let api: CommunityAPI
     private var viewerToken: String?
+    private var nextOffset: Int?
     private struct Query: Equatable {
         let search: String
         let category: String
@@ -29,37 +32,73 @@ final class CommunityFeedStore: ObservableObject {
     }
     private var loadedQuery: Query?
     private var query: Query { Query(search: search, category: category, sort: sort, token: viewerToken) }
-    var pageCount: Int { max(1, (totalCount + Self.pageSize - 1) / Self.pageSize) }
-    var canChangePage: Bool { !isLoading && loadedQuery == query }
+    var hasMore: Bool { nextOffset != nil && loadedQuery == query }
+    var canLoadMore: Bool { hasMore && !isLoading && !isLoadingMore }
+    var paginationID: String { "\(requestID)-\(nextOffset ?? -1)" }
 
     init(api: CommunityAPI? = nil) { self.api = api ?? CommunityAPI() }
 
     func setViewer(token: String?) {
         guard viewerToken != token else { return }
-        requestID = UUID(); viewerToken = token
-        decks = []; totalCount = 0; currentPage = 1; loadedQuery = nil; errorMessage = nil
+        viewerToken = token
+        invalidate()
     }
 
-    func load(page requestedPage: Int = 1) async {
+    private func invalidate() {
+        requestID = UUID()
+        decks = []; totalCount = 0; nextOffset = nil; loadedQuery = nil
+        isLoading = false; isLoadingMore = false; hasLoaded = false
+        errorMessage = nil; loadMoreErrorMessage = nil
+    }
+
+    func load() async {
         let id = UUID(); requestID = id
         let selectedQuery = query
-        let target = max(1, requestedPage)
-        isLoading = true; errorMessage = nil
+        isLoading = true; isLoadingMore = false
+        errorMessage = nil; loadMoreErrorMessage = nil
         defer { if requestID == id { isLoading = false } }
         do {
             let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
-                offset: (target - 1) * Self.pageSize, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
+                offset: 0, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
             guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
-            let count = max(0, page.totalCount ?? ((target - 1) * Self.pageSize + page.decks.count + (page.nextOffset == nil ? 0 : 1)))
-            let lastPage = max(1, (count + Self.pageSize - 1) / Self.pageSize)
-            // A removal can shrink the last page while it is being viewed.
-            if target > lastPage { await load(page: lastPage); return }
-            decks = page.decks
-            currentPage = target; totalCount = count; loadedQuery = selectedQuery
+            try validateNextOffset(page.nextOffset, after: 0)
+            decks = unique(page.decks)
+            nextOffset = page.nextOffset
+            totalCount = max(decks.count, page.totalCount ?? decks.count)
+            loadedQuery = selectedQuery; hasLoaded = true
         } catch {
             guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
             errorMessage = error.localizedDescription
         }
+    }
+
+    func loadNextPage() async {
+        guard canLoadMore, let offset = nextOffset else { return }
+        let id = requestID
+        let selectedQuery = query
+        isLoadingMore = true; loadMoreErrorMessage = nil
+        defer { if requestID == id { isLoadingMore = false } }
+        do {
+            let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
+                offset: offset, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
+            guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
+            try validateNextOffset(page.nextOffset, after: offset)
+            decks = unique(decks + page.decks)
+            nextOffset = page.nextOffset
+            totalCount = max(decks.count, page.totalCount ?? totalCount)
+        } catch {
+            guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
+            loadMoreErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func unique(_ values: [CommunityDeckPayload]) -> [CommunityDeckPayload] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.id).inserted }
+    }
+
+    private func validateNextOffset(_ next: Int?, after offset: Int) throws {
+        if let next, next <= offset { throw URLError(.cannotParseResponse) }
     }
 }
 
@@ -109,7 +148,6 @@ struct CommunityFeedView: View {
     let onShare: () -> Void
     var showsSearchField = true
     var showsTitle = true
-    var showsPageSelector = true
     @Namespace private var sortNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
@@ -117,8 +155,6 @@ struct CommunityFeedView: View {
     @State private var downloadingID: String?
     @State private var downloadProgress = ""
     @State private var message: String?
-    @State private var blockingDeck: CommunityDeckPayload?
-    @State private var isBlocking = false
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
     var body: some View {
@@ -141,38 +177,37 @@ struct CommunityFeedView: View {
                 .font(.subheadline).padding(.horizontal, 12).frame(minHeight: 48)
                 .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
             }
-            if store.isLoading && store.decks.isEmpty {
-                ProgressView("Loading decks…").frame(maxWidth: .infinity, minHeight: 140)
-            } else if let error = store.errorMessage {
-                VStack(spacing: 12) {
+            if (store.isLoading || !store.hasLoaded) && store.decks.isEmpty && store.errorMessage == nil {
+                ProgressView("Loading decks…").frame(maxWidth: .infinity, minHeight: 120)
+            } else if store.decks.isEmpty, let error = store.errorMessage {
+                VStack(spacing: 8) {
                     Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                     Button("Try again") { Task { await store.load() } }.frame(minHeight: 44)
-                }.frame(maxWidth: .infinity).padding(20).appCardSurface(cornerRadius: 20)
-            } else if store.decks.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "rectangle.stack").font(.system(size: 30)).foregroundStyle(LearnAlertStyle.appAccentForeground)
+                }.frame(maxWidth: .infinity).padding(.vertical, 20)
+            } else if store.hasLoaded && store.decks.isEmpty {
+                VStack(spacing: 8) {
                     Text(store.search.isEmpty && store.category == "All" ? "No community decks yet" : "No matching decks").font(.headline)
                     if !store.search.isEmpty || store.category != "All" {
                         Button("Clear filters") { store.search = ""; store.category = "All" }.frame(minHeight: 44)
                     }
-                }.frame(maxWidth: .infinity).padding(24).appCardSurface(cornerRadius: 20)
+                }.frame(maxWidth: .infinity).padding(.vertical, 24)
             }
-            VStack(spacing: 4) {
-                LazyVStack(spacing: 12) {
-                    ForEach(store.decks) { deck in
-                        CommunityDeckCard(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
-                            progress: downloadingID == deck.id ? downloadProgress : "",
-                            open: { selectedPreview = deck }, download: { Task { await download(deck) } })
-                            .contextMenu {
-                                Button("Report deck", systemImage: "flag") { Task { await report(deck) } }
-                                if canBlock(deck) {
-                                    Button("Block author", systemImage: "person.slash", role: .destructive) { blockingDeck = deck }.disabled(isBlocking)
-                                }
+            LazyVStack(spacing: 0) {
+                ForEach(Array(store.decks.enumerated()), id: \.element.id) { index, deck in
+                    CommunityDeckCard(deck: deck, open: { selectedPreview = deck })
+                        .contextMenu {
+                            Button("Report deck", systemImage: "flag") { Task { await report(deck) } }
+                        }
+                        .onAppear {
+                            if index >= store.decks.count - 4 && store.loadMoreErrorMessage == nil {
+                                Task { await store.loadNextPage() }
                             }
-                    }
+                        }
+                    if index < store.decks.count - 1 { Divider().overlay(LearnAlertStyle.hairline.opacity(0.35)) }
                 }
-                if showsPageSelector && store.totalCount > 0 { CommunityDeckPageSelector(store: store) }
+                paginationStatus
             }
+
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
         .task(id: "\(store.sort.rawValue):\(store.category):\(store.search):\(session.token ?? "anonymous")") {
@@ -181,24 +216,42 @@ struct CommunityFeedView: View {
             await store.load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in
+            selectedPreview = nil
             store.setViewer(token: session.token)
             Task { await store.load() }
         }
         .sheet(item: $selectedPreview) { deck in
             CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
-                progress: downloadProgress, download: { Task { await download(deck) } },
-                blockAuthor: canBlock(deck) ? { try await performBlock(deck) } : nil)
+                progress: downloadProgress, download: { Task { await download(deck) } })
         }
-        .confirmationDialog("Block \(blockingDeck?.authorHandle ?? "this author")?", isPresented: Binding(get: { blockingDeck != nil }, set: { if !$0 { blockingDeck = nil } }), titleVisibility: .visible) {
-            Button("Block author", role: .destructive) {
-                if let deck = blockingDeck {
-                    Task { do { try await performBlock(deck) } catch { session.handle(error); message = error.localizedDescription } }
-                }
-            }
-        } message: { Text("Hides their community decks. Copies in your library stay. You can unblock them in your profile.") }
         .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
+    }
+
+    @ViewBuilder private var paginationStatus: some View {
+        if !store.decks.isEmpty {
+            if let error = store.loadMoreErrorMessage ?? store.errorMessage {
+                VStack(spacing: 4) {
+                    Text(error).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                    Button("Try again") {
+                        Task {
+                            if store.loadMoreErrorMessage != nil { await store.loadNextPage() }
+                            else { await store.load() }
+                        }
+                    }.frame(minHeight: 44)
+                }.padding(.top, 12).frame(maxWidth: .infinity)
+            } else if store.isLoadingMore || store.isLoading {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 52)
+            } else if store.hasMore {
+                Color.clear.frame(height: 1)
+                    .task(id: store.paginationID) { await store.loadNextPage() }
+            } else if store.hasLoaded {
+                Text("You’re all caught up")
+                    .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 44).padding(.top, 6)
+            }
+        }
     }
 
     private var sortSelector: some View {
@@ -256,20 +309,6 @@ struct CommunityFeedView: View {
             selectedPreview = nil; onAddDeck(downloaded)
         } catch { message = error.localizedDescription }
     }
-    private func canBlock(_ deck: CommunityDeckPayload) -> Bool {
-        deck.authorID != nil && deck.authorID != session.profile.authorID
-    }
-    @MainActor private func performBlock(_ deck: CommunityDeckPayload) async throws {
-        guard let authorID = deck.authorID else { return }
-        guard let token = session.token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple in Settings to block an author.") }
-        guard !isBlocking else { return }
-        isBlocking = true
-        defer { isBlocking = false }
-        try await CommunityAPI().block(authorID: authorID, token: token)
-        guard session.token == token else { return }
-        selectedPreview = nil
-        NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
-    }
     @MainActor private func report(_ deck: CommunityDeckPayload) async {
         guard let token = session.token else { message = "Sign in with Apple in Settings before reporting a deck."; return }
         do {
@@ -279,126 +318,30 @@ struct CommunityFeedView: View {
     }
 }
 
-/// A shared compact pager, used inline or in Discover's persistent footer.
-struct CommunityDeckPageSelector: View {
-    @ObservedObject var store: CommunityFeedStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var pageItems: [Int] {
-        let count = store.pageCount
-        let current = store.currentPage
-        if count <= 5 { return Array(1...count) }
-        if current <= 3 { return [1, 2, 3, -1, count] }
-        if current >= count - 2 { return [1, -1, count - 2, count - 1, count] }
-        return [1, -1, current, -2, count]
-    }
-
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 0) {
-                pageArrow(forward: false)
-                ForEach(pageItems, id: \.self) { page in
-                    if page < 0 {
-                        Text("…").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                            .frame(width: 16).accessibilityHidden(true)
-                    } else {
-                        Button { changePage(page) } label: {
-                            Text("\(page)").font(.caption.weight(.semibold)).monospacedDigit()
-                                .foregroundStyle(page == store.currentPage ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
-                                .frame(width: 32, height: 32)
-                                .background {
-                                    if page == store.currentPage {
-                                        RoundedRectangle(cornerRadius: 6).fill(LearnAlertStyle.appAccent)
-                                            .frame(width: 24, height: 20)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Page \(page) of \(store.pageCount)")
-                        .accessibilityAddTraits(page == store.currentPage ? .isSelected : [])
-                    }
-                }
-                pageArrow(forward: true)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            HStack(spacing: 8) {
-                pageArrow(forward: false)
-                Text("\(store.currentPage) / \(store.pageCount)").font(.caption.weight(.semibold)).monospacedDigit()
-                pageArrow(forward: true)
-            }
-        }
-        .disabled(!store.canChangePage)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Community deck pages")
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: store.currentPage)
-    }
-
-    private func pageArrow(forward: Bool) -> some View {
-        Button { changePage(store.currentPage + (forward ? 1 : -1)) } label: {
-            Image(systemName: forward ? "chevron.right" : "chevron.left")
-                .font(.system(size: 11, weight: .semibold)).frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(forward ? store.currentPage >= store.pageCount : store.currentPage <= 1)
-        .accessibilityLabel(forward ? "Next page" : "Previous page")
-    }
-
-    private func changePage(_ page: Int) {
-        guard store.canChangePage, page != store.currentPage, (1...store.pageCount).contains(page) else { return }
-        HapticFeedback.impact(.light)
-        Task { await store.load(page: page) }
-    }
-
-}
-
 struct CommunityDeckCard: View {
     let deck: CommunityDeckPayload
-    var isAdded = false
-    var isDownloading = false
-    var progress = ""
     let open: () -> Void
-    let download: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button(action: open) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "rectangle.stack.fill").font(.system(size: 18))
-                        .foregroundStyle(Color(hex: deck.colorHex)).frame(width: 36, height: 40)
-                        .background(Color(hex: deck.colorHex).opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(deck.name).font(.headline).multilineTextAlignment(.leading)
-                        Text(deck.authorHandle).font(.caption).lineLimit(1)
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                        if !deck.description.isEmpty { Text(deck.description).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2).multilineTextAlignment(.leading) }
-                        Text("\(deck.cardCount) cards").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                        if !progress.isEmpty { Text(progress).font(.caption).foregroundStyle(LearnAlertStyle.appAccentForeground) }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .foregroundStyle(LearnAlertStyle.textPrimary).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityHint("Preview this deck")
-            Button(action: download) {
-                if isDownloading { ProgressView().frame(width: 44, height: 44) }
-                else { Image(systemName: isAdded ? "checkmark.circle.fill" : "arrow.down.circle.fill").font(.system(size: 25)).frame(width: 44, height: 44) }
+        Button(action: open) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                Text(deck.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("\(deck.cardCount) cards")
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .fixedSize()
             }
-            .buttonStyle(.plain).tint(LearnAlertStyle.appAccentForeground)
-            .disabled(isAdded || isDownloading).accessibilityLabel(isAdded ? "Already in your library" : "Add \(deck.name) to your library")
+            .frame(minHeight: 44)
+            .padding(.vertical, 1)
+            .contentShape(Rectangle())
         }
-        .overlay(alignment: .bottomTrailing) {
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.down").font(.system(size: 10, weight: .semibold))
-                Text(deck.downloadCount.formatted()).monospacedDigit()
-            }
-            .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-            .fixedSize()
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(deck.downloadCount) downloads")
-            .allowsHitTesting(false)
-        }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+        .buttonStyle(.plain)
+        .accessibilityHint("Preview this deck")
     }
 }
 
@@ -422,27 +365,58 @@ struct CommunityDeckPreviewSheet: View {
     var isDownloading = false
     var progress = ""
     let download: () -> Void
-    var blockAuthor: (() async throws -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
     @State private var preview: CommunityDeckPayload?
     @State private var error: String?
-    @State private var confirmingBlock = false
-    @State private var isBlocking = false
-    @State private var blockError: String?
+    @State private var actionMessage: String?
+    @State private var authorProfile: AuthorTarget?
+    @State private var likeCount = 0
+    @State private var viewerHasLiked = false
+    @State private var isSavingLike = false
+    @State private var hasLoaded = false
+    @State private var likeAnimationID = 0
+    private struct AuthorTarget: Identifiable { let id: String }
+    private var visibleDeck: CommunityDeckPayload { preview ?? deck }
+    private var isOwnDeck: Bool {
+        guard let authorID = visibleDeck.authorID else { return false }
+        return authorID == session.profile.authorID
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(spacing: 12) {
-                        CommunityAvatarView(avatar: deck.authorAvatar ?? .init()).frame(width: 48, height: 48)
-                        VStack(alignment: .leading, spacing: 4) { Text(deck.name).font(.title2.weight(.bold)); Text(deck.authorHandle).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
+                        CommunityAvatarView(avatar: visibleDeck.authorAvatar ?? .init()).frame(width: 48, height: 48)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(visibleDeck.name).font(.title2.weight(.bold))
+                            if let authorID = visibleDeck.authorID {
+                                Button { authorProfile = AuthorTarget(id: authorID) } label: {
+                                    Text(visibleDeck.authorHandle).underline()
+                                        .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                                        .frame(minHeight: 32, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("View creator profile")
+                            } else {
+                                Text(visibleDeck.authorHandle).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            }
+                        }
                     }
-                    if !deck.description.isEmpty { Text(deck.description).font(.body) }
-                    Text("\(deck.cardCount) cards · \(deck.downloadCount.formatted()) downloads").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
-                    if let error { Text(error).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
-                    else if let cards = preview?.cards {
+                    if !visibleDeck.description.isEmpty { Text(visibleDeck.description).font(.body) }
+                    HStack(spacing: 12) {
+                        Text("\(visibleDeck.cardCount) cards · \(visibleDeck.downloadCount.formatted()) downloads")
+                            .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                        Spacer(minLength: 4)
+                        if !isOwnDeck { likeButton }
+                    }
+                    if let error {
+                        Text(error).foregroundStyle(LearnAlertStyle.destructiveRed)
+                        Button("Try again") { Task { await load() } }.frame(minHeight: 44)
+                    } else if let cards = preview?.cards {
                         ForEach(cards) { CommunitySampleCardView(card: $0) }
                     } else { ProgressView().frame(maxWidth: .infinity, minHeight: 100) }
                 }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
@@ -450,29 +424,17 @@ struct CommunityDeckPreviewSheet: View {
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
             .navigationTitle("Deck preview").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isBlocking) }
-                if blockAuthor != nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Menu { Button("Block author", systemImage: "person.slash", role: .destructive) { confirmingBlock = true } }
-                            label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-                            .accessibilityLabel("Deck options").disabled(isBlocking)
-                    }
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu { Button("Report deck", systemImage: "flag") { Task { await report() } } }
+                        label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Deck options")
                 }
             }
-            .confirmationDialog("Block \(deck.authorHandle)?", isPresented: $confirmingBlock, titleVisibility: .visible) {
-                Button("Block author", role: .destructive) {
-                    isBlocking = true
-                    Task {
-                        defer { isBlocking = false }
-                        do { try await blockAuthor?(); dismiss() }
-                        catch { session.handle(error); blockError = error.localizedDescription }
-                    }
-                }
-            } message: { Text("Hides their community decks. Copies in your library stay.") }
-            .alert("Block author", isPresented: Binding(get: { blockError != nil }, set: { if !$0 { blockError = nil } })) {
-                Button("OK", role: .cancel) { blockError = nil }
-            } message: { Text(blockError ?? "") }
-            .interactiveDismissDisabled(isBlocking)
+            .alert("Community decks", isPresented: Binding(get: { actionMessage != nil }, set: { if !$0 { actionMessage = nil } })) {
+                Button("OK", role: .cancel) { actionMessage = nil }
+            } message: { Text(actionMessage ?? "") }
+            .sheet(item: $authorProfile) { author in CommunityPublicProfileView(authorID: author.id) }
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
                     if isDownloading { ProgressView(progress).font(.caption) }
@@ -480,13 +442,97 @@ struct CommunityDeckPreviewSheet: View {
                         .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk).disabled(isAdded || isDownloading)
                 }.padding(16).background(LearnAlertStyle.courseSurface)
             }
-            .task { await load() }
+            .task(id: session.token) { await load() }
         }
     }
+
+    private var likeButton: some View {
+        Button { Task { await toggleLike() } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: viewerHasLiked ? "heart.fill" : "heart")
+                    .font(.system(size: 21, weight: .medium))
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : likeAnimationID)
+                    .overlay {
+                        if likeAnimationID > 0 && !reduceMotion {
+                            CommunityHeartBurst().id(likeAnimationID).allowsHitTesting(false)
+                        }
+                    }
+                if isSavingLike { ProgressView().controlSize(.mini).frame(width: 20) }
+                else { Text(likeCount.formatted()).font(.subheadline.weight(.medium)).monospacedDigit() }
+            }
+            .foregroundStyle(viewerHasLiked ? Color.pink : LearnAlertStyle.textSecondary)
+            .frame(minWidth: 64, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!session.isSignedIn || !hasLoaded || isSavingLike)
+        .accessibilityLabel(viewerHasLiked ? "Unlike deck" : "Like deck")
+        .accessibilityValue("\(likeCount) likes")
+        .accessibilityHint(session.isSignedIn ? "" : "Sign in with Apple in Settings to like community decks")
+    }
+
     @MainActor private func load() async {
-        error = nil
-        do { preview = try await CommunityAPI().preview(deckID: deck.id, token: session.token) }
-        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        let token = session.token
+        error = nil; hasLoaded = false
+        likeCount = max(0, deck.likeCount ?? 0)
+        viewerHasLiked = false
+        do {
+            let loaded = try await CommunityAPI().preview(deckID: deck.id, token: token)
+            guard !Task.isCancelled, session.token == token else { return }
+            preview = loaded
+            likeCount = max(0, loaded.likeCount ?? 0)
+            viewerHasLiked = token != nil && (loaded.viewerHasLiked ?? false)
+            hasLoaded = true
+        } catch {
+            guard !Task.isCancelled, session.token == token else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    @MainActor private func toggleLike() async {
+        guard let token = session.token, hasLoaded, !isOwnDeck, !isSavingLike else { return }
+        isSavingLike = true
+        defer { isSavingLike = false }
+        let wasLiked = viewerHasLiked
+        do {
+            let result = try await CommunityAPI().setLike(deckID: deck.id, liked: !wasLiked, token: token)
+            guard !Task.isCancelled, session.token == token else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                likeCount = max(0, result.likeCount)
+                viewerHasLiked = result.viewerHasLiked
+                if !wasLiked && result.viewerHasLiked { likeAnimationID += 1 }
+            }
+        } catch {
+            guard !Task.isCancelled, session.token == token else { return }
+            session.handle(error); actionMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor private func report() async {
+        guard let token = session.token else { actionMessage = "Sign in with Apple in Settings before reporting a deck."; return }
+        do {
+            try await CommunityAPI().report(deckID: deck.id, reason: "Reported by a learner for review.", token: token)
+            actionMessage = "Your report has been saved for review."
+        } catch { session.handle(error); actionMessage = error.localizedDescription }
+    }
+}
+
+private struct CommunityHeartBurst: View {
+    @State private var expanded = false
+    var body: some View {
+        ZStack {
+            ForEach(0..<7, id: \.self) { index in
+                let angle = Double(index) * .pi * 2 / 7
+                Circle().fill(Color.pink.opacity(0.7))
+                    .frame(width: 4, height: 4)
+                    .offset(x: CGFloat(cos(angle)) * (expanded ? 26 : 8), y: CGFloat(sin(angle)) * (expanded ? 26 : 8))
+                    .scaleEffect(expanded ? 0.15 : 1)
+                    .opacity(expanded ? 0 : 1)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .accessibilityHidden(true)
+        .onAppear { withAnimation(.easeOut(duration: 0.55)) { expanded = true } }
     }
 }
 
@@ -544,31 +590,23 @@ struct CommunitySampleCardView: View {
     @State private var showingImageBack = false
     private var isImageCard: Bool { card.cardType == "images" }
     private var hasImageBack: Bool { localCard?.answerImageName?.isEmpty == false || card.answerImageID != nil }
-    private var visibleLocalImageName: String? { showingImageBack ? localCard?.answerImageName : localCard?.promptImageName }
-    private var visibleRemoteImageID: String? { showingImageBack ? card.answerImageID : card.promptImageID }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !isImageCard && !card.question.isEmpty { Text(card.question).font(.body.weight(.medium)) }
             if isImageCard {
                 Group {
-                    if let image = CardImageStore.loadImage(named: visibleLocalImageName) {
-                        Image(uiImage: image).resizable().scaledToFit()
-                    } else if let id = visibleRemoteImageID {
-                        CommunityRemoteImage(id: id, maximumHeight: 340)
+                    if hasImageBack {
+                        ImageCardFlipView(isShowingBack: $showingImageBack) {
+                            imageFace(localName: localCard?.promptImageName, remoteID: card.promptImageID)
+                        } back: {
+                            imageFace(localName: localCard?.answerImageName, remoteID: card.answerImageID)
+                        }
                     } else {
-                        Label("Image unavailable", systemImage: "photo").foregroundStyle(LearnAlertStyle.textSecondary)
+                        imageFace(localName: localCard?.promptImageName, remoteID: card.promptImageID)
                     }
                 }
                 .frame(maxWidth: .infinity).frame(height: 340)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                if hasImageBack {
-                    Button(showingImageBack ? "Show front" : "Reveal back") {
-                        withAnimation(.snappy) { showingImageBack.toggle() }
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .tint(LearnAlertStyle.appAccentForeground)
-                }
             } else if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160).frame(maxWidth: .infinity).clipShape(RoundedRectangle(cornerRadius: 12)) }
             else if let id = card.promptImageID { CommunityRemoteImage(id: id) }
             if !isImageCard {
@@ -590,6 +628,16 @@ struct CommunitySampleCardView: View {
                 }.font(.subheadline).tint(LearnAlertStyle.appAccentForeground)
             }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
+    }
+
+    @ViewBuilder private func imageFace(localName: String?, remoteID: String?) -> some View {
+        if let image = CardImageStore.loadImage(named: localName) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else if let remoteID {
+            CommunityRemoteImage(id: remoteID, maximumHeight: 340)
+        } else {
+            Label("Image unavailable", systemImage: "photo").foregroundStyle(LearnAlertStyle.textSecondary)
+        }
     }
 }
 

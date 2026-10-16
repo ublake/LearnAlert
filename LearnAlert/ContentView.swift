@@ -127,7 +127,8 @@ struct ContentView: View {
                         initialWasCorrect: handoff.wasCorrect,
                         initialWasGraded: handoff.wasGraded,
                         initialHintVisible: handoff.wasHintVisible,
-                        initialWasRevealed: handoff.wasRevealed
+                        initialWasRevealed: handoff.wasRevealed,
+                        initialImageBackViewed: handoff.wasImageBackViewed
                     )
                 } else {
                     ContentUnavailableView("Deck Not Found", systemImage: "rectangle.stack.badge.exclamationmark")

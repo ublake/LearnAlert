@@ -278,6 +278,7 @@ private struct NotificationSimulatedContainer: View {
     // Preview Interactive State
     @State private var selectedQuizChoice: String? = nil
     @State private var isRevealed = false
+    @State private var hasViewedImageBack = false
     @State private var isGraded = false
     @State private var showingHint = false
     @State private var typedBlank = ""
@@ -495,6 +496,7 @@ private struct NotificationSimulatedContainer: View {
     private func resetPreviewInteractions() {
         selectedQuizChoice = nil
         isRevealed = false
+        hasViewedImageBack = false
         isGraded = false
         showingHint = false
         typedBlank = ""
@@ -506,25 +508,30 @@ private struct NotificationSimulatedContainer: View {
     // MARK: - Vocabulary Preview
     private var imagePreview: some View {
         VStack(spacing: 12) {
-            if let image = CardImageStore.loadImage(named: isRevealed ? "course-vocab-orange" : "course-vocab-apple") {
-                Image(uiImage: image)
-                    .resizable().scaledToFit()
-                    .frame(height: isCompact ? 200 : 280)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            ImageCardFlipView(isShowingBack: $isRevealed, onBackViewed: { hasViewedImageBack = true }) {
+                imagePreviewFace("course-vocab-apple")
+            } back: {
+                imagePreviewFace("course-vocab-orange")
             }
+            .frame(height: isCompact ? 200 : 280)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             if !isGraded {
-                Button(isRevealed ? "Reviewed" : "Reveal back", systemImage: isRevealed ? "checkmark" : "rectangle.on.rectangle") {
-                    withAnimation(.snappy) {
-                        if isRevealed { isGraded = true }
-                        else { isRevealed = true }
-                    }
+                Button("Reviewed", systemImage: "checkmark") {
+                    withAnimation(.snappy) { isGraded = true }
                 }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .buttonStyle(.bordered)
                 .tint(textColorPrimary)
+                .disabled(!hasViewedImageBack)
             }
+        }
+    }
+
+    @ViewBuilder private func imagePreviewFace(_ name: String) -> some View {
+        if let image = CardImageStore.loadImage(named: name) {
+            Image(uiImage: image).resizable().scaledToFit()
         }
     }
 

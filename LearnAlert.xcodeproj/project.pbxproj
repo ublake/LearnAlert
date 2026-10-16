@@ -178,6 +178,7 @@
 				"hangulaudio/vowel_20.mp3",
 				"hangulaudio/vowel_21.mp3",
 				KoreanLexicon.swift,
+				ImageCardFlipView.swift,
 				Models.swift,
 				DeckAlertSettings.swift,
 				DailyDeckAlertScheduler.swift,

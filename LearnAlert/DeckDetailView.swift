@@ -723,9 +723,6 @@ struct CardInteractivePreviewSheet: View {
     @State private var isRevealed = false
     @State private var showHint = false
     private var hasImageBack: Bool { card.answerImageName?.isEmpty == false }
-    private var visibleImageName: String? {
-        card.cardType == .images && hasImageBack && isRevealed ? card.answerImageName : card.promptImageName
-    }
 
     var body: some View {
         NavigationStack {
@@ -753,22 +750,18 @@ struct CardInteractivePreviewSheet: View {
 
                             if card.cardType == .images {
                                 Group {
-                                    if let image = CardImageStore.loadImage(named: visibleImageName) {
-                                        Image(uiImage: image).resizable().scaledToFit()
+                                    if hasImageBack {
+                                        ImageCardFlipView(isShowingBack: $isRevealed) {
+                                            imageFace(card.promptImageName)
+                                        } back: {
+                                            imageFace(card.answerImageName)
+                                        }
                                     } else {
-                                        ContentUnavailableView("Image unavailable", systemImage: "photo",
-                                            description: Text("Edit this card to upload the picture again."))
+                                        imageFace(card.promptImageName)
                                     }
                                 }
                                 .frame(maxWidth: .infinity).frame(height: 340)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                if hasImageBack {
-                                    Button(isRevealed ? "Show front" : "Reveal back") {
-                                        withAnimation(.snappy) { isRevealed.toggle() }
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
-                                }
                             } else if let promptImg = card.promptImageName, !promptImg.isEmpty,
                                let uiImage = CardImageStore.loadImage(named: promptImg) {
                                 Image(uiImage: uiImage)
@@ -875,6 +868,15 @@ struct CardInteractivePreviewSheet: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder private func imageFace(_ name: String?) -> some View {
+        if let image = CardImageStore.loadImage(named: name) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else {
+            ContentUnavailableView("Image unavailable", systemImage: "photo",
+                description: Text("Edit this card to upload the picture again."))
         }
     }
 

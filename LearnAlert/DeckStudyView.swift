@@ -10,6 +10,7 @@ struct DeckStudyView: View {
     @State private var cardIndex = 0
     @State private var selectedAnswer: String?
     @State private var isRevealed = false
+    @State private var hasViewedImageBack = false
     @State private var isGraded = false
     @State private var correctCount = 0
     @State private var showingHint = false
@@ -23,6 +24,7 @@ struct DeckStudyView: View {
     let initialWasGraded: Bool
     let initialHintVisible: Bool
     let initialWasRevealed: Bool
+    let initialImageBackViewed: Bool
 
     init(
         deck: Deck,
@@ -31,7 +33,8 @@ struct DeckStudyView: View {
         initialWasCorrect: Bool? = nil,
         initialWasGraded: Bool = false,
         initialHintVisible: Bool = false,
-        initialWasRevealed: Bool = false
+        initialWasRevealed: Bool = false,
+        initialImageBackViewed: Bool = false
     ) {
         self.deck = deck
         self.initialCardId = initialCardId
@@ -40,6 +43,7 @@ struct DeckStudyView: View {
         self.initialWasGraded = initialWasGraded
         self.initialHintVisible = initialHintVisible
         self.initialWasRevealed = initialWasRevealed
+        self.initialImageBackViewed = initialImageBackViewed
     }
 
     private var currentCard: Flashcard? {
@@ -82,11 +86,13 @@ struct DeckStudyView: View {
                     cardCount: studyQueue.count,
                     correctCount: correctCount,
                     selectedAnswer: selectedAnswer,
-                    isRevealed: isRevealed,
+                    isRevealed: $isRevealed,
+                    hasViewedImageBack: hasViewedImageBack,
                     isGraded: isGraded,
                     showingHint: showingHint,
                     onSelect: { selectOption($0, for: card) },
                     onReveal: { withAnimation(.snappy) { isRevealed = true } },
+                    onImageBackViewed: { hasViewedImageBack = true },
                     onGrade: { grade(card, isCorrect: $0) },
                     onToggleHint: { toggleHint(for: card) },
                     onSkip: { skip(card) },
@@ -162,7 +168,7 @@ struct DeckStudyView: View {
     private func submitAndAdvance(_ card: Flashcard) {
         guard card.cardType != .images || CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
         if card.cardType == .images, let back = card.answerImageName, !back.isEmpty {
-            guard isRevealed, CardImageStore.loadImage(named: back) != nil else { return }
+            guard hasViewedImageBack, CardImageStore.loadImage(named: back) != nil else { return }
         }
         if card.cardType.isReviewOnly {
             // A notification may already have recorded this review before handing off.
@@ -187,6 +193,7 @@ struct DeckStudyView: View {
             cardIndex += 1
             selectedAnswer = nil
             isRevealed = false
+            hasViewedImageBack = false
             isGraded = false
             showingHint = false
             hasRecordedHint = false
@@ -199,6 +206,7 @@ struct DeckStudyView: View {
             cardIndex = 0
             selectedAnswer = nil
             isRevealed = false
+            hasViewedImageBack = false
             isGraded = false
             correctCount = 0
             showingHint = false
@@ -218,7 +226,10 @@ struct DeckStudyView: View {
         }
         selectedAnswer = initialSelectedAnswer
         isGraded = initialWasGraded
-        isRevealed = initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
+        isRevealed = currentCard?.cardType == .images
+            ? initialWasRevealed
+            : initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
+        hasViewedImageBack = initialImageBackViewed || initialWasRevealed || initialWasGraded
         showingHint = initialHintVisible
         hasRecordedHint = initialHintVisible
         correctCount = initialWasCorrect == true ? 1 : 0
@@ -242,11 +253,13 @@ private struct QuizSessionView: View {
     let cardCount: Int
     let correctCount: Int
     let selectedAnswer: String?
-    let isRevealed: Bool
+    @Binding var isRevealed: Bool
+    let hasViewedImageBack: Bool
     let isGraded: Bool
     let showingHint: Bool
     let onSelect: (String) -> Void
     let onReveal: () -> Void
+    let onImageBackViewed: () -> Void
     let onGrade: (Bool) -> Void
     let onToggleHint: () -> Void
     let onSkip: () -> Void
@@ -254,13 +267,15 @@ private struct QuizSessionView: View {
     let onClose: () -> Void
 
     private var canContinue: Bool {
-        if cardType == .images { return CardImageStore.loadImage(named: visibleImageName) != nil }
+        if cardType == .images {
+            guard CardImageStore.loadImage(named: promptImageName) != nil else { return false }
+            return !hasImageBack || (hasViewedImageBack && CardImageStore.loadImage(named: answerImageName) != nil)
+        }
         return cardType.isReviewOnly || isGraded
     }
     private var hasImageBack: Bool { answerImageName?.isEmpty == false }
-    private var visibleImageName: String? { hasImageBack && isRevealed ? answerImageName : promptImageName }
     private var actionTitle: LocalizedStringKey {
-        if cardType == .images { return hasImageBack && !isRevealed ? "REVEAL BACK" : "REVIEWED" }
+        if cardType == .images { return "REVIEWED" }
         return cardNumber >= cardCount ? "FINISH" : "CONTINUE"
     }
 
@@ -278,11 +293,17 @@ private struct QuizSessionView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     if cardType == .images {
                         Group {
-                            if let image = CardImageStore.loadImage(named: visibleImageName) {
-                                Image(uiImage: image).resizable().scaledToFit()
+                            if hasImageBack {
+                                ImageCardFlipView(isShowingBack: $isRevealed,
+                                    onBackViewed: {
+                                        if CardImageStore.loadImage(named: answerImageName) != nil { onImageBackViewed() }
+                                    }) {
+                                    imageFace(promptImageName)
+                                } back: {
+                                    imageFace(answerImageName)
+                                }
                             } else {
-                                ContentUnavailableView("Image unavailable", systemImage: "photo",
-                                    description: Text("Open the card editor to upload the picture again."))
+                                imageFace(promptImageName)
                             }
                         }
                         .frame(maxWidth: .infinity).frame(height: 420)
@@ -361,15 +382,21 @@ private struct QuizSessionView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button(actionTitle) {
-                if cardType == .images && hasImageBack && !isRevealed { onReveal() }
-                else { onContinue() }
-            }
+            Button(actionTitle, action: onContinue)
                 .buttonStyle(QuizActionButtonStyle())
                 .disabled(!canContinue)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(QuizTheme.canvas)
+        }
+    }
+
+    @ViewBuilder private func imageFace(_ name: String?) -> some View {
+        if let image = CardImageStore.loadImage(named: name) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else {
+            ContentUnavailableView("Image unavailable", systemImage: "photo",
+                description: Text("Open the card editor to upload the picture again."))
         }
     }
 }

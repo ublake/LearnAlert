@@ -44,6 +44,8 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var adminUpdatedAt: Int? = nil
     var isHidden: Bool? = nil
     var authorID: String? = nil
+    var likeCount: Int? = nil
+    var viewerHasLiked: Bool? = nil
 
     var isRemoved: Bool { status == "deleted" }
 }
@@ -156,6 +158,29 @@ struct CommunityAPI {
     func saveProfile(username: String, avatar: CommunityAvatar, token: String) async throws -> CommunityProfile {
         struct Body: Encodable { let username: String; let avatar: CommunityAvatar }
         return try await jsonRequest("account", method: "PUT", body: Body(username: username, avatar: avatar), token: token)
+    }
+
+    func saveProfilePrivacy(hideStatsPublicly: Bool, token: String) async throws -> CommunityProfile {
+        struct Body: Encodable { let hideStatsPublicly: Bool }
+        return try await jsonRequest("account", method: "PUT", body: Body(hideStatsPublicly: hideStatsPublicly), token: token)
+    }
+
+    func publicProfile(authorID: String, offset: Int = 0, limit: Int = 20, token: String? = nil) async throws -> CommunityPublicProfilePage {
+        var components = URLComponents(url: endpoint("profiles/\(authorID)"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "limit", value: String(limit))]
+        return try await decoded(viewerRequest(components.url!, token: token))
+    }
+
+    func setLike(deckID: String, liked: Bool, token: String) async throws -> CommunityLikeResult {
+        var request = viewerRequest(endpoint("decks/\(deckID)/like"), token: token)
+        request.httpMethod = liked ? "PUT" : "DELETE"
+        return try await decoded(request)
+    }
+
+    func receivedLikes(offset: Int = 0, limit: Int = 20, token: String) async throws -> CommunityLikesPage {
+        var components = URLComponents(url: endpoint("account/likes"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "offset", value: String(offset)), URLQueryItem(name: "limit", value: String(limit))]
+        return try await decoded(viewerRequest(components.url!, token: token))
     }
 
     func myDecks(token: String) async throws -> CommunityDeckPage {
@@ -397,6 +422,19 @@ final class CommunitySession: ObservableObject {
             let profile = try await api.saveProfile(username: username, avatar: avatar, token: token)
             guard var result = credentials, self.token == token else { throw CancellationError() }
             result.profile = profile; result.handle = profile.handle
+            try persist(result)
+            errorMessage = nil
+            NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
+        } catch { if self.token == token { handle(error) }; throw error }
+    }
+
+    func saveProfilePrivacy(hideStatsPublicly: Bool) async throws {
+        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple to update your profile.") }
+        do {
+            let profile = try await api.saveProfilePrivacy(hideStatsPublicly: hideStatsPublicly, token: token)
+            guard var result = credentials, self.token == token else { throw CancellationError() }
+            result.profile = profile
+            result.handle = profile.handle
             try persist(result)
             errorMessage = nil
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)

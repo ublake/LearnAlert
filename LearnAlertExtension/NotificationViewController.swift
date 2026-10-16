@@ -98,6 +98,7 @@ struct FlashcardNotificationView: View {
 
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
+    @State private var hasViewedImageBack = false
     @State private var isGraded = false
     @State private var isSkipped = false
     @State private var showingHint = false
@@ -180,7 +181,10 @@ struct FlashcardNotificationView: View {
         return answerImageName
     }
     private var hasImageBack: Bool { activeAnswerImageName?.isEmpty == false }
-    private var visibleImageName: String? { hasImageBack && isRevealed ? activeAnswerImageName : activePromptImageName }
+    private var canReviewImages: Bool {
+        guard CardImageStore.loadImage(named: activePromptImageName) != nil else { return false }
+        return !hasImageBack || (hasViewedImageBack && CardImageStore.loadImage(named: activeAnswerImageName) != nil)
+    }
     private var activeOptionImageNames: [String] { sessionCard?.optionImageNames ?? optionImageNames }
 
     private var isAppOpen: Bool {
@@ -336,16 +340,18 @@ struct FlashcardNotificationView: View {
                 if activeCardType == "images" {
                     VStack(spacing: 14) {
                         Group {
-                            if let image = CardImageStore.loadImage(named: visibleImageName) {
-                                Image(uiImage: image).resizable().scaledToFit()
-                            } else {
-                                VStack(spacing: 8) {
-                                    Label("Image unavailable", systemImage: "photo")
-                                        .font(.headline)
-                                    Text("Open the app to add the picture again.")
-                                        .font(.subheadline)
+                            if hasImageBack {
+                                ImageCardFlipView(isShowingBack: $isRevealed,
+                                    onBackViewed: {
+                                        if CardImageStore.loadImage(named: activeAnswerImageName) != nil { hasViewedImageBack = true }
+                                    }) {
+                                    imageFace(activePromptImageName)
+                                } back: {
+                                    imageFace(activeAnswerImageName)
                                 }
-                                .foregroundStyle(textColorSecondary)
+                                .id(activeCardId)
+                            } else {
+                                imageFace(activePromptImageName)
                             }
                         }
                         .frame(maxWidth: .infinity).frame(height: isCompactLayout ? 280 : 340)
@@ -357,22 +363,17 @@ struct FlashcardNotificationView: View {
                                 .foregroundStyle(textColorSecondary)
                         } else {
                             Button {
-                                guard !isGraded, CardImageStore.loadImage(named: visibleImageName) != nil else { return }
-                                if hasImageBack && !isRevealed {
-                                    withAnimation(.snappy) { isRevealed = true }
-                                } else {
-                                    gradeCard(isCorrect: true, playFeedback: false)
-                                }
+                                guard !isGraded, canReviewImages else { return }
+                                gradeCard(isCorrect: true, playFeedback: false)
                             } label: {
-                                Label(hasImageBack && !isRevealed ? "Reveal back" : "Reviewed",
-                                    systemImage: hasImageBack && !isRevealed ? "rectangle.on.rectangle" : "checkmark")
+                                Label("Reviewed", systemImage: "checkmark")
                                     .font(.headline.weight(.semibold))
                                     .foregroundStyle(textColorPrimary)
                                     .frame(maxWidth: .infinity, minHeight: 44)
                                     .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
                             }
                             .buttonStyle(.plain)
-                            .disabled(CardImageStore.loadImage(named: visibleImageName) == nil)
+                            .disabled(!canReviewImages)
                         }
                     }
                 }
@@ -784,8 +785,23 @@ struct FlashcardNotificationView: View {
         .onChange(of: isRevealed) { _, _ in
             if !previewMode { persistStudyHandoff() }
         }
+        .onChange(of: hasViewedImageBack) { _, _ in
+            if !previewMode { persistStudyHandoff() }
+        }
         .onChange(of: showingHint) { _, _ in
             if !previewMode { persistStudyHandoff() }
+        }
+    }
+
+    @ViewBuilder private func imageFace(_ name: String?) -> some View {
+        if let image = CardImageStore.loadImage(named: name) {
+            Image(uiImage: image).resizable().scaledToFit()
+        } else {
+            VStack(spacing: 8) {
+                Label("Image unavailable", systemImage: "photo").font(.headline)
+                Text("Open the app to add the picture again.").font(.subheadline)
+            }
+            .foregroundStyle(textColorSecondary)
         }
     }
 
@@ -891,6 +907,7 @@ struct FlashcardNotificationView: View {
             withAnimation(.snappy) {
                 selectedAnswer = nil
                 isRevealed = false
+                hasViewedImageBack = false
                 isGraded = false
                 isSkipped = false
                 showingHint = false
@@ -955,6 +972,7 @@ struct FlashcardNotificationView: View {
             selectedAnswer = nil
             lastAnswerWasCorrect = nil
             isRevealed = false
+            hasViewedImageBack = false
             isGraded = false
             isSkipped = false
             showingHint = false
@@ -1055,6 +1073,7 @@ struct FlashcardNotificationView: View {
         defaults.set(lastAnswerWasCorrect, forKey: "handoffWasCorrect")
         defaults.set(isGraded, forKey: "handoffWasGraded")
         defaults.set(isRevealed, forKey: "handoffWasRevealed")
+        defaults.set(hasViewedImageBack, forKey: "handoffImageBackViewed")
         defaults.set(showingHint, forKey: "handoffHintVisible")
         // Mark handoff originated from notification UI
         defaults.set(true, forKey: "handoffFromNotificationUI")

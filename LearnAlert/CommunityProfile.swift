@@ -45,6 +45,9 @@ struct CommunityProfile: Codable, Equatable {
     var authorID: String? = nil
     var accountStatus: String? = nil
     var restrictionMessage: String? = nil
+    var hideStatsPublicly: Bool? = nil
+    var profileCreatedAt: Int? = nil
+    var stats: CommunityProfileStats? = nil
 }
 
 /// Coordinated colors keep line-only features visible on every skin tone.
@@ -355,7 +358,10 @@ struct SettingsProfileCard: View {
             }
         }
         .padding(.horizontal, 20)
-        .sheet(isPresented: $showingProfile) { CommunityProfileSheet() }
+        .sheet(isPresented: $showingProfile) {
+            if session.needsProfileSetup || session.profile.authorID == nil { CommunityProfileSheet() }
+            else if let authorID = session.profile.authorID { CommunityPublicProfileView(authorID: authorID) }
+        }
         .task(id: session.token) { await session.refreshProfile() }
     }
 }

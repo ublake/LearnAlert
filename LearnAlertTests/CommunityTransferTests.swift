@@ -460,39 +460,37 @@ struct CommunityTransferTests {
         }
     }
 
-    @Test("Community pages replace six-card slices, keep query sorting, and recover a removed last page")
+    @Test("Community browsing appends twenty-card batches and resets when the query changes")
     func communityPaging() async throws {
-        var total = 13
+        let total = 43
         var offsets: [Int] = []
         CommunityTestProtocol.response = { request in
             let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
             let values = Dictionary(uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value ?? "") })
-            #expect(values["limit"] == "6")
+            #expect(values["limit"] == "20")
             #expect(values["sort"] == "popular")
             let offset = Int(values["offset"]!)!
             offsets.append(offset)
-            let decks: [[String: Any]] = offset >= total ? [] : (offset..<min(offset + 6, total)).map { index in
+            let decks: [[String: Any]] = offset >= total ? [] : (offset..<min(offset + 20, total)).map { index in
                 ["id": "deck-\(index)", "name": "Deck \(index)", "description": "", "authorHandle": "@cozy_otter", "categoryTag": "Science",
                  "colorHex": "#4868F8", "deckType": "Quiz", "cardCount": 10, "downloadCount": index]
             }
-            return (200, try json(["decks": decks, "totalCount": total, "nextOffset": offset + 6 < total ? offset + 6 : NSNull()]))
+            return (200, try json(["decks": decks, "totalCount": total, "nextOffset": offset + 20 < total ? offset + 20 : NSNull()]))
         }
         defer { CommunityTestProtocol.response = nil }
         let store = CommunityFeedStore(api: api())
         await store.load()
-        #expect(store.decks.count == 6 && store.currentPage == 1 && store.pageCount == 3)
-        await store.load(page: 2)
-        #expect(store.decks.map(\.id) == ["deck-6", "deck-7", "deck-8", "deck-9", "deck-10", "deck-11"])
-        await store.load(page: 3)
-        #expect(store.decks.count == 1 && store.currentPage == 3)
-        total = 7
-        await store.load(page: 3)
-        #expect(store.currentPage == 2 && store.decks.map(\.id) == ["deck-6"])
-        #expect(offsets == [0, 6, 12, 12, 6])
+        #expect(store.decks.count == 20 && store.hasMore)
+        await store.loadNextPage()
+        #expect(store.decks.count == 40 && store.decks.last?.id == "deck-39")
+        await store.loadNextPage()
+        #expect(store.decks.count == 43 && !store.hasMore)
+        await store.loadNextPage()
+        #expect(offsets == [0, 20, 40])
         store.search = "new query"
-        #expect(!store.canChangePage)
+        #expect(!store.hasLoaded && store.decks.isEmpty)
         await store.load()
-        #expect(store.currentPage == 1 && store.canChangePage)
+        #expect(store.decks.count == 20 && store.hasMore)
     }
 
     @Test("My community decks includes review status and rejection notes; older payloads still decode")
@@ -616,7 +614,7 @@ struct CommunityTransferTests {
         await store.load()
         #expect(store.decks.first?.id == "first")
         store.setViewer(token: "second")
-        #expect(store.decks.isEmpty && !store.canChangePage)
+        #expect(store.decks.isEmpty && !store.hasLoaded)
         await store.load()
         #expect(store.decks.first?.id == "second" && store.decks.first?.authorID == "public-author")
     }
