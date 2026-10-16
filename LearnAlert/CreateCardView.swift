@@ -26,6 +26,10 @@ struct CreateCardView: View {
     @State private var promptImage: UIImage?
     @State private var promptPhotoPickerItem: PhotosPickerItem?
     @State private var promptImageName: String?
+    @State private var answerImage: UIImage?
+    @State private var answerImageName: String?
+    @State private var answerPhotoPickerItem: PhotosPickerItem?
+    @State private var imageCardLayout: ImageCardLayout = .single
 
     @State private var optionImages: [UIImage?] = [nil, nil, nil, nil]
     @State private var optionPhotoPickerItems: [PhotosPickerItem?] = [nil, nil, nil, nil]
@@ -69,7 +73,7 @@ struct CreateCardView: View {
                 !matchingRight[$0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
         case .images:
-            return promptImage != nil
+            return promptImage != nil && (imageCardLayout == .single || answerImage != nil)
         }
     }
 
@@ -112,6 +116,9 @@ struct CreateCardView: View {
             .onChange(of: promptPhotoPickerItem) { _, newItem in
                 if let newItem { loadImageForCropping(newItem, target: .prompt) }
             }
+            .onChange(of: answerPhotoPickerItem) { _, newItem in
+                if let newItem { loadImageForCropping(newItem, target: .answer) }
+            }
             .onChange(of: optionPhotoPickerItems) { oldItems, newItems in
                 for (index, item) in newItems.enumerated() where item != oldItems[index] {
                     if let item {
@@ -125,6 +132,7 @@ struct CreateCardView: View {
                 }, onConfirm: { image in
                     switch request.target {
                     case .prompt: promptImage = image
+                    case .answer: answerImage = image
                     case .option(let index): optionImages[index] = image
                     }
                     pendingImageCrop = nil
@@ -383,32 +391,55 @@ struct CreateCardView: View {
     // MARK: - Vocabulary Editor
     private var imagesEditor: some View {
         VStack(spacing: 14) {
-            if let promptImage {
+            Picker("Image layout", selection: $imageCardLayout) {
+                Text("Single").tag(ImageCardLayout.single)
+                Text("Front & back").tag(ImageCardLayout.frontAndBack)
+            }
+            .pickerStyle(.segmented)
+
+            imageAttachment(image: promptImage, picker: $promptPhotoPickerItem, target: .prompt,
+                            title: imageCardLayout == .frontAndBack ? "Front" : nil)
+            if imageCardLayout == .frontAndBack {
+                imageAttachment(image: answerImage, picker: $answerPhotoPickerItem, target: .answer, title: "Back")
+            }
+        }
+        .animation(.snappy, value: imageCardLayout)
+    }
+
+    private func imageAttachment(image: UIImage?, picker: Binding<PhotosPickerItem?>,
+                                 target: CardImageCropRequest.Target, title: String?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let title {
+                Text(title).font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
+            }
+            if let image {
                 Button {
-                    pendingImageCrop = CardImageCropRequest(image: promptImage, target: .prompt)
+                    pendingImageCrop = CardImageCropRequest(image: image, target: target)
                 } label: {
-                    Image(uiImage: promptImage)
+                    Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: 380)
+                        .frame(maxWidth: .infinity, maxHeight: imageCardLayout == .single ? 380 : 220)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Adjust image frame")
+                .accessibilityLabel(title.map { "Adjust \($0.lowercased()) image frame" } ?? "Adjust image frame")
             }
-            PhotosPicker(selection: $promptPhotoPickerItem, matching: .images) {
-                Label(promptImage == nil ? "Upload image" : "Change image", systemImage: "photo.badge.plus")
+            PhotosPicker(selection: picker, matching: .images) {
+                Label(image == nil ? "Upload image" : "Change image", systemImage: "photo.badge.plus")
                     .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: promptImage == nil ? 180 : 48)
+                    .frame(maxWidth: .infinity, minHeight: image == nil ? 150 : 48)
                     .foregroundStyle(LearnAlertStyle.indigo)
                     .background(LearnAlertStyle.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
             }
-            if promptImage != nil {
+            .accessibilityLabel(title.map { "\(image == nil ? "Upload" : "Change") \($0.lowercased()) image" } ?? (image == nil ? "Upload image" : "Change image"))
+            if let image {
                 Button("Adjust frame") {
-                    if let promptImage { pendingImageCrop = CardImageCropRequest(image: promptImage, target: .prompt) }
+                    pendingImageCrop = CardImageCropRequest(image: image, target: target)
                 }
                 .font(.subheadline.weight(.semibold))
                 .tint(LearnAlertStyle.indigo)
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(14)
@@ -780,7 +811,7 @@ struct CreateCardView: View {
         case .tapReveal: "Active recall card: prompt & answer."
         case .matching: "Connect corresponding word pairs."
         case .fillBlank: "Type the missing word in the sentence."
-        case .images: "Just a picture. No question or answer text."
+        case .images: "One picture or front & back. No text needed."
         }
     }
 
@@ -795,6 +826,9 @@ struct CreateCardView: View {
         selectedSectionId = card.section?.id.uuidString ?? "NONE"
 
         promptImageName = card.promptImageName
+        answerImageName = card.answerImageName
+        answerImage = CardImageStore.loadImage(named: card.answerImageName)
+        imageCardLayout = card.answerImageName == nil ? .single : .frontAndBack
         promptAudioName = card.promptAudioName
         if let pName = card.promptImageName {
             promptImage = CardImageStore.loadImage(named: pName)
@@ -847,6 +881,17 @@ struct CreateCardView: View {
             newImageNames.append(saved)
         }
 
+        var finalAnswerImageName: String?
+        if selectedType == .images && imageCardLayout == .frontAndBack, let answerImage {
+            guard let saved = CardImageStore.saveImage(answerImage) else {
+                newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
+                imageError = "Your back image couldn’t be saved. Please try again."
+                return
+            }
+            finalAnswerImageName = saved
+            newImageNames.append(saved)
+        }
+
         // Process option images
         var finalOptionImageNames: [String] = []
         if selectedType == .multipleChoice {
@@ -875,11 +920,13 @@ struct CreateCardView: View {
             matchingLeftItems: left,
             matchingRightItems: right,
             promptImageName: finalPromptImageName,
+            answerImageName: finalAnswerImageName,
             optionImageNames: finalOptionImageNames
         )
         let previous = (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
                         card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
                         card.optionImageNames, card.promptAudioName, card.section)
+        let previousAnswerImageName = card.answerImageName
         card.question = finalQuestion
         card.options = finalOptions
         card.correctAnswer = finalAnswer
@@ -888,6 +935,7 @@ struct CreateCardView: View {
         card.matchingLeftItems = left
         card.matchingRightItems = right
         card.promptImageName = finalPromptImageName
+        card.answerImageName = finalAnswerImageName
         card.optionImageNames = finalOptionImageNames
         card.promptAudioName = selectedType == .images ? nil : promptAudioName
         card.section = selectedSection
@@ -900,6 +948,7 @@ struct CreateCardView: View {
                 (card.question, card.options, card.correctAnswer, card.hint, card.cardType,
                  card.matchingLeftItems, card.matchingRightItems, card.promptImageName,
                  card.optionImageNames, card.promptAudioName, card.section) = previous
+                card.answerImageName = previousAnswerImageName
             }
             newImageNames.forEach { CardImageStore.deleteImage(named: $0) }
             imageError = "Your card couldn’t be saved. Please try again."
@@ -908,8 +957,8 @@ struct CreateCardView: View {
         // A community download can reuse one local file across several cards.
         // Only remove replaced attachments after checking every stored reference.
         if let storedCards = try? context.fetch(FetchDescriptor<Flashcard>()) {
-            let oldImages = ([previous.7].compactMap { $0 } + previous.8).filter { !$0.isEmpty }
-            for name in Set(oldImages) where !storedCards.contains(where: { $0.promptImageName == name || $0.optionImageNames.contains(name) }) {
+            let oldImages = ([previous.7, previousAnswerImageName].compactMap { $0 } + previous.8).filter { !$0.isEmpty }
+            for name in Set(oldImages) where !storedCards.contains(where: { $0.promptImageName == name || $0.answerImageName == name || $0.optionImageNames.contains(name) }) {
                 CardImageStore.deleteImage(named: name)
             }
             if selectedType == .images, let oldAudio = previous.9,
@@ -934,6 +983,7 @@ struct CreateCardView: View {
 
     private func resetPhotoSelections() {
         promptPhotoPickerItem = nil
+        answerPhotoPickerItem = nil
         optionPhotoPickerItems = [nil, nil, nil, nil]
     }
 
@@ -961,11 +1011,13 @@ struct CreateCardView: View {
 }
 
 private struct CardImageCropRequest: Identifiable {
-    enum Target { case prompt, option(Int) }
+    enum Target { case prompt, answer, option(Int) }
     let id = UUID()
     let image: UIImage
     let target: Target
 }
+
+private enum ImageCardLayout: Hashable { case single, frontAndBack }
 
 // MARK: - Prompt Input Field with Embedded Photo Picker
 private struct PromptInputField: View {

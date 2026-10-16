@@ -87,6 +87,66 @@ struct CommunityTransferTests {
         #expect(id == draftID)
     }
 
+    @Test("Front and back image cards publish both attachments without text and reuse uploads")
+    func publishesFrontAndBackImages() async throws {
+        let front = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 20)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 30, height: 20))
+        }
+        let back = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 30))
+        }
+        let frontName = try #require(CardImageStore.saveImage(front))
+        let backName = try #require(CardImageStore.saveImage(back))
+        defer {
+            CardImageStore.deleteImage(named: frontName)
+            CardImageStore.deleteImage(named: backName)
+            CommunityTestProtocol.response = nil
+        }
+        let deck = Deck(name: "Picture pairs")
+        deck.cards = (0..<2).map { _ in
+            let card = Flashcard(question: "", correctAnswer: "", cardType: .images, promptImageName: frontName)
+            card.answerImageName = backName
+            return card
+        }
+        let draftID = UUID().uuidString
+        let imageIDs = [UUID().uuidString, UUID().uuidString]
+        var uploads = 0
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.hasSuffix("/drafts") { return (201, try json(["id": draftID])) }
+            if request.url!.path.hasSuffix("/media") {
+                #expect(request.value(forHTTPHeaderField: "Content-Type") == "image/jpeg")
+                let index = uploads
+                uploads += 1
+                return (201, try json(["id": imageIDs[min(index, imageIDs.count - 1)]]))
+            }
+            let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any])
+            let cards = try #require(body["cards"] as? [[String: Any]])
+            #expect(cards.count == 2)
+            for card in cards {
+                #expect(card["cardType"] as? String == "images")
+                #expect(card["question"] as? String == "")
+                #expect(card["correctAnswer"] as? String == "")
+                #expect(card["promptImageID"] as? String == imageIDs[0])
+                #expect(card["answerImageID"] as? String == imageIDs[1])
+            }
+            return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
+        }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        #expect(id == draftID)
+        #expect(uploads == 2)
+    }
+
+    @Test("Older single-picture payloads decode without a back image")
+    func legacySinglePicturePayload() throws {
+        let old = try json(["id": "old-picture", "question": "", "correctAnswer": "", "options": [], "hint": "", "cardType": "images",
+                            "matchingLeftItems": [], "matchingRightItems": [], "sectionName": "", "promptImageID": "front", "optionImageIDs": []])
+        let card = try JSONDecoder().decode(CommunityCardPayload.self, from: old)
+        #expect(card.promptImageID == "front")
+        #expect(card.answerImageID == nil)
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(card)) as? [String: Any])
+        #expect(encoded["answerImageID"] == nil)
+    }
+
     @Test("Image-only downloads retain their media and text-free type")
     func downloadsImageOnlyCard() async throws {
         let image = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image { context in
@@ -108,20 +168,68 @@ struct CommunityTransferTests {
         let card = try #require(downloaded.cards.first)
         defer { CardImageStore.deleteImage(named: card.promptImageName) }
         #expect(card.cardType == .images)
+        #expect(card.answerImageName == nil)
         #expect(card.question.isEmpty && card.correctAnswer.isEmpty && card.options.isEmpty)
         let picture = try #require(CardImageStore.loadImage(named: card.promptImageName))
         #expect(abs(picture.size.width / picture.size.height - 2.0 / 3.0) < 0.01)
+    }
+
+    @Test("Downloaded front and back pictures stay separate while repeated media is cached")
+    func downloadsFrontAndBackImages() async throws {
+        let front = UIGraphicsImageRenderer(size: CGSize(width: 30, height: 20)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 30, height: 20))
+        }
+        let back = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 30)).image { context in
+            UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 20, height: 30))
+        }
+        let frontData = try #require(front.jpegData(compressionQuality: 0.8))
+        let backData = try #require(back.jpegData(compressionQuality: 0.8))
+        let frontID = UUID().uuidString
+        let backID = UUID().uuidString
+        let deckID = UUID().uuidString
+        var requests = [frontID: 0, backID: 0]
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.hasSuffix(frontID) { requests[frontID, default: 0] += 1; return (200, frontData) }
+            if request.url!.path.hasSuffix(backID) { requests[backID, default: 0] += 1; return (200, backData) }
+            let cards: [[String: Any]] = (0..<2).map { index in
+                ["id": "picture-\(index)", "question": "", "correctAnswer": "", "options": [], "hint": "", "cardType": "images",
+                 "matchingLeftItems": [], "matchingRightItems": [], "sectionName": "", "promptImageID": frontID,
+                 "answerImageID": backID, "optionImageIDs": []]
+            }
+            return (200, try json(["deck": ["id": deckID, "name": "Pairs", "description": "", "authorHandle": "@buddy",
+                "categoryTag": "General", "colorHex": "#5B70E0", "deckType": "Mixed", "cardCount": 2, "downloadCount": 0,
+                "cards": cards]]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let summary = CommunityDeckPayload(id: deckID, name: "Pairs", description: "", authorHandle: "@buddy", categoryTag: "General", colorHex: "#5B70E0", deckType: "Mixed", cardCount: 2, downloadCount: 0, publishedAt: nil)
+        let downloaded = try await CommunityDeckTransfer.download(summary, api: api()) { _ in }
+        let first = try #require(downloaded.cards.first)
+        let frontName = try #require(first.promptImageName)
+        let backName = try #require(first.answerImageName)
+        defer { CardImageStore.deleteImage(named: frontName); CardImageStore.deleteImage(named: backName) }
+        #expect(frontName != backName)
+        #expect(downloaded.cards.count == 2)
+        #expect(downloaded.cards[1].promptImageName == frontName)
+        #expect(downloaded.cards[1].answerImageName == backName)
+        #expect(requests[frontID] == 1 && requests[backID] == 1)
+        let frontImage = try #require(CardImageStore.loadImage(named: frontName))
+        let backImage = try #require(CardImageStore.loadImage(named: backName))
+        #expect(abs(frontImage.size.width / frontImage.size.height - 1.5) < 0.01)
+        #expect(abs(backImage.size.width / backImage.size.height - 2.0 / 3.0) < 0.01)
+        #expect(first.cardType == .images && first.question.isEmpty && first.correctAnswer.isEmpty)
     }
 
     @Test("AI refinement preserves image-only cards outside its text context")
     func aiContextExcludesImageOnlyCards() {
         let deck = Deck(name: "Mixed")
         let picture = Flashcard(question: "", correctAnswer: "", cardType: .images, promptImageName: "picture.jpg")
+        picture.answerImageName = "back.jpg"
         let word = Flashcard(question: "Hello", correctAnswer: "A greeting", cardType: .vocabulary)
         deck.cards = [picture, word]
         let generated = deck.toGeneratedDeck()
         #expect(generated.cards.count == 1)
         #expect(generated.cards.first?.id == word.id.uuidString)
+        #expect(picture.promptImageName == "picture.jpg" && picture.answerImageName == "back.jpg")
         #expect(picture.cardType.isReviewOnly)
         #expect(!FlashcardType.multipleChoice.isReviewOnly)
     }

@@ -541,12 +541,36 @@ private struct CommunityPreviewAudio: View {
 struct CommunitySampleCardView: View {
     let card: CommunityCardPayload
     var localCard: Flashcard? = nil
+    @State private var showingImageBack = false
     private var isImageCard: Bool { card.cardType == "images" }
+    private var hasImageBack: Bool { localCard?.answerImageName?.isEmpty == false || card.answerImageID != nil }
+    private var visibleLocalImageName: String? { showingImageBack ? localCard?.answerImageName : localCard?.promptImageName }
+    private var visibleRemoteImageID: String? { showingImageBack ? card.answerImageID : card.promptImageID }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !isImageCard && !card.question.isEmpty { Text(card.question).font(.body.weight(.medium)) }
-            if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: isImageCard ? 340 : 160).frame(maxWidth: .infinity).clipShape(RoundedRectangle(cornerRadius: 12)) }
-            else if let id = card.promptImageID { CommunityRemoteImage(id: id, maximumHeight: isImageCard ? 340 : 160) }
+            if isImageCard {
+                Group {
+                    if let image = CardImageStore.loadImage(named: visibleLocalImageName) {
+                        Image(uiImage: image).resizable().scaledToFit()
+                    } else if let id = visibleRemoteImageID {
+                        CommunityRemoteImage(id: id, maximumHeight: 340)
+                    } else {
+                        Label("Image unavailable", systemImage: "photo").foregroundStyle(LearnAlertStyle.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity).frame(height: 340)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if hasImageBack {
+                    Button(showingImageBack ? "Show front" : "Reveal back") {
+                        withAnimation(.snappy) { showingImageBack.toggle() }
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .tint(LearnAlertStyle.appAccentForeground)
+                }
+            } else if let localCard, let image = CardImageStore.loadImage(named: localCard.promptImageName) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 160).frame(maxWidth: .infinity).clipShape(RoundedRectangle(cornerRadius: 12)) }
+            else if let id = card.promptImageID { CommunityRemoteImage(id: id) }
             if !isImageCard {
                 if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
                 else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
@@ -652,7 +676,7 @@ struct ShareDeckToCommunitySheet: View {
     }
 
     private func listingPreview(_ deck: Deck) -> some View {
-        let images = deck.cards.reduce(0) { $0 + ($1.promptImageName == nil ? 0 : 1) + $1.optionImageNames.filter { !$0.isEmpty }.count }
+        let images = deck.cards.reduce(0) { $0 + ($1.promptImageName == nil ? 0 : 1) + ($1.answerImageName == nil ? 0 : 1) + $1.optionImageNames.filter { !$0.isEmpty }.count }
         let audio = deck.cards.filter { $0.promptAudioName != nil }.count
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {

@@ -506,16 +506,19 @@ private struct NotificationSimulatedContainer: View {
     // MARK: - Vocabulary Preview
     private var imagePreview: some View {
         VStack(spacing: 12) {
-            if let image = CardImageStore.loadImage(named: "course-vocab-apple") {
+            if let image = CardImageStore.loadImage(named: isRevealed ? "course-vocab-orange" : "course-vocab-apple") {
                 Image(uiImage: image)
                     .resizable().scaledToFit()
-                    .frame(maxHeight: isCompact ? 200 : 280)
+                    .frame(height: isCompact ? 200 : 280)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             if !isGraded {
-                Button("Reviewed", systemImage: "checkmark") {
-                    withAnimation(.snappy) { isGraded = true }
+                Button(isRevealed ? "Reviewed" : "Reveal back", systemImage: isRevealed ? "checkmark" : "rectangle.on.rectangle") {
+                    withAnimation(.snappy) {
+                        if isRevealed { isGraded = true }
+                        else { isRevealed = true }
+                    }
                 }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 44)

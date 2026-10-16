@@ -14,6 +14,7 @@ struct PremadeCard: Identifiable {
     var matchingLeftItems: [String] = []
     var matchingRightItems: [String] = []
     var promptImageName: String? = nil
+    var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
     var sectionName: String = ""
@@ -476,6 +477,7 @@ struct PremadeDecksView: View {
                 matchingLeftItems: sourceCard.matchingLeftItems,
                 matchingRightItems: sourceCard.matchingRightItems,
                 promptImageName: sourceCard.promptImageName,
+                answerImageName: sourceCard.answerImageName,
                 optionImageNames: sourceCard.optionImageNames
             )
             card.orderIndex = index

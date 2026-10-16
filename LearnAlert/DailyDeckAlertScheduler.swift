@@ -62,6 +62,7 @@ enum DailyDeckAlertScheduler {
                 "question": card.question, "options": card.options, "correctAnswer": card.correctAnswer,
                 "hint": card.hint, "matchingLeftItems": card.matchingLeftItems,
                 "matchingRightItems": card.matchingRightItems, "promptImageName": card.promptImageName ?? "",
+                "answerImageName": card.answerImageName ?? "",
                 "optionImageNames": card.optionImageNames, "isRandom": false, "progress": "Daily card"]
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)

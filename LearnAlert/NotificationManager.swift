@@ -18,6 +18,7 @@ struct StudyHandoff: Identifiable, Hashable {
     let wasCorrect: Bool?
     let wasGraded: Bool
     let wasHintVisible: Bool
+    var wasRevealed: Bool = false
 
     var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")" }
 }
@@ -130,6 +131,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "matchingLeftItems": card.matchingLeftItems,
             "matchingRightItems": card.matchingRightItems,
             "promptImageName": card.promptImageName ?? "",
+            "answerImageName": card.answerImageName ?? "",
             "optionImageNames": card.optionImageNames
         ]
         
@@ -173,6 +175,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "matchingLeftItems": card.matchingLeftItems,
             "matchingRightItems": card.matchingRightItems,
             "promptImageName": card.promptImageName ?? "",
+            "answerImageName": card.answerImageName ?? "",
             "optionImageNames": card.optionImageNames
         ]
 
@@ -364,7 +367,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         if defaults?.string(forKey: "handoffDeckId") == content.userInfo["deckId"] as? String,
            defaults?.string(forKey: "handoffCardId") == content.userInfo["cardId"] as? String {
             ["handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffWasCorrect",
-             "handoffWasGraded", "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp"]
+             "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffFromNotificationUI", "handoffTimestamp"]
                 .forEach { defaults?.removeObject(forKey: $0) }
         }
         if pendingStudyHandoff?.deckId.uuidString == content.userInfo["deckId"] as? String {
@@ -398,12 +401,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             selectedAnswer: defaults.string(forKey: "handoffSelectedAnswer"),
             wasCorrect: defaults.object(forKey: "handoffWasCorrect") as? Bool,
             wasGraded: defaults.bool(forKey: "handoffWasGraded"),
-            wasHintVisible: defaults.bool(forKey: "handoffHintVisible")
+            wasHintVisible: defaults.bool(forKey: "handoffHintVisible"),
+            wasRevealed: defaults.bool(forKey: "handoffWasRevealed")
         )
 
         [
             "handoffDeckId", "handoffCardId", "handoffSelectedAnswer",
-            "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible",
+            "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed",
             "handoffFromNotificationUI", "handoffTimestamp"
         ].forEach(defaults.removeObject(forKey:))
     }

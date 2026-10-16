@@ -19,6 +19,7 @@ struct CommunityCardPayload: Codable, Identifiable {
     var promptImageID: String?
     var optionImageIDs: [String?]
     var promptAudioID: String?
+    var answerImageID: String? = nil
 }
 
 struct CommunityDeckPayload: Codable, Identifiable {
@@ -496,7 +497,8 @@ enum CommunityDeckTransfer {
                 options: card.options, hint: card.hint, cardType: card.cardType.rawValue,
                 matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                 sectionName: card.section?.name ?? "", promptImageID: try imageKey(card.promptImageName),
-                optionImageIDs: try card.optionImageNames.map { try imageKey($0) }, promptAudioID: try audioKey(card.promptAudioName)))
+                optionImageIDs: try card.optionImageNames.map { try imageKey($0) }, promptAudioID: try audioKey(card.promptAudioName),
+                answerImageID: try imageKey(card.answerImageName)))
         }
         guard uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
             throw CommunityAPIError(status: 413, message: "A shared deck can contain up to 100 MB of images and audio.")
@@ -523,6 +525,7 @@ enum CommunityDeckTransfer {
                 cards[index].promptImageID = cards[index].promptImageID.flatMap { remoteIDs[$0] }
                 cards[index].optionImageIDs = cards[index].optionImageIDs.map { $0.flatMap { remoteIDs[$0] } }
                 cards[index].promptAudioID = cards[index].promptAudioID.flatMap { remoteIDs[$0] }
+                cards[index].answerImageID = cards[index].answerImageID.flatMap { remoteIDs[$0] }
             }
             progress("Submitting for review…")
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
@@ -567,6 +570,7 @@ enum CommunityDeckTransfer {
                 try Task.checkCancellation()
                 progress("Downloading card \(index + 1) of \(cards.count)…")
                 let prompt = try await imageName(card.promptImageID)
+                let answer = try await imageName(card.answerImageID)
                 var options: [String] = []
                 for id in card.optionImageIDs { options.append(try await imageName(id) ?? "") }
                 let clip = try await audioName(card.promptAudioID)
@@ -574,7 +578,7 @@ enum CommunityDeckTransfer {
                     correctAnswer: card.correctAnswer, hint: card.hint,
                     cardType: FlashcardType(rawValue: card.cardType) ?? .tapReveal,
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
-                    promptImageName: prompt, optionImageNames: options, promptAudioName: clip, sectionName: card.sectionName))
+                    promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, sectionName: card.sectionName))
             }
             return PremadeDeck(id: detail.id, name: detail.name, category: detail.categoryTag, subcategory: detail.categoryTag,
                 description: detail.description, colorHex: detail.colorHex, deckType: detail.deckType, cards: imported, communitySourceID: detail.id)

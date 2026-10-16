@@ -22,6 +22,7 @@ struct DeckStudyView: View {
     let initialWasCorrect: Bool?
     let initialWasGraded: Bool
     let initialHintVisible: Bool
+    let initialWasRevealed: Bool
 
     init(
         deck: Deck,
@@ -29,7 +30,8 @@ struct DeckStudyView: View {
         initialSelectedAnswer: String? = nil,
         initialWasCorrect: Bool? = nil,
         initialWasGraded: Bool = false,
-        initialHintVisible: Bool = false
+        initialHintVisible: Bool = false,
+        initialWasRevealed: Bool = false
     ) {
         self.deck = deck
         self.initialCardId = initialCardId
@@ -37,6 +39,7 @@ struct DeckStudyView: View {
         self.initialWasCorrect = initialWasCorrect
         self.initialWasGraded = initialWasGraded
         self.initialHintVisible = initialHintVisible
+        self.initialWasRevealed = initialWasRevealed
     }
 
     private var currentCard: Flashcard? {
@@ -72,6 +75,7 @@ struct DeckStudyView: View {
                     correctAnswer: card.correctAnswer,
                     hint: card.hint,
                     promptImageName: card.promptImageName,
+                    answerImageName: card.answerImageName,
                     optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName,
                     cardNumber: cardIndex + 1,
@@ -157,6 +161,9 @@ struct DeckStudyView: View {
 
     private func submitAndAdvance(_ card: Flashcard) {
         guard card.cardType != .images || CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
+        if card.cardType == .images, let back = card.answerImageName, !back.isEmpty {
+            guard isRevealed, CardImageStore.loadImage(named: back) != nil else { return }
+        }
         if card.cardType.isReviewOnly {
             // A notification may already have recorded this review before handing off.
             if !isGraded {
@@ -211,7 +218,7 @@ struct DeckStudyView: View {
         }
         selectedAnswer = initialSelectedAnswer
         isGraded = initialWasGraded
-        isRevealed = initialWasGraded && initialSelectedAnswer == nil
+        isRevealed = initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
         showingHint = initialHintVisible
         hasRecordedHint = initialHintVisible
         correctCount = initialWasCorrect == true ? 1 : 0
@@ -228,6 +235,7 @@ private struct QuizSessionView: View {
     let correctAnswer: String
     let hint: String
     var promptImageName: String? = nil
+    var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
     let cardNumber: Int
@@ -246,11 +254,13 @@ private struct QuizSessionView: View {
     let onClose: () -> Void
 
     private var canContinue: Bool {
-        if cardType == .images { return CardImageStore.loadImage(named: promptImageName) != nil }
+        if cardType == .images { return CardImageStore.loadImage(named: visibleImageName) != nil }
         return cardType.isReviewOnly || isGraded
     }
+    private var hasImageBack: Bool { answerImageName?.isEmpty == false }
+    private var visibleImageName: String? { hasImageBack && isRevealed ? answerImageName : promptImageName }
     private var actionTitle: LocalizedStringKey {
-        if cardType == .images { return "REVIEWED" }
+        if cardType == .images { return hasImageBack && !isRevealed ? "REVEAL BACK" : "REVIEWED" }
         return cardNumber >= cardCount ? "FINISH" : "CONTINUE"
     }
 
@@ -266,22 +276,29 @@ private struct QuizSessionView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if let promptImg = promptImageName, !promptImg.isEmpty,
+                    if cardType == .images {
+                        Group {
+                            if let image = CardImageStore.loadImage(named: visibleImageName) {
+                                Image(uiImage: image).resizable().scaledToFit()
+                            } else {
+                                ContentUnavailableView("Image unavailable", systemImage: "photo",
+                                    description: Text("Open the card editor to upload the picture again."))
+                            }
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 420)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    } else if let promptImg = promptImageName, !promptImg.isEmpty,
                        let uiImage = CardImageStore.loadImage(named: promptImg) {
                         Image(uiImage: uiImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: cardType == .images ? 420 : 200)
+                            .frame(maxHeight: 200)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                                     .stroke(QuizTheme.border, lineWidth: 1)
                             )
                             .frame(maxWidth: .infinity, alignment: .center)
-                    } else if cardType == .images {
-                        ContentUnavailableView("Image unavailable", systemImage: "photo",
-                            description: Text("Open the card editor to upload the picture again."))
-                            .frame(maxWidth: .infinity, minHeight: 220)
                     }
 
                     if cardType != .images && !question.isEmpty {
@@ -344,7 +361,10 @@ private struct QuizSessionView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            Button(actionTitle, action: onContinue)
+            Button(actionTitle) {
+                if cardType == .images && hasImageBack && !isRevealed { onReveal() }
+                else { onContinue() }
+            }
                 .buttonStyle(QuizActionButtonStyle())
                 .disabled(!canContinue)
                 .padding(.horizontal, 20)

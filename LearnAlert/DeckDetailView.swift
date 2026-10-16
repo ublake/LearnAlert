@@ -501,13 +501,9 @@ struct DeckDetailView: View {
     private func cardRow(_ card: Flashcard) -> some View {
         HStack(alignment: .top, spacing: 12) {
             if card.cardType == .images {
-                Group {
-                    if let image = CardImageStore.loadImage(named: card.promptImageName) {
-                        Image(uiImage: image).resizable().scaledToFit()
-                    } else {
-                        Image(systemName: "photo").font(.title2).foregroundStyle(LearnAlertStyle.textSecondary)
-                            .accessibilityLabel("Image unavailable")
-                    }
+                HStack(spacing: 4) {
+                    imageCardThumbnail(card.promptImageName)
+                    if let back = card.answerImageName, !back.isEmpty { imageCardThumbnail(back) }
                 }
                 .frame(width: 92, height: 76)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -589,6 +585,18 @@ struct DeckDetailView: View {
         .padding(.vertical, 6)
         .listRowBackground(Color.clear)
         .listRowSeparatorTint(LearnAlertStyle.hairline.opacity(0.35))
+    }
+
+    private func imageCardThumbnail(_ name: String?) -> some View {
+        Group {
+            if let image = CardImageStore.loadImage(named: name) {
+                Image(uiImage: image).resizable().scaledToFit()
+            } else {
+                Image(systemName: "photo").font(.title2).foregroundStyle(LearnAlertStyle.textSecondary)
+                    .accessibilityLabel("Image unavailable")
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func delete(_ offsets: IndexSet, from list: [Flashcard]) {
@@ -714,6 +722,10 @@ struct CardInteractivePreviewSheet: View {
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
     @State private var showHint = false
+    private var hasImageBack: Bool { card.answerImageName?.isEmpty == false }
+    private var visibleImageName: String? {
+        card.cardType == .images && hasImageBack && isRevealed ? card.answerImageName : card.promptImageName
+    }
 
     var body: some View {
         NavigationStack {
@@ -739,22 +751,36 @@ struct CardInteractivePreviewSheet: View {
                                 }
                             }
 
-                            if let promptImg = card.promptImageName, !promptImg.isEmpty,
+                            if card.cardType == .images {
+                                Group {
+                                    if let image = CardImageStore.loadImage(named: visibleImageName) {
+                                        Image(uiImage: image).resizable().scaledToFit()
+                                    } else {
+                                        ContentUnavailableView("Image unavailable", systemImage: "photo",
+                                            description: Text("Edit this card to upload the picture again."))
+                                    }
+                                }
+                                .frame(maxWidth: .infinity).frame(height: 340)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                if hasImageBack {
+                                    Button(isRevealed ? "Show front" : "Reveal back") {
+                                        withAnimation(.snappy) { isRevealed.toggle() }
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                            } else if let promptImg = card.promptImageName, !promptImg.isEmpty,
                                let uiImage = CardImageStore.loadImage(named: promptImg) {
                                 Image(uiImage: uiImage)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(maxHeight: card.cardType == .images ? 340 : 160)
+                                    .frame(maxHeight: 160)
                                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                                             .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
                                     )
                                     .frame(maxWidth: .infinity, alignment: .center)
-                            } else if card.cardType == .images {
-                                ContentUnavailableView("Image unavailable", systemImage: "photo",
-                                    description: Text("Edit this card to upload the picture again."))
-                                    .frame(maxWidth: .infinity, minHeight: 180)
                             }
 
                             if card.cardType != .images && !card.question.isEmpty {

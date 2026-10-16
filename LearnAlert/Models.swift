@@ -46,7 +46,7 @@ enum FlashcardType: String, CaseIterable, Identifiable {
         case .vocabulary: "Word, pronunciation, and dictionary definition"
         case .fillBlank: "Type the missing keyword in context"
         case .matching: "Connect paired terms and definitions"
-        case .images: "Review a picture without any text"
+        case .images: "Review one picture or reveal an image on the back"
         }
     }
 
@@ -198,6 +198,7 @@ class Flashcard {
     var cardTypeRaw: String = FlashcardType.multipleChoice.rawValue
     var matchingPairsData: Data = Data()
     var promptImageName: String?
+    var answerImageName: String?
     var promptAudioName: String?
     var optionImageNamesData: Data = Data()
 
@@ -299,6 +300,7 @@ class Flashcard {
         matchingLeftItems: [String] = [],
         matchingRightItems: [String] = [],
         promptImageName: String? = nil,
+        answerImageName: String? = nil,
         optionImageNames: [String] = [],
         sourceLocator: String? = nil,
         sourceExcerpt: String? = nil,
@@ -313,6 +315,7 @@ class Flashcard {
         self.deck = deck
         self.section = section
         self.promptImageName = promptImageName
+        self.answerImageName = answerImageName
         self.optionsData = (try? JSONEncoder().encode(options)) ?? Data()
         self.optionImageNamesData = (try? JSONEncoder().encode(optionImageNames)) ?? Data()
         

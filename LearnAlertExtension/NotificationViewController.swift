@@ -25,6 +25,7 @@ private struct NotificationSessionCard {
     let matchingLeftItems: [String]
     let matchingRightItems: [String]
     var promptImageName: String? = nil
+    var answerImageName: String? = nil
     var optionImageNames: [String] = []
 }
 
@@ -83,6 +84,7 @@ struct FlashcardNotificationView: View {
     var matchingLeftItems: [String] = []
     var matchingRightItems: [String] = []
     var promptImageName: String? = nil
+    var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var previewMode = false
     var isTutorial = false
@@ -169,7 +171,16 @@ struct FlashcardNotificationView: View {
     private var activeHint: String { sessionCard?.hint ?? hint }
     private var activeMatchingLeftItems: [String] { sessionCard?.matchingLeftItems ?? matchingLeftItems }
     private var activeMatchingRightItems: [String] { sessionCard?.matchingRightItems ?? matchingRightItems }
-    private var activePromptImageName: String? { sessionCard?.promptImageName ?? promptImageName }
+    private var activePromptImageName: String? {
+        if let sessionCard { return sessionCard.promptImageName }
+        return promptImageName
+    }
+    private var activeAnswerImageName: String? {
+        if let sessionCard { return sessionCard.answerImageName }
+        return answerImageName
+    }
+    private var hasImageBack: Bool { activeAnswerImageName?.isEmpty == false }
+    private var visibleImageName: String? { hasImageBack && isRevealed ? activeAnswerImageName : activePromptImageName }
     private var activeOptionImageNames: [String] { sessionCard?.optionImageNames ?? optionImageNames }
 
     private var isAppOpen: Bool {
@@ -324,22 +335,21 @@ struct FlashcardNotificationView: View {
                 // Image cards are self-review, before the empty-options reveal fallback.
                 if activeCardType == "images" {
                     VStack(spacing: 14) {
-                        if let image = CardImageStore.loadImage(named: activePromptImageName) {
-                            Image(uiImage: image)
-                                .resizable().scaledToFit()
-                                .frame(maxHeight: isCompactLayout ? 280 : 340)
-                                .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        } else {
-                            VStack(spacing: 8) {
-                                Label("Image unavailable", systemImage: "photo")
-                                    .font(.headline)
-                                Text("Open the app to add the picture again.")
-                                    .font(.subheadline)
+                        Group {
+                            if let image = CardImageStore.loadImage(named: visibleImageName) {
+                                Image(uiImage: image).resizable().scaledToFit()
+                            } else {
+                                VStack(spacing: 8) {
+                                    Label("Image unavailable", systemImage: "photo")
+                                        .font(.headline)
+                                    Text("Open the app to add the picture again.")
+                                        .font(.subheadline)
+                                }
+                                .foregroundStyle(textColorSecondary)
                             }
-                            .foregroundStyle(textColorSecondary)
-                            .frame(maxWidth: .infinity, minHeight: 160)
                         }
+                        .frame(maxWidth: .infinity).frame(height: isCompactLayout ? 280 : 340)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                         if isGraded {
                             Label("Reviewed", systemImage: "checkmark")
@@ -347,17 +357,22 @@ struct FlashcardNotificationView: View {
                                 .foregroundStyle(textColorSecondary)
                         } else {
                             Button {
-                                guard !isGraded, CardImageStore.loadImage(named: activePromptImageName) != nil else { return }
-                                gradeCard(isCorrect: true, playFeedback: false)
+                                guard !isGraded, CardImageStore.loadImage(named: visibleImageName) != nil else { return }
+                                if hasImageBack && !isRevealed {
+                                    withAnimation(.snappy) { isRevealed = true }
+                                } else {
+                                    gradeCard(isCorrect: true, playFeedback: false)
+                                }
                             } label: {
-                                Label("Reviewed", systemImage: "checkmark")
+                                Label(hasImageBack && !isRevealed ? "Reveal back" : "Reviewed",
+                                    systemImage: hasImageBack && !isRevealed ? "rectangle.on.rectangle" : "checkmark")
                                     .font(.headline.weight(.semibold))
                                     .foregroundStyle(textColorPrimary)
                                     .frame(maxWidth: .infinity, minHeight: 44)
                                     .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
                             }
                             .buttonStyle(.plain)
-                            .disabled(CardImageStore.loadImage(named: activePromptImageName) == nil)
+                            .disabled(CardImageStore.loadImage(named: visibleImageName) == nil)
                         }
                     }
                 }
@@ -766,6 +781,9 @@ struct FlashcardNotificationView: View {
         .onChange(of: isGraded) { _, _ in
             if !previewMode { persistStudyHandoff() }
         }
+        .onChange(of: isRevealed) { _, _ in
+            if !previewMode { persistStudyHandoff() }
+        }
         .onChange(of: showingHint) { _, _ in
             if !previewMode { persistStudyHandoff() }
         }
@@ -931,6 +949,7 @@ struct FlashcardNotificationView: View {
                 matchingLeftItems: cardToStudy.matchingLeftItems,
                 matchingRightItems: cardToStudy.matchingRightItems,
                 promptImageName: cardToStudy.promptImageName,
+                answerImageName: cardToStudy.answerImageName,
                 optionImageNames: cardToStudy.optionImageNames
             )
             selectedAnswer = nil
@@ -1035,6 +1054,7 @@ struct FlashcardNotificationView: View {
         defaults.set(selectedAnswer, forKey: "handoffSelectedAnswer")
         defaults.set(lastAnswerWasCorrect, forKey: "handoffWasCorrect")
         defaults.set(isGraded, forKey: "handoffWasGraded")
+        defaults.set(isRevealed, forKey: "handoffWasRevealed")
         defaults.set(showingHint, forKey: "handoffHintVisible")
         // Mark handoff originated from notification UI
         defaults.set(true, forKey: "handoffFromNotificationUI")
@@ -1309,47 +1329,72 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
         courseContentHeight = nil
 
-        let cardId = userInfo["cardId"] as? String ?? ""
-        let deckId = userInfo["deckId"] as? String ?? ""
-        let deckName = userInfo["deckName"] as? String ?? "Deck"
-        let deckType = userInfo["deckType"] as? String ?? "Quiz"
-        let cardType = userInfo["cardType"] as? String ?? ""
         let isRandom = userInfo["isRandom"] as? Bool ?? false
         let progress = userInfo["progress"] as? String ?? "-"
-        let question = userInfo["question"] as? String ?? content.body
-        let options = userInfo["options"] as? [String] ?? []
-        let correctAnswer = userInfo["correctAnswer"] as? String ?? ""
-        let hint = userInfo["hint"] as? String ?? ""
-        let matchingLeftItems = userInfo["matchingLeftItems"] as? [String] ?? []
-        let matchingRightItems = userInfo["matchingRightItems"] as? [String] ?? []
-        let promptImageName = userInfo["promptImageName"] as? String
-        let optionImageNames = userInfo["optionImageNames"] as? [String] ?? []
+        var snapshot = NotificationSessionCard(
+            id: userInfo["cardId"] as? String ?? "",
+            deckId: userInfo["deckId"] as? String ?? "",
+            deckName: userInfo["deckName"] as? String ?? "Deck",
+            deckType: userInfo["deckType"] as? String ?? "Quiz",
+            cardType: userInfo["cardType"] as? String ?? "",
+            question: userInfo["question"] as? String ?? content.body,
+            options: userInfo["options"] as? [String] ?? [],
+            correctAnswer: userInfo["correctAnswer"] as? String ?? "",
+            hint: userInfo["hint"] as? String ?? "",
+            matchingLeftItems: userInfo["matchingLeftItems"] as? [String] ?? [],
+            matchingRightItems: userInfo["matchingRightItems"] as? [String] ?? [],
+            promptImageName: userInfo["promptImageName"] as? String,
+            answerImageName: userInfo["answerImageName"] as? String,
+            optionImageNames: userInfo["optionImageNames"] as? [String] ?? []
+        )
 
         let isTutorial = userInfo["isTutorial"] as? Bool ?? false
-        if isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" {
+        let isSynthetic = isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" ||
+            userInfo["isCustomizationTest"] as? Bool == true
+        if isSynthetic {
             self.extensionContext?.notificationActions = []
+        } else if let cardId = UUID(uuidString: snapshot.id),
+                  let deckId = UUID(uuidString: snapshot.deckId) {
+            // Queued alerts may predate a card edit and refer to replaced image files.
+            // Resolve the complete current card together, so a removed back cannot leak
+            // back in from the old notification payload.
+            let context = ModelContext(SharedDatabase.shared.container)
+            let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == cardId })
+            if let card = try? context.fetch(descriptor).first,
+               let deck = card.deck, deck.id == deckId {
+                snapshot = NotificationSessionCard(
+                    id: card.id.uuidString, deckId: deck.id.uuidString,
+                    deckName: deck.name, deckType: card.cardType.title,
+                    cardType: card.cardType.rawValue, question: card.question,
+                    options: card.options, correctAnswer: card.correctAnswer, hint: card.hint,
+                    matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
+                    promptImageName: card.promptImageName, answerImageName: card.answerImageName,
+                    optionImageNames: card.optionImageNames
+                )
+            }
         }
 
         let swiftUIView = FlashcardNotificationView(
-            cardId: cardId,
-            deckId: deckId,
-            deckName: deckName,
-            deckType: deckType,
-            cardType: cardType,
+            cardId: snapshot.id,
+            deckId: snapshot.deckId,
+            deckName: snapshot.deckName,
+            deckType: snapshot.deckType,
+            cardType: snapshot.cardType,
             isRandom: isRandom,
             progress: progress,
-            question: question,
-            options: options,
-            correctAnswer: correctAnswer,
-            hint: hint,
-            matchingLeftItems: matchingLeftItems,
-            matchingRightItems: matchingRightItems,
-            promptImageName: promptImageName,
-            optionImageNames: optionImageNames,
+            question: snapshot.question,
+            options: snapshot.options,
+            correctAnswer: snapshot.correctAnswer,
+            hint: snapshot.hint,
+            matchingLeftItems: snapshot.matchingLeftItems,
+            matchingRightItems: snapshot.matchingRightItems,
+            promptImageName: snapshot.promptImageName,
+            answerImageName: snapshot.answerImageName,
+            optionImageNames: snapshot.optionImageNames,
             isTutorial: isTutorial,
             appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in
-                self?.openHostApp(deckId: deckId)
+                self?.openHostApp(deckId: snapshot.deckId)
             },
             onContentHeightChange: { [weak self] newHeight in
                 guard let self = self else { return }
