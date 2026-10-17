@@ -25,6 +25,7 @@ struct DeckStudyView: View {
     let initialHintVisible: Bool
     let initialWasRevealed: Bool
     let initialImageBackViewed: Bool
+    let notificationRequestID: String?
 
     init(
         deck: Deck,
@@ -34,7 +35,8 @@ struct DeckStudyView: View {
         initialWasGraded: Bool = false,
         initialHintVisible: Bool = false,
         initialWasRevealed: Bool = false,
-        initialImageBackViewed: Bool = false
+        initialImageBackViewed: Bool = false,
+        notificationRequestID: String? = nil
     ) {
         self.deck = deck
         self.initialCardId = initialCardId
@@ -44,6 +46,7 @@ struct DeckStudyView: View {
         self.initialHintVisible = initialHintVisible
         self.initialWasRevealed = initialWasRevealed
         self.initialImageBackViewed = initialImageBackViewed
+        self.notificationRequestID = notificationRequestID
     }
 
     private var currentCard: Flashcard? {
@@ -165,7 +168,7 @@ struct DeckStudyView: View {
             studyQueue.insert(card, at: reinsertIndex)
         }
         isGraded = true
-        try? context.save()
+        if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
     }
 
     private func submitAndAdvance(_ card: Flashcard) {
@@ -178,7 +181,7 @@ struct DeckStudyView: View {
             if !isGraded {
                 card.processAnswer(isCorrect: true)
                 correctCount += 1
-                try? context.save()
+                if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
             }
             advance()
             return

@@ -139,7 +139,8 @@ struct ContentView: View {
                         initialWasGraded: handoff.wasGraded,
                         initialHintVisible: handoff.wasHintVisible,
                         initialWasRevealed: handoff.wasRevealed,
-                        initialImageBackViewed: handoff.wasImageBackViewed
+                        initialImageBackViewed: handoff.wasImageBackViewed,
+                        notificationRequestID: handoff.notificationRequestID
                     )
                 } else {
                     ContentUnavailableView("Deck Not Found", systemImage: "rectangle.stack.badge.exclamationmark")
@@ -1627,7 +1628,7 @@ private struct HomeAlertSetupCard: View {
             }
             .font(.subheadline.weight(.semibold))
 
-            UpcomingAlertsTimeline(scheduledDates: engine.scheduledDates)
+            UpcomingAlertsTimeline(scheduledDates: engine.scheduledDates, deckID: engine.activeDeckId?.uuidString)
         }
     }
 }
@@ -1849,94 +1850,6 @@ private struct DeckRequirementAlert: View {
             .padding(.horizontal, 24)
         }
         .accessibilityAddTraits(.isModal)
-    }
-}
-
-private struct UpcomingAlertsTimeline: View {
-    let scheduledDates: [Date]
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            let dates = scheduledDates.sorted()
-            let futureDates = dates.filter { $0 > timeline.date }
-
-            if let nextDate = futureDates.first {
-                HStack(spacing: 9) {
-                    Image(systemName: "bell.fill")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(LearnAlertStyle.aqua)
-
-                    Text(nextDate, format: .dateTime.hour().minute())
-                        .font(.custom("Poppins-Medium", size: 9, relativeTo: .caption2))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .fixedSize()
-
-                    AlertTimelineTrack(dates: dates, currentDate: timeline.date)
-                }
-                .frame(height: 12)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Next notification at \(nextDate.formatted(date: .omitted, time: .shortened))")
-            }
-        }
-    }
-}
-
-private struct AlertTimelineTrack: View {
-    let dates: [Date]
-    let currentDate: Date
-
-    private var progress: Double {
-        guard let first = dates.first, let last = dates.last, last > first else {
-            return currentDate >= (dates.first ?? .distantFuture) ? 1 : 0
-        }
-
-        return min(max(currentDate.timeIntervalSince(first) / last.timeIntervalSince(first), 0), 1)
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let trackWidth = geometry.size.width
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(LearnAlertStyle.textSecondary.opacity(0.20))
-                    .frame(height: 1.5)
-
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [LearnAlertStyle.aqua, LearnAlertStyle.appAccent],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: trackWidth * progress, height: 1.5)
-
-                ForEach(Array(dates.enumerated()), id: \.offset) { index, date in
-                    let position = dates.count == 1
-                        ? trackWidth
-                        : trackWidth * CGFloat(index) / CGFloat(dates.count - 1)
-                    let isNext = date > currentDate && !dates.prefix(index).contains(where: { $0 > currentDate })
-
-                    Circle()
-                        .fill(
-                            isNext
-                                ? LearnAlertStyle.aqua
-                                : (date <= currentDate ? LearnAlertStyle.appAccent : LearnAlertStyle.textSecondary.opacity(0.45))
-                        )
-                        .frame(width: isNext ? 5 : 3.5, height: isNext ? 5 : 3.5)
-                        .overlay {
-                            if isNext {
-                                Circle()
-                                    .stroke(LearnAlertStyle.aqua.opacity(0.28), lineWidth: 3)
-                            }
-                        }
-                        .position(x: min(max(position, 2.5), trackWidth - 2.5), y: geometry.size.height / 2)
-                }
-            }
-            .frame(maxHeight: .infinity)
-        }
-        .frame(height: 8)
     }
 }
 

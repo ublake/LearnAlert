@@ -66,7 +66,9 @@ enum DailyDeckAlertScheduler {
                 "optionImageNames": card.optionImageNames, "isRandom": false, "progress": "Daily card"]
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)
-            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            try await center.add(request)
+            AlertTimelineStore.shared.scheduled(request, date: slot.date)
             if activePlan != plan {
                 center.removePendingNotificationRequests(withIdentifiers: [id])
                 return []

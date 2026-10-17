@@ -161,7 +161,9 @@ enum CourseNotificationScheduler {
             if let unitId = progress.checkpointUnitId { content.userInfo["courseCheckpointSectionId"] = unitId }
             if existing[id]?.content.body == content.body && existing[id]?.content.subtitle == content.subtitle { continue }
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: date), repeats: false)
-            try await center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            try await center.add(request)
+            AlertTimelineStore.shared.scheduled(request, date: date)
         }
         return dates
     }

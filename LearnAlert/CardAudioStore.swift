@@ -94,14 +94,21 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
 struct CardAudioPlaybackButton: View {
     let name: String
+    var compact = false
     @StateObject private var player = CardAudioPlayer()
 
     var body: some View {
         Button { player.toggle(name: name) } label: {
-            Label(player.isPlaying ? "Stop audio" : "Play audio", systemImage: player.isPlaying ? "stop.fill" : "play.fill")
-                .font(.body.weight(.medium))
-                .frame(minHeight: 44)
+            HStack(spacing: 5) {
+                Image(systemName: player.isPlaying ? "stop.fill" : "play.fill")
+                if !compact { Text(player.isPlaying ? "Stop audio" : "Play audio") }
+                else { Image(systemName: "waveform").font(.caption2) }
+            }.font(compact ? .caption.weight(.semibold) : .body.weight(.medium))
+                .frame(minWidth: 44, minHeight: 44)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(player.isPlaying ? "Stop audio" : "Play audio")
+
         .tint(Color.accentColor)
         .onDisappear { player.stop() }
         .onChange(of: name) { _, _ in player.stop() }

@@ -92,6 +92,7 @@ struct FlashcardNotificationView: View {
     var fieldMedia: [String: CardFieldMedia] = [:]
     var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
+    var notificationRequestID: String? = nil
     var previewMode = false
     var isTutorial = false
     var appearance = NotificationAppearance.saved()
@@ -907,7 +908,7 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
         if let card = try? context.fetch(descriptor).first {
             card.processAnswer(isCorrect: isCorrect)
-            try? context.save()
+            if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
 
             if let deck = card.deck {
                 let unlearned = deck.cards.filter { $0.isNew }.count
@@ -940,6 +941,7 @@ struct FlashcardNotificationView: View {
               let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") else { return }
         defaults.set(activeDeckId, forKey: "handoffDeckId")
         defaults.set(activeCardId, forKey: "handoffCardId")
+        defaults.set(notificationRequestID, forKey: "handoffNotificationRequestID")
         defaults.set(selectedAnswer, forKey: "handoffSelectedAnswer")
         defaults.set(lastAnswerWasCorrect, forKey: "handoffWasCorrect")
         defaults.set(isGraded, forKey: "handoffWasGraded")
@@ -1194,6 +1196,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     func didReceive(_ notification: UNNotification) {
+        AlertTimelineStore.shared.delivered(notification)
         Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
         let userInfo = content.userInfo
@@ -1286,6 +1289,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             ankiContentData: snapshot.ankiContentData,
             fieldMedia: snapshot.fieldMedia, correctOptionIndex: snapshot.correctOptionIndex,
             optionImageNames: snapshot.optionImageNames,
+            notificationRequestID: isSynthetic ? nil : notification.request.identifier,
             isTutorial: isTutorial,
             appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in

@@ -20,8 +20,9 @@ struct StudyHandoff: Identifiable, Hashable {
     let wasHintVisible: Bool
     var wasRevealed: Bool = false
     var wasImageBackViewed: Bool = false
+    var notificationRequestID: String? = nil
 
-    var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")" }
+    var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")-\(notificationRequestID ?? "session")" }
 }
 
 struct CourseHandoff: Identifiable, Hashable {
@@ -143,6 +144,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error { print("Error scheduling: \(error)") }
+            else { AlertTimelineStore.shared.scheduled(request, date: date) }
         }
     }
 
@@ -187,6 +189,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
 
         try await UNUserNotificationCenter.current().add(request)
+        AlertTimelineStore.shared.scheduled(request, date: date)
     }
     
     func scheduleTutorialAlert(
@@ -262,6 +265,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        AlertTimelineStore.shared.delivered(notification)
         if #available(iOS 14.0, *) {
             completionHandler([.banner, .sound, .list, .badge])
         } else {
@@ -286,6 +290,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 completionHandler()
                 return
             }
+            let requestID = response.notification.request.identifier
+            AlertTimelineStore.shared.delivered(response.notification)
+            if response.actionIdentifier == UNNotificationDismissActionIdentifier {
+                AlertTimelineStore.shared.dismissed(requestID)
+                completionHandler()
+                return
+            }
+            AlertTimelineStore.shared.opened(requestID)
             if let courseId = userInfo["courseId"] as? String,
                response.actionIdentifier != UNNotificationDismissActionIdentifier {
                 CourseProgressManager.shared.reloadFromSharedDefaults()
@@ -304,6 +316,9 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
             let fromNotificationUI = defaults?.bool(forKey: "handoffFromNotificationUI") ?? false
             let hasHandoffDeck = defaults?.string(forKey: "handoffDeckId") != nil
+            if defaults?.string(forKey: "handoffDeckId") == userInfo["deckId"] as? String {
+                defaults?.set(requestID, forKey: "handoffNotificationRequestID")
+            }
 
             if response.actionIdentifier == "CONTINUE_IN_APP" {
                 self.shouldShowNotificationOpeningTip = false
@@ -320,7 +335,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                         selectedAnswer: nil,
                         wasCorrect: nil,
                         wasGraded: false,
-                        wasHintVisible: false
+                        wasHintVisible: false, notificationRequestID: requestID
                     )
                 } else {
                     self.consumePendingStudyHandoff()
@@ -341,7 +356,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                         selectedAnswer: nil,
                         wasCorrect: nil,
                         wasGraded: false,
-                        wasHintVisible: false
+                        wasHintVisible: false, notificationRequestID: requestID
                     )
                     self.shouldShowNotificationOpeningTip = true
                 } else {
@@ -406,13 +421,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             wasGraded: defaults.bool(forKey: "handoffWasGraded"),
             wasHintVisible: defaults.bool(forKey: "handoffHintVisible"),
             wasRevealed: defaults.bool(forKey: "handoffWasRevealed"),
-            wasImageBackViewed: defaults.bool(forKey: "handoffImageBackViewed")
+            wasImageBackViewed: defaults.bool(forKey: "handoffImageBackViewed"),
+            notificationRequestID: defaults.string(forKey: "handoffNotificationRequestID")
         )
 
         [
             "handoffDeckId", "handoffCardId", "handoffSelectedAnswer",
             "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffImageBackViewed",
-            "handoffFromNotificationUI", "handoffTimestamp"
+            "handoffFromNotificationUI", "handoffTimestamp", "handoffNotificationRequestID"
         ].forEach(defaults.removeObject(forKey:))
     }
 

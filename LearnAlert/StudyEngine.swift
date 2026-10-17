@@ -358,6 +358,7 @@ class StudyEngine: ObservableObject {
     }
     
     func stopAlerts() {
+        AlertTimelineStore.shared.cancelFuture()
         DailyDeckAlertScheduler.clear()
         CourseNotificationScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()

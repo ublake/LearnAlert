@@ -121,6 +121,7 @@
 				CourseNotificationSessionView.swift,
 				CourseQuestionPanel.swift,
 				CourseMatchingPanel.swift,
+				AlertTimelineStore.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
 				CardFieldMedia.swift,

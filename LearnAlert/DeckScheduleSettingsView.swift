@@ -20,7 +20,7 @@ struct DeckScheduleSettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Use deck schedule", isOn: $useDeckSettings)
+                    Toggle("Add custom schedule settings for this deck", isOn: $useDeckSettings)
                 } footer: {
                     Text("Remembers this deck’s pace and times. Alerts start when you schedule the deck.")
                 }
@@ -43,7 +43,7 @@ struct DeckScheduleSettingsView: View {
                     }
                 }
             }
-            .navigationTitle("Deck schedule")
+            .navigationTitle("Custom schedule")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }

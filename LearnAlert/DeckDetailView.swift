@@ -13,7 +13,9 @@ struct DeckDetailView: View {
     @State private var showingCreateCategory = false
     @State private var isEditingDeck = false
     @State private var cardToEdit: Flashcard?
-    @State private var cardToPreview: Flashcard?
+    @State private var showingStudy = false
+    @State private var isSearching = false
+    @FocusState private var searchFocused: Bool
     @State private var showingResetConfirmation = false
     @State private var searchText = ""
     @State private var selectedSectionFilter: String = "ALL"
@@ -89,39 +91,7 @@ struct DeckDetailView: View {
                     .transition(.opacity.combined(with: .scale))
                 }
 
-                // Header & Stats
-                VStack(spacing: 12) {
-                    DeckCreatureView(
-                        stableID: deck.id,
-                        appearanceSeed: deck.appearanceSeed,
-                        cardCount: deck.cards.count
-                    )
-                    .frame(width: 124, height: 96)
-
-                    HStack(spacing: 10) {
-                        StatBox(
-                            title: "CARDS",
-                            value: "\(deck.cards.count)",
-                            color: LearnAlertStyle.deckPrimaryAccent,
-                            icon: "rectangle.stack.fill"
-                        )
-                        StatBox(
-                            title: "DUE",
-                            value: "\(cardsDueToday)",
-                            color: cardsDueToday > 0 ? Color.orange : Color.green,
-                            icon: "clock.badge.exclamationmark"
-                        )
-                        StatBox(
-                            title: "MASTERED",
-                            value: "\(deck.cards.filter { $0.interval >= 7 }.count)",
-                            color: LearnAlertStyle.aqua,
-                            icon: "checkmark.seal.fill"
-                        )
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .padding(.top, 6)
-                .padding(.bottom, 12)
+                deckHeader
 
                 // Inline Rename Deck Banner
                 if isEditingDeck {
@@ -147,34 +117,21 @@ struct DeckDetailView: View {
                     .padding(.bottom, 10)
                 }
 
-                // Search Bar
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                    TextField("Search cards...", text: $searchText)
-                        .font(.custom("Poppins-Regular", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
+                if isSearching {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(LearnAlertStyle.textSecondary)
+                        TextField("Search cards", text: $searchText).font(.subheadline).focused($searchFocused)
+                        Button { withAnimation(.snappy) { searchText = ""; isSearching = false } } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
+                        }.accessibilityLabel("Close card search")
                     }
+                    .padding(10).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+                    .onAppear { searchFocused = true }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(LearnAlertStyle.courseSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.4), lineWidth: 1)
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
 
-                // Category / Section Filter Pills
+                // Filters only occupy space when the deck has folders.
+                if !orderedSections.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         sectionFilterPill(title: "All", tag: "ALL", count: deck.cards.count)
@@ -196,6 +153,7 @@ struct DeckDetailView: View {
                     .padding(.horizontal, 16)
                 }
                 .padding(.bottom, 8)
+                }
 
                 // Cards List
                 if filteredCards.isEmpty {
@@ -267,38 +225,18 @@ struct DeckDetailView: View {
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
-                    .contentMargins(.bottom, homeTutorialStep == 2 ? 0 : 80, for: .scrollContent)
+                    .contentMargins(.bottom, 20, for: .scrollContent)
                 }
-            }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if homeTutorialStep != 2 {
-                Button {
-                    HapticFeedback.impact(.light)
-                    InteractionSoundPlayer.shared.play(.click)
-                    showingCreateCard = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(LearnAlertStyle.appAccentInk)
-                        .frame(width: 56, height: 56)
-                        .background {
-                            Circle().fill(LearnAlertStyle.courseSurface)
-                                .overlay { Circle().fill(LearnAlertStyle.appAccent) }
-                        }
-                        .overlay { Circle().strokeBorder(LearnAlertStyle.surfaceOutline(darkOpacity: 0.5), lineWidth: 1) }
-                        .shadow(color: .black.opacity(0.14), radius: 8, y: 4)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add a flashcard")
-                .accessibilityHint("Create a new card in \(deck.name)")
-                .padding(16)
             }
         }
         .navigationTitle(deck.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { withAnimation(.snappy) { isSearching.toggle(); if !isSearching { searchText = "" } } } label: {
+                    Image(systemName: "magnifyingglass")
+                }.accessibilityLabel("Search cards")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if homeTutorialStep == 2 {
                     Button {
@@ -343,7 +281,7 @@ struct DeckDetailView: View {
                         }
 
                         Button { showingScheduleSettings = true } label: {
-                            Label("Deck schedule", systemImage: "bell.badge")
+                            Label("Add custom schedule settings for this deck", systemImage: "bell.badge")
                         }
 
                         Button(role: .destructive) {
@@ -378,12 +316,7 @@ struct DeckDetailView: View {
             if card.cardType == .anki { AnkiCardEditorView(card: card) }
             else { CreateCardView(deck: deck, cardToEdit: card) }
         }
-        .sheet(item: $cardToPreview) { card in
-            CardInteractivePreviewSheet(card: card) {
-                cardToPreview = nil
-                cardToEdit = card
-            }
-        }
+        .fullScreenCover(isPresented: $showingStudy) { NavigationStack { DeckStudyView(deck: deck) } }
         .confirmationDialog(
             "Reset all progress for this deck?",
             isPresented: $showingResetConfirmation,
@@ -499,105 +432,47 @@ struct DeckDetailView: View {
         }
     }
 
-    private func cardRow(_ card: Flashcard) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            if card.cardType == .images {
-                HStack(spacing: 4) {
-                    imageCardThumbnail(card.promptImageName)
-                    if let back = card.answerImageName, !back.isEmpty { imageCardThumbnail(back) }
-                }
-                .frame(width: 92, height: 76)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    private var deckHeader: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 8) {
+                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: deck.cards.count)
+                    .frame(width: 34, height: 28).accessibilityHidden(true)
+                compactStat("Cards", value: deck.cards.count, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
+                compactStat("Due", value: cardsDueToday, icon: "clock.badge.exclamationmark", color: cardsDueToday > 0 ? .orange : .green)
+                compactStat("Mastered", value: deck.cards.filter { $0.interval >= 7 }.count, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
             }
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    if let section = card.section {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(Color(hex: section.colorHex))
-                                .frame(width: 6, height: 6)
-                            Text(section.name)
-                                .font(.custom("Poppins-Medium", size: 10))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.04), in: Capsule())
-                    }
-
-                    if card.interval >= 7 {
-                        Label("Mastered", systemImage: "checkmark.seal.fill")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(LearnAlertStyle.aqua)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(LearnAlertStyle.aqua.opacity(0.12), in: Capsule())
-                    }
-
-                    if card.promptImageName != nil || !card.optionImageNames.filter({ !$0.isEmpty }).isEmpty {
-                        Image(systemName: "photo.fill")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(LearnAlertStyle.indigo)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(LearnAlertStyle.indigo.opacity(0.12), in: Capsule())
-                    }
-                }
-
-                if card.cardType != .images {
-                    Text(card.question.isEmpty ? (card.promptAudioName != nil ? "Audio prompt" : "Image prompt") : card.question)
-                        .font(.custom("Poppins-Medium", size: 14))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .lineLimit(3)
-
-                    Text(card.correctAnswer.isEmpty ? (card.cardType == .multipleChoice ? "\(card.options.count) choices" : "Media answer") : "Answer: \(card.correctAnswer)")
-                        .font(.custom("Poppins-Regular", size: 12))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .lineLimit(2)
-                }
+            HStack(spacing: 8) {
+                deckAction("Add cards", icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
+                deckAction("Add folder", icon: "folder.badge.plus") { showingCreateCategory = true }
+                deckAction("Study", icon: "play.fill", prominent: true) { showingStudy = true }
+                    .disabled(deck.cards.isEmpty)
             }
-
-            Spacer()
-
-            Button {
-                cardToPreview = card
-            } label: {
-                Image(systemName: "eye")
-                    .font(.system(size: 14))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(0.04), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Preview card")
-
-            Button {
-                cardToEdit = card
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.system(size: 14))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                    .frame(width: 32, height: 32)
-                    .background(Color.primary.opacity(0.04), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Edit card")
-        }
-        .padding(.vertical, 6)
-        .listRowBackground(Color.clear)
-        .listRowSeparatorTint(LearnAlertStyle.hairline.opacity(0.35))
+        }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
     }
 
-    private func imageCardThumbnail(_ name: String?) -> some View {
-        Group {
-            if let image = CardImageStore.loadImage(named: name) {
-                Image(uiImage: image).resizable().scaledToFit()
-            } else {
-                Image(systemName: "photo").font(.title2).foregroundStyle(LearnAlertStyle.textSecondary)
-                    .accessibilityLabel("Image unavailable")
-            }
-        }
-        .frame(maxWidth: .infinity)
+    private func compactStat(_ title: String, value: Int, icon: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+            Text("\(value)").font(.subheadline.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
+            Text(title).font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
+        }.frame(maxWidth: .infinity).lineLimit(1).minimumScaleFactor(0.8)
+            .accessibilityElement(children: .ignore).accessibilityLabel("\(value) \(title)")
+    }
+
+    private func deckAction(_ title: String, icon: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.caption.weight(.semibold)).lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .foregroundStyle(prominent ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textPrimary)
+                .background(prominent ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).stroke(LearnAlertStyle.cardBorder, lineWidth: 0.8))
+        }.buttonStyle(.plain)
+    }
+
+    private func cardRow(_ card: Flashcard) -> some View {
+        DeckCardPreviewRow(card: card) { cardToEdit = card }
+            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 5, leading: 0, bottom: 5, trailing: 0))
     }
 
     private func delete(_ offsets: IndexSet, from list: [Flashcard]) {
@@ -623,37 +498,6 @@ struct DeckDetailView: View {
             context.delete(removed)
         }
         try? context.save()
-    }
-}
-
-private struct StatBox: View {
-    let title: LocalizedStringKey
-    let value: String
-    let color: Color
-    let icon: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
-                Text(title)
-                    .font(.custom("Poppins-SemiBold", size: 10))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-            }
-            Text(value)
-                .font(.custom("Poppins-SemiBold", size: 18))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(LearnAlertStyle.courseSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(LearnAlertStyle.glassStroke, lineWidth: 1)
-        )
     }
 }
 

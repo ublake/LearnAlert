@@ -274,6 +274,7 @@ struct CourseNotificationSessionView: View {
             error = CourseLearningStore.shared.lastError ?? "Your answer couldn’t be saved. Retry before continuing."
             return
         }
+        AlertTimelineStore.shared.answered(requestId)
         answered = true
         pendingGrade = nil
         answeredCardIds.insert(card.id)
