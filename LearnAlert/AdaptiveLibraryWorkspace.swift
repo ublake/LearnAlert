@@ -17,7 +17,9 @@ nonisolated struct LibraryWorkspaceGeometry: Equatable {
             .sorted { $0.width > $1.width }.first
         let horizontal = clipped.filter { $0.width >= bounds.width * 0.7 && $0.height < bounds.height * 0.3 }
             .sorted { $0.height > $1.height }.first
-        if supportsDualPane, regularWidth, bounds.width >= 640, bounds.height >= 240 {
+        // A folded portrait display keeps one reachable page instead of stacking tabs.
+        let foldedPortrait = bounds.height > bounds.width && !clipped.isEmpty
+        if supportsDualPane, regularWidth, !foldedPortrait, bounds.width >= 640, bounds.height >= 240 {
             if let fold = horizontal {
                 let top = CGRect(x: 0, y: 0, width: bounds.width, height: fold.minY)
                 let bottom = CGRect(x: 0, y: fold.maxY, width: bounds.width, height: bounds.height - fold.maxY)

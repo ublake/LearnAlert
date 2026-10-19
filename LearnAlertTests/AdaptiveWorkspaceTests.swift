@@ -31,13 +31,20 @@ struct AdaptiveWorkspaceTests {
             #expect(rtl ? layout.home.minX > layout.discover.minX : layout.home.minX < layout.discover.minX)
         }
     }
-    @Test("Tabletop folds use reachable panes; narrow regions keep a single usable pane")
+    @Test("Folded portrait keeps the selected page in one usable region")
     func horizontalFold() {
         let fold = CGRect(x: -30, y: 450, width: 800, height: 35)
         let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: 669, height: 951), regularWidth: true, supportsDualPane: true, divisions: [fold])
-        #expect(layout.presentation == .rows)
-        #expect(layout.home.maxY <= fold.minY && layout.discover.minY >= fold.maxY)
+        #expect(layout.presentation == .single)
+        #expect(layout.home == layout.discover && layout.home == layout.dock)
+        #expect(layout.home.minY >= fold.maxY)
         #expect(!layout.dock.intersects(fold))
+        let vertical = CGRect(x: 320, y: 0, width: 29, height: 951)
+        let portraitBook = LibraryWorkspaceGeometry.resolve(size: .init(width: 669, height: 951), regularWidth: true,
+            supportsDualPane: true, divisions: [vertical])
+        #expect(portraitBook.presentation == .single)
+        #expect(portraitBook.home == portraitBook.discover)
+        #expect(!portraitBook.home.intersects(vertical))
         let small = LibraryWorkspaceGeometry.resolve(size: .init(width: 420, height: 600), regularWidth: false,
             divisions: [.init(x: 0, y: 200, width: 420, height: 30)])
         #expect(small.presentation == .single)
