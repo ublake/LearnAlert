@@ -117,4 +117,20 @@ extension AdaptiveWorkspaceTests {
         #expect(!NavigationDockPresentation.usesFloatingDock(sceneWidth: 951, dockWidth: 951, isPad: false, isDuo: false))
         #expect(!NavigationDockPresentation.usesFloatingDock(sceneWidth: 390, dockWidth: 390, isPad: true, isDuo: false))
     }
+    @Test("Duo side navigation stays on the physical right outside folds and camera regions")
+    func sideNavigation() {
+        let wide = CGSize(width: 951, height: 669)
+        let edge = NavigationDockPresentation.sideRegion(size: wide, isDuo: true, avoiding: [])
+        #expect(edge == CGRect(x: 867, y: 0, width: 84, height: 669))
+        let fold = CGRect(x: 0, y: 450, width: 669, height: 35)
+        let tabletop = NavigationDockPresentation.sideRegion(size: .init(width: 669, height: 951), isDuo: true, avoiding: [fold])
+        #expect(tabletop?.minY == 485)
+        #expect(tabletop?.maxX == 669)
+        let camera = CGRect(x: 900, y: 0, width: 51, height: 100)
+        let clear = NavigationDockPresentation.sideRegion(size: wide, isDuo: true, avoiding: [camera])
+        #expect(clear?.intersects(camera) == false)
+        #expect(NavigationDockPresentation.sideRegion(size: wide, isDuo: false, avoiding: []) == nil)
+        #expect(NavigationDockPresentation.sideRegion(size: .init(width: 393, height: 852), isDuo: true, avoiding: []) == nil)
+        #expect(NavigationDockPresentation.sideRegion(size: .init(width: 951, height: 300), isDuo: true, avoiding: []) == nil)
+    }
 }

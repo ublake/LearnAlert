@@ -4,6 +4,7 @@ struct BottomNavigationBar: View {
     @Binding var selectedTab: Int
     @Binding var showingCreationActions: Bool
     var floatingDock = false
+    var verticalDock = false
     let createDeck: () -> Void
     let importWithAI: () -> Void
     let importAnki: () -> Void
@@ -15,7 +16,9 @@ struct BottomNavigationBar: View {
     var body: some View {
         Group {
             if floatingDock {
-                GlassEffectContainer(spacing: 14) { navigationContent }
+                GlassEffectContainer(spacing: 14) {
+                    if verticalDock { sideNavigationContent } else { navigationContent }
+                }
             } else {
                 navigationContent
             }
@@ -24,6 +27,31 @@ struct BottomNavigationBar: View {
         .onChange(of: homeTutorialStep) { _, step in
             if step > 0 { showingCreationActions = false }
         }
+    }
+
+    private var sideNavigationContent: some View {
+        ZStack {
+            if showingCreationActions && homeTutorialStep == 0 {
+                VStack(spacing: 10) {
+                    creationAction("Create Deck", icon: "rectangle.stack.badge.plus", action: createDeck)
+                    creationAction("Import with AI", icon: "sparkles", action: importWithAI)
+                    creationAction("Import Anki", icon: "square.and.arrow.down.on.square", action: importAnki)
+                }
+                .frame(width: 208)
+                .transition(reduceMotion ? .opacity : .offset(x: 16).combined(with: .opacity))
+                .position(x: 104, y: 150)
+            }
+
+            NavigationDock(selectedTab: selectedTab, isExpanded: showingCreationActions,
+                floatingDock: true, verticalDock: true,
+                selectTab: { tab in
+                    withAnimation(motion) { selectedTab = tab; showingCreationActions = false }
+                }, toggleCreation: { withAnimation(motion) { showingCreationActions.toggle() } })
+                .disabled(homeTutorialStep > 0)
+                .opacity(homeTutorialStep > 0 ? 0.30 : 1)
+                .position(x: 258, y: 150)
+        }
+        .frame(width: 292, height: 300)
     }
 
     private var navigationContent: some View {
@@ -82,7 +110,8 @@ struct BottomNavigationBar: View {
             withAnimation(motion) { showingCreationActions = false }
             action()
         } label: {
-            VStack(spacing: 8) {
+            let layout = verticalDock ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 8))
+            layout {
                 Image(systemName: icon)
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(LearnAlertStyle.appAccentForeground)
@@ -95,7 +124,7 @@ struct BottomNavigationBar: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 88)
+            .frame(maxWidth: .infinity, minHeight: verticalDock ? 32 : 88)
             .modifier(CreationActionSurface(floating: floatingDock))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
@@ -108,6 +137,7 @@ private struct NavigationDock: View {
     let selectedTab: Int
     var isExpanded = false
     var floatingDock = false
+    var verticalDock = false
     let selectTab: (Int) -> Void
     let toggleCreation: () -> Void
     @Namespace private var selectionNamespace
@@ -127,7 +157,7 @@ private struct NavigationDock: View {
     var body: some View {
         Group {
             if floatingDock {
-                glassDock
+                if verticalDock { sideGlassDock } else { glassDock }
             } else {
                 ZStack(alignment: .top) {
                     islandDock
@@ -138,10 +168,28 @@ private struct NavigationDock: View {
                 }
             }
         }
-        .frame(height: floatingDock ? 68 : 108, alignment: .top)
+        .frame(height: verticalDock ? 300 : floatingDock ? 68 : 108, alignment: .top)
         .offset(y: floatingDock ? 0 : 24)
         .animation(floatingDock && reduceMotion ? nil : motion, value: selectedTab)
         .animation(motion, value: isExpanded)
+    }
+
+    private var sideGlassDock: some View {
+        VStack(spacing: 8) {
+            sideTabPair(0, 1)
+            creationBall
+            sideTabPair(2, 3)
+        }
+        .padding(6)
+        .modifier(NavigationGlassSurface(shape: Capsule()))
+    }
+
+    private func sideTabPair(_ first: Int, _ second: Int) -> some View {
+        VStack(spacing: 4) {
+            glassTab(first)
+            glassTab(second)
+        }
+        .frame(width: 56, height: 108)
     }
 
     private var glassDock: some View {
@@ -165,20 +213,21 @@ private struct NavigationDock: View {
     private func glassTab(_ index: Int) -> some View {
         let selected = selectedTab == index
         return Button { selectTab(index) } label: {
-            HStack(spacing: 6) {
+            let layout = verticalDock ? AnyLayout(VStackLayout(spacing: 3)) : AnyLayout(HStackLayout(spacing: 6))
+            layout {
                 tabIcon(index, size: 22)
                     .frame(width: 24, height: 26)
                 if selected {
                     Text(tabs[index].title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: verticalDock ? 9 : 12, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94)))
                 }
             }
             .foregroundStyle(tabColor(index))
-            .padding(.horizontal, selected ? 8 : 0)
-            .frame(width: selected ? 100 : 44, height: 56)
+            .padding(.horizontal, selected ? (verticalDock ? 2 : 8) : 0)
+            .frame(width: verticalDock ? 56 : selected ? 100 : 44, height: verticalDock ? (selected ? 56 : 44) : 56)
             .background {
                 if selected {
                     Capsule().fill(LearnAlertStyle.appAccent.opacity(0.20))

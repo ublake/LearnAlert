@@ -33,63 +33,79 @@ struct ContentView: View {
     
     let enterForeground = NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
     
+    private func navigationBar(floating: Bool, vertical: Bool = false) -> some View {
+        BottomNavigationBar(selectedTab: $selectedTab, showingCreationActions: $showingCreationActions,
+            floatingDock: floating, verticalDock: vertical,
+            createDeck: { showingCreateDeck = true },
+            importWithAI: { showingAIComposer = true },
+            importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true })
+    }
+
+    private func workspacePages(_ workspace: LibraryWorkspaceGeometry) -> some View {
+        Group {
+            switch selectedTab {
+            case 0, 1:
+                AdaptiveLibraryWorkspace(geometry: workspace, searchText: $searchText,
+                    selectedTab: $selectedTab, showingCreateDeck: $showingCreateDeck)
+            case 2: NotificationCustomizeView()
+            case 3: AppSettingsView()
+            default:
+                HomeLibraryView(searchText: $searchText, selectedTab: $selectedTab,
+                    showingCreateDeck: $showingCreateDeck)
+            }
+        }
+        .animation(nil, value: selectedTab)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(showingCreationActions)
+    }
+
+    private var creationBackdrop: some View {
+        Button {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72)) {
+                showingCreationActions = false
+            }
+        } label: {
+            Color.black.opacity(0.14).ignoresSafeArea()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close new deck options")
+        .transition(.opacity)
+    }
+
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                let workspace = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
+                let outer = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
                     direction: layoutDirection)
-            ZStack {
-                LearnAlertStyle.courseCanvas
-                    .ignoresSafeArea()
-                
-                Group {
-                    switch selectedTab {
-                    case 0, 1:
-                        AdaptiveLibraryWorkspace(geometry: workspace, searchText: $searchText,
-                            selectedTab: $selectedTab, showingCreateDeck: $showingCreateDeck)
-                    case 2: NotificationCustomizeView()
-                    case 3: AppSettingsView()
-                    default:
-                        HomeLibraryView(
-                            searchText: $searchText,
-                            selectedTab: $selectedTab,
-                            showingCreateDeck: $showingCreateDeck
-                        )
-                    }
-                }
-                .animation(nil, value: selectedTab)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityHidden(showingCreationActions)
-
-                if showingCreationActions {
-                    Button {
-                        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72)) {
-                            showingCreationActions = false
+                let sideRegion = outer.sideDockRegion
+                ZStack {
+                    LearnAlertStyle.courseCanvas.ignoresSafeArea()
+                    GeometryReader { pageProxy in
+                        let workspace = LibraryWorkspaceGeometry.resolve(proxy: pageProxy,
+                            regularWidth: horizontalSizeClass == .regular, direction: layoutDirection)
+                        ZStack {
+                            workspacePages(workspace)
+                            if showingCreationActions { creationBackdrop }
+                            if sideRegion == nil {
+                                VStack {
+                                    Spacer()
+                                    navigationBar(floating: workspace.usesFloatingDock)
+                                }
+                                .ignoresSafeArea(.keyboard, edges: .bottom)
+                                .frame(width: workspace.dock.width, height: workspace.dock.height)
+                                .position(x: workspace.dock.midX, y: workspace.dock.midY)
+                            }
                         }
-                    } label: {
-                        Color.black.opacity(0.14).ignoresSafeArea()
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close new deck options")
-                    .transition(.opacity)
+                    // Reserve the physical right edge, including in right-to-left layouts.
+                    .padding(layoutDirection == .rightToLeft ? .leading : .trailing, sideRegion == nil ? 0 : 84)
+                    if let region = sideRegion {
+                        // The 292-point menu/pill container ends eight points inside the right edge.
+                        navigationBar(floating: true, vertical: true)
+                            .ignoresSafeArea(.keyboard, edges: .bottom)
+                            .position(x: region.maxX - 154, y: region.midY)
+                    }
                 }
-
-                VStack {
-                    Spacer()
-                    BottomNavigationBar(
-                        selectedTab: $selectedTab,
-                        showingCreationActions: $showingCreationActions,
-                        floatingDock: workspace.usesFloatingDock,
-                        createDeck: { showingCreateDeck = true },
-                        importWithAI: { showingAIComposer = true },
-                        importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true }
-                    )
-                }
-                // Only the dock ignores the keyboard; the current page still avoids it.
-                .ignoresSafeArea(.keyboard, edges: .bottom)
-                .frame(width: workspace.dock.width, height: workspace.dock.height)
-                .position(x: workspace.dock.midX, y: workspace.dock.midY)
-            }
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }
