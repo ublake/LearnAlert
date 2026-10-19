@@ -48,6 +48,8 @@ struct CommunityProfile: Codable, Equatable {
     var hideStatsPublicly: Bool? = nil
     var profileCreatedAt: Int? = nil
     var stats: CommunityProfileStats? = nil
+    var isDeveloper: Bool? = nil
+    var allowAnkiUploads: Bool? = nil
 }
 
 /// Coordinated colors keep line-only features visible on every skin tone.

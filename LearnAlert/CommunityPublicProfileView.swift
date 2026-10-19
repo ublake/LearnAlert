@@ -279,6 +279,7 @@ struct CommunityProfileDeckPreview: View {
                 card.orderIndex = index; card.promptAudioName = item.promptAudioName
                 if !item.fieldMedia.isEmpty { card.fieldMedia = item.fieldMedia }
                 card.correctOptionIndex = item.correctOptionIndex
+                card.ankiContent = item.ankiContent
                 imported.cards.append(card)
                 imported.assignCardToSection(card: card, suggestedCategory: item.sectionName)
             }
@@ -295,6 +296,9 @@ struct CommunityProfileDeckPreview: View {
     }
 
     private func removeDownloadedMedia(_ source: PremadeDeck) {
+        for folder in Set(source.cards.compactMap({ $0.ankiContent?.mediaURL })) {
+            try? FileManager.default.removeItem(at: folder)
+        }
         let images = source.cards.flatMap { [$0.promptImageName, $0.answerImageName].compactMap { $0 } + $0.optionImageNames + $0.fieldMedia.values.compactMap(\.image) }
         Set(images.filter { !$0.isEmpty }).forEach { CardImageStore.deleteImage(named: $0) }
         Set(source.cards.compactMap(\.promptAudioName) + source.cards.flatMap { $0.fieldMedia.values.compactMap(\.audio) }).forEach { CardAudioStore.delete(named: $0) }

@@ -20,6 +20,7 @@ struct PremadeCard: Identifiable {
     var fieldMedia: [String: CardFieldMedia] = [:]
     var correctOptionIndex: Int? = nil
     var sectionName: String = ""
+    var ankiContent: AnkiCardContent? = nil
 }
 
 struct PremadeDeck: Identifiable {
@@ -471,6 +472,7 @@ struct PremadeDecksView: View {
             card.promptAudioName = sourceCard.promptAudioName
             if !sourceCard.fieldMedia.isEmpty { card.fieldMedia = sourceCard.fieldMedia }
             card.correctOptionIndex = sourceCard.correctOptionIndex
+            card.ankiContent = sourceCard.ankiContent
             deck.cards.append(card)
             deck.assignCardToSection(card: card, suggestedCategory: sourceCard.sectionName)
         }

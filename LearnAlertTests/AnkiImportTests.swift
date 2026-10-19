@@ -117,7 +117,7 @@ struct AnkiImportTests {
         defer { try? FileManager.default.removeItem(at: workspace) }
         let content = AnkiCardContent(frontHTML: "<div id='custom'>Korean \\(x^2\\)</div><img id='picture' src='cat.png'><script>document.getElementById('custom').dataset.ready='yes';</script>",
             backHTML: "Back", css: "#custom { color: rgb(23, 100, 180); }", mediaFolder: "", templateOrdinal: 0, noteType: "Custom", tags: [])
-        let host = UIHostingController(rootView: AnkiCardView(content: content, showingBack: false, mediaDirectory: package.mediaDirectory))
+        let host = UIHostingController(rootView: AnkiCardView(content: content, showingBack: false, mediaDirectory: package.mediaDirectory, centered: true, animatedReveal: true))
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
@@ -141,6 +141,11 @@ struct AnkiImportTests {
         #expect(try await web.evaluateJavaScript("!!document.querySelector('.katex')") as? Bool == true)
         let network = try await web.callAsyncJavaScript("try { await fetch('https://example.com/blocked'); return 'allowed'; } catch (_) { return 'blocked'; }", arguments: [:], in: nil, contentWorld: .page)
         #expect(network as? String == "blocked")
+        let centered = try await web.evaluateJavaScript("Math.abs(document.getElementById('learnalert-anki-content').getBoundingClientRect().top + document.getElementById('learnalert-anki-content').getBoundingClientRect().height / 2 - innerHeight / 2) < 3")
+        #expect(centered as? Bool == true)
+        let longContent = try await web.evaluateJavaScript("document.getElementById('learnalert-anki-content').style.height='1400px'; document.documentElement.scrollHeight > innerHeight && document.getElementById('learnalert-anki-content').getBoundingClientRect().top >= 0")
+        #expect(longContent as? Bool == true)
+
     }
 
     @Test("Media lookup cannot escape its import folder")

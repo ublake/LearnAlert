@@ -45,6 +45,15 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     @Published var shouldShowNotificationOpeningTip = false
     @Published var shouldShowCustomizationTestGuide = false
     
+    var shouldOfferNotificationOpeningTip: Bool {
+        !UserDefaults.standard.bool(forKey: "hasDismissedNotificationOpeningTip")
+    }
+
+    func dismissNotificationOpeningTip() {
+        UserDefaults.standard.set(true, forKey: "hasDismissedNotificationOpeningTip")
+        shouldShowNotificationOpeningTip = false
+    }
+
     override convenience init() {
         self.init(registerForNotifications: true)
     }
@@ -358,7 +367,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                         wasGraded: false,
                         wasHintVisible: false, notificationRequestID: requestID
                     )
-                    self.shouldShowNotificationOpeningTip = true
+                    self.shouldShowNotificationOpeningTip = self.shouldOfferNotificationOpeningTip
                 } else {
                     self.consumePendingStudyHandoff()
                 }

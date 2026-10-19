@@ -298,101 +298,106 @@ private struct QuizSessionView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if cardType == .anki {
-                        if let ankiContent {
-                            AnkiCardView(content: ankiContent, showingBack: isRevealed)
-                                .frame(height: 440)
-                                .clipShape(RoundedRectangle(cornerRadius: 20))
-                            AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
-                        } else {
-                            ContentUnavailableView("Card unavailable", systemImage: "rectangle.slash", description: Text("Re-import this Anki deck to restore its content."))
-                        }
-                    } else if cardType == .images {
-                        Group {
-                            if hasImageBack {
-                                ImageCardFlipView(isShowingBack: $isRevealed,
-                                    onBackViewed: {
-                                        if CardImageStore.loadImage(named: answerImageName) != nil { onImageBackViewed() }
-                                    }) {
-                                    imageFace(promptImageName)
-                                } back: {
-                                    imageFace(answerImageName)
-                                }
-                            } else {
-                                imageFace(promptImageName)
-                            }
-                        }
-                        .frame(maxWidth: .infinity).frame(height: 420)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    } else if let promptImg = promptImageName, !promptImg.isEmpty,
-                       let uiImage = CardImageStore.loadImage(named: promptImg) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxHeight: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(QuizTheme.border, lineWidth: 1)
-                            )
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-
-                    if cardType != .images && cardType != .anki && !question.isEmpty {
-                        Text(question)
-                            .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
-                            .foregroundStyle(QuizTheme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if cardType != .images, let promptAudioName {
-                        CardAudioPlaybackButton(name: promptAudioName)
-                    }
-
-                    switch cardType {
-                    case .images, .anki:
-                        EmptyView()
-                    case .vocabulary:
-                        CardFieldContent(text: correctAnswer, media: fieldMedia["answer"] ?? .init()).font(.title3.weight(.semibold))
-                    case .multipleChoice:
-                        CardMediaChoiceList(options: options, fields: fieldMedia, correctIndex: correctOptionIndex,
-                            selection: selectedAnswer, isGraded: isGraded, onSelect: onSelect)
-                    case .tapReveal:
-                        QuizRevealCard(
-                            answer: correctAnswer,
-                            media: fieldMedia["answer"] ?? .init(),
-                            isRevealed: isRevealed,
-                            isGraded: isGraded,
-                            onReveal: onReveal,
-                            onGrade: onGrade
-                        )
-                    case .fillBlank:
-                        if correctAnswer.isEmpty {
-                            QuizRevealCard(answer: "", media: fieldMedia["answer"] ?? .init(), isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
-                        } else {
-                            QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)
-                            if isGraded { CardFieldContent(media: fieldMedia["answer"] ?? .init()) }
-                        }
-                    case .matching:
-                        CardMediaMatchingBoard(left: matchingLeftItems, right: matchingRightItems, fields: fieldMedia, isGraded: isGraded, onGrade: onGrade)
-                    }
-
-                    if !cardType.isReviewOnly || (fieldMedia["hint"] ?? .init()).hasContent(hint) {
-                        QuizUtilityControls(
-                            hint: hint,
-                            media: fieldMedia["hint"] ?? .init(),
-                            showingHint: showingHint,
-                            isGraded: isGraded,
-                            onToggleHint: onToggleHint,
-                            onSkip: onSkip
-                        )
-                    }
+            if cardType == .anki, let ankiContent {
+                VStack(spacing: 16) {
+                    AnkiCardView(content: ankiContent, showingBack: isRevealed, centered: true, animatedReveal: true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                    AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 38)
-                .padding(.bottom, 24)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if cardType == .anki {
+                            ContentUnavailableView("Card unavailable", systemImage: "rectangle.slash", description: Text("Re-import this Anki deck to restore its content."))
+                        } else if cardType == .images {
+                            Group {
+                                if hasImageBack {
+                                    ImageCardFlipView(isShowingBack: $isRevealed,
+                                        onBackViewed: {
+                                            if CardImageStore.loadImage(named: answerImageName) != nil { onImageBackViewed() }
+                                        }) {
+                                        imageFace(promptImageName)
+                                    } back: {
+                                        imageFace(answerImageName)
+                                    }
+                                } else {
+                                    imageFace(promptImageName)
+                                }
+                            }
+                            .frame(maxWidth: .infinity).frame(height: 420)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        } else if let promptImg = promptImageName, !promptImg.isEmpty,
+                           let uiImage = CardImageStore.loadImage(named: promptImg) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxHeight: 200)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(QuizTheme.border, lineWidth: 1)
+                                )
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
+
+                        if cardType != .images && cardType != .anki && !question.isEmpty {
+                            Text(question)
+                                .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
+                                .foregroundStyle(QuizTheme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if cardType != .images, let promptAudioName {
+                            CardAudioPlaybackButton(name: promptAudioName)
+                        }
+
+                        switch cardType {
+                        case .images, .anki:
+                            EmptyView()
+                        case .vocabulary:
+                            CardFieldContent(text: correctAnswer, media: fieldMedia["answer"] ?? .init()).font(.title3.weight(.semibold))
+                        case .multipleChoice:
+                            CardMediaChoiceList(options: options, fields: fieldMedia, correctIndex: correctOptionIndex,
+                                selection: selectedAnswer, isGraded: isGraded, onSelect: onSelect)
+                        case .tapReveal:
+                            QuizRevealCard(
+                                answer: correctAnswer,
+                                media: fieldMedia["answer"] ?? .init(),
+                                isRevealed: isRevealed,
+                                isGraded: isGraded,
+                                onReveal: onReveal,
+                                onGrade: onGrade
+                            )
+                        case .fillBlank:
+                            if correctAnswer.isEmpty {
+                                QuizRevealCard(answer: "", media: fieldMedia["answer"] ?? .init(), isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
+                            } else {
+                                QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)
+                                if isGraded { CardFieldContent(media: fieldMedia["answer"] ?? .init()) }
+                            }
+                        case .matching:
+                            CardMediaMatchingBoard(left: matchingLeftItems, right: matchingRightItems, fields: fieldMedia, isGraded: isGraded, onGrade: onGrade)
+                        }
+
+                        if !cardType.isReviewOnly || (fieldMedia["hint"] ?? .init()).hasContent(hint) {
+                            QuizUtilityControls(
+                                hint: hint,
+                                media: fieldMedia["hint"] ?? .init(),
+                                showingHint: showingHint,
+                                isGraded: isGraded,
+                                onToggleHint: onToggleHint,
+                                onSkip: onSkip
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 38)
+                    .padding(.bottom, 24)
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {

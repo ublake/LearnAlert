@@ -189,7 +189,7 @@ struct ContentView: View {
             if notificationManager.shouldShowNotificationOpeningTip {
                 NotificationOpeningTip {
                     withAnimation(.snappy) {
-                        notificationManager.shouldShowNotificationOpeningTip = false
+                        notificationManager.dismissNotificationOpeningTip()
                     }
                 }
                 .transition(.scale(scale: 0.94).combined(with: .opacity))
@@ -202,149 +202,32 @@ struct ContentView: View {
 
 private struct NotificationOpeningTip: View {
     let dismiss: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            Color.black.opacity(colorScheme == .dark ? 0.72 : 0.45)
-                .ignoresSafeArea()
-                .onTapGesture(perform: dismiss)
-
-            VStack(spacing: 20) {
-                HStack(alignment: .top, spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.12, green: 0.50, blue: 0.98),
-                                        Color(red: 0.20, green: 0.78, blue: 0.85)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "bell.badge.waveform.fill")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Study Directly in Alerts")
-                            .font(.custom("Poppins-SemiBold", size: 18))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-                        Text("Did you know alerts are interactive flashcards?")
-                            .font(.custom("Poppins-Regular", size: 12))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                    }
-
-                    Spacer()
-
-                    Button(action: dismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Color.primary.opacity(0.06), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close notification tip")
-                }
-
-                VStack(spacing: 12) {
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.orange.opacity(0.15))
-                                .frame(width: 40, height: 40)
-                            Image(systemName: "hand.tap.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.orange)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("Tapping alert")
-                                    .font(.custom("Poppins-SemiBold", size: 14))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                Text("Opens App")
-                                    .font(.custom("Poppins-Medium", size: 10))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.orange.opacity(0.15), in: Capsule())
-                                    .foregroundStyle(.orange)
-                            }
-                            Text("Opens the full in-app study session.")
-                                .font(.custom("Poppins-Regular", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(14)
-                    .background(LearnAlertStyle.courseSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
-                    )
-
-                    HStack(spacing: 14) {
-                        ZStack {
-                            Circle()
-                                .fill(LearnAlertStyle.indigo.opacity(0.18))
-                                .frame(width: 40, height: 40)
-                            Image(systemName: "hand.draw.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(LearnAlertStyle.sky)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("Swipe down / Press & Hold")
-                                    .font(.custom("Poppins-SemiBold", size: 14))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                Text("Recommended")
-                                    .font(.custom("Poppins-Medium", size: 10))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(LearnAlertStyle.indigo.opacity(0.18), in: Capsule())
-                                    .foregroundStyle(LearnAlertStyle.sky)
-                            }
-                            Text("Expands the quiz card without opening the app!")
-                                .font(.custom("Poppins-Regular", size: 12))
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(14)
-                    .background(LearnAlertStyle.courseSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(LearnAlertStyle.indigo.opacity(0.4), lineWidth: 1.2)
-                    )
-                }
-
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 22) {
+                Text("Don’t forget! Notifications are expandable too, so you don’t even have to open the app to answer!")
+                    .font(.custom("Poppins-Medium", size: 17, relativeTo: .body))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button(action: dismiss) {
-                    Text("Got It!")
-                        .font(.custom("Poppins-SemiBold", size: 15))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(LearnAlertStyle.indigo)
-                        .clipShape(Capsule())
-                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 8, y: 4)
+                    HStack(spacing: 10) {
+                        Text("Got it").font(.subheadline.weight(.semibold))
+                        Text("Don’t show again").font(.caption).opacity(0.5)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(LearnAlertStyle.appAccent)
+                .foregroundStyle(LearnAlertStyle.appAccentInk)
             }
-            .padding(20)
-            .background(LearnAlertStyle.courseSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.3), radius: 24, y: 12)
+            .padding(24)
+            .background(LearnAlertStyle.courseSurface, in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3)))
+            .shadow(color: .black.opacity(0.2), radius: 24, y: 12)
+            .frame(maxWidth: 440)
             .padding(.horizontal, 24)
         }
     }
@@ -3153,6 +3036,8 @@ struct AppSettingsView: View {
 
     private let availableSounds = AlertSoundOption.allSounds
     
+    @ObservedObject private var communitySession = CommunitySession.shared
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -3171,6 +3056,7 @@ struct AppSettingsView: View {
                 )
 
                 SettingsSupportGroup()
+                if communitySession.isDeveloper { DeveloperOptionsGroup() }
 
                 Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }
@@ -3180,7 +3066,10 @@ struct AppSettingsView: View {
             LearnAlertStyle.courseCanvas
                 .ignoresSafeArea()
         }
-        .task { await refreshPermissionStatus() }
+        .task {
+            await refreshPermissionStatus()
+            await communitySession.refreshProfile()
+        }
         .onAppear {
             if !availableSounds.contains(where: { $0.id == alertSound }) {
                 alertSound = "alert3.wav"
@@ -3466,5 +3355,32 @@ private struct QuickScheduleTipPopup: View {
         )
         .shadow(color: LearnAlertStyle.indigoDeep.opacity(0.38), radius: 18, y: 8)
         .padding(.horizontal, 18)
+    }
+}
+
+private struct DeveloperOptionsGroup: View {
+    @ObservedObject private var session = CommunitySession.shared
+    @State private var isSaving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Developer options").font(.headline)
+            Toggle("Allow Anki community uploads", isOn: Binding(
+                get: { session.canUploadAnki },
+                set: { enabled in
+                    isSaving = true; error = nil
+                    Task { @MainActor in
+                        defer { isSaving = false }
+                        do { try await session.saveDeveloperOptions(allowAnkiUploads: enabled) }
+                        catch { self.error = error.localizedDescription }
+                    }
+                }
+            ))
+            .disabled(isSaving)
+            if isSaving { ProgressView().controlSize(.small) }
+            if let error { Text(error).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
+        }
+        .padding(16).appCardSurface(cornerRadius: 20).padding(.horizontal, 20)
     }
 }

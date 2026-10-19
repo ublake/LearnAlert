@@ -670,8 +670,14 @@ struct ShareDeckToCommunitySheet: View {
     @State private var publishError: String?
     @State private var showingProfile = false
     @State private var showingPreview = false
-    private var availableDecks: [Deck] { libraryDecks.filter(\.canShareToCommunity) }
+    @State private var publisherHandle = ""
+    private var availableDecks: [Deck] { libraryDecks.filter(\.canPresentCommunitySharing) }
     private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
+    private var canPublishSelected: Bool {
+        guard let deck = selectedDeck else { return false }
+        return deck.sharingRestriction(allowAnkiUploads: session.canUploadAnki) == nil
+    }
+    private var listingCategories: [String] { CommunityFeedView.categories.filter { $0 != "All" } }
 
     var body: some View {
         NavigationStack {
@@ -691,10 +697,19 @@ struct ShareDeckToCommunitySheet: View {
                         }.disabled(isPublishing)
                         if let deck = selectedDeck {
                             listingPreview(deck)
+                            if let reason = deck.sharingRestriction(allowAnkiUploads: session.canUploadAnki) {
+                                Text(reason).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                            }
+                            if session.isDeveloper {
+                                TextField("Creator name (optional)", text: $publisherHandle)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .padding(14).appCardSurface(cornerRadius: 16)
+                                    .disabled(isPublishing)
+                            }
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Text("Category").font(.subheadline.weight(.medium)); Spacer()
-                                    Picker("Category", selection: $category) { ForEach(CommunityFeedView.categories.filter { $0 != "All" }, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
+                                    Picker("Category", selection: $category) { ForEach(listingCategories, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
                                 }
                                 Divider()
                                 TextField("A short description", text: $deckDescription, axis: .vertical).lineLimit(2...4)
@@ -710,7 +725,7 @@ struct ShareDeckToCommunitySheet: View {
             .navigationTitle(isSubmitted ? "Submitted for review" : "Share a deck").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isPublishing) } }
             .safeAreaInset(edge: .bottom) {
-                if selectedDeck != nil {
+                if canPublishSelected {
                     VStack(spacing: 10) {
                         if isPublishing { ProgressView(progress).font(.caption) }
                         if selectedDeck?.publishedCommunityID != nil && !isSubmitted {
@@ -726,10 +741,21 @@ struct ShareDeckToCommunitySheet: View {
                 }
             }
             .interactiveDismissDisabled(isPublishing)
+            .task(id: selectedDeckID) {
+                await session.refreshProfile()
+                let selectedID = selectedDeckID
+                if session.isDeveloper, let id = selectedDeck?.publishedCommunityID, let token = session.token,
+                   let owned = try? await CommunityAPI().myDecks(token: token),
+                   selectedDeckID == selectedID, publisherHandle.isEmpty,
+                   let listing = owned.decks.first(where: { $0.id == id }), listing.authorHandle != session.handle {
+                    publisherHandle = listing.authorHandle
+                }
+            }
             .onAppear { if selectedDeckID == nil { selectedDeckID = availableDecks.first(where: { $0.id == initialDeckID })?.id ?? availableDecks.first?.id; loadMetadata() } }
             .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
             .onChange(of: category) { _, _ in isSubmitted = false }
             .onChange(of: deckDescription) { _, _ in isSubmitted = false }
+            .onChange(of: publisherHandle) { _, _ in isSubmitted = false }
             .sheet(isPresented: $showingProfile) {
                 CommunityProfileSheet(saveTitle: "Save & submit", onSave: { showingProfile = false; Task { await publish() } })
             }
@@ -743,7 +769,7 @@ struct ShareDeckToCommunitySheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }
-                Text(session.isSignedIn ? session.handle : "Your community preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                Text(session.isDeveloper && !publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? publisherHandle : session.isSignedIn ? session.handle : "Your community preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             Text(deck.name).font(.title3.weight(.semibold))
             if !deckDescription.isEmpty { Text(deckDescription).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
@@ -757,7 +783,7 @@ struct ShareDeckToCommunitySheet: View {
     }
     private func loadMetadata() {
         category = selectedDeck?.communityCategory ?? "General"; deckDescription = selectedDeck?.communityDescription ?? ""
-        isSubmitted = false; publishError = nil
+        isSubmitted = false; publishError = nil; publisherHandle = ""
     }
     private func beginPublish() {
         if !session.isSignedIn || session.needsProfileSetup { showingProfile = true }
@@ -768,7 +794,8 @@ struct ShareDeckToCommunitySheet: View {
         isPublishing = true; publishError = nil
         defer { isPublishing = false }
         do {
-            let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: deckDescription, token: token) { progress = $0 }
+            let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: deckDescription, token: token,
+                publisherHandle: session.isDeveloper ? publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines) : nil) { progress = $0 }
             deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = deckDescription
             try context.save(); isSubmitted = true; HapticFeedback.success()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
@@ -845,7 +872,7 @@ struct MySharedDecksSheet: View {
                                 Label("Updated by admin", systemImage: "pencil").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             HStack {
-                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canShareToCommunity }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.sharingRestriction(allowAnkiUploads: session.canUploadAnki) == nil }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
                                 Button(deck.isRemoved ? "Dismiss notice" : "Remove", systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
                                     if deck.isRemoved { Task { await remove(deck) } } else { removingDeck = deck }

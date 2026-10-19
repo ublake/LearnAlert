@@ -262,7 +262,7 @@ struct DeckDetailView: View {
 
                         Divider()
 
-                        if deck.canShareToCommunity {
+                        if deck.canPresentCommunitySharing {
                             Button { showingCommunityShare = true } label: {
                                 Label("Share to Community", systemImage: "square.and.arrow.up")
                             }

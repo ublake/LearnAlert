@@ -9,6 +9,9 @@ struct AnkiCardView: UIViewRepresentable {
     let showingBack: Bool
     var mediaDirectory: URL? = nil
     var compact = false
+    var centered = false
+    var animatedReveal = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -52,6 +55,10 @@ struct AnkiCardView: UIViewRepresentable {
     private var document: String {
         let dark = colorScheme == .dark
         let html = showingBack ? content.backHTML : content.frontHTML
+        let cardHTML = centered ? "<main id=\"learnalert-anki-content\">\(html)</main>" : html
+        let revealStyle = animatedReveal && showingBack && !reduceMotion
+            ? "@keyframes learnalertReveal { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } } #learnalert-anki-content { animation:learnalertReveal 280ms cubic-bezier(.2,.8,.2,1) both; }"
+            : ""
         let hasMath = ["\\(", "\\[", "[latex]", "[$]", "[$$]"].contains { html.contains($0) }
         let mathAssets = hasMath ? """
         <link rel="stylesheet" href="anki-media://assets/katex.min.css">
@@ -71,8 +78,10 @@ struct AnkiCardView: UIViewRepresentable {
         .anki-sound { border:1px solid #739abb66; border-radius:14px; padding:12px 16px; margin:6px; color:inherit; background:#77baff22; font:600 15px -apple-system; }
         details { margin:12px 0; } summary { cursor:pointer; } table { max-width:100%; }
         </style><style>\(content.css.replacingOccurrences(of: "</style", with: "<\\/style", options: .caseInsensitive))</style>
+        <style>\(centered ? "body { min-height:100vh; display:flex; flex-direction:column; } #learnalert-anki-content { width:100%; flex-shrink:0; margin-block:auto; } img,video { max-height:65vh; object-fit:contain; }" : "")</style>
+        <style>\(revealStyle)</style>
         \(mathAssets)
-        </head><body class="card card\(content.templateOrdinal + 1) iphone mobile \(dark ? "nightMode night_mode" : "")">\(html)
+        </head><body class="card card\(content.templateOrdinal + 1) iphone mobile \(dark ? "nightMode night_mode" : "")">\(cardHTML)
         <script>
         document.addEventListener('click',function(event){
           const button=event.target.closest('[data-sound],[data-speech]');

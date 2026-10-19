@@ -27,6 +27,7 @@ struct CommunityCardPayload: Codable, Identifiable {
     var answerImageID: String? = nil
     var fieldMedia: [String: CommunityFieldMedia]? = nil
     var correctOptionIndex: Int? = nil
+    var ankiContent: AnkiCardContent? = nil
 }
 
 struct CommunityDeckPayload: Codable, Identifiable {
@@ -53,6 +54,7 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var authorID: String? = nil
     var likeCount: Int? = nil
     var viewerHasLiked: Bool? = nil
+    var ankiMedia: [String: [String: String]]? = nil
 
     var isRemoved: Bool { status == "deleted" }
 }
@@ -75,9 +77,14 @@ struct CommunityBlockedUser: Codable, Identifiable, Equatable {
 
 extension Deck {
     /// Provenance survives edits; content matching also catches built-in imports made before tracking existed.
-    var communitySharingRestriction: String? {
-        if sourceAnkiDeckID != nil || cards.contains(where: { $0.sourceAnkiCardID != nil || $0.cardType == .anki }) {
-            return "Anki imports stay in your personal library. Publish a deck you created."
+    var isAnkiImport: Bool {
+        sourceKind == "anki" || sourceAnkiDeckID != nil || cards.contains { $0.sourceAnkiCardID != nil || $0.cardType == .anki }
+    }
+    var communitySharingRestriction: String? { sharingRestriction(allowAnkiUploads: false) }
+
+    func sharingRestriction(allowAnkiUploads: Bool) -> String? {
+        if isAnkiImport && !allowAnkiUploads {
+            return "Uploading decks imported from Anki are not supported yet"
         }
         if sourceCommunityID != nil { return "Downloaded community decks can’t be republished. Share a deck you created." }
         if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and courses can’t be published to the community." }
@@ -93,6 +100,7 @@ extension Deck {
     }
 
     var canShareToCommunity: Bool { communitySharingRestriction == nil }
+    var canPresentCommunitySharing: Bool { sharingRestriction(allowAnkiUploads: true) == nil }
 }
 
 struct CommunityAPIError: LocalizedError {
@@ -136,6 +144,8 @@ struct CommunityAPI {
         let deckType: String
         let cards: [CommunityCardPayload]
         var origin = "personal"
+        var publisherHandle: String? = nil
+        var ankiMedia: [String: [String: String]]? = nil
     }
 
     struct AppleReauthentication: Encodable {
@@ -173,6 +183,11 @@ struct CommunityAPI {
     func saveProfilePrivacy(hideStatsPublicly: Bool, token: String) async throws -> CommunityProfile {
         struct Body: Encodable { let hideStatsPublicly: Bool }
         return try await jsonRequest("account", method: "PUT", body: Body(hideStatsPublicly: hideStatsPublicly), token: token)
+    }
+
+    func saveDeveloperOptions(allowAnkiUploads: Bool, token: String) async throws -> CommunityProfile {
+        struct Body: Encodable { let allowAnkiUploads: Bool }
+        return try await jsonRequest("account/developer", method: "PUT", body: Body(allowAnkiUploads: allowAnkiUploads), token: token)
     }
 
     func publicProfile(authorID: String, offset: Int = 0, limit: Int = 20, token: String? = nil) async throws -> CommunityPublicProfilePage {
@@ -340,6 +355,8 @@ final class CommunitySession: ObservableObject {
     var handle: String { credentials?.handle ?? "" }
     var token: String? { isSignedIn ? credentials?.token : nil }
     var profile: CommunityProfile { credentials?.profile ?? CommunityProfile(handle: handle, avatar: .init(), isComplete: false) }
+    var isDeveloper: Bool { isSignedIn && profile.isDeveloper == true }
+    var canUploadAnki: Bool { isDeveloper && profile.allowAnkiUploads == true }
     var needsProfileSetup: Bool { isSignedIn && !profile.isComplete }
     var isRestricted: Bool { profile.accountStatus == "banned" || profile.accountStatus == "suspended" }
 
@@ -451,6 +468,14 @@ final class CommunitySession: ObservableObject {
         } catch { if self.token == token { handle(error) }; throw error }
     }
 
+    func saveDeveloperOptions(allowAnkiUploads: Bool) async throws {
+        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in to change developer options.") }
+        let profile = try await api.saveDeveloperOptions(allowAnkiUploads: allowAnkiUploads, token: token)
+        guard var result = credentials, self.token == token else { throw CancellationError() }
+        result.profile = profile
+        try persist(result)
+    }
+
     func signOut() {
         SecItemDelete(keychainQuery as CFDictionary)
         credentials = nil
@@ -502,11 +527,17 @@ enum CommunityDeckTransfer {
         let contentType: String
     }
 
-    static func publish(deck: Deck, category: String, description: String, token: String,
+    static func publish(deck: Deck, category: String, description: String, token: String, publisherHandle: String? = nil,
                         api: CommunityAPI? = nil,
                         progress: @escaping (String) -> Void) async throws -> String {
-        if let reason = deck.communitySharingRestriction { throw CommunityAPIError(status: 403, message: reason) }
         let api = api ?? CommunityAPI()
+        let profile = deck.isAnkiImport || publisherHandle?.isEmpty == false ? try await api.profile(token: token) : nil
+        if let reason = deck.sharingRestriction(allowAnkiUploads: profile?.isDeveloper == true && profile?.allowAnkiUploads == true) {
+            throw CommunityAPIError(status: 403, message: reason)
+        }
+        if publisherHandle?.isEmpty == false && profile?.isDeveloper != true {
+            throw CommunityAPIError(status: 403, message: "Custom publishing names require developer access.")
+        }
         guard !deck.cards.isEmpty, deck.cards.count <= 500 else {
             throw CommunityAPIError(status: 400, message: "Publish between 1 and 500 cards per deck.")
         }
@@ -539,8 +570,35 @@ enum CommunityDeckTransfer {
             }
             return key
         }
+        var ankiMedia: [String: [String: String]] = [:]
+        var templateBytes = 0
         var cards: [CommunityCardPayload] = []
         for card in deck.cards {
+            if let content = card.ankiContent {
+                templateBytes += content.frontHTML.utf8.count + content.backHTML.utf8.count + content.css.utf8.count
+                guard templateBytes <= 1024 * 1024 else {
+                    throw CommunityAPIError(status: 413, message: "These Anki templates are too large to share. Split the deck into smaller decks.")
+                }
+            }
+            if let content = card.ankiContent, ankiMedia[content.mediaFolder] == nil {
+                guard let directory = content.mediaURL else { throw CommunityAPIError(status: 400, message: "Anki media is unavailable. Re-import the deck.") }
+                let index = AnkiCardContent.mediaIndex(in: directory)
+                var media: [String: String] = [:]
+                let names = index.isEmpty ? try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { !$0.hasPrefix(".") } : Array(index.keys)
+                for name in names {
+                    guard let url = AnkiCardContent.safeMediaURL(name: name, directory: directory, index: index),
+                          let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 20 * 1024 * 1024 else {
+                        throw CommunityAPIError(status: 400, message: "An Anki attachment is missing or exceeds 20 MB.")
+                    }
+                    guard uploads.count < 1000, uploads.reduce(0, { $0 + $1.data.count }) + size <= 100 * 1024 * 1024 else {
+                        throw CommunityAPIError(status: 413, message: "A shared deck supports up to 100 MB of media and 1,000 attachments.")
+                    }
+                    let key = "anki:\(content.mediaFolder):\(name)"
+                    uploads.append(Upload(key: key, data: try Data(contentsOf: url), contentType: "application/octet-stream"))
+                    media[name] = key
+                }
+                ankiMedia[content.mediaFolder] = media
+            }
             var fields: [String: CommunityFieldMedia] = [:]
             for (key, attachment) in card.fieldMedia {
                 fields[key] = .init(imageID: try imageKey(attachment.image), audioID: try audioKey(attachment.audio))
@@ -550,7 +608,7 @@ enum CommunityDeckTransfer {
                 matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                 sectionName: card.section?.name ?? "", promptImageID: fields["prompt"]?.imageID,
                 optionImageIDs: card.options.indices.map { fields["option:\($0)"]?.imageID }, promptAudioID: fields["prompt"]?.audioID,
-                answerImageID: fields["answer"]?.imageID, fieldMedia: fields, correctOptionIndex: card.resolvedCorrectOptionIndex))
+                answerImageID: fields["answer"]?.imageID, fieldMedia: fields, correctOptionIndex: card.resolvedCorrectOptionIndex, ankiContent: card.ankiContent))
         }
         guard uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
             throw CommunityAPIError(status: 413, message: "A shared deck can contain up to 100 MB of images and audio.")
@@ -582,8 +640,10 @@ enum CommunityDeckTransfer {
 
             }
             progress("Submitting for review…")
+            let remoteAnkiMedia = ankiMedia.mapValues { $0.compactMapValues { remoteIDs[$0] } }
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
-                colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards), deckID: id, token: token)
+                colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards, origin: deck.isAnkiImport ? "anki" : "personal",
+                publisherHandle: publisherHandle, ankiMedia: remoteAnkiMedia.isEmpty ? nil : remoteAnkiMedia), deckID: id, token: token)
             return id
         } catch {
             if existingID == nil { try? await api.remove(deckID: id, token: token) }
@@ -598,6 +658,8 @@ enum CommunityDeckTransfer {
         var images: [String: String] = [:]
         var audio: [String: String] = [:]
         var savedFiles: [URL] = []
+        var savedAnkiFolders: [URL] = []
+        var ankiFolders: [String: String] = [:]
         func imageName(_ id: String?) async throws -> String? {
             guard let id else { return nil }
             if let name = images[id] { return name }
@@ -619,6 +681,25 @@ enum CommunityDeckTransfer {
             return name
         }
         do {
+            var ankiBytes = 0
+            for (group, files) in detail.ankiMedia ?? [:] {
+                let folder = UUID().uuidString
+                let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder, isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                savedAnkiFolders.append(directory)
+                var index: [String: String] = [:]
+                for (name, id) in files {
+                    guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\\"), !name.unicodeScalars.contains(where: { $0.value < 32 }) else { throw URLError(.cannotParseResponse) }
+                    let data = try await api.media(id: id, maximumBytes: 20 * 1024 * 1024, token: token)
+                    ankiBytes += data.count
+                    guard ankiBytes <= 100 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+                    let filename = UUID().uuidString + "." + URL(fileURLWithPath: name).pathExtension
+                    try data.write(to: directory.appendingPathComponent(filename), options: .atomic)
+                    index[name] = filename
+                }
+                try JSONEncoder().encode(index).write(to: directory.appendingPathComponent(".learnalert-media.json"), options: .atomic)
+                ankiFolders[group] = folder
+            }
             var imported: [PremadeCard] = []
             for (index, card) in cards.enumerated() {
                 try Task.checkCancellation()
@@ -637,16 +718,27 @@ enum CommunityDeckTransfer {
                 fields["answer"] = fields["answer"] ?? .init(image: answer)
                 for (i, name) in options.enumerated() where !name.isEmpty && fields["option:\(i)"] == nil { fields["option:\(i)"] = .init(image: name) }
 
+                var ankiContent = card.ankiContent
+                if var content = ankiContent {
+                    if let folder = ankiFolders[content.mediaFolder] { content.mediaFolder = folder }
+                    else {
+                        let folder = UUID().uuidString
+                        let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder, isDirectory: true)
+                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                        savedAnkiFolders.append(directory); content.mediaFolder = folder
+                    }
+                    ankiContent = content
+                }
                 imported.append(PremadeCard(id: card.id, question: card.question, options: card.options,
                     correctAnswer: card.correctAnswer, hint: card.hint,
                     cardType: FlashcardType(rawValue: card.cardType) ?? .tapReveal,
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
-                    promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, fieldMedia: fields, correctOptionIndex: card.correctOptionIndex, sectionName: card.sectionName))
+                    promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, fieldMedia: fields, correctOptionIndex: card.correctOptionIndex, sectionName: card.sectionName, ankiContent: ankiContent))
             }
             return PremadeDeck(id: detail.id, name: detail.name, category: detail.categoryTag, subcategory: detail.categoryTag,
                 description: detail.description, colorHex: detail.colorHex, deckType: detail.deckType, cards: imported, communitySourceID: detail.id)
         } catch {
-            for file in savedFiles { try? FileManager.default.removeItem(at: file) }
+            for file in savedFiles + savedAnkiFolders { try? FileManager.default.removeItem(at: file) }
             throw error
         }
     }

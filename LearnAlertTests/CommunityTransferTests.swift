@@ -165,15 +165,18 @@ struct CommunityTransferTests {
             return card
         }
         let draftID = UUID().uuidString
+        let frontBytes = try #require(CardImageStore.loadImage(named: frontName)?.jpegData(compressionQuality: 0.82))
+        let backBytes = try #require(CardImageStore.loadImage(named: backName)?.jpegData(compressionQuality: 0.82))
         let imageIDs = [UUID().uuidString, UUID().uuidString]
         var uploads = 0
         CommunityTestProtocol.response = { request in
             if request.url!.path.hasSuffix("/drafts") { return (201, try json(["id": draftID])) }
             if request.url!.path.hasSuffix("/media") {
                 #expect(request.value(forHTTPHeaderField: "Content-Type") == "image/jpeg")
-                let index = uploads
+                let bytes = requestBody(request)
+                #expect(bytes == frontBytes || bytes == backBytes)
                 uploads += 1
-                return (201, try json(["id": imageIDs[min(index, imageIDs.count - 1)]]))
+                return (201, try json(["id": imageIDs[bytes == frontBytes ? 0 : 1]]))
             }
             let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any])
             let cards = try #require(body["cards"] as? [[String: Any]])
@@ -752,6 +755,73 @@ struct CommunityTransferTests {
         // A restored account gets its current status from the owner-only profile endpoint.
         await session.refreshProfile()
         #expect(session.isSignedIn && !session.isRestricted)
+    }
+
+    @Test("Developer Anki publishing preserves templates and uploads binary media")
+    func developerAnkiRoundTrip() async throws {
+        let folder = UUID().uuidString
+        let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bytes = Data([1, 2, 3, 4])
+        try bytes.write(to: directory.appendingPathComponent("tone.wav"))
+        defer { try? FileManager.default.removeItem(at: directory); CommunityTestProtocol.response = nil }
+        let content = AnkiCardContent(frontHTML: "<b>Front</b>", backHTML: "<b>Back</b>", css: ".card { color:blue }", mediaFolder: folder, templateOrdinal: 0, noteType: "Basic", tags: ["Korean"])
+        let deck = Deck(name: "Developer Anki", deckType: "Anki")
+        deck.sourceAnkiDeckID = "42"
+        let card = Flashcard(question: "Front", correctAnswer: "Back", cardType: .anki)
+        card.ankiContent = content; deck.cards = [card]
+        let id = UUID().uuidString, mediaID = UUID().uuidString
+        var uploaded = false
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.hasSuffix("/account") {
+                return (200, try json(["handle":"@developer", "avatar":["hair":0,"eyes":0,"mouth":0], "isComplete":true, "isDeveloper":true, "allowAnkiUploads":true]))
+            }
+            if request.url!.path.hasSuffix("/drafts") { return (201, try json(["id":id])) }
+            if request.url!.path.hasSuffix("/media") {
+                #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream")
+                #expect(requestBody(request) == bytes); uploaded = true
+                return (201, try json(["id":mediaID]))
+            }
+            let body = try #require(JSONSerialization.jsonObject(with: requestBody(request)) as? [String:Any])
+            #expect(body["publisherHandle"] as? String == "Fun author")
+            #expect(body["origin"] as? String == "anki")
+            let cards = try #require(body["cards"] as? [[String:Any]])
+            #expect((cards[0]["ankiContent"] as? [String:Any])?["frontHTML"] as? String == content.frontHTML)
+            #expect((body["ankiMedia"] as? [String:[String:String]])?[folder]?["tone.wav"] == mediaID)
+            return (202, try json(["id":id]))
+        }
+        #expect(try await CommunityDeckTransfer.publish(deck: deck, category: "Languages", description: "", token: "test", publisherHandle: "Fun author", api: api()) { _ in } == id)
+        #expect(uploaded)
+        let summary = CommunityDeckPayload(id: id, name: deck.name, description: "", authorHandle: "Fun author", categoryTag: "Languages", colorHex: "#123456", deckType: "Anki", cardCount: 1, downloadCount: 0, publishedAt: nil)
+        var detail = summary
+        detail.cards = [CommunityCardPayload(id: card.id.uuidString, question: "Front", correctAnswer: "Back", options: [], hint: "", cardType: "anki", matchingLeftItems: [], matchingRightItems: [], sectionName: "", optionImageIDs: [], ankiContent: content)]
+        detail.ankiMedia = [folder:["tone.wav":mediaID]]
+        CommunityTestProtocol.response = { request in
+            if request.url!.path.contains("/media/") { return (200, bytes) }
+            return (200, try json(["deck":JSONSerialization.jsonObject(with: JSONEncoder().encode(detail))]))
+        }
+        let downloaded = try await CommunityDeckTransfer.download(summary, api: api()) { _ in }
+        let restored = try #require(downloaded.cards.first?.ankiContent)
+        defer { if let url = restored.mediaURL { try? FileManager.default.removeItem(at: url) } }
+        #expect(restored.frontHTML == content.frontHTML && restored.backHTML == content.backHTML && restored.css == content.css)
+        #expect(restored.mediaFolder != folder)
+        let restoredDirectory = try #require(restored.mediaURL)
+        let file = try #require(AnkiCardContent.safeMediaURL(name: "tone.wav", directory: restoredDirectory))
+        #expect(try Data(contentsOf: file) == bytes)
+    }
+
+    @Test("Acknowledging the notification reminder persists across manager instances")
+    func notificationReminderDismissal() {
+        let key = "hasDismissedNotificationOpeningTip"
+        let original = UserDefaults.standard.object(forKey: key)
+        defer { if let original { UserDefaults.standard.set(original, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
+        UserDefaults.standard.removeObject(forKey: key)
+        let manager = NotificationManager(registerForNotifications: false)
+        #expect(manager.shouldOfferNotificationOpeningTip)
+        manager.shouldShowNotificationOpeningTip = true
+        manager.dismissNotificationOpeningTip()
+        #expect(!manager.shouldShowNotificationOpeningTip)
+        #expect(!NotificationManager(registerForNotifications: false).shouldOfferNotificationOpeningTip)
     }
 
 }
