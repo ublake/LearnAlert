@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var showingCreationActions = false
+    @State private var usesDuoSystemNavigation = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.layoutDirection) private var layoutDirection
@@ -33,12 +34,24 @@ struct ContentView: View {
     
     let enterForeground = NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
     
-    private func navigationBar(floating: Bool, vertical: Bool = false) -> some View {
+    private func navigationBar(floating: Bool) -> some View {
         BottomNavigationBar(selectedTab: $selectedTab, showingCreationActions: $showingCreationActions,
-            floatingDock: floating, verticalDock: vertical,
+            floatingDock: floating,
             createDeck: { showingCreateDeck = true },
             importWithAI: { showingAIComposer = true },
             importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true })
+    }
+
+    @ViewBuilder private func systemNavigation<Content: View>(_ content: Content, isDuoScene: Bool) -> some View {
+        if #available(iOS 27.1, *) {
+            content.modifier(DuoSystemNavigationModifier(selectedTab: $selectedTab,
+                isEnabled: $usesDuoSystemNavigation, isDuoScene: isDuoScene,
+                createDeck: { showingCreateDeck = true },
+                importWithAI: { showingAIComposer = true },
+                importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true }))
+        } else {
+            content
+        }
     }
 
     private func workspacePages(_ workspace: LibraryWorkspaceGeometry) -> some View {
@@ -75,36 +88,24 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                let outer = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
+                let workspace = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
                     direction: layoutDirection)
-                let sideRegion = outer.sideDockRegion
-                ZStack {
+                systemNavigation(ZStack {
                     LearnAlertStyle.courseCanvas.ignoresSafeArea()
-                    GeometryReader { pageProxy in
-                        let workspace = LibraryWorkspaceGeometry.resolve(proxy: pageProxy,
-                            regularWidth: horizontalSizeClass == .regular, direction: layoutDirection)
-                        ZStack {
-                            workspacePages(workspace)
-                            if showingCreationActions { creationBackdrop }
-                            if sideRegion == nil {
-                                VStack {
-                                    Spacer()
-                                    navigationBar(floating: workspace.usesFloatingDock)
-                                }
-                                .ignoresSafeArea(.keyboard, edges: .bottom)
-                                .frame(width: workspace.dock.width, height: workspace.dock.height)
-                                .position(x: workspace.dock.midX, y: workspace.dock.midY)
-                            }
+                    workspacePages(workspace)
+                    if showingCreationActions && !usesDuoSystemNavigation { creationBackdrop }
+                    if !usesDuoSystemNavigation {
+                        VStack {
+                            Spacer()
+                            navigationBar(floating: workspace.usesFloatingDock)
                         }
+                        .ignoresSafeArea(.keyboard, edges: .bottom)
+                        .frame(width: workspace.dock.width, height: workspace.dock.height)
+                        .position(x: workspace.dock.midX, y: workspace.dock.midY)
                     }
-                    // Reserve the physical right edge, including in right-to-left layouts.
-                    .padding(layoutDirection == .rightToLeft ? .leading : .trailing, sideRegion == nil ? 0 : 84)
-                    if let region = sideRegion {
-                        // The 292-point menu/pill container ends eight points inside the right edge.
-                        navigationBar(floating: true, vertical: true)
-                            .ignoresSafeArea(.keyboard, edges: .bottom)
-                            .position(x: region.maxX - 154, y: region.midY)
-                    }
+                }, isDuoScene: workspace.isDuoScene)
+                .onChange(of: usesDuoSystemNavigation) { _, enabled in
+                    if enabled { showingCreationActions = false }
                 }
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }

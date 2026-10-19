@@ -9,7 +9,7 @@ nonisolated struct LibraryWorkspaceGeometry: Equatable {
     let discover: CGRect
     let dock: CGRect
     var usesFloatingDock = false
-    var sideDockRegion: CGRect?
+    var isDuoScene = false
 
     static func resolve(size: CGSize, regularWidth: Bool, supportsDualPane: Bool = false,
                         rightToLeft: Bool = false, divisions: [CGRect] = []) -> Self {
@@ -38,6 +38,13 @@ nonisolated struct LibraryWorkspaceGeometry: Equatable {
                 }
             }
         }
+        if supportsDualPane, foldedPortrait, let fold = horizontal {
+            let lower = CGRect(x: 0, y: fold.maxY, width: bounds.width, height: bounds.height - fold.maxY)
+            let usable = NotificationViewportGeometry.usableRect(in: lower, avoiding: clipped)
+            if usable.height >= 240 {
+                return .init(presentation: .single, home: usable, discover: usable, dock: usable)
+            }
+        }
         // A fold may leave too little room for two usable panes. Keep both tabs available.
         let usable = NotificationViewportGeometry.usableRect(in: bounds, avoiding: clipped)
         return .init(presentation: .single, home: usable, discover: usable, dock: usable)
@@ -49,15 +56,12 @@ extension LibraryWorkspaceGeometry {
                                    direction: LayoutDirection) -> Self {
         var divisions: [CGRect] = []
         var hasFoldRegion = false
-        var occlusions: [CGRect] = []
         if #available(iOS 27.1, *) {
             // Use physical frames once; semantic pane ordering is handled by the layout.
             let regions = proxy.reservedRegions(kind: .division, options: .includeInactive,
                 layoutDirectionBehavior: .fixed)
             hasFoldRegion = !regions.isEmpty
             divisions = regions.filter(\.isActive).map(\.frame)
-            occlusions = proxy.reservedRegions(kind: .occlusion, options: .includeInactive,
-                layoutDirectionBehavior: .fixed).filter(\.isActive).map(\.frame)
         }
         // Device family gates this product feature only; local geometry still controls layout.
         let supportsDualPane = UIDevice.current.userInterfaceIdiom == .phone && hasFoldRegion
@@ -66,8 +70,7 @@ extension LibraryWorkspaceGeometry {
         geometry.usesFloatingDock = NavigationDockPresentation.usesFloatingDock(
             sceneWidth: proxy.size.width, dockWidth: geometry.dock.width,
             isPad: UIDevice.current.userInterfaceIdiom == .pad, isDuo: supportsDualPane)
-        geometry.sideDockRegion = NavigationDockPresentation.sideRegion(
-            size: proxy.size, isDuo: supportsDualPane, avoiding: divisions + occlusions)
+        geometry.isDuoScene = supportsDualPane
         return geometry
     }
 }
@@ -155,14 +158,11 @@ nonisolated enum HomeLibraryGrid {
 }
 
 nonisolated enum NavigationDockPresentation {
-    static func usesFloatingDock(sceneWidth: CGFloat, dockWidth: CGFloat, isPad: Bool, isDuo: Bool) -> Bool {
-        dockWidth >= 420 && (isPad || (isDuo && sceneWidth >= 640))
+    static func usesSystemNavigation(isPhone: Bool, hasFoldRegion: Bool, supportsVerticalBar: Bool) -> Bool {
+        isPhone && (hasFoldRegion || supportsVerticalBar)
     }
 
-    static func sideRegion(size: CGSize, isDuo: Bool, avoiding regions: [CGRect]) -> CGRect? {
-        guard isDuo, size.width >= 640 else { return nil }
-        let edge = CGRect(x: size.width - 84, y: 0, width: 84, height: size.height)
-        let usable = NotificationViewportGeometry.usableRect(in: edge, avoiding: regions)
-        return usable.width >= 68 && usable.height >= 340 ? usable : nil
+    static func usesFloatingDock(sceneWidth: CGFloat, dockWidth: CGFloat, isPad: Bool, isDuo: Bool) -> Bool {
+        dockWidth >= 420 && (isPad || (isDuo && sceneWidth >= 640))
     }
 }
