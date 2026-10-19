@@ -14,9 +14,11 @@ On iPad, Home fills its page. The library uses a single scroll view with a row-m
 
 Roomy iPad scenes keep the compact bottom capsule with native Liquid Glass, animated blue selection, multicolor icons and centered creation button. Ordinary iPhones keep the edge-to-edge Islands bar. The floating treatment requires at least 420 points of usable dock width; narrow iPad windows retain the bar. These custom dock surfaces retain their Reduce Transparency and Reduce Motion behavior.
 
-Duo instead uses navigation-container-owned toolbar items. Home, Discover, Customize and Settings form a native group around the creation menu, with filled blue symbols for the selected destination. The group opts into the vertical axis with axisBehavior(.verticalPreferred); Apple hosts it in the shared system strip beside the status icons on supported poses, and chooses horizontal placement on the inner portrait display. Spacing, glass, available width and overflow belong to the system. The previous content-owned right rail and its 84-point reservation have been removed.
+Duo instead uses navigation-container-owned toolbar items. Home, Discover, Customize and Settings form one native group with filled blue symbols for the selected destination. The + creation menu is a separate toolbar item, divided from navigation using the system's fixed ToolbarSpacer so it receives its own circular glass background. Both opt into the vertical axis with axisBehavior(.verticalPreferred); Apple hosts them in the shared system strip beside the status icons on supported poses, and chooses horizontal placement on the inner portrait display. Spacing, glass, available width and overflow belong to the system. The previous content-owned right rail and its 84-point reservation have been removed.
 
 Duo capability is recognized only for phone scenes exposing a fold division or a supported vertical toolbar edge, and retained across display transitions. The edge is a capability signal, not a claim that a vertical bar is currently visible. Root selection, page trees, sheets and notification handoffs retain their existing owners. The system navigation uses the same actions and page selection; no duplicate TabView page trees are introduced. Older systems keep the custom navigation path.
+
+In Duo's vertical-bar context, the root geometry reader extends through the bottom container safe area, allowing the clipped Home and Discover panes to reach the display edge. Horizontal system-bar contexts retain bottom safe-area protection. Keyboard safe areas remain respected. A scoped environment value replaces the old custom-bar clearance in Home, Discover, Customize and Settings with a 24-point end margin only when Duo uses system navigation; iPad and ordinary iPhone spacing stays unchanged.
 
 ## Notification behavior retained
 
@@ -24,6 +26,7 @@ Native-deck and course notification content request bounded heights using the ac
 
 ## Validation on 19 October 2026
 
+- Edge-fill/separate-action refinement: signed Debug app and extension build passed with Xcode 27.1. Installed on Duo iOS 27.1; simulator checks showed Home and Discover content reaching the lower rounded display edge, four navigation icons sharing one pill, and the separate circular + button below. Its menu still exposed Create Deck, Import with AI and Import Anki. This visual refinement used build/runtime checks; the ten-test result below belongs to the preceding native-navigation change.
 - Native Duo navigation: signed Debug app and extension test-build passed using Xcode 27.1 (27A9269). Ten AdaptiveWorkspaceTests passed with zero failures, including Duo-only capability gating and a shortened tabletop content region. Result: /tmp/LearnAlert-DuoBuild/Logs/Test/Test-LearnAlert-2026.10.19_12-56-43--0400.xcresult.
 - Native Duo simulator checks: landscape showed the navigation group inside the actual system strip beneath the status icons; selecting Discover expanded its page and updated the filled blue icon. The + menu exposed all three creation/import actions and Create Deck opened its existing sheet, dismissed without creating data. A fresh outer-display launch adopted native navigation and Settings worked. Returning to half-folded portrait kept Home alone below the fold with the native horizontal controls at the bottom. Physical hardware, system multitasking, overflow under severe space constraints and VoiceOver remain unverified.
 - The custom right-rail prototype below is superseded by native navigation. iPad and ordinary iPhone retain the prior custom navigation paths; this refinement's runtime checks focused on Duo.
@@ -45,4 +48,5 @@ Native-deck and course notification content request bounded heights using the ac
 - https://developer.apple.com/documentation/usernotificationsui/customizing-the-appearance-of-notifications
 - https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views
 - https://developer.apple.com/videos/play/tech-talks/111462/
+- https://developer.apple.com/documentation/swiftui/landmarks-refining-the-system-provided-glass-effect-in-toolbars
 - /Users/blake/.codex/skills/iphone-duo/references/iPhone-Duo-Developer-Guide.md

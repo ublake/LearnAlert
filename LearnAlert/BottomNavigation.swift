@@ -1,6 +1,17 @@
 import SwiftUI
 import UIKit
 
+private struct NativeStudyNavigationKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var usesNativeStudyNavigation: Bool {
+        get { self[NativeStudyNavigationKey.self] }
+        set { self[NativeStudyNavigationKey.self] = newValue }
+    }
+}
+
 struct BottomNavigationBar: View {
     @Binding var selectedTab: Int
     @Binding var showingCreationActions: Bool
@@ -393,11 +404,21 @@ struct DuoSystemNavigationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .ignoresSafeArea(.container, edges: (isEnabled || eligible) && verticalEdge != nil ? .bottom : [])
             .toolbar {
                 if isEnabled || eligible {
                     ToolbarItemGroup(placement: .bottomBar) {
                         destination(0, title: "Home", symbol: "rectangle.stack", selectedSymbol: "rectangle.stack.fill")
                         destination(1, title: "Discover", symbol: "books.vertical", selectedSymbol: "books.vertical.fill")
+                        destination(2, title: "Customize", symbol: "slider.horizontal.3", selectedSymbol: "slider.horizontal.3")
+                        destination(3, title: "Settings", symbol: "gearshape", selectedSymbol: "gearshape.fill")
+                    }
+                    .axisBehavior(.verticalPreferred)
+                    .visibilityPriority(.high)
+
+                    ToolbarSpacer(.fixed, placement: .bottomBar)
+
+                    ToolbarItem(placement: .bottomBar) {
                         Menu("New deck options", systemImage: "plus") {
                             Button("Create Deck", systemImage: "rectangle.stack.badge.plus", action: createDeck)
                             Button("Import with AI", systemImage: "sparkles", action: importWithAI)
@@ -406,8 +427,6 @@ struct DuoSystemNavigationModifier: ViewModifier {
                         .tint(LearnAlertStyle.appAccentForeground)
                         .disabled(homeTutorialStep > 0)
                         .accessibilityHint("Create a deck, import with AI, or import an Anki file")
-                        destination(2, title: "Customize", symbol: "slider.horizontal.3", selectedSymbol: "slider.horizontal.3")
-                        destination(3, title: "Settings", symbol: "gearshape", selectedSymbol: "gearshape.fill")
                     }
                     .axisBehavior(.verticalPreferred)
                     .visibilityPriority(.high)

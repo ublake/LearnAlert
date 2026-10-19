@@ -87,10 +87,10 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            GeometryReader { proxy in
+            systemNavigation(GeometryReader { proxy in
                 let workspace = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
                     direction: layoutDirection)
-                systemNavigation(ZStack {
+                ZStack {
                     LearnAlertStyle.courseCanvas.ignoresSafeArea()
                     workspacePages(workspace)
                     if showingCreationActions && !usesDuoSystemNavigation { creationBackdrop }
@@ -103,11 +103,15 @@ struct ContentView: View {
                         .frame(width: workspace.dock.width, height: workspace.dock.height)
                         .position(x: workspace.dock.midX, y: workspace.dock.midY)
                     }
-                }, isDuoScene: workspace.isDuoScene)
+                }
+                .onChange(of: workspace.isDuoScene, initial: true) { _, isDuo in
+                    if isDuo { usesDuoSystemNavigation = true }
+                }
                 .onChange(of: usesDuoSystemNavigation) { _, enabled in
                     if enabled { showingCreationActions = false }
                 }
-            }
+            }, isDuoScene: usesDuoSystemNavigation)
+            .environment(\.usesNativeStudyNavigation, usesDuoSystemNavigation)
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }
             .sheet(isPresented: $showingAnkiImporter) {
@@ -433,6 +437,7 @@ struct HomeLibraryView: View {
     @ObservedObject private var engine = StudyEngine.shared
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
 
     @State private var draggedDeck: Deck?
     @State private var isSearchExpanded = false
@@ -959,7 +964,7 @@ struct HomeLibraryView: View {
                     librarySection(columnCount: HomeLibraryGrid.columnCount(width: proxy.size.width,
                         isPad: UIDevice.current.userInterfaceIdiom == .pad, accessibilitySize: dynamicTypeSize.isAccessibilitySize))
 
-                    Spacer().frame(height: 210)
+                    Spacer().frame(height: usesNativeStudyNavigation ? 24 : 210)
                 }
                 .padding(.top, 22)
             }
@@ -3129,6 +3134,7 @@ struct AppSettingsView: View {
     @State private var permissionStatus: UNAuthorizationStatus = .notDetermined
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
+    @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
     @AppStorage("alertSound") private var alertSound = "alert3.wav"
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("deckCreaturesHaveFaces") private var deckCreaturesHaveFaces = false
@@ -3154,7 +3160,7 @@ struct AppSettingsView: View {
 
                 SettingsSupportGroup()
 
-                Spacer().frame(height: 120)
+                Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }
             .padding(.top, 22)
         }

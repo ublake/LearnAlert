@@ -257,6 +257,7 @@ enum PremadeDeckCatalog {
 // MARK: - Main Discover Hub View (2-Column Category Grid)
 
 struct PremadeDecksView: View {
+    @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -327,7 +328,7 @@ struct PremadeDecksView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, 110)
+            .padding(.bottom, usesNativeStudyNavigation ? 24 : 110)
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }

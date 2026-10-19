@@ -2,6 +2,7 @@ import SwiftUI
 import UserNotifications
 
 struct NotificationCustomizeView: View {
+    @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
     @AppStorage("notificationCustomTheme", store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var storedThemeRaw: String = NotificationTheme.defaultTheme.rawValue
 
@@ -91,7 +92,7 @@ struct NotificationCustomizeView: View {
                     Button("How to open the alert", systemImage: "hand.draw") { showingTestGuide = true }
                         .font(.footnote).frame(minHeight: 44)
                 }
-            }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 112)
+            }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, usesNativeStudyNavigation ? 24 : 112)
                 .frame(maxWidth: 600).frame(maxWidth: .infinity)
         }.background(StudyStudioStyle.canvas.ignoresSafeArea())
             .tint(StudyStudioStyle.blue)
