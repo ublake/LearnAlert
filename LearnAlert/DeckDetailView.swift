@@ -6,6 +6,7 @@ struct DeckDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
+    @AppStorage("tutorialDeckId") private var tutorialDeckId = ""
 
     @State private var showingScheduleSettings = false
     @State private var showingCreateCard = false
@@ -66,12 +67,13 @@ struct DeckDetailView: View {
             VStack(spacing: 0) {
                 if homeTutorialStep == 2 {
                     HStack(spacing: 6) {
-                        Image(systemName: "hand.tap.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("Step 2 of 3: Tap ‹ Back above to schedule alerts")
-                            .font(.custom("Poppins-SemiBold", size: 11))
                         Image(systemName: "arrow.up.left")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
+                            .accessibilityHidden(true)
+                        Text("Step 2 of 3: Tap Back above to schedule alerts")
+                            .font(.custom("Poppins-SemiBold", size: 11))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -186,6 +188,7 @@ struct DeckDetailView: View {
                                         if !collapsedFolderIDs.contains(section.id) {
                                             ForEach(sectionCards) { card in
                                                 cardRow(card)
+                                                    .deleteDisabled(homeTutorialStep > 0)
                                             }
                                             .onDelete { offsets in
                                                 delete(offsets, from: sectionCards)
@@ -204,6 +207,7 @@ struct DeckDetailView: View {
                                 Section {
                                     ForEach(uncategorized) { card in
                                         cardRow(card)
+                                            .deleteDisabled(homeTutorialStep > 0)
                                     }
                                     .onDelete { offsets in
                                         delete(offsets, from: uncategorized)
@@ -217,6 +221,7 @@ struct DeckDetailView: View {
                         } else {
                             ForEach(filteredCards) { card in
                                 cardRow(card)
+                                    .deleteDisabled(homeTutorialStep > 0)
                             }
                             .onDelete { offsets in
                                 delete(offsets, from: filteredCards)
@@ -228,30 +233,20 @@ struct DeckDetailView: View {
                     .contentMargins(.bottom, 20, for: .scrollContent)
                 }
             }
+            // Keep the native Back button active while the deck remains a passive preview.
+            .disabled(homeTutorialStep > 0)
+            .allowsHitTesting(homeTutorialStep == 0)
         }
         .navigationTitle(deck.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { withAnimation(.snappy) { isSearching.toggle(); if !isSearching { searchText = "" } } } label: {
-                    Image(systemName: "magnifyingglass")
-                }.accessibilityLabel("Search cards")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if homeTutorialStep == 2 {
-                    Button {
-                        withAnimation(.snappy) {
-                            homeTutorialStep = 0
-                        }
-                    } label: {
-                        Text("Skip Tour")
-                            .font(.custom("Poppins-Medium", size: 14, relativeTo: .body))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 4)
-                    }
-                    .buttonStyle(.plain)
-                } else {
+            if homeTutorialStep == 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { withAnimation(.snappy) { isSearching.toggle(); if !isSearching { searchText = "" } } } label: {
+                        Image(systemName: "magnifyingglass")
+                    }.accessibilityLabel("Search cards")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button {
                             showingCreateCard = true
@@ -295,6 +290,12 @@ struct DeckDetailView: View {
                             .foregroundStyle(LearnAlertStyle.indigo)
                     }
                 }
+            }
+        }
+        .onAppear {
+            // Accessibility activation can open a NavigationLink without its tap gesture.
+            if homeTutorialStep == 1 && tutorialDeckId == deck.id.uuidString {
+                homeTutorialStep = 2
             }
         }
         .onDisappear {

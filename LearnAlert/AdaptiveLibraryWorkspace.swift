@@ -83,6 +83,7 @@ struct AdaptiveLibraryWorkspace: View {
     @Binding var showingCreateDeck: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var direction
+    @AppStorage("homeTutorialStep") private var homeTutorialStep = 0
     private var expanded: Bool { geometry.presentation != .single && selectedTab == 1 }
 
     var body: some View {
@@ -95,8 +96,9 @@ struct AdaptiveLibraryWorkspace: View {
             PremadeDecksView()
                 .clipped()
                 .opacity(geometry.presentation != .single || selectedTab == 1 ? 1 : 0)
-                .allowsHitTesting(geometry.presentation != .single || selectedTab == 1)
-                .accessibilityHidden(geometry.presentation == .single && selectedTab != 1)
+                .disabled(homeTutorialStep > 0)
+                .allowsHitTesting(homeTutorialStep == 0 && (geometry.presentation != .single || selectedTab == 1))
+                .accessibilityHidden(homeTutorialStep > 0 || (geometry.presentation == .single && selectedTab != 1))
         }
         .overlay {
             if geometry.presentation == .columns {

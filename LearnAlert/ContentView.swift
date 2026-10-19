@@ -86,6 +86,26 @@ struct ContentView: View {
     }
 
     var body: some View {
+        Group {
+            if hasCompletedOnboarding {
+                mainContent
+            } else {
+                WelcomeOnboardingView {
+                    hasCompletedOnboarding = true
+                }
+            }
+        }
+        // One appearance owner lets System Default clear the override for both screens.
+        .preferredColorScheme(preferredColorScheme)
+        .onChange(of: appearanceMode) { _, newMode in
+            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newMode, forKey: "appearanceMode")
+        }
+        .onAppear {
+            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(appearanceMode, forKey: "appearanceMode")
+        }
+    }
+
+    private var mainContent: some View {
         NavigationStack {
             systemNavigation(GeometryReader { proxy in
                 let workspace = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
@@ -124,14 +144,6 @@ struct ContentView: View {
             }
             .sheet(isPresented: $notificationManager.shouldShowCustomizationTestGuide) {
                 NotificationTestGuideView()
-            }
-            .fullScreenCover(isPresented: Binding(
-                get: { !hasCompletedOnboarding },
-                set: { if $0 { hasCompletedOnboarding = false } }
-            )) {
-                WelcomeOnboardingView {
-                    hasCompletedOnboarding = true
-                }
             }
             .onAppear {
                 notificationManager.consumePendingStudyHandoff()
@@ -185,13 +197,6 @@ struct ContentView: View {
         }
         .animation(.snappy, value: notificationManager.shouldShowNotificationOpeningTip)
         .tint(LearnAlertStyle.appAccentForeground)
-        .preferredColorScheme(preferredColorScheme)
-        .onChange(of: appearanceMode) { _, newMode in
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newMode, forKey: "appearanceMode")
-        }
-        .onAppear {
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(appearanceMode, forKey: "appearanceMode")
-        }
     }
 }
 
@@ -658,6 +663,7 @@ struct HomeLibraryView: View {
         .padding(.horizontal, 20)
         .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
         .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
+        .disabled(homeTutorialStep != 0 && homeTutorialStep != 3)
         .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
     }
 
@@ -723,7 +729,7 @@ struct HomeLibraryView: View {
                 .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
                 .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
 
-                if pinnedItems.count > 1 {
+                if pinnedItems.count > 1 && homeTutorialStep == 0 {
                     Button {
                         showingPinnedReorderSheet = true
                     } label: {
@@ -749,11 +755,14 @@ struct HomeLibraryView: View {
                 .padding(.horizontal, 20)
                 .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
                 .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
-                .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
+                .disabled(homeTutorialStep > 0)
+                .allowsHitTesting(homeTutorialStep == 0)
             } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: columnCount),
                           alignment: .leading, spacing: 12) {
                     pinnedLibraryCards
+                        .disabled(homeTutorialStep > 0)
+                        .allowsHitTesting(homeTutorialStep == 0)
 
                     Group {
                         // Unpinned Courses
@@ -779,6 +788,8 @@ struct HomeLibraryView: View {
                                     coursePendingUnenroll = course
                                 }
                             )
+                            .disabled(homeTutorialStep > 0)
+                            .allowsHitTesting(homeTutorialStep == 0)
                         }
 
                         // Unpinned Decks
@@ -805,6 +816,7 @@ struct HomeLibraryView: View {
                             )
                             .opacity(isOtherDeckInStep1 ? 0.18 : 1.0)
                             .blur(radius: isOtherDeckInStep1 ? 2.0 : 0)
+                            .disabled(homeTutorialStep > 0 && !isHighlightedInTour)
                             .allowsHitTesting(homeTutorialStep == 0 || isHighlightedInTour)
                         }
                     }

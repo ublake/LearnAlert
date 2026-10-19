@@ -108,14 +108,6 @@ struct WelcomeOnboardingView: View {
 
     let completion: () -> Void
 
-    private var preferredColorScheme: ColorScheme? {
-        switch appearanceMode {
-        case "light": .light
-        case "dark": .dark
-        default: nil
-        }
-    }
-
     var body: some View {
         ZStack(alignment: .top) {
             LearnAlertStyle.courseCanvas
@@ -158,7 +150,6 @@ struct WelcomeOnboardingView: View {
                 ))
             }
         }
-        .preferredColorScheme(preferredColorScheme)
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appearanceMode)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: currentStep)
     }
