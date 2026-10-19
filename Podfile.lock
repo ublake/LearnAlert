@@ -1,3 +1,29 @@
-PODFILE CHECKSUM: 0216578299837be52baad8ecf06fe92feb5400d6
+PODS:
+  - AnkiArchive (0.1.0):
+    - CZstd (= 1.5.7)
+    - ZIPFoundation (= 0.9.20)
+  - CZstd (1.5.7)
+  - ZIPFoundation (0.9.20)
+
+DEPENDENCIES:
+  - AnkiArchive (from `Packages/AnkiArchive`)
+  - CZstd (from `Packages/AnkiArchive`)
+
+SPEC REPOS:
+  trunk:
+    - ZIPFoundation
+
+EXTERNAL SOURCES:
+  AnkiArchive:
+    :path: Packages/AnkiArchive
+  CZstd:
+    :path: Packages/AnkiArchive
+
+SPEC CHECKSUMS:
+  AnkiArchive: 8208aff26ffd3451768647dffb1a331e89df4c93
+  CZstd: 498c20a04b1fc2fc1c36492ebcd7d6f055423fe5
+  ZIPFoundation: dfd3d681c4053ff7e2f7350bc4e53b5dba3f5351
+
+PODFILE CHECKSUM: f6566d0a3556217ede6af7a3d4a0d37b42620e0a
 
 COCOAPODS: 1.17.0

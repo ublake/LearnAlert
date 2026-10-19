@@ -3,6 +3,8 @@ platform :ios, '26.2'
 
 target 'LearnAlert' do
   use_frameworks!
+  pod 'AnkiArchive', :path => 'Packages/AnkiArchive'
+  pod 'CZstd', :path => 'Packages/AnkiArchive'
   pod 'TikTokBusinessSDK', '1.7.2' if tiktok_enabled
   target 'LearnAlertTests' do
     inherit! :search_paths
@@ -26,6 +28,7 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |configuration|
       configuration.build_settings['ENABLE_ENHANCED_SECURITY'] = 'YES'
+      configuration.build_settings['ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE'] = 'YES'
       deployment_target = configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
       if deployment_target && Gem::Version.new(deployment_target) < Gem::Version.new('15.0')
         configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'

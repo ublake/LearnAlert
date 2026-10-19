@@ -14,7 +14,6 @@
 		57FF6B1FC43F82619BEBF39B /* Pods_LearnAlert.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */; };
 		7D62B53640D93AFA5F77B9ED /* Pods_LearnAlertTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */; };
 		C3C2972945E15562A609E5B0 /* Pods_LearnAlertExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */; };
-		A17A00000000000000000001 /* AnkiArchive in Frameworks */ = {isa = PBXBuildFile; productRef = A17A00000000000000000002 /* AnkiArchive */; };
 		A17A00000000000000000004 /* AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* AnkiWebAssets */; };
 		A17A00000000000000000005 /* AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* AnkiWebAssets */; };
 /* End PBXBuildFile section */
@@ -198,14 +197,6 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		A17A00000000000000000003 /* AnkiArchive */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/AnkiArchive; };
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		A17A00000000000000000002 /* AnkiArchive */ = {isa = XCSwiftPackageProductDependency; package = A17A00000000000000000003 /* AnkiArchive */; productName = AnkiArchive; };
-/* End XCSwiftPackageProductDependency section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		250C4A9530551C7F00A86148 /* LearnAlertTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -255,7 +246,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				57FF6B1FC43F82619BEBF39B /* Pods_LearnAlert.framework in Frameworks */,
-				A17A00000000000000000001 /* AnkiArchive in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -385,6 +375,7 @@
 				25FF1AEE2F477005006D435B /* Frameworks */,
 				25FF1AEF2F477005006D435B /* Resources */,
 				254C85272F47BFB00026450E /* Embed Foundation Extensions */,
+				011ADD3B14ADBC1A4C83FF69 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -395,7 +386,6 @@
 			fileSystemSynchronizedGroups = (
 				25FF1AF32F477005006D435B /* LearnAlert */,
 			);
-			packageProductDependencies = (A17A00000000000000000002 /* AnkiArchive */,);
 			name = LearnAlert;
 			productName = LearnAlert;
 			productReference = 25AC703F3076C7A700B460DB /* LearnAlert.app */;
@@ -441,7 +431,6 @@
 					ProjectRef = 38652F26561A9FDA94B15C02 /* Pods.xcodeproj */;
 				},
 			);
-			packageReferences = (A17A00000000000000000003 /* AnkiArchive */,);
 			projectRoot = "";
 			targets = (
 				25FF1AF02F477005006D435B /* LearnAlert */,
@@ -479,6 +468,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		011ADD3B14ADBC1A4C83FF69 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-LearnAlert/Pods-LearnAlert-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-LearnAlert/Pods-LearnAlert-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-LearnAlert/Pods-LearnAlert-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		1A758E0289EC5B06ACA9ECB2 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
