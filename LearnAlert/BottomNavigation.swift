@@ -3,6 +3,7 @@ import SwiftUI
 struct BottomNavigationBar: View {
     @Binding var selectedTab: Int
     @Binding var showingCreationActions: Bool
+    var floatingDock = false
     let createDeck: () -> Void
     let importWithAI: () -> Void
     let importAnki: () -> Void
@@ -12,12 +13,27 @@ struct BottomNavigationBar: View {
     private var motion: Animation { reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.44, dampingFraction: 0.72) }
 
     var body: some View {
-        VStack(spacing: 12) {
+        Group {
+            if floatingDock {
+                GlassEffectContainer(spacing: 14) { navigationContent }
+            } else {
+                navigationContent
+            }
+        }
+        .onChange(of: selectedTab) { _, _ in showingCreationActions = false }
+        .onChange(of: homeTutorialStep) { _, step in
+            if step > 0 { showingCreationActions = false }
+        }
+    }
+
+    private var navigationContent: some View {
+        VStack(spacing: floatingDock ? 14 : 12) {
             creationMenu
 
             NavigationDock(
                 selectedTab: selectedTab,
                 isExpanded: showingCreationActions,
+                floatingDock: floatingDock,
                 selectTab: { tab in
                     withAnimation(motion) {
                         selectedTab = tab
@@ -32,11 +48,9 @@ struct BottomNavigationBar: View {
             .disabled(homeTutorialStep > 0)
             .opacity(homeTutorialStep > 0 ? 0.30 : 1)
         }
-        .frame(maxWidth: 560)
-        .onChange(of: selectedTab) { _, _ in showingCreationActions = false }
-        .onChange(of: homeTutorialStep) { _, step in
-            if step > 0 { showingCreationActions = false }
-        }
+        .frame(maxWidth: floatingDock ? 440 : 560)
+        .padding(.horizontal, floatingDock ? 16 : 0)
+        .padding(.bottom, floatingDock ? 12 : 0)
     }
 
     private var creationMenu: some View {
@@ -51,7 +65,7 @@ struct BottomNavigationBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .offset(y: 48)
+        .offset(y: floatingDock ? 0 : 48)
         .accessibilityElement(children: .contain)
     }
 
@@ -82,7 +96,7 @@ struct BottomNavigationBar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, minHeight: 88)
-            .appCardSurface(cornerRadius: 20)
+            .modifier(CreationActionSurface(floating: floatingDock))
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(DockPressStyle())
@@ -93,6 +107,7 @@ struct BottomNavigationBar: View {
 private struct NavigationDock: View {
     let selectedTab: Int
     var isExpanded = false
+    var floatingDock = false
     let selectTab: (Int) -> Void
     let toggleCreation: () -> Void
     @Namespace private var selectionNamespace
@@ -110,17 +125,72 @@ private struct NavigationDock: View {
         reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.46, dampingFraction: 0.78)
     }
     var body: some View {
-        ZStack(alignment: .top) {
-            islandDock
+        Group {
+            if floatingDock {
+                glassDock
+            } else {
+                ZStack(alignment: .top) {
+                    islandDock
 
-            creationBall
-                .offset(y: 28 - (isExpanded && !reduceMotion ? 2 : 0))
-                .zIndex(2)
+                    creationBall
+                        .offset(y: 28 - (isExpanded && !reduceMotion ? 2 : 0))
+                        .zIndex(2)
+                }
+            }
         }
-        .frame(height: 108, alignment: .top)
-        .offset(y: 24)
-        .animation(motion, value: selectedTab)
+        .frame(height: floatingDock ? 68 : 108, alignment: .top)
+        .offset(y: floatingDock ? 0 : 24)
+        .animation(floatingDock && reduceMotion ? nil : motion, value: selectedTab)
         .animation(motion, value: isExpanded)
+    }
+
+    private var glassDock: some View {
+        HStack(spacing: 8) {
+            glassTabPair(0, 1)
+            creationBall
+            glassTabPair(2, 3)
+        }
+        .padding(6)
+        .modifier(NavigationGlassSurface(shape: Capsule()))
+    }
+
+    private func glassTabPair(_ first: Int, _ second: Int) -> some View {
+        HStack(spacing: 4) {
+            glassTab(first)
+            glassTab(second)
+        }
+        .frame(width: 148)
+    }
+
+    private func glassTab(_ index: Int) -> some View {
+        let selected = selectedTab == index
+        return Button { selectTab(index) } label: {
+            HStack(spacing: 6) {
+                tabIcon(index, size: 22)
+                    .frame(width: 24, height: 26)
+                if selected {
+                    Text(tabs[index].title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.94)))
+                }
+            }
+            .foregroundStyle(tabColor(index))
+            .padding(.horizontal, selected ? 8 : 0)
+            .frame(width: selected ? 100 : 44, height: 56)
+            .background {
+                if selected {
+                    Capsule().fill(LearnAlertStyle.appAccent.opacity(0.20))
+                        .modifier(DockSelectionMotion(namespace: selectionNamespace, reduceMotion: reduceMotion))
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(DockPressStyle())
+        .accessibilityLabel(tabs[index].title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityShowsLargeContentViewer { Label(tabs[index].title, systemImage: tabs[index].symbol) }
     }
 
     // Islands: equal-width tabs keep the icons centered as their selected labels appear.
@@ -224,7 +294,12 @@ private struct NavigationDock: View {
                 .foregroundStyle(LearnAlertStyle.appAccentInk)
                 .frame(width: 56, height: 56)
                 .background {
-                    ballSurface
+                    if floatingDock {
+                        Circle().fill(LearnAlertStyle.appAccent.opacity(isExpanded ? 0.90 : 0.70))
+                            .overlay { Circle().strokeBorder(.white.opacity(0.35), lineWidth: 0.5) }
+                    } else {
+                        ballSurface
+                    }
                 }
                 .scaleEffect(isExpanded && !reduceMotion ? 1.06 : 1)
                 .contentShape(Circle())
@@ -244,6 +319,33 @@ private struct NavigationDock: View {
             .background {
                 Circle().fill(LearnAlertStyle.courseSurface).padding(-4)
             }
+    }
+}
+
+private struct NavigationGlassSurface<S: Shape>: ViewModifier {
+    let shape: S
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if reduceTransparency {
+            content.background(LearnAlertStyle.courseSurface, in: shape)
+                .overlay { shape.stroke(LearnAlertStyle.cardBorder, lineWidth: 1) }
+        } else {
+            content.glassEffect(.regular.interactive(!reduceMotion), in: shape)
+        }
+    }
+}
+
+private struct CreationActionSurface: ViewModifier {
+    let floating: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if floating {
+            content.modifier(NavigationGlassSurface(shape: RoundedRectangle(cornerRadius: 20, style: .continuous)))
+        } else {
+            content.appCardSurface(cornerRadius: 20)
+        }
     }
 }
 

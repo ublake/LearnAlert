@@ -10,12 +10,20 @@ In folded portrait, Home and Discover remain separate tabs: only the selected pa
 
 On iPad, Home fills its page. The library uses a single scroll view with a row-major two-column lazy grid when there is at least 700 points of local width: first card left, second right, third on the next row left, fourth right. Existing pinned-first ordering, courses, search, card actions and reorder controls are preserved. Narrow windows and accessibility text sizes use one column to keep cards readable. Duo Home panes remain single-column.
 
+## Adaptive navigation surface
+
+Roomy iPad scenes and expanded Duo scenes use a compact floating capsule with native Liquid Glass, an animated blue selection, the existing multicolor icons, and a centered creation button. The selected tab expands to show its title within its half of the capsule, keeping the creation button centered. Creation actions open above it with the same glass surface. Reduce Transparency replaces glass with an opaque outlined surface; Reduce Motion suppresses the selection morph and interactive glass motion.
+
+Ordinary iPhones (including landscape) and Duo's compact outer display keep the existing edge-to-edge Islands bar. The floating treatment requires at least 420 points of usable dock width; narrow iPad windows also retain the bar. Dock placement still avoids active folds, and keyboard avoidance remains disabled only for the dock.
+
 ## Notification behavior retained
 
 Native-deck and course notification content request bounded heights using the active scene's effective coordinate space, rather than the physical screen. The hosted content responds to local width/height and active fold/camera regions; the system retains control of notification width, final height, position and chrome. No notification behavior changed in the Discover/grid refinement.
 
 ## Validation on 19 October 2026
 
+- Glass dock refinement: signed Debug app and extension build passed with Xcode 27.1. Nine AdaptiveWorkspaceTests passed, including floating-dock eligibility for iPad, inner/outer Duo, ordinary landscape iPhone and narrow windows. Result: /tmp/LearnAlert-DuoBuild/Logs/Test/Test-LearnAlert-2026.10.19_12-20-19--0400.xcresult. A subsequent build also passed after the Reduce Motion adjustment.
+- Installed on Duo iOS 27.1 and iPad Air 13-inch (M4) iPadOS 27.0. Simulator checks showed the floating capsule on both, the glass creation actions above the Duo capsule, and working right-side tab selection. Duo was checked in dark appearance and iPad in light appearance. No physical-device glass or ergonomics check was performed.
 - Signed Debug app and notification-extension build passed using Xcode 27.1 (27A9269), iPhoneSimulator27.1 SDK. Deployment targets remain unchanged.
 - Eight AdaptiveWorkspaceTests passed with zero failures/skips on iPhone Duo, iOS 27.1 after the folded-portrait change. Coverage includes separate portrait tabs for both fold axes, Duo eligibility, landscape fold geometry, RTL, intermediate/full Discover frames, local iPad grid limits, occlusions and notification height budgets. Result: /tmp/LearnAlert-DuoBuild/Logs/Test/Test-LearnAlert-2026.10.19_12-13-58--0400.xcresult.
 - Duo simulator: half-folded portrait showed only Home in the lower usable region; selecting Discover replaced it with the community feed. Opening the display and selecting Home restored both panes. The previous refinement also verified Discover's full-page expansion.
@@ -28,4 +36,5 @@ Native-deck and course notification content request bounded heights using the ac
 - https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo
 - https://developer.apple.com/documentation/swiftui/geometryproxy/reservedregions(kind:options:layoutdirectionbehavior:)
 - https://developer.apple.com/documentation/usernotificationsui/customizing-the-appearance-of-notifications
+- https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views
 - /Users/blake/.codex/skills/iphone-duo/references/iPhone-Duo-Developer-Guide.md

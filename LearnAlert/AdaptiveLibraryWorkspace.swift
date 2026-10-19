@@ -8,6 +8,7 @@ nonisolated struct LibraryWorkspaceGeometry: Equatable {
     let home: CGRect
     let discover: CGRect
     let dock: CGRect
+    var usesFloatingDock = false
 
     static func resolve(size: CGSize, regularWidth: Bool, supportsDualPane: Bool = false,
                         rightToLeft: Bool = false, divisions: [CGRect] = []) -> Self {
@@ -56,8 +57,12 @@ extension LibraryWorkspaceGeometry {
         }
         // Device family gates this product feature only; local geometry still controls layout.
         let supportsDualPane = UIDevice.current.userInterfaceIdiom == .phone && hasFoldRegion
-        return resolve(size: proxy.size, regularWidth: regularWidth, supportsDualPane: supportsDualPane,
+        var geometry = resolve(size: proxy.size, regularWidth: regularWidth, supportsDualPane: supportsDualPane,
                        rightToLeft: direction == .rightToLeft, divisions: divisions)
+        geometry.usesFloatingDock = NavigationDockPresentation.usesFloatingDock(
+            sceneWidth: proxy.size.width, dockWidth: geometry.dock.width,
+            isPad: UIDevice.current.userInterfaceIdiom == .pad, isDuo: supportsDualPane)
+        return geometry
     }
 }
 
@@ -140,5 +145,11 @@ extension LibraryWorkspaceGeometry {
 nonisolated enum HomeLibraryGrid {
     static func columnCount(width: CGFloat, isPad: Bool, accessibilitySize: Bool) -> Int {
         isPad && !accessibilitySize && width >= 700 ? 2 : 1
+    }
+}
+
+nonisolated enum NavigationDockPresentation {
+    static func usesFloatingDock(sceneWidth: CGFloat, dockWidth: CGFloat, isPad: Bool, isDuo: Bool) -> Bool {
+        dockWidth >= 420 && (isPad || (isDuo && sceneWidth >= 640))
     }
 }

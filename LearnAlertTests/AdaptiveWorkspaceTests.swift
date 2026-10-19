@@ -108,4 +108,13 @@ extension AdaptiveWorkspaceTests {
         #expect(HomeLibraryGrid.columnCount(width: 1024, isPad: false, accessibilitySize: false) == 1)
         #expect(HomeLibraryGrid.columnCount(width: 1024, isPad: true, accessibilitySize: true) == 1)
     }
+    @Test("Floating navigation is limited to roomy iPad and inner Duo scenes")
+    func floatingNavigation() {
+        #expect(NavigationDockPresentation.usesFloatingDock(sceneWidth: 1024, dockWidth: 1024, isPad: true, isDuo: false))
+        #expect(NavigationDockPresentation.usesFloatingDock(sceneWidth: 951, dockWidth: 450, isPad: false, isDuo: true))
+        #expect(NavigationDockPresentation.usesFloatingDock(sceneWidth: 669, dockWidth: 669, isPad: false, isDuo: true))
+        #expect(!NavigationDockPresentation.usesFloatingDock(sceneWidth: 393, dockWidth: 393, isPad: false, isDuo: true))
+        #expect(!NavigationDockPresentation.usesFloatingDock(sceneWidth: 951, dockWidth: 951, isPad: false, isDuo: false))
+        #expect(!NavigationDockPresentation.usesFloatingDock(sceneWidth: 390, dockWidth: 390, isPad: true, isDuo: false))
+    }
 }

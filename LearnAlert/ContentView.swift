@@ -79,6 +79,7 @@ struct ContentView: View {
                     BottomNavigationBar(
                         selectedTab: $selectedTab,
                         showingCreationActions: $showingCreationActions,
+                        floatingDock: workspace.usesFloatingDock,
                         createDeck: { showingCreateDeck = true },
                         importWithAI: { showingAIComposer = true },
                         importAnki: { incomingAnkiURL = nil; showingAnkiImporter = true }
