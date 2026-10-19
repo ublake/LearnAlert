@@ -69,14 +69,22 @@ struct AdaptiveWorkspaceTests {
         #expect(NotificationViewportGeometry.usableRect(in: .zero, avoiding: regions) == .zero)
         #expect(NotificationViewportGeometry.usableRect(in: bounds, avoiding: [bounds]) == .zero)
     }
-    @Test("Collapsed notification hosts use the active display budget without expanding real compact scenes")
+    @Test("Notification resizing never feeds its bubble height back into its display budget")
     func collapsedNotificationHost() {
         let height = NotificationViewportGeometry.containerHeight(sceneHeight: 180, displayHeight: 852)
         #expect(height == 852)
         #expect(NotificationViewportGeometry.preferredHeight(contentHeight: 430, containerHeight: height, baseline: 420) >= 430)
-        #expect(NotificationViewportGeometry.containerHeight(sceneHeight: 320, displayHeight: 393) == 320)
-        #expect(NotificationViewportGeometry.containerHeight(sceneHeight: 600, displayHeight: 1024) == 600)
+        #expect(NotificationViewportGeometry.containerHeight(sceneHeight: 320, displayHeight: 393) == 393)
+        #expect(NotificationViewportGeometry.containerHeight(sceneHeight: 600, displayHeight: 1024) == 1024)
         #expect(NotificationViewportGeometry.containerHeight(sceneHeight: nil, displayHeight: 852) == 852)
+        for initial in [CGFloat(180), 320, 420, 540] {
+            var sceneHeight = initial
+            for _ in 0..<8 {
+                let budget = NotificationViewportGeometry.containerHeight(sceneHeight: sceneHeight, displayHeight: 852)
+                sceneHeight = NotificationViewportGeometry.preferredHeight(contentHeight: 484, containerHeight: budget, baseline: 500)
+                #expect(sceneHeight == 500)
+            }
+        }
     }
     @Test("Preferred notification height fits the active scene and grows again when space returns")
     func heightBudget() {

@@ -104,6 +104,7 @@ struct FlashcardNotificationView: View {
 
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.notificationViewportCompact) private var viewportCompact
+    @Environment(\.notificationViewportHeight) private var viewportHeight
 
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
@@ -353,7 +354,8 @@ struct FlashcardNotificationView: View {
                     if let content = activeAnkiContent {
                         AnkiCardView(content: content, showingBack: isRevealed, compact: true, centered: true, animatedReveal: true,
                             loadingChanged: { ankiIsLoading = $0 })
-                            .frame(height: isCompactLayout ? 260 : 320)
+                            .frame(height: min(isCompactLayout ? 260 : 320, max(120, viewportHeight - 180)))
+                            .foregroundStyle(textColorPrimary).tint(textColorPrimary)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                         AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
                             onReveal: { withAnimation(.snappy) { isRevealed = true } },
@@ -1173,15 +1175,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private func fitContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
         measuredContentHeight = height
         coursePreservesDrawingHeight = preserveDrawingHeight
-        // The active scene can be a different display or a resized window. Never size
-        // a notification from UIScreen.main or the physical display's full bounds.
+        // Use the active scene's display, never UIScreen.main or the bubble's own height.
         let scene = view.window?.windowScene
         let containerHeight = NotificationViewportGeometry.containerHeight(
             sceneHeight: scene?.effectiveGeometry.coordinateSpace.bounds.height,
             displayHeight: scene?.screen.coordinateSpace.bounds.height ?? 760)
         let requested = preserveDrawingHeight ? CGFloat(540) : height
         let targetHeight = NotificationViewportGeometry.preferredHeight(contentHeight: requested,
-            containerHeight: containerHeight, baseline: isCourseContent ? 540 : isAnkiContent ? 420 : 300)
+            containerHeight: containerHeight, baseline: isCourseContent ? 540 : isAnkiContent ? 500 : 300)
         let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
         if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
             preferredContentSize = targetSize
@@ -1371,7 +1372,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 private struct NotificationViewportCompactKey: EnvironmentKey {
     static let defaultValue = false
 }
+private struct NotificationViewportHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 540
+}
 private extension EnvironmentValues {
+    var notificationViewportHeight: CGFloat {
+        get { self[NotificationViewportHeightKey.self] }
+        set { self[NotificationViewportHeightKey.self] = newValue }
+    }
     var notificationViewportCompact: Bool {
         get { self[NotificationViewportCompactKey.self] }
         set { self[NotificationViewportCompactKey.self] = newValue }
@@ -1386,6 +1394,7 @@ private struct NotificationViewportRoot: View {
             let usable = contentRect(proxy)
             content
                 .environment(\.notificationViewportCompact, usable.width < 350 || usable.height < 450)
+                .environment(\.notificationViewportHeight, usable.height)
                 .frame(width: min(640, usable.width), height: usable.height)
                 .clipped()
                 .position(x: usable.midX, y: usable.midY)
