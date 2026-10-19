@@ -834,13 +834,23 @@ struct WhatsNewView: View {
                         .font(.caption.bold())
                         .foregroundStyle(LearnAlertStyle.textSecondary)
 
-                    // Current release
                     ReleaseNotesEntry(
-                        version: "1.0.0",
-                        title: "Release",
+                        version: "1.1.0",
                         badgeText: "Current Version",
                         badgeColor: LearnAlertStyle.appAccentForeground,
-                        isCurrent: true
+                        isCurrent: true,
+                        highlights: [
+                            .init(title: "Community decks & profiles", detail: "Discover and share decks, create a character avatar, and show creators some love."),
+                            .init(title: "Guided language courses", detail: "Learn through structured lessons, audio questions, varied activities, and helpful lesson guides."),
+                            .init(title: "Import from Anki", detail: "Bring your .apkg decks into LearnAlert with images, audio, and custom card layouts."),
+                            .init(title: "More ways to make flashcards", detail: "Create image-only cards, animated front-and-back cards, and audio or image answer choices."),
+                            .init(title: "Smarter study alerts", detail: "Schedule decks and courses with individual settings, specific daily times, and improved expandable notification cards.")
+                        ]
+                    )
+
+                    ReleaseNotesEntry(
+                        version: "1.0.0",
+                        title: "Release"
                     )
                 }
                 .padding(20)
@@ -853,6 +863,11 @@ struct WhatsNewView: View {
     }
 }
 
+private struct ReleaseNotesHighlight {
+    let title: LocalizedStringResource
+    let detail: LocalizedStringResource
+}
+
 private struct ReleaseNotesEntry: View {
     let version: String
     var title: LocalizedStringResource? = nil
@@ -860,6 +875,7 @@ private struct ReleaseNotesEntry: View {
     var badgeText: String? = nil
     var badgeColor: Color = LearnAlertStyle.appAccentForeground
     var isCurrent: Bool = false
+    var highlights: [ReleaseNotesHighlight] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -890,6 +906,22 @@ private struct ReleaseNotesEntry: View {
                     .font(.custom("Poppins-Regular", size: 12))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !highlights.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(highlights.indices, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(highlights[index].title)
+                                .font(.custom("Poppins-Medium", size: 13))
+                            Text(highlights[index].detail)
+                                .font(.custom("Poppins-Regular", size: 12))
+                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.top, 8)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
