@@ -683,7 +683,7 @@ struct HomeLibraryView: View {
     }
 
     @ViewBuilder
-    private var librarySection: some View {
+    private func librarySection(columnCount: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 HStack {
@@ -728,7 +728,8 @@ struct HomeLibraryView: View {
                 .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
                 .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
             } else {
-                LazyVStack(spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: columnCount),
+                          alignment: .leading, spacing: 12) {
                     pinnedLibraryCards
 
                     Group {
@@ -926,6 +927,7 @@ struct HomeLibraryView: View {
 
             ScheduleLightBurst(event: scheduleCelebrationEvent)
 
+            GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     if sharedDB.isUsingTemporaryStorage {
@@ -936,7 +938,8 @@ struct HomeLibraryView: View {
 
                     alertSetupSection
 
-                    librarySection
+                    librarySection(columnCount: HomeLibraryGrid.columnCount(width: proxy.size.width,
+                        isPad: UIDevice.current.userInterfaceIdiom == .pad, accessibilitySize: dynamicTypeSize.isAccessibilitySize))
 
                     Spacer().frame(height: 210)
                 }
@@ -944,6 +947,7 @@ struct HomeLibraryView: View {
             }
             .blur(radius: showingDeckRequirementAlert ? 3 : 0)
             .animation(.easeInOut(duration: 0.25), value: showingDeckRequirementAlert)
+            }
 
             tourOverlays
         }

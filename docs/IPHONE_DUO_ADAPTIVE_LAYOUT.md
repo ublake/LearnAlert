@@ -1,29 +1,31 @@
-# Adaptive Duo workspace and notification content
+# Duo workspace, Discover expansion and iPad library
 
-The Home and Discover tabs share a stable two-child layout. Regular-width containers with at least 640 points of width show the library and Discover together; compact windows keep the selected tab. Both children keep their identity during resizing and tab changes between Home and Discover, preserving local search, feed and scroll state. The existing navigation stack stays outside the layout, so an open deck/course remains open across a display transition. No display-name, device-idiom or hinge-angle thresholds choose the layout.
+## Current page behavior
 
-On iOS 27.1+, the layout explicitly queries active reserved divisions in physical local coordinates. A vertical fold leaves a gutter between columns and keeps the custom dock wholly in the Home pane. A horizontal fold uses Home above and Discover below when both have usable height; otherwise the selected page occupies the largest usable region, with both tabs still available. RTL reverses semantic column order once. The same width-driven layout works for iPad windows without requiring fold hardware. Settings, Customize, imports and study features retain their routes.
+The combined Home/Discover workspace is exclusive to phone scenes that expose a fold division, including an inactive division while flat. The idiom check gates this product feature; actual size class, container bounds and active reserved geometry continue to choose its layout. iPad and ordinary iPhone scenes use independent full-page Home and Discover tabs.
 
-This uses a custom SwiftUI Layout to keep the requested side-by-side presentation even in a tall, flat inner display. Apple's ArrangementView normally chooses a vertical split in a tall container; restricting it to horizontal can hide its secondary view. The layout owns only geometry and preserves the child view trees. It is not nested inside a scrolling container or NavigationSplitView.
+On an expanded Duo, selecting Discover animates its existing pane across the workspace to fill the page. Selecting Home restores the library and Discover together. The custom Layout interpolates the pane positions and sizes, keeping both child trees mounted. Searches, feed state and open navigation are retained. Hidden Home content stops accepting interaction and leaves the accessibility tree. Reduce Motion disables the pane animation. Continuous full-page Discover content can span a fold, while the dock keeps its existing fold-safe placement.
 
-Both native-deck and course notification content now request bounded heights from the active window scene's effective coordinate space, rather than a physical screen's full height. Layout and safe-area changes recalculate that request. Content responds to actual local width/height; compact host regions use compact native-card spacing, large windows constrain text/media to 640 points, and active fold/camera regions constrain the hosted content to a usable local rectangle. Scrollable content remains the fallback when it cannot fit without losing readability. Drawing keeps its requested canvas height when space permits, and is capped in shorter containers rather than requesting an oversized window.
+When Home is selected, a vertical fold separates the two columns and keeps the dock in the Home pane; a horizontal fold can use Home above Discover. Narrow scenes show the selected page, with both tabs available. The navigation stack remains outside the layout. This avoids ArrangementView's automatic vertical splitting in a tall, flat display and its secondary-view hiding under a horizontal-only axis restriction.
 
-The system owns notification width, final height, position and chrome; preferredContentSize is a request. No public API is assumed to force a notification onto a particular Duo display or prevent the system's dismissal gestures. In-app notification handoff and grading paths are preserved.
+On iPad, Home fills its page. The library uses a single scroll view with a row-major two-column lazy grid when there is at least 700 points of local width: first card left, second right, third on the next row left, fourth right. Existing pinned-first ordering, courses, search, card actions and reorder controls are preserved. Narrow windows and accessibility text sizes use one column to keep cards readable. Duo Home panes remain single-column.
 
-## Sources and toolchain
+## Notification behavior retained
 
-- Apple: https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo
-- Apple: https://developer.apple.com/documentation/swiftui/geometryproxy/reservedregions(kind:options:layoutdirectionbehavior:)
-- Apple: https://developer.apple.com/documentation/usernotificationsui/customizing-the-appearance-of-notifications
-- Local guide: /Users/blake/.codex/skills/iphone-duo/references/iPhone-Duo-Developer-Guide.md
-
-Duo APIs were checked in Xcode 27.1 (27A9269), iPhoneSimulator27.1 SDK public interfaces. New reserved-region calls have iOS 27.1 availability guards; deployment targets are unchanged. The 27.1 beta's documented extension/debugging limitations and physical-device behavior remain separate from app build and simulated geometry evidence.
+Native-deck and course notification content request bounded heights using the active scene's effective coordinate space, rather than the physical screen. The hosted content responds to local width/height and active fold/camera regions; the system retains control of notification width, final height, position and chrome. No notification behavior changed in the Discover/grid refinement.
 
 ## Validation on 19 October 2026
 
-- Signed Debug app and notification-extension build passed with Xcode 27.1 (27A9269), iPhoneSimulator27.1 SDK. The iOS 27.2 SDK also exposes the reserved-region declarations; no 27.2 build is claimed.
-- All 20 focused simulator tests passed with zero failures/skips on iPhone Duo, iOS 27.1: AdaptiveWorkspaceTests, CourseNotificationFlowTests and NotificationAppearanceTests. Coverage includes both fold axes, RTL, multiple/partial/outside occlusions, small regions, scene height budgets and existing notification handoffs. Result: /tmp/LearnAlert-DuoBuild/Logs/Test/Test-LearnAlert-2026.10.19_10-54-20--0400.xcresult.
-- The simulator visually confirmed closed single-page mode, flat-open Home/Discover columns, book-mode fold clearance and dock relocation, and rotated tabletop Home-above-Discover panes. A Discover search stayed expanded and retained its query across closing/reopening.
-- iPad Air 13-inch (M4), iPadOS 27.0, visually confirmed the two-pane fallback and successful execution without 27.1-only calls.
-- Live expanded notifications on both Duo displays, physical-device fold ergonomics, camera occlusion, VoiceOver and multitasking transitions remain unverified. Geometry tests and an extension build do not establish the system's final notification presentation.
-- The Desktop checkout encountered blocking local file reads. Compilation/tests and commit preparation used a clean temporary checkout at /tmp/LearnAlert-DuoClean with the current implementation overlaid. Unrelated local project formatting and Korean artwork changes were excluded from the commit. The original checkout retains its edited source files and its previous Git revision.
+- Signed Debug app and notification-extension build passed using Xcode 27.1 (27A9269), iPhoneSimulator27.1 SDK. Deployment targets remain unchanged.
+- Eight AdaptiveWorkspaceTests passed with zero failures/skips on iPhone Duo, iOS 27.1. Coverage includes Duo eligibility, fold geometry, RTL, intermediate/full Discover frames, local iPad grid limits, occlusions and notification height budgets. Result: /tmp/LearnAlert-DuoBuild/Logs/Test/Test-LearnAlert-2026.10.19_12-03-44--0400.xcresult.
+- Duo simulator: Home showed both panes on the flat inner display; selecting Discover filled the page and selecting Home restored both panes.
+- iPad Air 13-inch (M4), iPadOS 27.0: Home occupied the full page. Four local sample decks visibly appeared as Layout 1 / Layout 2, then Layout 3 / Layout 4 in the next row. No alerts were scheduled for these samples.
+- The previous implementation's 20 notification/layout regression tests passed before this refinement. Live notification presentation on physical Duo hardware, device ergonomics, camera occlusion and multitasking remain unverified.
+- The Desktop checkout has blocked local file reads. Builds and commits use /tmp/LearnAlert-DuoClean. This task's source files are mirrored atomically to /Users/blake/Desktop/LearnAlert; its original Git revision and unrelated project-formatting/Korean-artwork edits are preserved.
+
+## References
+
+- https://developer.apple.com/documentation/technologyoverviews/preparing-your-app-for-iphone-duo
+- https://developer.apple.com/documentation/swiftui/geometryproxy/reservedregions(kind:options:layoutdirectionbehavior:)
+- https://developer.apple.com/documentation/usernotificationsui/customizing-the-appearance-of-notifications
+- /Users/blake/.codex/skills/iphone-duo/references/iPhone-Duo-Developer-Guide.md

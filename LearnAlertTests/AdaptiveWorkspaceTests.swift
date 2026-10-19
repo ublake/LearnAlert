@@ -5,26 +5,26 @@ import Testing
 
 @Suite("Adaptive workspace and notification viewport")
 struct AdaptiveWorkspaceTests {
-    @Test("Expansion follows local usable width, not iPhone/iPad device identity")
+    @Test("Eligible Duo workspaces still follow local usable width")
     func expansion() {
         for size in [CGSize(width: 669, height: 951), CGSize(width: 951, height: 669), CGSize(width: 1024, height: 768)] {
-            let layout = LibraryWorkspaceGeometry.resolve(size: size, regularWidth: true)
+            let layout = LibraryWorkspaceGeometry.resolve(size: size, regularWidth: true, supportsDualPane: true)
             #expect(layout.presentation == .columns)
             #expect(layout.home.width >= 300 && layout.discover.width >= 300)
             #expect(!layout.home.intersects(layout.discover))
         }
         for size in [CGSize(width: 393, height: 852), CGSize(width: 500, height: 900)] {
-            #expect(LibraryWorkspaceGeometry.resolve(size: size, regularWidth: true).presentation == .single)
+            #expect(LibraryWorkspaceGeometry.resolve(size: size, regularWidth: true, supportsDualPane: true).presentation == .single)
         }
         #expect(LibraryWorkspaceGeometry.resolve(size: .init(width: 951, height: 669), regularWidth: false).presentation == .single)
         // A keyboard can shorten the container without erasing the two-pane workspace.
-        #expect(LibraryWorkspaceGeometry.resolve(size: .init(width: 951, height: 300), regularWidth: true).presentation == .columns)
+        #expect(LibraryWorkspaceGeometry.resolve(size: .init(width: 951, height: 300), regularWidth: true, supportsDualPane: true).presentation == .columns)
     }
     @Test("Vertical folds and the dock stay outside reserved geometry, including RTL")
     func verticalFold() {
         let fold = CGRect(x: 450, y: -40, width: 36, height: 900)
         for rtl in [false, true] {
-            let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: 951, height: 669), regularWidth: true,
+            let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: 951, height: 669), regularWidth: true, supportsDualPane: true,
                 rightToLeft: rtl, divisions: [fold])
             #expect(layout.presentation == .columns)
             for rect in [layout.home, layout.discover, layout.dock] { #expect(!rect.intersects(fold)) }
@@ -34,7 +34,7 @@ struct AdaptiveWorkspaceTests {
     @Test("Tabletop folds use reachable panes; narrow regions keep a single usable pane")
     func horizontalFold() {
         let fold = CGRect(x: -30, y: 450, width: 800, height: 35)
-        let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: 669, height: 951), regularWidth: true, divisions: [fold])
+        let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: 669, height: 951), regularWidth: true, supportsDualPane: true, divisions: [fold])
         #expect(layout.presentation == .rows)
         #expect(layout.home.maxY <= fold.minY && layout.discover.minY >= fold.maxY)
         #expect(!layout.dock.intersects(fold))
@@ -66,5 +66,39 @@ struct AdaptiveWorkspaceTests {
         }
         #expect(NotificationViewportGeometry.preferredHeight(contentHeight: .nan, containerHeight: 844, baseline: 540) == 540)
         #expect(NotificationViewportGeometry.preferredHeight(contentHeight: 650, containerHeight: 430) < NotificationViewportGeometry.preferredHeight(contentHeight: 650, containerHeight: 951))
+    }
+}
+
+
+extension AdaptiveWorkspaceTests {
+    @Test("iPad and ordinary iPhones keep independent full-page tabs")
+    func workspaceEligibility() {
+        for width in [CGFloat(669), 951, 1366] {
+            let layout = LibraryWorkspaceGeometry.resolve(size: .init(width: width, height: 900), regularWidth: true)
+            #expect(layout.presentation == .single)
+            #expect(layout.home.width == width && layout.discover.width == width)
+        }
+    }
+    @Test("Discover fills the workspace at the end of the slide and keeps safe intermediate frames")
+    func discoverExpansion() {
+        let bounds = CGRect(x: 0, y: 0, width: 951, height: 669)
+        for rtl in [false, true] {
+            let layout = LibraryWorkspaceGeometry.resolve(size: bounds.size, regularWidth: true, supportsDualPane: true, rightToLeft: rtl)
+            let start = layout.paneFrames(in: bounds, expansion: 0, rightToLeft: rtl)
+            let middle = layout.paneFrames(in: bounds, expansion: 0.5, rightToLeft: rtl)
+            let end = layout.paneFrames(in: bounds, expansion: 1, rightToLeft: rtl)
+            #expect(start.home == layout.home && start.discover == layout.discover)
+            #expect(end.discover == bounds)
+            #expect(middle.discover.width > start.discover.width && middle.discover.width < bounds.width)
+            #expect(!end.home.intersects(bounds))
+            #expect(layout.paneFrames(in: bounds, expansion: 2, rightToLeft: rtl).discover == bounds)
+        }
+    }
+    @Test("iPad grid keeps two readable columns, collapsing in narrow windows")
+    func iPadGrid() {
+        #expect(HomeLibraryGrid.columnCount(width: 1024, isPad: true, accessibilitySize: false) == 2)
+        #expect(HomeLibraryGrid.columnCount(width: 500, isPad: true, accessibilitySize: false) == 1)
+        #expect(HomeLibraryGrid.columnCount(width: 1024, isPad: false, accessibilitySize: false) == 1)
+        #expect(HomeLibraryGrid.columnCount(width: 1024, isPad: true, accessibilitySize: true) == 1)
     }
 }
