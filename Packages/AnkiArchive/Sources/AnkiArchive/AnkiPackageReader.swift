@@ -13,12 +13,12 @@ public enum AnkiPackageReader {
     /// Synchronous, cancellable work; call from a background task, never the UI actor.
     /// The caller owns `workspace` and removes it on cancel, failure or after committing.
     public static func read(url: URL, workspace: URL,
-                            progress: @Sendable (AnkiImportProgress) -> Void = { _ in }) throws -> AnkiImportPackage {
+                            progress: @escaping @Sendable (AnkiImportProgress) -> Void = { _ in }) throws -> AnkiImportPackage {
         try Task.checkCancellation()
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0, size <= maximumArchiveBytes else { throw AnkiImportError.invalid("Choose an Anki package smaller than 1 GB.") }
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        progress(.init(0.02, "Opening your deck", url.lastPathComponent))
+        progress(.init(0.02, "Opening your deck", url.lastPathComponent, archiveBytes: size))
         let archive: Archive
         do { archive = try Archive(url: url, accessMode: .read) }
         catch { throw AnkiImportError.invalid("This file isn't a readable Anki package. Export the deck as an .apkg file and try again.") }
@@ -34,7 +34,9 @@ public enum AnkiPackageReader {
         guard let collection = archive[filename] else { throw AnkiImportError.invalid("The package is missing its Anki collection database.") }
         progress(.init(0.07, "Reading cards", "Unpacking the collection"))
         let databaseURL = workspace.appendingPathComponent("collection.sqlite")
-        let databaseBytes = try extractToFile(collection, archive: archive, to: databaseURL, compressed: modern, limit: maximumDatabaseBytes)
+        let databaseBytes = try extractToFile(collection, archive: archive, to: databaseURL, compressed: modern, limit: maximumDatabaseBytes) { bytes in
+            progress(.init(0.07, "Reading cards", "Unpacking the collection", processedBytes: bytes))
+        }
         let header = try FileHandle(forReadingFrom: databaseURL)
         defer { try? header.close() }
         guard try header.read(upToCount: 16) == Data("SQLite format 3\0".utf8) else { throw AnkiImportError.invalid("The Anki collection database is damaged.") }
@@ -62,6 +64,7 @@ public enum AnkiPackageReader {
         var mediaBytes = 0, mediaCount = 0, missingMedia = 0
         var mediaFiles: [String: String] = [:]
         var names = Set<String>(), savedNames = Set<String>()
+        progress(.init(0.48, "Gathering images & audio", completedItems: 0, totalItems: mediaMap.count, unit: "files", processedBytes: 0))
         for (index, item) in mediaMap.enumerated() {
             try Task.checkCancellation()
             let (key, name) = item
@@ -72,12 +75,17 @@ public enum AnkiPackageReader {
             let originalExtension = URL(fileURLWithPath: name).pathExtension.lowercased()
             let ext = originalExtension.count <= 16 && originalExtension.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) && $0.isASCII }) ? originalExtension : "bin"
             let storedName = "media-\(index).\(ext.isEmpty ? "bin" : ext)"
-            mediaBytes += try extractToFile(entry, archive: archive, to: mediaDirectory.appendingPathComponent(storedName), compressed: modern, limit: available)
+            let bytesBeforeFile = mediaBytes
+            let extractedBytes = try extractToFile(entry, archive: archive, to: mediaDirectory.appendingPathComponent(storedName), compressed: modern, limit: available) { bytes in
+                progress(.init(0.48 + 0.49 * Double(index) / Double(max(1, mediaMap.count)), "Gathering images & audio",
+                    completedItems: index, totalItems: mediaMap.count, unit: "files", processedBytes: bytesBeforeFile + bytes))
+            }
+            mediaBytes += extractedBytes
             mediaFiles[name] = storedName
             mediaCount += 1
             savedNames.insert(name.precomposedStringWithCanonicalMapping)
             if index % 20 == 0 || index + 1 == mediaMap.count {
-                progress(.init(0.48 + 0.49 * Double(index + 1) / Double(max(1, mediaMap.count)), "Gathering images & audio", "\(index + 1) of \(mediaMap.count) files"))
+                progress(.init(0.48 + 0.49 * Double(index + 1) / Double(max(1, mediaMap.count)), "Gathering images & audio", "\(index + 1) of \(mediaMap.count) files", completedItems: index + 1, totalItems: mediaMap.count, unit: "files", processedBytes: mediaBytes))
             }
         }
         try JSONEncoder().encode(mediaFiles).write(to: mediaDirectory.appendingPathComponent(".learnalert-media.json"))
@@ -139,15 +147,17 @@ public enum AnkiPackageReader {
 
     /// Stream collection/media bytes to disk. Large decks never hold the database
     /// or entire audio/image archive in RAM alongside their converted cards.
-    private static func extractToFile(_ entry: Entry, archive: Archive, to url: URL, compressed: Bool, limit: Int) throws -> Int {
+    private static func extractToFile(_ entry: Entry, archive: Archive, to url: URL, compressed: Bool, limit: Int, onBytes: ((Int) -> Void)? = nil) throws -> Int {
         guard entry.type == .file, entry.uncompressedSize <= UInt64(max(0, limit)) else { throw AnkiImportError.invalid("An item in this deck exceeds the import size limit.") }
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let file = try FileHandle(forWritingTo: url)
         defer { try? file.close() }
         var written = 0
+        var lastReport = Date.distantPast
         func write(_ bytes: UnsafeRawBufferPointer, count: Int) throws {
             guard count <= limit - written else { throw AnkiImportError.invalid("An item in this deck expands beyond the import size limit.") }
             try file.write(contentsOf: Data(bytes: bytes.baseAddress!, count: count)); written += count
+            if Date().timeIntervalSince(lastReport) >= 0.2 { lastReport = Date(); onBytes?(written) }
         }
         let stream = compressed ? ZSTD_createDStream() : nil
         if compressed && stream == nil { throw AnkiImportError.invalid("There isn't enough memory to open this deck.") }
@@ -215,6 +225,7 @@ public enum AnkiPackageReader {
         let db = try AnkiSQLite(url: url)
         let count = try db.rows("SELECT count(*) FROM cards").first?.int(0) ?? 0
         guard count <= maximumCards else { throw AnkiImportError.invalid("This package contains more than 100,000 cards. Export a smaller deck or subdeck.") }
+        progress(.init(0.12, "Converting cards", completedItems: 0, totalItems: count, unit: "cards"))
         var types: [String: AnkiNoteType] = [:], decks: [String: String] = [:]
         if try db.hasTable("notetypes") {
             var fields: [String: [String]] = [:], templates: [String: [AnkiTemplate]] = [:]
@@ -257,8 +268,9 @@ public enum AnkiPackageReader {
             warnings.formUnion(result.warnings)
             cards.append(AnkiImportedCard(id: "\(guid):\(ordinal)", noteGUID: guid, deckID: deckID, deckName: name, templateOrdinal: ordinal, noteType: type.name,
                 front: result.front, back: result.back, css: type.css, plainFront: AnkiTemplateRenderer.plainText(result.front), plainBack: AnkiTemplateRenderer.plainText(result.back), tags: tags, warnings: result.warnings))
-            if cards.count % 100 == 0 { progress(.init(0.12 + 0.34 * Double(cards.count + skipped) / Double(max(1, count)), "Converting cards", "\(cards.count) of \(count)")) }
+            if cards.count % 100 == 0 { progress(.init(0.12 + 0.34 * Double(cards.count + skipped) / Double(max(1, count)), "Converting cards", "\(cards.count) of \(count)", completedItems: cards.count + skipped, totalItems: count, unit: "cards")) }
         }
+        progress(.init(0.46, "Converting cards", completedItems: cards.count + skipped, totalItems: count, unit: "cards"))
         return (cards, decks, warnings, skipped)
     }
 }

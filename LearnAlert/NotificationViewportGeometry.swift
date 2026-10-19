@@ -3,6 +3,13 @@ import CoreGraphics
 
 /// Pure geometry shared with the extension; iOS still owns notification width and final size.
 nonisolated enum NotificationViewportGeometry {
+    static func containerHeight(sceneHeight: CGFloat?, displayHeight: CGFloat) -> CGFloat {
+        let display = displayHeight.isFinite && displayHeight > 0 ? displayHeight : 760
+        guard let sceneHeight, sceneHeight.isFinite, sceneHeight > 0 else { return display }
+        // Notification hosts can report their collapsed bubble as the scene size.
+        if sceneHeight < 360 && display >= 600 { return display }
+        return sceneHeight
+    }
     static func maximumHeight(containerHeight: CGFloat) -> CGFloat {
         let height = containerHeight.isFinite && containerHeight > 0 ? containerHeight : 760
         return min(height, max(160, min(680, height - 220)))

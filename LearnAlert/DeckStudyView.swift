@@ -6,6 +6,9 @@ struct DeckStudyView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var ankiCache = AnkiStudyRenderCache()
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var studyQueue: [Flashcard] = []
     @State private var cardIndex = 0
     @State private var selectedAnswer: String?
@@ -86,6 +89,7 @@ struct DeckStudyView: View {
                     optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName,
                     ankiContent: card.ankiContent,
+                    ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
                     fieldMedia: card.fieldMedia,
                     correctOptionIndex: card.resolvedCorrectOptionIndex,
                     cardNumber: cardIndex + 1,
@@ -106,10 +110,24 @@ struct DeckStudyView: View {
                     onClose: dismiss.callAsFunction
                 )
                 .id(card.id)
+                .task(id: "\(card.id)-\(colorScheme)") { prefetchAnki() }
+            } else {
+                ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear(perform: applyInitialStateIfNeeded)
+        .task { await Task.yield(); applyInitialStateIfNeeded() }
+        .onDisappear { ankiCache.clear() }
+    }
+
+    private func prefetchAnki() {
+        guard let card = currentCard, let content = card.ankiContent else { ankiCache.clear(); return }
+        let next: (UUID, AnkiCardContent)?
+        if studyQueue.indices.contains(cardIndex + 1), let content = studyQueue[cardIndex + 1].ankiContent {
+            next = (studyQueue[cardIndex + 1].id, content)
+        } else { next = nil }
+        ankiCache.prepare(current: (card.id, content, isRevealed), next: next,
+            configuration: .init(dark: colorScheme == .dark, reduceMotion: reduceMotion))
     }
 
     private func setupStudyQueue() {
@@ -256,6 +274,8 @@ private struct QuizSessionView: View {
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
     var ankiContent: AnkiCardContent? = nil
+    var ankiRenderer: AnkiCardRenderer? = nil
+    @State private var ankiIsLoading = true
     var fieldMedia: [String: CardFieldMedia] = [:]
     var correctOptionIndex: Int? = nil
     let cardNumber: Int
@@ -300,10 +320,12 @@ private struct QuizSessionView: View {
 
             if cardType == .anki, let ankiContent {
                 VStack(spacing: 16) {
-                    AnkiCardView(content: ankiContent, showingBack: isRevealed, centered: true, animatedReveal: true)
+                    AnkiCardView(content: ankiContent, showingBack: isRevealed, centered: true, animatedReveal: true,
+                        renderer: ankiRenderer, loadingChanged: { ankiIsLoading = $0 })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 20))
                     AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
+                        .disabled(ankiIsLoading)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)

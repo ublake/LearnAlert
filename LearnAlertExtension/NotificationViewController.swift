@@ -99,6 +99,7 @@ struct FlashcardNotificationView: View {
     var openApp: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
+    @State private var ankiIsLoading = true
     @FocusState private var isAnswerFieldFocused: Bool
 
     @Environment(\.colorScheme) private var systemColorScheme
@@ -350,12 +351,14 @@ struct FlashcardNotificationView: View {
                 // Image cards are self-review, before the empty-options reveal fallback.
                 if activeCardType == "anki" {
                     if let content = activeAnkiContent {
-                        AnkiCardView(content: content, showingBack: isRevealed, compact: true)
+                        AnkiCardView(content: content, showingBack: isRevealed, compact: true, centered: true, animatedReveal: true,
+                            loadingChanged: { ankiIsLoading = $0 })
                             .frame(height: isCompactLayout ? 260 : 320)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                         AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
                             onReveal: { withAnimation(.snappy) { isRevealed = true } },
                             onGrade: { gradeReveal(correct: $0) })
+                            .disabled(ankiIsLoading)
                     } else {
                         Button("Open this Anki card in LearnAlert", action: openApp)
                             .buttonStyle(.borderedProminent)
@@ -1164,6 +1167,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     private var hostingController: UIHostingController<AnyView>?
     private var measuredContentHeight: CGFloat = 540
     private var isCourseContent = false
+    private var isAnkiContent = false
     private var coursePreservesDrawingHeight = false
 
     private func fitContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
@@ -1171,11 +1175,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         coursePreservesDrawingHeight = preserveDrawingHeight
         // The active scene can be a different display or a resized window. Never size
         // a notification from UIScreen.main or the physical display's full bounds.
-        let containerHeight = view.window?.windowScene?.effectiveGeometry.coordinateSpace.bounds.height
-            ?? view.window?.bounds.height ?? 760
+        let scene = view.window?.windowScene
+        let containerHeight = NotificationViewportGeometry.containerHeight(
+            sceneHeight: scene?.effectiveGeometry.coordinateSpace.bounds.height,
+            displayHeight: scene?.screen.coordinateSpace.bounds.height ?? 760)
         let requested = preserveDrawingHeight ? CGFloat(540) : height
         let targetHeight = NotificationViewportGeometry.preferredHeight(contentHeight: requested,
-            containerHeight: containerHeight, baseline: isCourseContent ? 540 : 300)
+            containerHeight: containerHeight, baseline: isCourseContent ? 540 : isAnkiContent ? 420 : 300)
         let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
         if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
             preferredContentSize = targetSize
@@ -1199,6 +1205,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = .clear
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -1239,6 +1246,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
 
         isCourseContent = false
+        isAnkiContent = (userInfo["cardType"] as? String) == "anki"
         coursePreservesDrawingHeight = false
         fitContent(540)
 
@@ -1324,9 +1332,12 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     private func show(_ root: AnyView) {
-        let wrapped = AnyView(NotificationViewportRoot(content: root))
+        let wrapped = AnyView(NotificationViewportRoot(content: root).ignoresSafeArea(.container))
         if let existing = hostingController { existing.rootView = wrapped; return }
         let hosting = UIHostingController(rootView: wrapped)
+        // The system already positions the notification; phone status/home insets
+        // must not become padding inside its extension content.
+        hosting.safeAreaRegions = []
         hosting.view.backgroundColor = .clear
         addChild(hosting)
         view.addSubview(hosting.view)
@@ -1381,13 +1392,17 @@ private struct NotificationViewportRoot: View {
         }
     }
     private func contentRect(_ proxy: GeometryProxy) -> CGRect {
+        let bounds = CGRect(origin: .zero, size: proxy.size)
         var regions: [CGRect] = []
         if #available(iOS 27.1, *) {
-            regions = [ReservedRegion.Kind.division, .occlusion].flatMap { kind in
-                proxy.reservedRegions(kind: kind, options: .includeInactive, layoutDirectionBehavior: .fixed)
-                    .filter(\.isActive).map(\.frame)
-            }
+            let divisions = proxy.reservedRegions(kind: .division, options: .includeInactive, layoutDirectionBehavior: .fixed)
+            // Ordinary iPhone/iPad alerts already sit outside screen cutouts.
+            // Only a folding display needs this additional avoidance within the bubble.
+            guard !divisions.isEmpty else { return bounds }
+            regions = divisions.filter(\.isActive).map(\.frame)
+            regions += proxy.reservedRegions(kind: .occlusion, options: .includeInactive, layoutDirectionBehavior: .fixed)
+                .filter(\.isActive).map(\.frame)
         }
-        return NotificationViewportGeometry.usableRect(in: CGRect(origin: .zero, size: proxy.size), avoiding: regions)
+        return NotificationViewportGeometry.usableRect(in: bounds, avoiding: regions)
     }
 }

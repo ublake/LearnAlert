@@ -8,6 +8,9 @@ final class AnkiImportSession: ObservableObject {
     enum Phase { case chooseFile, converting, review, saving, complete, failed }
     @Published var phase = Phase.chooseFile
     @Published var progress = AnkiImportProgress(0, "Opening your deck")
+    @Published var startedAt = Date()
+    @Published var stageStartedAt = Date()
+    @Published var archiveBytes: Int?
     @Published var package: AnkiImportPackage?
     @Published var selectedDecks = Set<String>()
     @Published var updateExisting = false
@@ -28,6 +31,7 @@ final class AnkiImportSession: ObservableObject {
         let workspace = FileManager.default.temporaryDirectory.appendingPathComponent("LearnAlert-Anki-\(id.uuidString)", isDirectory: true)
         self.workspace = workspace; filename = url.lastPathComponent
         package = nil; error = nil; result = nil; phase = .converting
+        startedAt = Date(); stageStartedAt = startedAt; archiveBytes = nil
         progress = .init(0, "Opening your deck", filename)
         let scoped = url.startAccessingSecurityScopedResource()
         let progressOwner = self
@@ -36,7 +40,7 @@ final class AnkiImportSession: ObservableObject {
             return try AnkiPackageReader.read(url: url, workspace: workspace) { value in
                 Task { @MainActor in
                     guard progressOwner.runID == id, progressOwner.phase == .converting else { return }
-                    progressOwner.progress = value
+                    progressOwner.recordProgress(value)
                 }
             }
         }
@@ -61,7 +65,8 @@ final class AnkiImportSession: ObservableObject {
         guard let package, !selectedDecks.isEmpty, phase == .review else { return }
         let selection = selectedDecks, update = updateExisting, filename = filename
         let id = runID, workspace = workspace
-        phase = .saving; progress = .init(0.02, "Adding to your library")
+        phase = .saving; startedAt = Date(); stageStartedAt = startedAt
+        progress = .init(0.02, "Adding to your library")
         let progressOwner = self
         operation = Task { [weak self] in
             do {
@@ -72,8 +77,8 @@ final class AnkiImportSession: ObservableObject {
                 }.value
                 let result = try await committer.save(package, selectedDecks: selection, updateExisting: update, filename: filename) { value in
                     Task { @MainActor in
-                        guard progressOwner.runID == id else { return }
-                        progressOwner.progress = value
+                        guard progressOwner.runID == id, progressOwner.phase == .saving else { return }
+                        progressOwner.recordProgress(value)
                     }
                 }
                 if let workspace { try? FileManager.default.removeItem(at: workspace) }
@@ -84,6 +89,13 @@ final class AnkiImportSession: ObservableObject {
                 self.error = error.localizedDescription; self.phase = .review
             }
         }
+    }
+
+    private func recordProgress(_ value: AnkiImportProgress) {
+        guard value.fraction >= progress.fraction else { return }
+        if value.title != progress.title { stageStartedAt = Date() }
+        if let bytes = value.archiveBytes { archiveBytes = bytes }
+        progress = value
     }
 
     func cancel() {
@@ -115,10 +127,13 @@ actor AnkiLibraryImporter {
             if !saved { modelContext.rollback(); try? FileManager.default.removeItem(at: destination) }
         }
         let files = try FileManager.default.contentsOfDirectory(at: package.mediaDirectory, includingPropertiesForKeys: nil)
+        var copiedBytes = 0
+        progress(.init(0.05, "Saving images & audio", completedItems: 0, totalItems: files.count, unit: "files", processedBytes: 0))
         for (index, file) in files.enumerated() {
             try Task.checkCancellation()
             try FileManager.default.copyItem(at: file, to: destination.appendingPathComponent(file.lastPathComponent))
-            if index % 20 == 0 { progress(.init(0.05 + 0.35 * Double(index + 1) / Double(max(1, files.count)), "Saving images & audio", "\(index + 1) of \(files.count)")) }
+            copiedBytes += (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            if index % 20 == 0 || index + 1 == files.count { progress(.init(0.05 + 0.35 * Double(index + 1) / Double(max(1, files.count)), "Saving images & audio", "\(index + 1) of \(files.count)", completedItems: index + 1, totalItems: files.count, unit: "files", processedBytes: copiedBytes)) }
         }
         let library = try modelContext.fetch(FetchDescriptor<Deck>())
         var decks: [String: Deck] = [:]
@@ -173,7 +188,7 @@ actor AnkiLibraryImporter {
             card.ankiContent = AnkiCardContent(frontHTML: source.front, backHTML: source.back, css: source.css,
                 mediaFolder: mediaFolder, templateOrdinal: source.templateOrdinal, noteType: source.noteType, tags: source.tags)
             card.cardType = .anki
-            if index % 100 == 0 { progress(.init(0.42 + 0.53 * Double(index + 1) / Double(max(1, cards.count)), "Adding your cards", "\(index + 1) of \(cards.count)")) }
+            if index % 100 == 0 || index + 1 == cards.count { progress(.init(0.42 + 0.53 * Double(index + 1) / Double(max(1, cards.count)), "Adding your cards", "\(index + 1) of \(cards.count)", completedItems: index + 1, totalItems: cards.count, unit: "cards")) }
         }
         for (id, cards) in deckCards { decks[id]?.cards = cards }
         try Task.checkCancellation()
@@ -185,4 +200,34 @@ actor AnkiLibraryImporter {
         progress(.init(1, "Your deck is ready"))
         return AnkiImportResult(added: added, updated: updated, unchanged: unchanged, decks: selectedDecks.count)
     }
+}
+
+/// Rates are phase-local measurements; local archive work is never labeled as network transfer.
+struct AnkiImportTelemetry {
+    let progress: AnkiImportProgress
+    let elapsed: TimeInterval
+    let stageElapsed: TimeInterval
+    init(progress: AnkiImportProgress, startedAt: Date, stageStartedAt: Date, now: Date) {
+        self.progress = progress
+        elapsed = max(0, now.timeIntervalSince(startedAt))
+        stageElapsed = max(0, now.timeIntervalSince(stageStartedAt))
+    }
+    var unitsPerSecond: Double? {
+        guard stageElapsed >= 0.25, let count = progress.completedItems, count > 0 else { return nil }
+        return Double(count) / stageElapsed
+    }
+    var bytesPerSecond: Double? {
+        guard stageElapsed >= 0.25, let bytes = progress.processedBytes, bytes > 0 else { return nil }
+        return Double(bytes) / stageElapsed
+    }
+    var remainingSeconds: TimeInterval? {
+        guard stageElapsed >= 1, let completed = progress.completedItems, let total = progress.totalItems,
+              completed > 0, total > completed, let rate = unitsPerSecond else { return nil }
+        return Double(total - completed) / rate
+    }
+    static func duration(_ seconds: TimeInterval) -> String {
+        let seconds = Int(max(0, seconds).rounded(.up))
+        return seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
+    }
+    static func bytes(_ count: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file) }
 }

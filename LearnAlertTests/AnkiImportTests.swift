@@ -179,4 +179,42 @@ struct AnkiImportTests {
             try? FileManager.default.removeItem(at: AnkiCardContent.mediaRoot.appendingPathComponent(folder))
         }
     }
+    @Test("Study preloading reuses the next renderer and retains only two cards")
+    func prefetchesNextCard() async throws {
+        let cache = AnkiStudyRenderCache()
+        defer { cache.clear() }
+        let ids = (0..<3).map { _ in UUID() }
+        func content(_ number: Int) -> AnkiCardContent {
+            .init(frontHTML: "Card \(number)", backHTML: "Answer \(number)", css: "", mediaFolder: "", templateOrdinal: 0, noteType: "Basic", tags: [])
+        }
+        cache.prepare(current: (ids[0], content(0), false), next: (ids[1], content(1)), configuration: .init())
+        let next = cache.renderer(for: ids[1])
+        #expect(!next.coordinator.permitsPlayback)
+        for _ in 0..<150 {
+            if !next.isLoading { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        #expect(!next.isLoading && next.error == nil)
+        #expect(try await next.webView.evaluateJavaScript("document.body.textContent.includes('Card 1')") as? Bool == true)
+        cache.prepare(current: (ids[1], content(1), false), next: (ids[2], content(2)), configuration: .init())
+        #expect(cache.renderer(for: ids[1]) === next)
+        #expect(!next.isLoading)
+        #expect(cache.retainedRendererCount == 2)
+    }
+
+    @Test("Import telemetry measures stage rates and does not invent an ETA before progress")
+    func importTelemetry() {
+        let start = Date(timeIntervalSince1970: 100)
+        let now = Date(timeIntervalSince1970: 110)
+        let progress = AnkiImportProgress(0.6, "Media", completedItems: 20, totalItems: 100, unit: "files", processedBytes: 2000000)
+        let metrics = AnkiImportTelemetry(progress: progress, startedAt: start, stageStartedAt: start, now: now)
+        #expect(metrics.unitsPerSecond == 2)
+        #expect(metrics.bytesPerSecond == 200000)
+        #expect(metrics.remainingSeconds == 40)
+        let waiting = AnkiImportTelemetry(progress: .init(0,"Opening"), startedAt: start, stageStartedAt: start, now: now)
+        #expect(waiting.bytesPerSecond == nil && waiting.remainingSeconds == nil)
+        let complete = AnkiImportTelemetry(progress: .init(1,"Done",completedItems:100,totalItems:100,unit:"cards"), startedAt:start,stageStartedAt:start,now:now)
+        #expect(complete.remainingSeconds == nil)
+    }
+
 }

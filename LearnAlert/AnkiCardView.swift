@@ -1,59 +1,42 @@
 import SwiftUI
+import Combine
 import WebKit
 import AVFoundation
 import UniformTypeIdentifiers
 
 /// Imported cards have their own isolated renderer. Native LearnAlert cards never load HTML.
-struct AnkiCardView: UIViewRepresentable {
+struct AnkiCardView: View {
     let content: AnkiCardContent
     let showingBack: Bool
     var mediaDirectory: URL? = nil
     var compact = false
     var centered = false
     var animatedReveal = false
+    var loadingChanged: ((Bool) -> Void)? = nil
+    @StateObject private var localRenderer: AnkiCardRenderer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.mediaTypesRequiringUserActionForPlayback = .all
-        configuration.allowsInlineMediaPlayback = true
-        let handler = AnkiMediaSchemeHandler()
-        context.coordinator.media = handler
-        configuration.setURLSchemeHandler(handler, forURLScheme: "anki-media")
-        configuration.userContentController.add(context.coordinator, name: "ankiAudio")
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.scrollView.alwaysBounceVertical = false
-        webView.allowsBackForwardNavigationGestures = false
-        return webView
+    init(content: AnkiCardContent, showingBack: Bool, mediaDirectory: URL? = nil,
+         compact: Bool = false, centered: Bool = false, animatedReveal: Bool = false,
+         renderer: AnkiCardRenderer? = nil, loadingChanged: ((Bool) -> Void)? = nil) {
+        self.content = content; self.showingBack = showingBack; self.mediaDirectory = mediaDirectory
+        self.compact = compact; self.centered = centered; self.animatedReveal = animatedReveal
+        self.loadingChanged = loadingChanged
+        _localRenderer = StateObject(wrappedValue: renderer ?? AnkiCardRenderer())
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
-        let html = document
-        let directory = mediaDirectory ?? content.mediaURL
-        guard context.coordinator.document != html || context.coordinator.directory != directory else { return }
-        context.coordinator.stop()
-        context.coordinator.document = html
-        context.coordinator.directory = directory
-        context.coordinator.media?.directory = directory
-        view.loadHTMLString(html, baseURL: URL(string: "anki-media://deck/"))
+    var body: some View {
+        AnkiRenderedSurface(renderer: localRenderer,
+            document: Self.document(content: content, showingBack: showingBack,
+                configuration: .init(dark: colorScheme == .dark, compact: compact, centered: centered,
+                    animatedReveal: animatedReveal, reduceMotion: reduceMotion)),
+            directory: mediaDirectory ?? content.mediaURL, compact: compact, loadingChanged: loadingChanged)
     }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
-        view.stopLoading(); coordinator.stop()
-        view.configuration.userContentController.removeScriptMessageHandler(forName: "ankiAudio")
-        view.navigationDelegate = nil
-    }
-
-    private var document: String {
-        let dark = colorScheme == .dark
+    static func document(content: AnkiCardContent, showingBack: Bool, configuration: AnkiRenderConfiguration) -> String {
+        let dark = configuration.dark, compact = configuration.compact, centered = configuration.centered
+        let animatedReveal = configuration.animatedReveal, reduceMotion = configuration.reduceMotion
         let html = showingBack ? content.backHTML : content.frontHTML
         let cardHTML = centered ? "<main id=\"learnalert-anki-content\">\(html)</main>" : html
         let revealStyle = animatedReveal && showingBack && !reduceMotion
@@ -101,13 +84,32 @@ struct AnkiCardView: UIViewRepresentable {
         var document = ""
         var directory: URL?
         var media: AnkiMediaSchemeHandler?
+        var permitsPlayback = false
+        var loadCompleted: ((Error?) -> Void)?
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard !webView.isLoading else { return }
+            let expectedDocument = document
+            webView.evaluateJavaScript("document.readyState") { [weak self, weak webView] _, error in
+                guard let self, self.document == expectedDocument, webView?.isLoading == false else { return }
+                self.loadCompleted?(error)
+            }
+        }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { loadCompleted?(error) }
+        }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { loadCompleted?(error) }
+        }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            loadCompleted?(URLError(.cannotLoadFromNetwork))
+        }
         private var audio: AVAudioPlayer?
         private let speech = AVSpeechSynthesizer()
 
         func stop() { audio?.stop(); audio = nil; speech.stopSpeaking(at: .immediate) }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: String] else { return }
+            guard permitsPlayback, let body = message.body as? [String: String] else { return }
             stop()
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try? AVAudioSession.sharedInstance().setActive(true)
@@ -126,6 +128,113 @@ struct AnkiCardView: UIViewRepresentable {
             let scheme = action.request.url?.scheme?.lowercased()
             decisionHandler(action.navigationType == .other && (scheme == "about" || scheme == "anki-media") ? .allow : .cancel)
         }
+    }
+}
+
+struct AnkiRenderConfiguration: Equatable {
+    var dark = false
+    var compact = false
+    var centered = true
+    var animatedReveal = true
+    var reduceMotion = false
+}
+
+/// One renderer for the current card and one for the next; never preload a whole deck.
+@MainActor final class AnkiStudyRenderCache: ObservableObject {
+    private var renderers: [UUID: AnkiCardRenderer] = [:]
+    var retainedRendererCount: Int { renderers.count }
+    func renderer(for id: UUID) -> AnkiCardRenderer {
+        if let renderer = renderers[id] { return renderer }
+        let renderer = AnkiCardRenderer(); renderers[id] = renderer
+        return renderer
+    }
+    func prepare(current: (UUID, AnkiCardContent, Bool), next: (UUID, AnkiCardContent)?, configuration: AnkiRenderConfiguration) {
+        let keep = Set([current.0, next?.0].compactMap { $0 })
+        for id in Array(renderers.keys) where !keep.contains(id) { renderers.removeValue(forKey: id)?.discard() }
+        renderer(for: current.0).load(AnkiCardView.document(content: current.1, showingBack: current.2, configuration: configuration), directory: current.1.mediaURL)
+        if let next, next.0 != current.0 {
+            renderer(for: next.0).load(AnkiCardView.document(content: next.1, showingBack: false, configuration: configuration), directory: next.1.mediaURL)
+        }
+    }
+    func clear() { renderers.values.forEach { $0.discard() }; renderers.removeAll() }
+}
+
+@MainActor final class AnkiCardRenderer: ObservableObject {
+    @Published private(set) var isLoading = true
+    @Published private(set) var error: String?
+    let webView: WKWebView
+    let coordinator = AnkiCardView.Coordinator()
+    init() {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+        configuration.allowsInlineMediaPlayback = true
+        let handler = AnkiMediaSchemeHandler()
+        coordinator.media = handler
+        configuration.setURLSchemeHandler(handler, forURLScheme: "anki-media")
+        configuration.userContentController.add(coordinator, name: "ankiAudio")
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = coordinator
+        webView.isOpaque = false; webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.alwaysBounceVertical = false
+        webView.allowsBackForwardNavigationGestures = false
+        coordinator.loadCompleted = { [weak self] error in
+            self?.error = error == nil ? nil : "This card couldn’t load. Try again."
+            self?.isLoading = false
+        }
+    }
+    func load(_ document: String, directory: URL?) {
+        guard coordinator.document != document || coordinator.directory != directory else { return }
+        coordinator.stop(); error = nil; isLoading = true
+        coordinator.document = document; coordinator.directory = directory
+        coordinator.media?.directory = directory
+        webView.loadHTMLString(document, baseURL: URL(string: "anki-media://deck/"))
+    }
+    func retry() {
+        let document = coordinator.document, directory = coordinator.directory
+        coordinator.document = ""; load(document, directory: directory)
+    }
+    func discard() { webView.stopLoading(); coordinator.permitsPlayback = false; coordinator.stop() }
+}
+
+private struct AnkiNativeWebView: UIViewRepresentable {
+    let renderer: AnkiCardRenderer
+    func makeUIView(context: Context) -> WKWebView { renderer.webView }
+    func updateUIView(_ uiView: WKWebView, context: Context) { }
+    func makeCoordinator() -> AnkiCardRenderer { renderer }
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: AnkiCardRenderer) { coordinator.coordinator.stop() }
+}
+
+private struct AnkiRenderedSurface: View {
+    @ObservedObject var renderer: AnkiCardRenderer
+    let document: String
+    let directory: URL?
+    let compact: Bool
+    let loadingChanged: ((Bool) -> Void)?
+    var body: some View {
+        ZStack {
+            AnkiNativeWebView(renderer: renderer)
+                .opacity(renderer.isLoading || renderer.error != nil ? 0 : 1)
+                .allowsHitTesting(!renderer.isLoading && renderer.error == nil)
+                .accessibilityHidden(renderer.isLoading || renderer.error != nil)
+            if renderer.isLoading {
+                ProgressView("Loading card…").font(compact ? .caption : .subheadline)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = renderer.error {
+                VStack(spacing: 12) {
+                    Text(error).font(.subheadline).multilineTextAlignment(.center)
+                    Button("Try again") { renderer.retry() }.buttonStyle(.bordered)
+                }.padding()
+            }
+        }
+        .onAppear { renderer.coordinator.permitsPlayback = true }
+        .onDisappear { renderer.coordinator.permitsPlayback = false; renderer.coordinator.stop() }
+        .onChange(of: document, initial: true) { _, value in renderer.load(value, directory: directory) }
+        .onChange(of: directory) { _, value in renderer.load(document, directory: value) }
+        .onChange(of: renderer.isLoading, initial: true) { _, value in loadingChanged?(value || renderer.error != nil) }
+        .onChange(of: renderer.error) { _, value in loadingChanged?(renderer.isLoading || value != nil) }
     }
 }
 

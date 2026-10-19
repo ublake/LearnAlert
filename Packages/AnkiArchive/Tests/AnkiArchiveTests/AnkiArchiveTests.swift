@@ -2,6 +2,13 @@ import XCTest
 import ZIPFoundation
 @testable import AnkiArchive
 
+private final class ProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [AnkiImportProgress] = []
+    func append(_ value: AnkiImportProgress) { lock.lock(); defer { lock.unlock() }; values.append(value) }
+    func snapshot() -> [AnkiImportProgress] { lock.lock(); defer { lock.unlock() }; return values }
+}
+
 final class AnkiArchiveTests: XCTestCase {
     private func fixture(_ name: String) throws -> URL { try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "apkg", subdirectory: "Fixtures")) }
     private func temporary() -> URL { FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true) }
@@ -10,7 +17,13 @@ final class AnkiArchiveTests: XCTestCase {
         var identities: Set<String>?
         for format in ["legacy", "modern"] {
             let workspace = temporary(); defer { try? FileManager.default.removeItem(at: workspace) }
-            let package = try AnkiPackageReader.read(url: fixture(format), workspace: workspace)
+            let recorder = ProgressRecorder()
+            let package = try AnkiPackageReader.read(url: fixture(format), workspace: workspace, progress: { recorder.append($0) })
+            let samples = recorder.snapshot()
+            XCTAssertGreaterThan(samples.compactMap(\.archiveBytes).first ?? 0, 0)
+            XCTAssertEqual(samples.last(where: { $0.unit == "cards" })?.completedItems, package.cards.count)
+            XCTAssertEqual(samples.last(where: { $0.unit == "files" })?.processedBytes, package.mediaBytes)
+            XCTAssertTrue(samples.allSatisfy { ($0.completedItems ?? 0) <= ($0.totalItems ?? Int.max) })
             XCTAssertEqual(package.cards.count, 9)
             XCTAssertEqual(package.decks.count, 3)
             XCTAssertEqual(package.mediaCount, 2)

@@ -125,6 +125,31 @@ struct AnkiImportView: View {
                 .tint(LearnAlertStyle.appAccentForeground)
                 .animation(.easeInOut(duration: 0.35), value: session.progress.fraction)
                 .accessibilityLabel(session.progress.title)
+            TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+                let metrics = AnkiImportTelemetry(progress: session.progress, startedAt: session.startedAt,
+                    stageStartedAt: session.stageStartedAt, now: timeline.date)
+                VStack(spacing: 6) {
+                    HStack {
+                        Text("\(Int(session.progress.fraction * 100))%")
+                        Spacer()
+                        if let bytes = session.archiveBytes { Text(AnkiImportTelemetry.bytes(bytes)) }
+                        Text("· \(AnkiImportTelemetry.duration(metrics.elapsed)) elapsed")
+                    }
+                    HStack {
+                        if let completed = session.progress.completedItems, let total = session.progress.totalItems {
+                            Text("\(completed.formatted()) / \(total.formatted()) \(session.progress.unit)")
+                        }
+                        Spacer()
+                        if let rate = metrics.bytesPerSecond { Text("\(AnkiImportTelemetry.bytes(Int(rate)))/s") }
+                        else if let rate = metrics.unitsPerSecond { Text("\(Int(rate).formatted()) \(session.progress.unit)/s") }
+                    }
+                    if let remaining = metrics.remainingSeconds {
+                        Text("About \(AnkiImportTelemetry.duration(remaining)) left in this step")
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                .font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
+            }
             HStack(spacing: 0) {
                 if session.phase == .saving {
                     stage("Media", complete: session.progress.fraction >= 0.4)

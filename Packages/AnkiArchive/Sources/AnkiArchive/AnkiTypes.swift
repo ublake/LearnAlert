@@ -11,8 +11,17 @@ public struct AnkiImportProgress: Sendable {
     public let fraction: Double
     public let title: String
     public let detail: String
-    public init(_ fraction: Double, _ title: String, _ detail: String = "") {
+    public let completedItems: Int?
+    public let totalItems: Int?
+    public let unit: String
+    public let processedBytes: Int?
+    public let archiveBytes: Int?
+    public init(_ fraction: Double, _ title: String, _ detail: String = "",
+                completedItems: Int? = nil, totalItems: Int? = nil, unit: String = "",
+                processedBytes: Int? = nil, archiveBytes: Int? = nil) {
         self.fraction = fraction; self.title = title; self.detail = detail
+        self.completedItems = completedItems; self.totalItems = totalItems; self.unit = unit
+        self.processedBytes = processedBytes; self.archiveBytes = archiveBytes
     }
 }
 
