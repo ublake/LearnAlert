@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var isSearching = false
     @State private var showingCreationActions = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.layoutDirection) private var layoutDirection
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
@@ -33,19 +35,18 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
+            GeometryReader { proxy in
+                let workspace = LibraryWorkspaceGeometry.resolve(proxy: proxy, regularWidth: horizontalSizeClass == .regular,
+                    direction: layoutDirection)
             ZStack {
                 LearnAlertStyle.courseCanvas
                     .ignoresSafeArea()
                 
                 Group {
                     switch selectedTab {
-                    case 0:
-                        HomeLibraryView(
-                            searchText: $searchText,
-                            selectedTab: $selectedTab,
-                            showingCreateDeck: $showingCreateDeck
-                        )
-                    case 1: PremadeDecksView()
+                    case 0, 1:
+                        AdaptiveLibraryWorkspace(geometry: workspace, searchText: $searchText,
+                            selectedTab: $selectedTab, showingCreateDeck: $showingCreateDeck)
                     case 2: NotificationCustomizeView()
                     case 3: AppSettingsView()
                     default:
@@ -85,6 +86,9 @@ struct ContentView: View {
                 }
                 // Only the dock ignores the keyboard; the current page still avoids it.
                 .ignoresSafeArea(.keyboard, edges: .bottom)
+                .frame(width: workspace.dock.width, height: workspace.dock.height)
+                .position(x: workspace.dock.midX, y: workspace.dock.midY)
+            }
             }
             .sheet(isPresented: $showingCreateDeck) { CreateDeckView() }
             .sheet(isPresented: $showingAIComposer) { GeneratedQuizImportView() }

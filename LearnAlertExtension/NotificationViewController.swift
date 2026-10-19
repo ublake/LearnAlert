@@ -102,6 +102,7 @@ struct FlashcardNotificationView: View {
     @FocusState private var isAnswerFieldFocused: Bool
 
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.notificationViewportCompact) private var viewportCompact
 
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
@@ -150,7 +151,7 @@ struct FlashcardNotificationView: View {
     }
 
     private var isCompactLayout: Bool {
-        appearance.layout == .compact
+        appearance.layout == .compact || viewportCompact
     }
 
     private var isLight: Bool {
@@ -1161,23 +1162,39 @@ private extension View {
 class NotificationViewController: UIViewController, UNNotificationContentExtension {
 
     private var hostingController: UIHostingController<AnyView>?
-    private var courseContentHeight: CGFloat?
+    private var measuredContentHeight: CGFloat = 540
+    private var isCourseContent = false
     private var coursePreservesDrawingHeight = false
 
-    private func fitCourseContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
-        courseContentHeight = height
+    private func fitContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
+        measuredContentHeight = height
         coursePreservesDrawingHeight = preserveDrawingHeight
-        let screenHeight = view.window?.windowScene?.screen.bounds.height ?? 844
-        let targetHeight = CourseNotificationSizing.height(contentHeight: height, screenHeight: screenHeight,
-            preserveDrawingHeight: preserveDrawingHeight)
-        if abs(preferredContentSize.height - targetHeight) > 2 {
-            preferredContentSize = CGSize(width: view.bounds.width, height: targetHeight)
+        // The active scene can be a different display or a resized window. Never size
+        // a notification from UIScreen.main or the physical display's full bounds.
+        let containerHeight = view.window?.windowScene?.effectiveGeometry.coordinateSpace.bounds.height
+            ?? view.window?.bounds.height ?? 760
+        let requested = preserveDrawingHeight ? CGFloat(540) : height
+        let targetHeight = NotificationViewportGeometry.preferredHeight(contentHeight: requested,
+            containerHeight: containerHeight, baseline: isCourseContent ? 540 : 300)
+        let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
+        if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
+            preferredContentSize = targetSize
         }
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if let height = courseContentHeight { fitCourseContent(height, preserveDrawingHeight: coursePreservesDrawingHeight) }
+        fitContent(measuredContentHeight, preserveDrawingHeight: coursePreservesDrawingHeight)
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        view.setNeedsLayout()
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.view.setNeedsLayout() }
     }
 
     override func viewDidLoad() {
@@ -1202,7 +1219,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let userInfo = content.userInfo
 
         if let courseId = userInfo["courseId"] as? String, let course = CourseCurriculumCatalog.course(for: courseId) {
-            fitCourseContent(540)
+            isCourseContent = true
+            fitContent(540)
             let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false, openApp: { [weak self] sectionId in
                 let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
                 defaults?.set(courseId, forKey: "handoffCourseId")
@@ -1214,13 +1232,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 if playing { self?.extensionContext?.mediaPlayingStarted() }
                 else { self?.extensionContext?.mediaPlayingPaused() }
             }, contentHeightChanged: { [weak self] height, preserveDrawingHeight in
-                self?.fitCourseContent(height, preserveDrawingHeight: preserveDrawingHeight)
+                self?.fitContent(height, preserveDrawingHeight: preserveDrawingHeight)
             })
             show(AnyView(courseView))
             return
         }
 
-        courseContentHeight = nil
+        isCourseContent = false
+        coursePreservesDrawingHeight = false
+        fitContent(540)
 
         let isRandom = userInfo["isRandom"] as? Bool ?? false
         let progress = userInfo["progress"] as? String ?? "-"
@@ -1296,36 +1316,17 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 self?.openHostApp(deckId: snapshot.deckId)
             },
             onContentHeightChange: { [weak self] newHeight in
-                guard let self = self else { return }
-                let targetSize = CGSize(width: self.view.bounds.width, height: newHeight)
-                if abs(self.preferredContentSize.height - newHeight) > 2 {
-                    self.preferredContentSize = targetSize
-                }
+                self?.fitContent(newHeight)
             }
         )
 
-        if let existing = hostingController {
-            existing.rootView = AnyView(swiftUIView)
-        } else {
-            let hosting = UIHostingController(rootView: AnyView(swiftUIView))
-            hosting.view.backgroundColor = .clear
-            addChild(hosting)
-            view.addSubview(hosting.view)
-            hosting.view.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
-                hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-                hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-            ])
-            hosting.didMove(toParent: self)
-            self.hostingController = hosting
-        }
+        show(AnyView(swiftUIView))
     }
 
     private func show(_ root: AnyView) {
-        if let existing = hostingController { existing.rootView = root; return }
-        let hosting = UIHostingController(rootView: root)
+        let wrapped = AnyView(NotificationViewportRoot(content: root))
+        if let existing = hostingController { existing.rootView = wrapped; return }
+        let hosting = UIHostingController(rootView: wrapped)
         hosting.view.backgroundColor = .clear
         addChild(hosting)
         view.addSubview(hosting.view)
@@ -1352,5 +1353,41 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             }
             extensionContext?.performNotificationDefaultAction()
         }
+    }
+}
+
+
+private struct NotificationViewportCompactKey: EnvironmentKey {
+    static let defaultValue = false
+}
+private extension EnvironmentValues {
+    var notificationViewportCompact: Bool {
+        get { self[NotificationViewportCompactKey.self] }
+        set { self[NotificationViewportCompactKey.self] = newValue }
+    }
+}
+
+/// The content stays mounted while its window changes display or size.
+private struct NotificationViewportRoot: View {
+    let content: AnyView
+    var body: some View {
+        GeometryReader { proxy in
+            let usable = contentRect(proxy)
+            content
+                .environment(\.notificationViewportCompact, usable.width < 350 || usable.height < 450)
+                .frame(width: min(640, usable.width), height: usable.height)
+                .clipped()
+                .position(x: usable.midX, y: usable.midY)
+        }
+    }
+    private func contentRect(_ proxy: GeometryProxy) -> CGRect {
+        var regions: [CGRect] = []
+        if #available(iOS 27.1, *) {
+            regions = [ReservedRegion.Kind.division, .occlusion].flatMap { kind in
+                proxy.reservedRegions(kind: kind, options: .includeInactive, layoutDirectionBehavior: .fixed)
+                    .filter(\.isActive).map(\.frame)
+            }
+        }
+        return NotificationViewportGeometry.usableRect(in: CGRect(origin: .zero, size: proxy.size), avoiding: regions)
     }
 }

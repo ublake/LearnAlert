@@ -17,7 +17,7 @@ struct CourseNotificationFlowTests {
         #expect(CourseNotificationSizing.height(contentHeight: 500, screenHeight: 667) == 447)
         #expect(CourseNotificationSizing.height(contentHeight: .nan, screenHeight: 844) == 540)
         #expect(CourseNotificationSizing.height(contentHeight: 2000, screenHeight: 1366) == 680)
-        #expect(CourseNotificationSizing.height(contentHeight: 900, screenHeight: 667, preserveDrawingHeight: true) == 540)
+        #expect(CourseNotificationSizing.height(contentHeight: 900, screenHeight: 667, preserveDrawingHeight: true) == 447)
     }
 
     @Test("Foundation teaching, listening, choices and placement fit a phone notification without shrinking text")

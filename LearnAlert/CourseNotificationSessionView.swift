@@ -14,14 +14,11 @@ extension EnvironmentValues {
 /// Keep the familiar height unless readable content genuinely needs more room.
 nonisolated enum CourseNotificationSizing {
     static func maximumHeight(screenHeight: CGFloat) -> CGFloat {
-        max(320, min(680, screenHeight - 220))
+        NotificationViewportGeometry.maximumHeight(containerHeight: screenHeight)
     }
     static func height(contentHeight: CGFloat, screenHeight: CGFloat, preserveDrawingHeight: Bool = false) -> CGFloat {
-        if preserveDrawingHeight { return 540 }
-        let maximum = maximumHeight(screenHeight: screenHeight)
-        let baseline = min(540, maximum)
-        guard contentHeight.isFinite, contentHeight > 0 else { return baseline }
-        return min(maximum, max(baseline, ceil(contentHeight)))
+        NotificationViewportGeometry.preferredHeight(contentHeight: preserveDrawingHeight ? 540 : contentHeight,
+            containerHeight: screenHeight, baseline: 540)
     }
 }
 
