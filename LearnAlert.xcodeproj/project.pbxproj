@@ -123,6 +123,8 @@
 				AlertTimelineStore.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
+				AnkiReviewAlerts.swift,
+				AnkiReviewScheduling.swift,
 				CardFieldMedia.swift,
 				CardAudioStore.swift,
 				CourseActivity.swift,

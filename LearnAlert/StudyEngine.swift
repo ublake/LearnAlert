@@ -496,7 +496,7 @@ class StudyEngine: ObservableObject {
             
             // 4. If we haven't reached activeVolume, pull upcoming cards that will be due soonest without duplicate repeats
             if selected.count < targetCount {
-                let futureCards = baseCards.filter { !$0.isNew && $0.nextReviewDate > now }.sorted {
+                let futureCards = baseCards.filter { $0.cardType != .anki && !$0.isNew && $0.nextReviewDate > now }.sorted {
                     $0.nextReviewDate < $1.nextReviewDate
                 }
                 
@@ -515,7 +515,9 @@ class StudyEngine: ObservableObject {
             
             return selected
         } else {
-            let ordered = orderedCards(deck: deck, section: section)
+            let ordered = orderedCards(deck: deck, section: section).filter {
+                $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now
+            }
             let nextID = UserDefaults.standard.string(forKey: sequentialCursorKey(deck: deck, section: section)).flatMap(UUID.init(uuidString:))
             return StudyScheduling.sequentialBatch(ordered, nextID: nextID, count: activeVolume)
         }

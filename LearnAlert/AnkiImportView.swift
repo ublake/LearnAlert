@@ -34,7 +34,7 @@ struct AnkiImportView: View {
                     case .complete: complete
                     }
                 }
-                .transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : 12)))
+                .transition(session.phase == .saving ? .identity : .opacity.combined(with: .offset(y: reduceMotion ? 0 : 12)))
             }
             .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: session.phase)
             .navigationTitle("Import Anki")
@@ -127,7 +127,7 @@ struct AnkiImportView: View {
                 .accessibilityLabel(session.progress.title)
             TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
                 let metrics = AnkiImportTelemetry(progress: session.progress, startedAt: session.startedAt,
-                    stageStartedAt: session.stageStartedAt, now: timeline.date)
+                    stageStartedAt: session.stageStartedAt, now: timeline.date, samples: session.recentSamples)
                 VStack(spacing: 6) {
                     HStack {
                         Text("\(Int(session.progress.fraction * 100))%")
@@ -140,8 +140,25 @@ struct AnkiImportView: View {
                             Text("\(completed.formatted()) / \(total.formatted()) \(session.progress.unit)")
                         }
                         Spacer()
-                        if let rate = metrics.bytesPerSecond { Text("\(AnkiImportTelemetry.bytes(Int(rate)))/s") }
-                        else if let rate = metrics.unitsPerSecond { Text("\(Int(rate).formatted()) \(session.progress.unit)/s") }
+                    }
+                    HStack {
+                        if let rate = metrics.currentBytesPerSecond {
+                            Text("Now \(AnkiImportTelemetry.bytes(Int(rate)))/s")
+                        } else if let rate = metrics.currentUnitsPerSecond {
+                            Text("Now \(Int(rate).formatted()) \(session.progress.unit)/s")
+                        }
+                        Spacer()
+                        if let rate = metrics.bytesPerSecond {
+                            Text("Avg \(AnkiImportTelemetry.bytes(Int(rate)))/s")
+                        } else if let rate = metrics.unitsPerSecond {
+                            Text("Avg \(Int(rate).formatted()) \(session.progress.unit)/s")
+                        }
+                    }
+                    if session.waitingForCommit {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.mini)
+                            Text(session.progress.title == "Updating your library" ? "Refreshing the library…" : "Saving safely…")
+                        }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if let remaining = metrics.remainingSeconds {
                         Text("About \(AnkiImportTelemetry.duration(remaining)) left in this step")
@@ -164,6 +181,7 @@ struct AnkiImportView: View {
             Spacer(); Spacer().frame(height: 24)
         }
         .padding(.horizontal, 32)
+        .onAppear { session.savingViewDidAppear() }
     }
 
     private func stage(_ title: String, complete: Bool) -> some View {

@@ -6,8 +6,44 @@ public enum AnkiTemplateRenderer {
     public struct Result: Sendable { public let front: String; public let back: String; public let warnings: [String] }
     private indirect enum Node { case text(String), field(String), section(String, Bool, [Node]) }
 
+    private static let templateExpression = try! NSRegularExpression(pattern: #"\{\{([^{}]+)\}\}"#)
+    private static let externalExpression = try! NSRegularExpression(pattern: #"(?:src\s*=\s*["']?https?://|url\s*\(\s*["']?https?://|https?://[^\s"']+\.(?:js|css))"#)
+    private static let mediaExpression = try! NSRegularExpression(pattern: #"<(?:img|audio|video)\b|\[sound:"#)
+    private static let scriptExpression = try! NSRegularExpression(pattern: #"(?is)<(script|style)\b[^>]*>.*?</\1>"#)
+    private static let breakExpression = try! NSRegularExpression(pattern: #"(?i)<br\s*/?>|</(?:div|p|li|tr)>"#)
+    private static let tagExpression = try! NSRegularExpression(pattern: #"<[^>]*>"#)
+    private static let furiganaExpression = try! NSRegularExpression(pattern: #"([^\s\[\]<>]+)\[([^\[\]]+)\]"#)
+    private static let soundExpression = try! NSRegularExpression(pattern: #"\[sound:([^\]]+)\]"#)
+
+    /// One import owns one session. Templates (including failed parses) and static
+    /// CSS warnings are reused; rendered field HTML is never cached or discarded.
+    final class Session {
+        private var templates: [String: Swift.Result<[Node], Error>] = [:]
+        private var cssWarnings: [String: Set<String>] = [:]
+        private(set) var parsedTemplateCount = 0
+        func render(type: AnkiNoteType, values: [String], ordinal: Int, deck: String, tags: [String]) throws -> Result {
+            let warnings = cssWarnings[type.css] ?? contentWarnings(type.css)
+            cssWarnings[type.css] = warnings
+            return try AnkiTemplateRenderer.render(type: type, values: values, ordinal: ordinal, deck: deck, tags: tags,
+                parseTemplate: parsed, cssWarnings: warnings)
+        }
+        private func parsed(_ source: String) throws -> [Node] {
+            if let cached = templates[source] { return try cached.get() }
+            parsedTemplateCount += 1
+            let parsed = Swift.Result { try AnkiTemplateRenderer.parse(source) }
+            templates[source] = parsed
+            return try parsed.get()
+        }
+    }
+
     public static func render(type: AnkiNoteType, values: [String], ordinal: Int,
                               deck: String, tags: [String]) throws -> Result {
+        try render(type: type, values: values, ordinal: ordinal, deck: deck, tags: tags,
+            parseTemplate: parse, cssWarnings: contentWarnings(type.css))
+    }
+
+    private static func render(type: AnkiNoteType, values: [String], ordinal: Int, deck: String, tags: [String],
+                               parseTemplate: (String) throws -> [Node], cssWarnings: Set<String>) throws -> Result {
         guard let template = type.templates[safe: type.isCloze ? 0 : ordinal] else {
             throw AnkiImportError.invalid("A card references a missing Anki template.")
         }
@@ -20,27 +56,36 @@ public enum AnkiTemplateRenderer {
         if template.front.contains("anki.imageOcclusion.setup"), fields["Occlusion"] != nil {
             return try AnkiImageOcclusion.render(fields: fields, ordinal: ordinal)
         }
-        var warnings = Set<String>()
-        let frontNodes = try parse(template.front), backNodes = try parse(template.back)
+        var warnings = cssWarnings
+        let frontNodes = try parseTemplate(template.front), backNodes = try parseTemplate(template.back)
         let front = evaluate(frontNodes, fields: fields, answer: false, ordinal: ordinal, warnings: &warnings)
         fields["FrontSide"] = front
         let back = evaluate(backNodes, fields: fields, answer: true, ordinal: ordinal, warnings: &warnings)
-        for content in [front, back, type.css] {
-            if content.range(of: #"(?:src\s*=\s*["']?https?://|url\s*\(\s*["']?https?://|https?://[^\s"']+\.(?:js|css))"#, options: .regularExpression) != nil {
-                warnings.insert("Some cards reference online media or libraries. Only bundled files are available during offline study.")
-            }
-            if content.contains("anki.imageOcclusion") || content.contains("anki.setupImageOcclusion") {
-                warnings.insert("This deck uses Anki's image-occlusion runtime. Check the sample before importing.")
-            }
-            if content.contains("\\(") || content.contains("\\[") || content.contains("[latex]") {
-                warnings.insert("Equations use LearnAlert's offline KaTeX renderer. Anki-specific MathJax macros and full LaTeX documents may need adjustment.")
-            }
-        }
+        warnings.formUnion(contentWarnings(front))
+        warnings.formUnion(contentWarnings(back))
         return Result(front: soundHTML(front), back: soundHTML(back), warnings: warnings.sorted())
     }
 
+    private static func hasMatch(_ expression: NSRegularExpression, in text: String) -> Bool {
+        expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    private static func contentWarnings(_ content: String) -> Set<String> {
+        var warnings = Set<String>()
+        if hasMatch(externalExpression, in: content) {
+            warnings.insert("Some cards reference online media or libraries. Only bundled files are available during offline study.")
+        }
+        if content.contains("anki.imageOcclusion") || content.contains("anki.setupImageOcclusion") {
+            warnings.insert("This deck uses Anki's image-occlusion runtime. Check the sample before importing.")
+        }
+        if content.contains("\\(") || content.contains("\\[") || content.contains("[latex]") {
+            warnings.insert("Equations use LearnAlert's offline KaTeX renderer. Anki-specific MathJax macros and full LaTeX documents may need adjustment.")
+        }
+        return warnings
+    }
+
     private static func parse(_ input: String) throws -> [Node] {
-        let expression = try NSRegularExpression(pattern: #"\{\{([^{}]+)\}\}"#)
+        let expression = templateExpression
         let text = input as NSString
         let matches = expression.matches(in: input, range: NSRange(location: 0, length: text.length))
         var index = 0, cursor = 0
@@ -75,7 +120,7 @@ public enum AnkiTemplateRenderer {
             case .text(let text): return text
             case .section(let name, let inverted, let children):
                 let value = fields[name] ?? ""
-                let exists = !plainText(value).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.range(of: #"<(?:img|audio|video)\b|\[sound:"#, options: .regularExpression) != nil
+                let exists = !plainText(value).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasMatch(mediaExpression, in: value)
                 return exists != inverted ? evaluate(children, fields: fields, answer: answer, ordinal: ordinal, warnings: &warnings) : ""
             case .field(let token):
                 let parts = token.components(separatedBy: ":")
@@ -146,19 +191,19 @@ public enum AnkiTemplateRenderer {
     }
 
     private static func furigana(_ value: String, mode: Int) -> String {
-        replacing(value, pattern: #"([^\s\[\]<>]+)\[([^\[\]]+)\]"#) { parts in
+        replacing(value, using: furiganaExpression) { parts in
             switch mode { case 1: return parts[2]; case 2: return parts[1]; default: return "<ruby>\(parts[1])<rt>\(parts[2])</rt></ruby>" }
         }
     }
 
     private static func soundHTML(_ text: String) -> String {
-        replacing(text, pattern: #"\[sound:([^\]]+)\]"#) { "<button class=\"anki-sound\" data-sound=\"\(escape($0[1]))\" aria-label=\"Play audio\">▶ Listen</button>" }
+        replacing(text, using: soundExpression) { "<button class=\"anki-sound\" data-sound=\"\(escape($0[1]))\" aria-label=\"Play audio\">▶ Listen</button>" }
     }
 
     public static func plainText(_ html: String) -> String {
-        var text = html.replacingOccurrences(of: #"(?is)<(script|style)\b[^>]*>.*?</\1>"#, with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"(?i)<br\s*/?>|</(?:div|p|li|tr)>"#, with: "\n", options: .regularExpression)
-        text = text.replacingOccurrences(of: #"<[^>]*>"#, with: "", options: .regularExpression)
+        var text = scriptExpression.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "")
+        text = breakExpression.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "\n")
+        text = tagExpression.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
         for (entity, value) in [("&nbsp;", " "), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] { text = text.replacingOccurrences(of: entity, with: value) }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -167,16 +212,23 @@ public enum AnkiTemplateRenderer {
         value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;")
     }
 
-    private static func replacing(_ value: String, pattern: String, transform: ([String]) -> String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return value }
+    private static func replacing(_ value: String, using regex: NSRegularExpression, transform: ([String]) -> String) -> String {
         let text = value as NSString
-        var result = value
-        for match in regex.matches(in: value, range: NSRange(location: 0, length: text.length)).reversed() {
+        let matches = regex.matches(in: value, range: NSRange(location: 0, length: text.length))
+        guard !matches.isEmpty else { return value }
+        var pieces: [String] = []
+        pieces.reserveCapacity(matches.count * 2 + 1)
+        var cursor = 0
+        for match in matches {
+            pieces.append(text.substring(with: NSRange(location: cursor, length: match.range.location - cursor)))
             let parts = (0..<match.numberOfRanges).map { match.range(at: $0).location == NSNotFound ? "" : text.substring(with: match.range(at: $0)) }
-            if let range = Range(match.range, in: result) { result.replaceSubrange(range, with: transform(parts)) }
+            pieces.append(transform(parts))
+            cursor = NSMaxRange(match.range)
         }
-        return result
+        pieces.append(text.substring(from: cursor))
+        return pieces.joined()
     }
+
 }
 
 private extension Array {

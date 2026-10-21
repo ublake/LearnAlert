@@ -209,12 +209,42 @@ class Flashcard {
     var fieldMediaData: Data?
     var correctOptionIndex: Int?
     @Attribute(.externalStorage) var ankiContentData: Data?
+    /// Optional additive storage keeps existing local and CloudKit cards migratable.
+    var ankiReviewStateData: Data?
     var sourceAnkiCardID: String?
     var sourceCourseCardID: String?
 
     var ankiContent: AnkiCardContent? {
         get { ankiContentData.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) } }
         set { ankiContentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
+    var ankiReviewState: AnkiReviewState {
+        get {
+            if let data = ankiReviewStateData,
+               let state = try? JSONDecoder().decode(AnkiReviewState.self, from: data) { return state }
+            return AnkiReviewScheduling.migratingLegacy(reviewCount: reviewCount,
+                lastReviewedDate: lastReviewedDate, nextReviewDate: legacyNextReviewDate,
+                interval: legacyReviewInterval)
+        }
+        set { ankiReviewStateData = try? JSONEncoder().encode(newValue) }
+    }
+
+    func ankiReviewOptions(at date: Date = Date()) -> [AnkiReviewOption] {
+        AnkiReviewScheduling.options(for: ankiReviewState, at: date)
+    }
+
+    @discardableResult
+    func recordAnkiReview(rating: AnkiReviewRating, at date: Date = Date()) -> AnkiReviewOption {
+        let option = AnkiReviewScheduling.option(for: rating, state: ankiReviewState, at: date)
+        guard cardType == .anki else { return option }
+        recordAggregateReview(wasCorrect: rating.wasCorrect, at: date)
+        // The aggregate powers the app's Known/mastered summaries. Keep it in
+        // step with Anki graduation rather than requiring three Easy ratings.
+        if option.nextState.phase == .review { masteryScore = 3 }
+        else if rating == .again { masteryScore = 0 }
+        else { masteryScore = min(2, masteryScore) }
+        ankiReviewState = option.nextState
+        return option
     }
     var optionImageNamesData: Data = Data()
 
@@ -377,8 +407,16 @@ class Flashcard {
     }
 
     func recordReview(wasCorrect: Bool) {
+        if cardType == .anki {
+            recordAnkiReview(rating: wasCorrect ? .good : .again)
+            return
+        }
+        recordAggregateReview(wasCorrect: wasCorrect, at: Date())
+    }
+
+    private func recordAggregateReview(wasCorrect: Bool, at date: Date) {
         reviewCount += 1
-        lastReviewedDate = Date()
+        lastReviewedDate = date
         if wasCorrect {
             correctCount += 1
             streak += 1
@@ -402,6 +440,7 @@ class Flashcard {
     }
 
     var interval: Int {
+        if cardType == .anki { return max(0, Int(ankiReviewState.interval / AnkiReviewScheduling.day)) }
         switch masteryScore {
         case 0: return 0
         case 1: return 1
@@ -428,7 +467,15 @@ class Flashcard {
     }
 
     var nextReviewDate: Date {
+        cardType == .anki ? ankiReviewState.dueDate : legacyNextReviewDate
+    }
+
+    private var legacyNextReviewDate: Date {
         guard let last = lastReviewedDate else { return Date.distantPast }
+        return last.addingTimeInterval(legacyReviewInterval)
+    }
+
+    private var legacyReviewInterval: TimeInterval {
         let hours: Double
         switch masteryScore {
         case 0: hours = 1
@@ -437,7 +484,7 @@ class Flashcard {
         case 3: hours = 24
         default: hours = 48
         }
-        return last.addingTimeInterval(hours * 3600)
+        return hours * 3600
     }
 
     var tags: [String] {
@@ -469,6 +516,7 @@ class Flashcard {
         streak = 0
         longestStreak = 0
         lastReviewedDate = nil
+        ankiReviewStateData = nil
     }
 }
 

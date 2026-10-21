@@ -39,7 +39,10 @@ enum DailyDeckAlertScheduler {
             defaults?.set(true, forKey: "extensionDidStopAlerts")
             return []
         }
-        let slots = plan.slots().filter { lookup[$0.cardId] != nil }
+        let slots = plan.slots().filter { slot in
+            guard let card = lookup[slot.cardId] else { return false }
+            return card.cardType != .anki || card.isNew || card.nextReviewDate <= slot.date
+        }
         let desired = Set(slots.map { "daily-deck-\(plan.id)-\(Int($0.date.timeIntervalSince1970))" })
         let pending = await center.pendingNotificationRequests()
         guard activePlan == plan else { return [] }

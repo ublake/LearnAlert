@@ -393,25 +393,62 @@ final class AnkiMediaSchemeHandler: NSObject, WKURLSchemeHandler {
 struct AnkiReviewControls: View {
     let isRevealed: Bool
     let isGraded: Bool
+    var options: [AnkiReviewOption] = []
     let onReveal: () -> Void
-    let onGrade: (Bool) -> Void
+    let onGrade: (AnkiReviewRating) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if !isGraded {
             if isRevealed {
-                HStack(spacing: 12) {
-                    Button { onGrade(false) } label: {
-                        Label("Again", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity, minHeight: 42)
-                    }.buttonStyle(.bordered).tint(.orange)
-                    Button { onGrade(true) } label: {
-                        Label("Got it", systemImage: "checkmark").frame(maxWidth: .infinity, minHeight: 42)
-                    }.buttonStyle(.borderedProminent)
-                }.font(.subheadline.weight(.semibold))
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 8) {
+                    ForEach(options, id: \.rating) { option in
+                        Button { onGrade(option.rating) } label: {
+                            VStack(spacing: 4) {
+                                Text(option.intervalLabel)
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                                Text(option.rating.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1).minimumScaleFactor(0.8)
+                                    .foregroundStyle(option.rating.reviewTint)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .padding(.vertical, 6)
+                            .background(option.rating.reviewTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(option.rating.reviewTint.opacity(0.28), lineWidth: 1))
+                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(AnkiRatingButtonStyle())
+                        .accessibilityLabel("\(option.rating.title), next review in \(option.intervalLabel)")
+                    }
+                }
             } else {
                 Button(action: onReveal) {
                     Label("Show answer", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity, minHeight: 42)
                 }.buttonStyle(.borderedProminent).font(.subheadline.weight(.semibold))
             }
         }
+    }
+}
+
+extension AnkiReviewRating {
+    var reviewTint: Color {
+        switch self {
+        case .again: .red
+        case .hard: .orange
+        case .good: .blue
+        case .easy: .teal
+        }
+    }
+}
+
+private struct AnkiRatingButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.76 : 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }

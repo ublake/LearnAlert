@@ -15,6 +15,8 @@ public enum AnkiPackageReader {
     public static func read(url: URL, workspace: URL,
                             progress: @escaping @Sendable (AnkiImportProgress) -> Void = { _ in }) throws -> AnkiImportPackage {
         try Task.checkCancellation()
+        let reporter = AnkiImportProgressReporter(emit: progress)
+        let progress: @Sendable (AnkiImportProgress) -> Void = { reporter.report($0) }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0, size <= maximumArchiveBytes else { throw AnkiImportError.invalid("Choose an Anki package smaller than 1 GB.") }
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
@@ -22,16 +24,17 @@ public enum AnkiPackageReader {
         let archive: Archive
         do { archive = try Archive(url: url, accessMode: .read) }
         catch { throw AnkiImportError.invalid("This file isn't a readable Anki package. Export the deck as an .apkg file and try again.") }
-        var entryCount = 0
-        for _ in archive { entryCount += 1; if entryCount > 150_000 { throw AnkiImportError.invalid("This package contains too many files.") } }
+        // Archive[path] scans the ZIP directory from the beginning. Looking up every
+        // numbered media file that way becomes quadratic on large exports.
+        var entries = try AnkiArchiveEntryIndex(archive)
         let version: Int
-        if let entry = archive["meta"] {
+        if let entry = entries["meta"] {
             version = Int(try AnkiProto(extract(entry, archive: archive, limit: 4_096)).integer(1))
             guard (1...3).contains(version) else { throw AnkiImportError.invalid("This Anki package uses a newer format. Re-export it with ‘Support older Anki versions’ enabled.") }
-        } else { version = archive["collection.anki21"] == nil ? 1 : 2 }
+        } else { version = entries["collection.anki21"] == nil ? 1 : 2 }
         let modern = version == 3
         let filename = modern ? "collection.anki21b" : version == 2 ? "collection.anki21" : "collection.anki2"
-        guard let collection = archive[filename] else { throw AnkiImportError.invalid("The package is missing its Anki collection database.") }
+        guard let collection = entries[filename] else { throw AnkiImportError.invalid("The package is missing its Anki collection database.") }
         progress(.init(0.07, "Reading cards", "Unpacking the collection"))
         let databaseURL = workspace.appendingPathComponent("collection.sqlite")
         let databaseBytes = try extractToFile(collection, archive: archive, to: databaseURL, compressed: modern, limit: maximumDatabaseBytes) { bytes in
@@ -45,7 +48,7 @@ public enum AnkiPackageReader {
 
         progress(.init(0.48, "Gathering images & audio"))
         var mediaMap: [(String, String)] = []
-        if let entry = archive["media"] {
+        if let entry = entries["media"] {
             let packedMap = try extract(entry, archive: archive, limit: 24 * 1_024 * 1_024)
             let map = modern ? try decompress(packedMap, limit: 24 * 1_024 * 1_024) : packedMap
             if modern {
@@ -59,6 +62,9 @@ public enum AnkiPackageReader {
             }
         }
         guard mediaMap.count <= 100_000 else { throw AnkiImportError.invalid("This package contains too many media files.") }
+        // Legacy maps may use noncanonical numeric paths such as long zero-padded
+        // keys. Resolve only those requested paths in one additional bounded pass.
+        try entries.include(Set(mediaMap.map { $0.0 }), from: archive)
         let mediaDirectory = workspace.appendingPathComponent("media", isDirectory: true)
         try FileManager.default.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
         var mediaBytes = 0, mediaCount = 0, missingMedia = 0
@@ -70,7 +76,7 @@ public enum AnkiPackageReader {
             let (key, name) = item
             guard isSafeMediaName(name), Int(key) != nil else { throw AnkiImportError.invalid("The Anki package contains an unsafe media filename.") }
             guard names.insert(name.precomposedStringWithCanonicalMapping).inserted else { throw AnkiImportError.invalid("The Anki package contains duplicate media filenames.") }
-            guard let entry = archive[key] else { missingMedia += 1; continue }
+            guard let entry = entries[key] else { missingMedia += 1; continue }
             let available = min(maximumMediaBytes, maximumTotalBytes - mediaBytes - databaseBytes)
             let originalExtension = URL(fileURLWithPath: name).pathExtension.lowercased()
             let ext = originalExtension.count <= 16 && originalExtension.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) && $0.isASCII }) ? originalExtension : "bin"
@@ -88,6 +94,9 @@ public enum AnkiPackageReader {
                 progress(.init(0.48 + 0.49 * Double(index + 1) / Double(max(1, mediaMap.count)), "Gathering images & audio", "\(index + 1) of \(mediaMap.count) files", completedItems: index + 1, totalItems: mediaMap.count, unit: "files", processedBytes: mediaBytes))
             }
         }
+        // Always report the completed file stage, including missing/empty media maps.
+        progress(.init(0.97, "Gathering images & audio", completedItems: mediaMap.count, totalItems: mediaMap.count,
+            unit: "files", processedBytes: mediaBytes))
         try JSONEncoder().encode(mediaFiles).write(to: mediaDirectory.appendingPathComponent(".learnalert-media.json"))
         var warnings = cardWarnings
         let referenced = try referencedMedia(in: cards)
@@ -95,8 +104,9 @@ public enum AnkiPackageReader {
         if !absent.isEmpty { warnings.insert("\(absent.count) referenced media files weren't included in this export. Re-export with ‘Include Media’ to bring them along.") }
         if missingMedia > 0 { warnings.insert("\(missingMedia) media files listed by the deck were missing from the package.") }
         if skipped > 0 { warnings.insert("\(skipped) cards couldn't be converted. Their templates or note types were missing or invalid.") }
-        let groups = Dictionary(grouping: cards, by: \.deckID)
-        let decks = groups.map { AnkiImportedDeck(id: $0.key, name: deckNames[$0.key] ?? "Imported deck", cardCount: $0.value.count) }
+        var deckCounts: [String: Int] = [:]
+        for card in cards { deckCounts[card.deckID, default: 0] += 1 }
+        let decks = deckCounts.map { AnkiImportedDeck(id: $0.key, name: deckNames[$0.key] ?? "Imported deck", cardCount: $0.value) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         progress(.init(1, "Ready to import", "\(cards.count) cards · \(mediaCount) media files"))
         return AnkiImportPackage(cards: cards, decks: decks, mediaDirectory: mediaDirectory,
@@ -110,10 +120,11 @@ public enum AnkiPackageReader {
 
     private static func referencedMedia(in cards: [AnkiImportedCard]) throws -> Set<String> {
         guard let regex = try? NSRegularExpression(pattern: #"(?i)(?:\b(?:src|poster|data-sound)\s*=\s*["']([^"']+)["']|url\(\s*["']?([^)'"\s]+))"#) else { return [] }
-        var names = Set<String>()
+        var names = Set<String>(), scannedCSS = Set<String>()
         for card in cards {
             try Task.checkCancellation()
-            for html in [card.front, card.back, card.css] {
+            let content = scannedCSS.insert(card.css).inserted ? [card.front, card.back, card.css] : [card.front, card.back]
+            for html in content {
                 let text = html as NSString
                 for match in regex.matches(in: html, range: NSRange(location: 0, length: text.length)) {
                     let range = match.range(at: match.range(at: 1).location == NSNotFound ? 2 : 1)
@@ -252,6 +263,8 @@ public enum AnkiPackageReader {
             for (id, deck) in deckMap { decks[id] = deck["name"] as? String ?? "Imported deck" }
         }
         var cards: [AnkiImportedCard] = [], warnings = Set<String>(), skipped = 0, totalHTML = 0
+        cards.reserveCapacity(count)
+        let renderer = AnkiTemplateRenderer.Session()
         // Read actual cards rather than notes: reverse templates and cloze groups remain separate cards.
         try db.forEach("SELECT c.id,c.ord,CASE WHEN c.odid != 0 THEN c.odid ELSE c.did END,n.guid,n.mid,n.flds,n.tags FROM cards c JOIN notes n ON n.id=c.nid ORDER BY c.id") { row in
             try Task.checkCancellation()
@@ -261,7 +274,7 @@ public enum AnkiPackageReader {
             let name = decks[deckID] ?? "Imported deck"
             let tags = row.string(6).split(separator: " ").map(String.init)
             let result: AnkiTemplateRenderer.Result
-            do { result = try AnkiTemplateRenderer.render(type: type, values: row.string(5).components(separatedBy: "\u{1f}"), ordinal: ordinal, deck: name, tags: tags) }
+            do { result = try renderer.render(type: type, values: row.string(5).components(separatedBy: "\u{1f}"), ordinal: ordinal, deck: name, tags: tags) }
             catch { skipped += 1; return }
             totalHTML += result.front.utf8.count + result.back.utf8.count + type.css.utf8.count
             guard totalHTML <= 192 * 1_024 * 1_024 else { throw AnkiImportError.invalid("This deck contains too much card content to import at once. Export a smaller subdeck.") }
@@ -336,5 +349,62 @@ private final class AnkiSQLite {
             }
             try body(Row(values: values))
         }
+    }
+}
+
+
+/// Index only paths the APKG reader may use. Arbitrarily long unrelated ZIP names
+/// never become retained dictionary keys; duplicate paths retain ZIPFoundation's first match.
+struct AnkiArchiveEntryIndex {
+    private var entries: [String: Entry] = [:]
+    let scannedEntryCount: Int
+    var indexedEntryCount: Int { entries.count }
+    init<S: Sequence>(_ archive: S) throws where S.Element == Entry {
+        let metadata: Set<String> = ["meta", "media", "collection.anki2", "collection.anki21", "collection.anki21b"]
+        var count = 0
+        for entry in archive {
+            try Task.checkCancellation()
+            count += 1
+            guard count <= 150_000 else { throw AnkiImportError.invalid("This package contains too many files.") }
+            let path = entry.path
+            guard metadata.contains(path) || (path.utf8.count <= 20 && Int(path) != nil) else { continue }
+            if entries[path] == nil { entries[path] = entry }
+        }
+        scannedEntryCount = count
+    }
+    mutating func include<S: Sequence>(_ paths: Set<String>, from archive: S) throws where S.Element == Entry {
+        var missing = Set(paths.filter { entries[$0] == nil })
+        guard !missing.isEmpty else { return }
+        for entry in archive {
+            try Task.checkCancellation()
+            let path = entry.path
+            if missing.remove(path) != nil { entries[path] = entry }
+            if missing.isEmpty { return }
+        }
+    }
+    subscript(_ path: String) -> Entry? { entries[path] }
+}
+
+/// A small file can finish before its per-file byte timer elapses. Coalesce across
+/// the entire import so thousands of tiny files don't enqueue thousands of UI tasks.
+final class AnkiImportProgressReporter: @unchecked Sendable {
+    static let minimumInterval: TimeInterval = 0.1
+    private let lock = NSLock()
+    private let emit: @Sendable (AnkiImportProgress) -> Void
+    private let clock: @Sendable () -> TimeInterval
+    private var lastEmission: TimeInterval?
+    private var lastStage: String?
+    init(emit: @escaping @Sendable (AnkiImportProgress) -> Void,
+         clock: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.emit = emit; self.clock = clock
+    }
+    func report(_ value: AnkiImportProgress) {
+        let now = clock(), stage = value.title + "\u{0}" + value.unit
+        let finished = value.fraction >= 1 || (value.completedItems != nil && value.completedItems == value.totalItems)
+        lock.lock()
+        let shouldEmit = lastStage != stage || finished || lastEmission.map { now - $0 >= Self.minimumInterval } ?? true
+        if shouldEmit { lastEmission = now; lastStage = stage }
+        lock.unlock()
+        if shouldEmit { emit(value) }
     }
 }

@@ -76,6 +76,7 @@ struct AnkiImportTests {
         let original = try #require(cards.first { $0.sourceAnkiCardID == "fixture-cat:0" })
         let id = original.id
         original.processAnswer(isCorrect: true)
+        let reviewStateData = try #require(original.ankiReviewStateData)
         var edited = try #require(original.ankiContent)
         edited.frontHTML = "A local edit"
         original.ankiContent = edited
@@ -94,6 +95,8 @@ struct AnkiImportTests {
         #expect(cards.count == 9)
         let updated = try #require(cards.first { $0.id == id })
         #expect(updated.reviewCount == 1)
+        #expect(updated.ankiReviewStateData == reviewStateData)
+        #expect(updated.ankiReviewState.ratingCounts.good == 1)
         #expect(updated.ankiContent?.frontHTML.contains("고양이") == true)
         #expect(updated.cardType == .anki)
         let decks = try context.fetch(FetchDescriptor<Deck>())
@@ -314,6 +317,13 @@ struct AnkiImportTests {
         #expect(session.selectedCardCount == 9)
         let container = try container()
         session.save(container: container)
+        #expect(session.phase == .saving)
+        #expect(session.progress.title == "Making room for your cards")
+        await Task.yield()
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<Flashcard>()) == 0)
+        // Starting is gated by the visible saving surface, never by a hidden worker.
+        session.savingViewDidAppear()
+        session.savingViewDidAppear() // Reappearing cannot start a second commit.
         for _ in 0..<200 where session.phase == .saving { try await Task.sleep(for: .milliseconds(25)) }
         #expect(session.phase == .complete)
         #expect(session.result?.added == 9)
@@ -324,6 +334,75 @@ struct AnkiImportTests {
             try? FileManager.default.removeItem(at: AnkiCardContent.mediaRoot.appendingPathComponent(folder))
         }
     }
+    @Test("A session-owned media folder is adopted without retaining a second extracted copy")
+    func consumesOwnedMedia() async throws {
+        let (package, workspace) = try package()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let container = try container()
+        let importer = AnkiLibraryImporter(modelContainer: container)
+        let result = try await importer.save(package, selectedDecks: Set(package.decks.map(\.id)),
+            updateExisting: false, filename: "sample.apkg", consumeMedia: true) { _ in }
+        #expect(result.added == 9)
+        #expect(!FileManager.default.fileExists(atPath: package.mediaDirectory.path))
+        let context = ModelContext(container)
+        let cards = try context.fetch(FetchDescriptor<Flashcard>())
+        let folders = Set(cards.compactMap { $0.ankiContent?.mediaFolder })
+        defer { for folder in folders { try? FileManager.default.removeItem(at: AnkiCardContent.mediaRoot.appendingPathComponent(folder)) } }
+        #expect(folders.count == 1)
+        let directory = try #require(cards.first?.ankiContent?.mediaURL)
+        let audio = try #require(AnkiCardContent.safeMediaURL(name: "tone.wav", directory: directory))
+        #expect(try AVAudioPlayer(contentsOf: audio).duration > 0)
+    }
+
+    @Test("Cancelling after media adoption rolls back every model and restores the package for retry")
+    func cancelledSaveRestoresMedia() async throws {
+        let (package, workspace) = try package()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let container = try container(), importer = AnkiLibraryImporter(modelContainer: container)
+        let selection = Set(package.decks.map(\.id))
+        let task = Task {
+            try await importer.save(package, selectedDecks: selection, updateExisting: false,
+                filename: "sample.apkg", consumeMedia: true) { progress in
+                if progress.title == "Adding your cards" && progress.completedItems == 0 {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            }
+        }
+        do { _ = try await task.value; Issue.record("Cancelled save unexpectedly committed") }
+        catch { #expect(error is CancellationError) }
+        let context = ModelContext(container)
+        #expect(try context.fetchCount(FetchDescriptor<Deck>()) == 0)
+        #expect(try context.fetchCount(FetchDescriptor<Flashcard>()) == 0)
+        #expect(FileManager.default.fileExists(atPath: package.mediaDirectory.path))
+        let retry = AnkiLibraryImporter(modelContainer: container)
+        let result = try await retry.save(package, selectedDecks: selection, updateExisting: false,
+            filename: "sample.apkg", consumeMedia: true) { _ in }
+        #expect(result.added == 9)
+        let refreshed = ModelContext(container)
+        let cards = try refreshed.fetch(FetchDescriptor<Flashcard>())
+        for folder in Set(cards.compactMap { $0.ankiContent?.mediaFolder }) {
+            try? FileManager.default.removeItem(at: AnkiCardContent.mediaRoot.appendingPathComponent(folder))
+        }
+    }
+
+    @Test("No-op re-imports do not access the extracted media directory")
+    func duplicateImportSkipsMedia() async throws {
+        let (package, workspace) = try package()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let container = try container(), importer = AnkiLibraryImporter(modelContainer: container)
+        let selection = Set(package.decks.map(\.id))
+        _ = try await importer.save(package, selectedDecks: selection, updateExisting: false, filename: "sample.apkg") { _ in }
+        try FileManager.default.removeItem(at: package.mediaDirectory)
+        let duplicate = try await importer.save(package, selectedDecks: selection, updateExisting: false, filename: "sample.apkg") { _ in }
+        #expect(duplicate.added == 0 && duplicate.updated == 0 && duplicate.unchanged == 9)
+        let context = ModelContext(container)
+        let cards = try context.fetch(FetchDescriptor<Flashcard>())
+        #expect(cards.count == 9)
+        for folder in Set(cards.compactMap { $0.ankiContent?.mediaFolder }) {
+            try? FileManager.default.removeItem(at: AnkiCardContent.mediaRoot.appendingPathComponent(folder))
+        }
+    }
+
     @Test("Study preloading reuses the next renderer and retains only two cards")
     func prefetchesNextCard() async throws {
         let cache = AnkiStudyRenderCache()
@@ -360,6 +439,25 @@ struct AnkiImportTests {
         #expect(waiting.bytesPerSecond == nil && waiting.remainingSeconds == nil)
         let complete = AnkiImportTelemetry(progress: .init(1,"Done",completedItems:100,totalItems:100,unit:"cards"), startedAt:start,stageStartedAt:start,now:now)
         #expect(complete.remainingSeconds == nil)
+    }
+
+    @Test("Current import rates use recent measurements and expire rather than showing stale speed")
+    func currentImportTelemetry() {
+        let start = Date(timeIntervalSince1970: 100), now = Date(timeIntervalSince1970: 110)
+        let progress = AnkiImportProgress(0.6, "Cards", completedItems: 100, totalItems: 200, unit: "cards", processedBytes: 2500)
+        let samples: [AnkiImportRateSample] = [
+            .init(date: Date(timeIntervalSince1970: 108), items: 90, bytes: 500),
+            .init(date: now, items: 100, bytes: 2500)
+        ]
+        let metrics = AnkiImportTelemetry(progress: progress, startedAt: start, stageStartedAt: start, now: now, samples: samples)
+        #expect(metrics.unitsPerSecond == 10)
+        #expect(metrics.currentUnitsPerSecond == 5)
+        #expect(metrics.bytesPerSecond == 250)
+        #expect(metrics.currentBytesPerSecond == 1000)
+        #expect(metrics.remainingSeconds == 10)
+        let stale = AnkiImportTelemetry(progress: progress, startedAt: start, stageStartedAt: start,
+            now: now.addingTimeInterval(2), samples: samples)
+        #expect(stale.currentUnitsPerSecond == nil && stale.currentBytesPerSecond == nil)
     }
 
 }

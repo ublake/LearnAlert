@@ -101,6 +101,8 @@ struct FlashcardNotificationView: View {
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
 
     @State private var ankiIsLoading = true
+    @State private var ankiReviewOptions: [AnkiReviewOption] = []
+    @State private var ankiFutureReviewDate: Date?
     @FocusState private var isAnswerFieldFocused: Bool
 
     @Environment(\.colorScheme) private var systemColorScheme
@@ -362,10 +364,19 @@ struct FlashcardNotificationView: View {
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
                             .environment(\.colorScheme, isLight ? .light : .dark)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                        AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
+                        if let date = ankiFutureReviewDate, !isGraded {
+                            VStack(spacing: 8) {
+                                Text("Next review in \(AnkiReviewScheduling.intervalLabel(max(0, date.timeIntervalSinceNow)))")
+                                    .font(.subheadline).foregroundStyle(textColorSecondary)
+                                Button("Review early") { ankiFutureReviewDate = nil }
+                                    .buttonStyle(.bordered).font(.subheadline.weight(.semibold))
+                            }
+                        } else {
+                        AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
                             onReveal: { withAnimation(.snappy) { isRevealed = true } },
-                            onGrade: { gradeReveal(correct: $0) })
+                            onGrade: { gradeAnki($0) })
                             .disabled(ankiIsLoading)
+                        }
                     } else {
                         Button("Open this Anki card in LearnAlert", action: openApp)
                             .buttonStyle(.borderedProminent)
@@ -649,12 +660,14 @@ struct FlashcardNotificationView: View {
         }
         .onAppear {
             seenCardIds.insert(activeCardId)
+            loadAnkiReviewOptions()
             if !previewMode {
                 loadAvailableDecks()
                 persistStudyHandoff()
             }
         }
         .onChange(of: activeCardId) { _, _ in
+            loadAnkiReviewOptions()
             if !previewMode { persistStudyHandoff() }
         }
         .onChange(of: selectedAnswer) { _, _ in
@@ -817,18 +830,23 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
-        let unseenCards = deck.cards.filter { !seenCardIds.contains($0.id.uuidString) }
+        let cards = deck.cards
+        let now = Date()
+        let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
+        let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
         let nextCard: Flashcard?
         if let card = unseenCards.first {
             nextCard = card
         } else {
             seenCardIds.removeAll()
-            let sortedCards = deck.cards.sorted { $0.studyPriority > $1.studyPriority }
+            let sortedCards = eligible.sorted { $0.studyPriority > $1.studyPriority }
             nextCard = sortedCards.first
         }
 
         guard let cardToStudy = nextCard else {
-            statusMessage = "This deck has no cards."
+            if let next = cards.filter({ $0.cardType == .anki }).map(\.nextReviewDate).min() {
+                statusMessage = "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow)))."
+            } else { statusMessage = "This deck has no cards." }
             return
         }
 
@@ -866,6 +884,8 @@ struct FlashcardNotificationView: View {
             hadMatchingMistake = false
             statusMessage = nil
         }
+        // A short repeat can have the same card ID but a different learning step.
+        loadAnkiReviewOptions()
     }
 
     private func stopScheduledAlerts() {
@@ -885,20 +905,32 @@ struct FlashcardNotificationView: View {
         gradeCard(isCorrect: correct)
     }
 
-    private func gradeCard(isCorrect: Bool, playFeedback: Bool = true) {
+    private func loadAnkiReviewOptions() {
+        ankiFutureReviewDate = nil
+        guard activeCardType == "anki" else { ankiReviewOptions = []; return }
+        let now = Date()
+        if !previewMode, let id = UUID(uuidString: activeCardId) {
+            let context = ModelContext(SharedDatabase.shared.container)
+            if let card = try? context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == id })).first {
+                ankiReviewOptions = card.ankiReviewOptions(at: now)
+                if !card.isNew && card.nextReviewDate > now { ankiFutureReviewDate = card.nextReviewDate }
+                return
+            }
+        }
+        ankiReviewOptions = AnkiReviewScheduling.options(for: AnkiReviewState(), at: now)
+    }
+
+    private func gradeAnki(_ rating: AnkiReviewRating) {
+        guard activeCardType == "anki", isRevealed, !isGraded, ankiFutureReviewDate == nil else { return }
+        gradeCard(isCorrect: rating.wasCorrect, ankiRating: rating)
+    }
+
+    private func gradeCard(isCorrect: Bool, playFeedback: Bool = true, ankiRating: AnkiReviewRating? = nil) {
         isAnswerFieldFocused = false
         if playFeedback {
             NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect")
         }
         lastAnswerWasCorrect = isCorrect
-
-        if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {
-            defaults.set(Date().timeIntervalSince1970, forKey: "lastNotificationAnsweredTimestamp")
-            defaults.set(isCorrect, forKey: "lastNotificationWasCorrect")
-            defaults.set(activeCardId, forKey: "lastNotificationCardId")
-            defaults.set(true, forKey: "lastNotificationWasGraded")
-            defaults.synchronize()
-        }
 
         if previewMode {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
@@ -918,8 +950,25 @@ struct FlashcardNotificationView: View {
 
         let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
         if let card = try? context.fetch(descriptor).first {
-            card.processAnswer(isCorrect: isCorrect)
-            if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
+            if let ankiRating { card.recordAnkiReview(rating: ankiRating, at: Date()) }
+            else { card.processAnswer(isCorrect: isCorrect) }
+            do { try context.save() }
+            catch {
+                context.rollback()
+                statusMessage = "Review couldn't be saved. Please try again."
+                return
+            }
+            AlertTimelineStore.shared.answered(notificationRequestID)
+            if ankiRating != nil {
+                Task { await AnkiReviewAlerts.reconcile(cardID: uuid) }
+            }
+            if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {
+                defaults.set(Date().timeIntervalSince1970, forKey: "lastNotificationAnsweredTimestamp")
+                defaults.set(isCorrect, forKey: "lastNotificationWasCorrect")
+                defaults.set(activeCardId, forKey: "lastNotificationCardId")
+                defaults.set(true, forKey: "lastNotificationWasGraded")
+                defaults.synchronize()
+            }
 
             if let deck = card.deck {
                 let unlearned = deck.cards.filter { $0.isNew }.count
