@@ -185,51 +185,7 @@ struct ContentView: View {
                 }
             }
         }
-        .overlay {
-            if notificationManager.shouldShowNotificationOpeningTip {
-                NotificationOpeningTip {
-                    withAnimation(.snappy) {
-                        notificationManager.dismissNotificationOpeningTip()
-                    }
-                }
-                .transition(.scale(scale: 0.94).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy, value: notificationManager.shouldShowNotificationOpeningTip)
         .tint(LearnAlertStyle.appAccentForeground)
-    }
-}
-
-private struct NotificationOpeningTip: View {
-    let dismiss: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.4).ignoresSafeArea()
-            VStack(spacing: 22) {
-                Text("Don’t forget! Notifications are expandable too, so you don’t even have to open the app to answer!")
-                    .font(.custom("Poppins-Medium", size: 17, relativeTo: .body))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: dismiss) {
-                    HStack(spacing: 10) {
-                        Text("Got it").font(.subheadline.weight(.semibold))
-                        Text("Don’t show again").font(.caption).opacity(0.5)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(LearnAlertStyle.appAccent)
-                .foregroundStyle(LearnAlertStyle.appAccentInk)
-            }
-            .padding(24)
-            .background(LearnAlertStyle.courseSurface, in: RoundedRectangle(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).stroke(LearnAlertStyle.surfaceOutline(darkOpacity: 0.3)))
-            .shadow(color: .black.opacity(0.2), radius: 24, y: 12)
-            .frame(maxWidth: 440)
-            .padding(.horizontal, 24)
-        }
     }
 }
 

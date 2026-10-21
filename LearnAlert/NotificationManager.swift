@@ -42,18 +42,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     @Published var isAuthorized = false
     @Published var pendingCourseHandoff: CourseHandoff?
     @Published var pendingStudyHandoff: StudyHandoff?
-    @Published var shouldShowNotificationOpeningTip = false
     @Published var shouldShowCustomizationTestGuide = false
     
-    var shouldOfferNotificationOpeningTip: Bool {
-        !UserDefaults.standard.bool(forKey: "hasDismissedNotificationOpeningTip")
-    }
-
-    func dismissNotificationOpeningTip() {
-        UserDefaults.standard.set(true, forKey: "hasDismissedNotificationOpeningTip")
-        shouldShowNotificationOpeningTip = false
-    }
-
     override convenience init() {
         self.init(registerForNotifications: true)
     }
@@ -330,7 +320,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
 
             if response.actionIdentifier == "CONTINUE_IN_APP" {
-                self.shouldShowNotificationOpeningTip = false
                 if hasHandoffDeck {
                     defaults?.removeObject(forKey: "handoffFromNotificationUI")
                     self.consumePendingStudyHandoff()
@@ -352,7 +341,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 if fromNotificationUI || hasHandoffDeck {
                     defaults?.removeObject(forKey: "handoffFromNotificationUI")
-                    self.shouldShowNotificationOpeningTip = false
                     self.consumePendingStudyHandoff()
                 } else if let deckString = userInfo["deckId"] as? String,
                           let cardString = userInfo["cardId"] as? String,
@@ -367,7 +355,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                         wasGraded: false,
                         wasHintVisible: false, notificationRequestID: requestID
                     )
-                    self.shouldShowNotificationOpeningTip = self.shouldOfferNotificationOpeningTip
                 } else {
                     self.consumePendingStudyHandoff()
                 }
@@ -400,7 +387,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         if pendingStudyHandoff?.deckId.uuidString == content.userInfo["deckId"] as? String {
             pendingStudyHandoff = nil
         }
-        shouldShowNotificationOpeningTip = false
         shouldShowCustomizationTestGuide = true
         return true
     }
@@ -421,7 +407,6 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
               let deckId = UUID(uuidString: deckString),
               let cardId = UUID(uuidString: cardString) else { return }
 
-        shouldShowNotificationOpeningTip = false
         pendingStudyHandoff = StudyHandoff(
             deckId: deckId,
             cardId: cardId,

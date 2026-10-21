@@ -138,20 +138,22 @@ struct DeckCreatureView: View {
     let appearanceSeed: Int64?
     let cardCount: Int
     var isCelebrating = false
+    var compactStack = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("deckCreaturesHaveFaces") private var deckCreaturesHaveFaces = false
     @State private var bounceOffset: CGFloat = 0
 
-    init(stableID: UUID, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false) {
-        self.init(stableID: stableID.uuidString.lowercased(), appearanceSeed: appearanceSeed, cardCount: cardCount, isCelebrating: isCelebrating)
+    init(stableID: UUID, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false) {
+        self.init(stableID: stableID.uuidString.lowercased(), appearanceSeed: appearanceSeed, cardCount: cardCount, isCelebrating: isCelebrating, compactStack: compactStack)
     }
 
-    init(stableID: String, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false) {
+    init(stableID: String, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false) {
         self.stableID = stableID
         self.appearanceSeed = appearanceSeed
         self.cardCount = max(cardCount, 0)
         self.isCelebrating = isCelebrating
+        self.compactStack = compactStack
     }
 
     private var appearance: DeckCreatureAppearance {
@@ -171,8 +173,11 @@ struct DeckCreatureView: View {
             let width = geometry.size.width
             let height = geometry.size.height
             let cardWidth = width * (0.77 + growth * 0.08)
-            let cardHeight = height * (0.61 + growth * 0.05)
-            let layerSpacing = 1.8 + growth * 1.7
+            let cardHeight = height * (compactStack ? 0.58 : 0.61 + growth * 0.05)
+            // Dense headers have a fixed icon slot; keep the layered stack inside it.
+            let fittingSpacing = max(0, height * 0.82 - cardHeight) / CGFloat(max(visibleLayers - 1, 1))
+            let standardLayerSpacing = CGFloat(1.8 + growth * 1.7)
+            let layerSpacing = compactStack ? min(standardLayerSpacing, fittingSpacing) : standardLayerSpacing
             let stackDepth = CGFloat(max(visibleLayers - 1, 0)) * layerSpacing
             let centerY = height / 2 + stackDepth / 2
             let fanAmount = 0.65 + growth * 0.35
@@ -248,7 +253,7 @@ struct DeckCreatureView: View {
                     )
             }
 
-            if visibleLayers >= 7 {
+            if visibleLayers >= 7 && !compactStack {
                 BookmarkShape()
                     .fill(appearance.palette.accent.color)
                     .frame(width: 9, height: 21)

@@ -809,19 +809,4 @@ struct CommunityTransferTests {
         let file = try #require(AnkiCardContent.safeMediaURL(name: "tone.wav", directory: restoredDirectory))
         #expect(try Data(contentsOf: file) == bytes)
     }
-
-    @Test("Acknowledging the notification reminder persists across manager instances")
-    func notificationReminderDismissal() {
-        let key = "hasDismissedNotificationOpeningTip"
-        let original = UserDefaults.standard.object(forKey: key)
-        defer { if let original { UserDefaults.standard.set(original, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
-        UserDefaults.standard.removeObject(forKey: key)
-        let manager = NotificationManager(registerForNotifications: false)
-        #expect(manager.shouldOfferNotificationOpeningTip)
-        manager.shouldShowNotificationOpeningTip = true
-        manager.dismissNotificationOpeningTip()
-        #expect(!manager.shouldShowNotificationOpeningTip)
-        #expect(!NotificationManager(registerForNotifications: false).shouldOfferNotificationOpeningTip)
-    }
-
 }

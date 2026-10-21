@@ -95,6 +95,7 @@ struct FlashcardNotificationView: View {
     var notificationRequestID: String? = nil
     var previewMode = false
     var isTutorial = false
+    var isCustomizationTest = false
     var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
@@ -321,17 +322,20 @@ struct FlashcardNotificationView: View {
                         Button {
                             withAnimation(.snappy) { showingControls.toggle() }
                         } label: {
-                            Image(systemName: showingControls ? "xmark" : "gearshape.fill")
+                            Image(systemName: showingControls && !isCustomizationTest ? "xmark" : "gearshape.fill")
                                 .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
-                                .foregroundStyle(textColorPrimary)
+                                .foregroundStyle(isCustomizationTest ? textColorSecondary : textColorPrimary)
                                 .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
                                 .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, isLight: isLight)
                         }
-                        .accessibilityLabel(showingControls ? "Close controls" : "Study controls")
+                        .disabled(isCustomizationTest)
+                        .opacity(isCustomizationTest ? 0.45 : 1)
+                        .accessibilityLabel(showingControls && !isCustomizationTest ? "Close controls" : "Study controls")
+                        .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : "")
                     }
                 }
 
-                if showingControls {
+                if showingControls && !isCustomizationTest {
                     notificationControls
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -356,6 +360,7 @@ struct FlashcardNotificationView: View {
                             loadingChanged: { ankiIsLoading = $0 })
                             .frame(height: min(isCompactLayout ? 260 : 320, max(120, viewportHeight - 180)))
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
+                            .environment(\.colorScheme, isLight ? .light : .dark)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                         AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
                             onReveal: { withAnimation(.snappy) { isRevealed = true } },
@@ -1272,8 +1277,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         )
 
         let isTutorial = userInfo["isTutorial"] as? Bool ?? false
-        let isSynthetic = isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" ||
-            userInfo["isCustomizationTest"] as? Bool == true
+        let isCustomizationTest = userInfo["isCustomizationTest"] as? Bool == true ||
+            (content.categoryIdentifier == "FLASHCARD_TEST" &&
+             userInfo["isCustomizationTest"] == nil && snapshot.deckName == "Example")
+        let isSynthetic = isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" || isCustomizationTest
         if isSynthetic {
             self.extensionContext?.notificationActions = []
         } else if let cardId = UUID(uuidString: snapshot.id),
@@ -1320,6 +1327,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             optionImageNames: snapshot.optionImageNames,
             notificationRequestID: isSynthetic ? nil : notification.request.identifier,
             isTutorial: isTutorial,
+            isCustomizationTest: isCustomizationTest,
             appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in
                 self?.openHostApp(deckId: snapshot.deckId)

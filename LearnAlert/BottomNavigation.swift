@@ -218,6 +218,7 @@ private struct NavigationDock: View {
                         .opacity(selected ? 1 : 0)
                         .accessibilityHidden(true)
                 }
+                .offset(y: 4)
                 .foregroundStyle(tabColor(index))
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)

@@ -9,6 +9,14 @@ import AnkiArchive
 
 private class AnkiFixtureBundle: NSObject { }
 
+@MainActor
+private final class AnkiAudioMessageRecorder: NSObject, WKScriptMessageHandler {
+    var messages: [[String: String]] = []
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let body = message.body as? [String: String] { messages.append(body) }
+    }
+}
+
 @Suite("Anki imports", .serialized)
 @MainActor
 struct AnkiImportTests {
@@ -22,6 +30,36 @@ struct AnkiImportTests {
         let config = url.map { ModelConfiguration(url: $0, cloudKitDatabase: .none) }
             ?? ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         return try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: config)
+    }
+
+    /// A real hosted WebKit surface also exercises SwiftUI's color-scheme input.
+    private func withRenderedCard<Result>(content: AnkiCardContent, directory: URL? = nil,
+                                         dark: Bool, _ inspect: @MainActor (WKWebView) async throws -> Result) async throws -> Result {
+        let renderer = AnkiCardRenderer()
+        let host = UIHostingController(rootView: AnkiCardView(content: content, showingBack: false,
+            mediaDirectory: directory, renderer: renderer).environment(\.colorScheme, dark ? .dark : .light))
+        let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer {
+            renderer.discard()
+            window.isHidden = true; window.rootViewController = nil
+        }
+        host.view.layoutIfNeeded()
+        var ready = false
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        while ContinuousClock.now < deadline {
+            if !renderer.isLoading, renderer.error == nil,
+               let complete = try? await renderer.webView.evaluateJavaScript("document.readyState==='complete' && !!document.getElementById('learnalert-anki-content')"),
+               complete as? Bool == true { ready = true; break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        if !ready {
+            let page = (try? await renderer.webView.evaluateJavaScript("JSON.stringify({readyState:document.readyState,hasRoot:!!document.getElementById('learnalert-anki-content'),url:location.href,colorScheme:getComputedStyle(document.documentElement).colorScheme})")) as? String ?? "JavaScript unavailable"
+            try #require(ready, "Imported HTML readiness timed out: isLoading=\(renderer.isLoading), error=\(renderer.error ?? "none"), documentQueued=\(!renderer.coordinator.document.isEmpty), webViewAttached=\(renderer.webView.window != nil), page=\(page)")
+        }
+        return try await inspect(renderer.webView)
     }
 
     @Test("Import, duplicate import, and updates retain card IDs and LearnAlert progress")
@@ -117,7 +155,7 @@ struct AnkiImportTests {
         defer { try? FileManager.default.removeItem(at: workspace) }
         let content = AnkiCardContent(frontHTML: "<div id='custom'>Korean \\(x^2\\)</div><img id='picture' src='cat.png'><script>document.getElementById('custom').dataset.ready='yes';</script>",
             backHTML: "Back", css: "#custom { color: rgb(23, 100, 180); }", mediaFolder: "", templateOrdinal: 0, noteType: "Custom", tags: [])
-        let host = UIHostingController(rootView: AnkiCardView(content: content, showingBack: false, mediaDirectory: package.mediaDirectory, centered: true, animatedReveal: true))
+        let host = UIHostingController(rootView: AnkiCardView(content: content, showingBack: false, mediaDirectory: package.mediaDirectory, centered: true, animatedReveal: true).environment(\.colorScheme, .light))
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
@@ -146,6 +184,113 @@ struct AnkiImportTests {
         let longContent = try await web.evaluateJavaScript("document.getElementById('learnalert-anki-content').style.height='1400px'; document.documentElement.scrollHeight > innerHeight && document.getElementById('learnalert-anki-content').getBoundingClientRect().top >= 0")
         #expect(longContent as? Bool == true)
 
+    }
+
+    @Test("Authored white and black templates follow both host appearances with readable text", arguments: [false, true], [false, true])
+    func adaptiveTemplateTheme(dark: Bool, authoredDark: Bool) async throws {
+        let background = authoredDark ? "#000" : "#fff"
+        let foreground = authoredDark ? "#fff" : "#000"
+        let content = AnkiCardContent(frontHTML: """
+            <div id="panel" style="background:\(background)!important;border:2px solid \(foreground)!important;padding:16px">
+              <span id="inherited">Inherited Korean 한국어</span>
+              <span id="explicit" style="color:\(foreground)!important">Explicit text</span>
+              <span id="accent" style="color:#ffff00!important">Colored emphasis</span>
+              <span id="blue" style="color:#1764b4!important">Blue emphasis</span>
+              <span id="cloze" class="cloze">[...]</span>
+            </div>
+            <div id="gradient" style="background:linear-gradient(#fff,#000);padding:12px">Template box</div>
+            <script>
+              for (const element of [document.documentElement,document.body,document.getElementById('learnalert-anki-content')]) {
+                element.style.setProperty('background','\(background)','important');
+                element.style.setProperty('color','\(foreground)','important');
+              }
+            </script>
+            """, backHTML: "Answer", css: "", mediaFolder: "", templateOrdinal: 0, noteType: "Custom", tags: [])
+        try await withRenderedCard(content: content, dark: dark) { web in
+            let checks = try #require(try await web.evaluateJavaScript("""
+                (() => {
+                  const rgb=value=>value.match(/[\\d.]+/g).map(Number);
+                  const alpha=value=>{ const c=rgb(value);return c.length===4?c[3]:1; };
+                  const luminance=c=>c.slice(0,3).reduce((sum,v,i)=>{
+                    v/=255;return sum+(v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4))*[.2126,.7152,.0722][i];
+                  },0);
+                  const contrast=(a,b)=>(Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
+                  const style=id=>getComputedStyle(document.getElementById(id));
+                  const host=\(dark ? "[25,29,40]" : "[238,241,248]");
+                  const surface=rgb(style('panel').backgroundColor);
+                  const blended=surface.slice(0,3).map((v,i)=>v*(surface[3]??1)+host[i]*(1-(surface[3]??1)));
+                  const ink=rgb(getComputedStyle(document.body).color);
+                  return {
+                    appearance:getComputedStyle(document.documentElement).colorScheme==='\(dark ? "dark" : "light")',
+                    transparentRoots:[document.documentElement,document.body,document.getElementById('learnalert-anki-content')].every(el=>alpha(getComputedStyle(el).backgroundColor)<.01),
+                    translucentPanel:surface[3]>0 && surface[3]<.7,
+                    subtleBorder:alpha(style('panel').borderTopColor)>0 && alpha(style('panel').borderTopColor)<.7,
+                    inheritedReadable:contrast(rgb(style('inherited').color),blended)>=4.5,
+                    explicitReadable:contrast(rgb(style('explicit').color),blended)>=4.5,
+                    emphasisReadable:contrast(rgb(style('accent').color),blended)>=4.5,
+                    blueReadable:contrast(rgb(style('blue').color),blended)>=4.5,
+                    clozeReadable:contrast(rgb(style('cloze').color),blended)>=4.5,
+                    inkFollowsHost:\(dark ? "luminance(ink)>.6" : "luminance(ink)<.1"),
+                    gradientAdapted:style('gradient').backgroundImage==='none' && alpha(style('gradient').backgroundColor)<.7,
+                    contentPreserved:document.getElementById('inherited').textContent==='Inherited Korean 한국어' && document.getElementById('cloze').textContent==='[...]'
+                  };
+                })()
+                """) as? [String: Bool])
+            #expect(checks["appearance"] == true)
+            #expect(checks["transparentRoots"] == true)
+            #expect(checks["translucentPanel"] == true)
+            #expect(checks["subtleBorder"] == true)
+            #expect(checks["inheritedReadable"] == true)
+            #expect(checks["explicitReadable"] == true)
+            #expect(checks["emphasisReadable"] == true)
+            #expect(checks["blueReadable"] == true)
+            #expect(checks["clozeReadable"] == true)
+            #expect(checks["inkFollowsHost"] == true)
+            #expect(checks["gradientAdapted"] == true)
+            #expect(checks["contentPreserved"] == true)
+        }
+    }
+
+    @Test("Theme adaptation preserves local image backgrounds, audio actions, and interactive template content", arguments: [false, true])
+    func adaptiveThemeKeepsTemplateBehavior(dark: Bool) async throws {
+        let (package, workspace) = try package()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let content = AnkiCardContent(frontHTML: """
+            <div id="image-panel" style="background:#fff url('cat.png') center/contain no-repeat;padding:12px">
+              <img id="picture" src="cat.png">
+            </div>
+            <button id="listen" class="anki-sound" data-sound="tone.wav">Listen</button>
+            <button id="speech" data-speech="한국어" data-language="ko-KR">Speak</button>
+            <button id="toggle" onclick="document.getElementById('cloze').textContent='한국어';document.getElementById('concealed').style.removeProperty('color');document.getElementById('visible').style.color='transparent';const panel=document.createElement('div');panel.id='added';panel.style.cssText='background:white;color:black;border:1px solid black';panel.textContent='Added by the template';document.getElementById('learnalert-anki-content').append(panel)">Reveal custom answer</button>
+            <span id="cloze" class="cloze" data-original="한국어">[...]</span>
+            <span id="concealed" style="color:transparent!important">Hidden answer</span>
+            <span id="visible">Initially visible answer</span>
+            <script>document.documentElement.style.setProperty('background-image',"url('cat.png')",'important');</script>
+            """, backHTML: "Answer", css: "", mediaFolder: "", templateOrdinal: 0, noteType: "Custom", tags: [])
+        try await withRenderedCard(content: content, directory: package.mediaDirectory, dark: dark) { web in
+            #expect(try await web.evaluateJavaScript("getComputedStyle(document.documentElement).backgroundImage.includes('cat.png') && getComputedStyle(document.getElementById('image-panel')).backgroundImage.includes('cat.png')") as? Bool == true)
+            #expect(try await web.evaluateJavaScript("document.getElementById('picture').complete && document.getElementById('picture').naturalWidth>0") as? Bool == true)
+            #expect(try await web.evaluateJavaScript("getComputedStyle(document.getElementById('concealed')).color==='rgba(0, 0, 0, 0)'") as? Bool == true)
+            #expect(try await web.evaluateJavaScript("getComputedStyle(document.getElementById('visible')).color===getComputedStyle(document.body).color") as? Bool == true)
+            let recorder = AnkiAudioMessageRecorder()
+            web.configuration.userContentController.removeScriptMessageHandler(forName: "ankiAudio")
+            web.configuration.userContentController.add(recorder, name: "ankiAudio")
+            _ = try await web.evaluateJavaScript("document.getElementById('listen').click();document.getElementById('speech').click();document.getElementById('toggle').click();true")
+            var insertedAndAdapted = false
+            for _ in 0..<100 {
+                if let adapted = try? await web.evaluateJavaScript("(() => { const panel=document.getElementById('added');return panel && getComputedStyle(panel).backgroundColor.startsWith('rgba(') && getComputedStyle(panel).color===getComputedStyle(document.body).color; })()"),
+                   adapted as? Bool == true, recorder.messages.count == 2 { insertedAndAdapted = true; break }
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            #expect(insertedAndAdapted)
+            #expect(try await web.evaluateJavaScript("getComputedStyle(document.getElementById('visible')).color==='rgba(0, 0, 0, 0)'") as? Bool == true)
+            #expect(recorder.messages.first?["sound"] == "tone.wav")
+            #expect(recorder.messages.last?["speech"] == "한국어")
+            #expect(recorder.messages.last?["language"] == "ko-KR")
+            #expect(try await web.evaluateJavaScript("document.getElementById('cloze').textContent==='한국어' && document.getElementById('cloze').dataset.original==='한국어' && document.getElementById('added').textContent==='Added by the template' && getComputedStyle(document.getElementById('concealed')).color===getComputedStyle(document.body).color") as? Bool == true)
+            let network = try await web.callAsyncJavaScript("try { await fetch('https://example.com/blocked'); return 'allowed'; } catch (_) { return 'blocked'; }", arguments: [:], in: nil, contentWorld: .page)
+            #expect(network as? String == "blocked")
+        }
     }
 
     @Test("Media lookup cannot escape its import folder")

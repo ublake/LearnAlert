@@ -38,7 +38,7 @@ struct AnkiCardView: View {
         let dark = configuration.dark, compact = configuration.compact, centered = configuration.centered
         let animatedReveal = configuration.animatedReveal, reduceMotion = configuration.reduceMotion
         let html = showingBack ? content.backHTML : content.frontHTML
-        let cardHTML = centered ? "<main id=\"learnalert-anki-content\">\(html)</main>" : html
+        let cardHTML = "<main id=\"learnalert-anki-content\">\(html)</main>"
         let revealStyle = animatedReveal && showingBack && !reduceMotion
             ? "@keyframes learnalertReveal { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } } #learnalert-anki-content { animation:learnalertReveal 280ms cubic-bezier(.2,.8,.2,1) both; }"
             : ""
@@ -61,6 +61,7 @@ struct AnkiCardView: View {
         .anki-sound { border:1px solid #739abb66; border-radius:14px; padding:12px 16px; margin:6px; color:inherit; background:#77baff22; font:600 15px -apple-system; }
         details { margin:12px 0; } summary { cursor:pointer; } table { max-width:100%; }
         </style><style>\(content.css.replacingOccurrences(of: "</style", with: "<\\/style", options: .caseInsensitive))</style>
+        <style>\(nativeThemeCSS(dark: dark))</style>
         <style>\(centered ? "body { min-height:100vh; display:flex; flex-direction:column; } #learnalert-anki-content { width:100%; flex-shrink:0; margin-block:auto; } img,video { max-height:65vh; object-fit:contain; }" : "")</style>
         <style>\(revealStyle)</style>
         \(mathAssets)
@@ -76,7 +77,131 @@ struct AnkiCardView: View {
           {left:'[$$]',right:'[/$$]',display:true},{left:'[$]',right:'[/$]',display:false},
           {left:'[latex]',right:'[/latex]',display:true}
         ],throwOnError:false,trust:false,maxExpand:1000});}
-        </script></body></html>
+        </script><script>\(nativeThemeScript(dark: dark))</script></body></html>
+        """
+    }
+
+    /// Keep imported structure and behavior, but let the host surface show through.
+    /// Only presentation is adapted; the saved HTML/CSS and media are untouched.
+    private static func nativeThemeCSS(dark: Bool) -> String {
+        """
+        :root {
+          --la-ink: \(dark ? "#f2f5fa" : "#19213d");
+          --la-panel: \(dark ? "rgba(255,255,255,.075)" : "rgba(255,255,255,.56)");
+          --la-line: \(dark ? "rgba(220,232,255,.18)" : "rgba(38,63,99,.25)");
+          --la-accent: \(dark ? "#86c9ff" : "#206db0");
+        }
+        html:root, html:root body.card, #learnalert-anki-content {
+          background-color:transparent !important; color:var(--la-ink) !important;
+        }
+        body.card { font-family:-apple-system,BlinkMacSystemFont,sans-serif !important; }
+        #learnalert-anki-content { max-width:100%; }
+        #learnalert-anki-content :is(div,section,article,table) { max-width:100%; }
+        .anki-sound, button[data-sound], button[data-speech] {
+          color:var(--la-ink) !important; background:rgba(119,186,255,.14) !important;
+          border:1px solid var(--la-line) !important; border-radius:14px !important;
+          font-family:-apple-system,BlinkMacSystemFont,sans-serif !important;
+        }
+        hr { border:0; border-top:1px solid var(--la-line) !important; }
+        a, .cloze { color:var(--la-accent); }
+        ::selection { background:rgba(119,186,255,.32); }
+        """
+    }
+
+    private static func nativeThemeScript(dark: Bool) -> String {
+        """
+        (() => {
+          const dark=\(dark ? "true" : "false"), ink=dark?[242,245,250]:[25,33,61];
+          const backdrop=dark?[25,29,40]:[238,241,248];
+          const originals=new WeakMap();
+          const colors=new Map(), sample=document.createElement('canvas'); sample.width=sample.height=1;
+          const context=sample.getContext('2d');
+          const color=value => {
+            if(colors.has(value))return colors.get(value);
+            let result=null;
+            if(value.startsWith('rgb')) {
+              const parts=value.match(/[\\d.]+/g);
+              if(parts && parts.length>=3)result=parts.map(Number);
+            } else if(context) {
+              // Modern templates can use display-p3, lab, or color() values too.
+              context.clearRect(0,0,1,1); context.fillStyle=value; context.fillRect(0,0,1,1);
+              const pixel=context.getImageData(0,0,1,1).data;
+              result=[pixel[0],pixel[1],pixel[2],pixel[3]/255];
+            }
+            colors.set(value,result); return result;
+          };
+          const neutral=c => Math.max(...c.slice(0,3))-Math.min(...c.slice(0,3))<36;
+          const luminance=c => c.slice(0,3).reduce((sum,v,i)=>{
+            v/=255; return sum+(v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4))*[.2126,.7152,.0722][i];
+          },0);
+          const contrast=(a,b)=>(Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
+          const readable=(c,background) => {
+            if(neutral(c)) return `rgb(${ink.join(',')})`;
+            let result=c.slice(0,3), target=luminance(background)<.18?255:0;
+            for(let i=0;i<20 && contrast(result,background)<4.5;i++) result=result.map(v=>v+(target-v)*.12);
+            return `rgb(${result.map(Math.round).join(',')})`;
+          };
+          const set=(element,key,value)=>element.style.setProperty(key,value,'important');
+          const adapt=()=>{
+            // Snapshot authored colors before changing ancestors, so inherited colors
+            // and template-specific night-mode rules can be handled consistently.
+            const elements=[document.documentElement,document.body,...document.body.querySelectorAll('*')]
+              .filter(el=>!el.closest('svg,canvas,img,video,picture,script,style,link'));
+            const added=elements.filter(el=>!originals.has(el));
+            for(const el of added) {
+              const s=getComputedStyle(el);
+              originals.set(el,{ink:color(s.color),bg:color(s.backgroundColor),image:s.backgroundImage,
+                border:s.borderTopWidth!=='0px'||s.borderRightWidth!=='0px'||s.borderBottomWidth!=='0px'||s.borderLeftWidth!=='0px',
+                radius:s.borderRadius,shadow:s.boxShadow});
+            }
+            for(const el of added) {
+              const s=originals.get(el);
+              if(el===document.documentElement||el===document.body||el.id==='learnalert-anki-content') {
+                set(el,'background-color','transparent'); set(el,'color','var(--la-ink)');
+                if(!s.image.includes('url(')) set(el,'background-image','none');
+                set(el,'box-shadow','none');
+                continue;
+              }
+              const gradient=s.image.includes('gradient(')&&!s.image.includes('url(');
+              if(gradient) { set(el,'background-image','none'); set(el,'background-color','var(--la-panel)'); }
+              if(s.bg && (s.bg[3]===undefined||s.bg[3]>.03)) {
+                // Preserve image backgrounds and meaningful colored highlights.
+                // Neutral HTML boxes become softly separated app-like surfaces.
+                if(neutral(s.bg)) set(el,'background-color','var(--la-panel)');
+                else set(el,'background-color',`rgba(${s.bg.slice(0,3).map(Math.round).join(',')},${dark ? .18 : .12})`);
+                if(s.image==='none' && !['SPAN','MARK','TD','TH','TR'].includes(el.tagName)) {
+                  set(el,'border-radius',s.radius==='0px'?'14px':s.radius);
+                }
+              }
+              if(s.border) set(el,'border-color','var(--la-line)');
+              if(s.shadow!=='none') set(el,'box-shadow',dark?'0 3px 12px rgba(0,0,0,.12)':'0 3px 12px rgba(25,40,65,.07)');
+            }
+            const backgrounds=new WeakMap();
+            const background=el=>{
+              if(!el)return backdrop;
+              if(backgrounds.has(el))return backgrounds.get(el);
+              const base=background(el.parentElement), c=color(getComputedStyle(el).backgroundColor);
+              const alpha=c?(c[3]===undefined?1:c[3]):0;
+              const result=c?base.map((v,i)=>c[i]*alpha+v*(1-alpha)):base;
+              backgrounds.set(el,result); return result;
+            };
+            // Do not replay old colors over a template's later reveal/hide actions.
+            for(const el of added) {
+              const c=originals.get(el).ink;
+              // Transparent text is often a deliberate template answer/reveal mask.
+              if(c && (c[3]===undefined||c[3]>.03) && el!==document.documentElement && el!==document.body && el.id!=='learnalert-anki-content') {
+                set(el,'color',readable(c,background(el)));
+              }
+            }
+          };
+          adapt();
+          let pending=false;
+          new MutationObserver(()=>{
+            if(pending)return; pending=true;
+            requestAnimationFrame(()=>{pending=false;adapt();});
+          }).observe(document.body,{childList:true,subtree:true});
+          window.addEventListener('load',adapt,{once:true});
+        })();
         """
     }
 

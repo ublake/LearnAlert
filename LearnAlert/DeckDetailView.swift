@@ -436,7 +436,8 @@ struct DeckDetailView: View {
     private var deckHeader: some View {
         VStack(spacing: 9) {
             HStack(spacing: 8) {
-                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: deck.cards.count)
+                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: deck.cards.count,
+                                 compactStack: DeckCreatureAppearance.visibleLayerCount(for: deck.cards.count) >= 7)
                     .frame(width: 34, height: 28).accessibilityHidden(true)
                 compactStat("Cards", value: deck.cards.count, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
                 compactStat("Due", value: cardsDueToday, icon: "clock.badge.exclamationmark", color: cardsDueToday > 0 ? .orange : .green)
