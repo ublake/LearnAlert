@@ -57,6 +57,12 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     var isReviewOnly: Bool { self == .vocabulary || self == .images }
 }
 
+struct DeckLibrarySummary: Equatable {
+    let cardCount: Int
+    let cycleStreak: Int
+    let cycleProgress: Double
+}
+
 @Model
 class Deck {
     var id: UUID = UUID()
@@ -111,11 +117,29 @@ class Deck {
         }
     }
 
+    /// Counts do not need study order or faults for each card's orderIndex.
+    var cardCount: Int { storedCards?.count ?? 0 }
+
+    /// Home uses one unordered traversal instead of sorting the entire deck for
+    /// each count, progress label, progress color, and streak label.
+    var librarySummary: DeckLibrarySummary {
+        let cards = storedCards ?? []
+        var streak = 0
+        var totalMastery = 0
+        for card in cards {
+            streak = max(streak, card.streak)
+            totalMastery += min(card.masteryScore, 3)
+        }
+        return DeckLibrarySummary(cardCount: cards.count, cycleStreak: streak,
+            cycleProgress: cards.isEmpty ? 0 : Double(totalMastery) / (Double(cards.count) * 3))
+    }
+
     var cycleStreak: Int {
-        cards.map(\.streak).max() ?? 0
+        storedCards?.reduce(0) { max($0, $1.streak) } ?? 0
     }
 
     var cycleProgress: Double {
+        let cards = storedCards ?? []
         guard !cards.isEmpty else { return 0.0 }
         let totalMastery = cards.reduce(0) { $0 + min($1.masteryScore, 3) }
         let maxPossibleMastery = cards.count * 3

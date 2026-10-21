@@ -409,17 +409,12 @@ final class ManagedCatalogStore: ObservableObject {
 
     private func document(_ id: String) -> ManagedCatalogContent? { decodedContents[id] }
 
-    private static func decodeContents(_ documents: [String: Data]) throws -> [String: ManagedCatalogContent] {
-        try documents.mapValues { try JSONDecoder().decode(ManagedCatalogDocument.self, from: $0).document }
-    }
-
     func reloadFromDisk() {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
               let modified = attributes[.modificationDate] as? Date, modified != fileDate,
               let data = try? Data(contentsOf: cacheURL),
               let loaded = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
-              (try? Self.validate(loaded.manifest, documents: loaded.documents)) != nil else { return }
-        guard let decoded = try? Self.decodeContents(loaded.documents) else { return }
+              let decoded = try? Self.decodeContents(loaded.manifest, documents: loaded.documents) else { return }
         cache = loaded
         decodedContents = decoded
         if loaded.manifest.initialized { defaults?.set(true, forKey: "managed_catalog_initialized") }
@@ -447,7 +442,9 @@ final class ManagedCatalogStore: ObservableObject {
                 else { requestedDocuments.append((item.id, item.contentURL, 32 * 1024 * 1024)) }
             }
             documents.merge(try await fetchMany(requestedDocuments)) { _, newest in newest }
-            try Self.validate(manifest, documents: documents)
+            // Decode and validate each document once. The same prepared values
+            // are installed after media arrives instead of parsing all cards again.
+            let decoded = try Self.decodeContents(manifest, documents: documents)
             // Download immutable assets before publishing a snapshot to the UI/extension.
             var assets: [String: ManagedCatalogAsset] = [:]
             for asset in manifest.items.flatMap({ $0.assets ?? [] }) {
@@ -463,7 +460,7 @@ final class ManagedCatalogStore: ObservableObject {
                     if let asset = assets[reference] { try ManagedCatalogMedia.save(data, asset: asset) }
                 }
             }
-            try install(manifest, documents: documents)
+            try install(manifest, documents: documents, decoded: decoded)
             lastError = nil
         } catch { lastError = error.localizedDescription }
     }
@@ -498,10 +495,13 @@ final class ManagedCatalogStore: ObservableObject {
 
     /// Separate from transport so replacement/deletion and offline behavior can be tested.
     func install(_ manifest: ManagedCatalogManifest, documents: [String: Data]) throws {
-        try Self.validate(manifest, documents: documents)
+        let decoded = try Self.decodeContents(manifest, documents: documents)
+        try install(manifest, documents: documents, decoded: decoded)
+    }
+
+    private func install(_ manifest: ManagedCatalogManifest, documents: [String: Data], decoded: [String: ManagedCatalogContent]) throws {
         guard manifest.initialized else { return }
         var retained = cache?.retainedCourses ?? [:]
-        let decoded = try Self.decodeContents(documents)
         for course in courses where enrolledIDs.contains(course.id) { retained[course.id] = course }
         for content in decoded.values {
             if case .course(let course) = content,
@@ -519,9 +519,10 @@ final class ManagedCatalogStore: ObservableObject {
         revision = manifest.revision
     }
 
-    private static func validate(_ manifest: ManagedCatalogManifest, documents: [String: Data]) throws {
+    private static func decodeContents(_ manifest: ManagedCatalogManifest, documents: [String: Data]) throws -> [String: ManagedCatalogContent] {
         guard manifest.schemaVersion == 1, !manifest.revision.isEmpty,
               Set(manifest.items.map(\.id)).count == manifest.items.count else { throw CocoaError(.coderReadCorrupt) }
+        var contents: [String: ManagedCatalogContent] = [:]
         for item in manifest.items {
             guard let data = documents[item.id] else { throw CocoaError(.coderReadCorrupt) }
             let decoded = try JSONDecoder().decode(ManagedCatalogDocument.self, from: data)
@@ -530,7 +531,9 @@ final class ManagedCatalogStore: ObservableObject {
             case .course(let course): guard course.id == item.id else { throw CocoaError(.coderReadCorrupt) }
             case .exam(let deck): guard deck.id == item.id else { throw CocoaError(.coderReadCorrupt) }
             }
+            contents[item.id] = decoded.document
         }
+        return contents
     }
 }
 

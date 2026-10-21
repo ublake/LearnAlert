@@ -57,25 +57,32 @@ struct LearnAlertApp: App {
                 }
                 .task(id: scenePhase == .active) {
                     guard scenePhase == .active else { return }
-                    // Assign stable source IDs before a remotely renamed lesson is installed.
-                    syncManagedCourseDecks()
+                    // Let Home render before maintaining enrolled course decks.
+                    do { try await Task.sleep(for: .milliseconds(250)) }
+                    catch { return }
+                    // Assign stable source IDs before installing a remote rename.
+                    await syncManagedCourseDecks()
                     while !Task.isCancelled {
                         await ManagedCatalogStore.shared.refresh()
                         do { try await Task.sleep(for: .seconds(60)) }
                         catch { return }
                     }
                 }
-                .onReceive(ManagedCatalogStore.shared.$revision.dropFirst()) { _ in syncManagedCourseDecks() }
+                .onReceive(ManagedCatalogStore.shared.$revision.dropFirst()) { _ in
+                    Task { await syncManagedCourseDecks() }
+                }
                 .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
                     CommunitySession.shared.appleCredentialRevoked()
                 }
         }
     }
 
-    @MainActor private func syncManagedCourseDecks() {
+    @MainActor private func syncManagedCourseDecks() async {
         let manager = CourseProgressManager.shared
         manager.reloadFromSharedDefaults()
         for course in manager.allEnrolledCourses {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             manager.syncManagedCourseDeckIfNeeded(for: course, in: sharedDatabase.container.mainContext)
             manager.reconcilePendingNotifications(for: course)
         }

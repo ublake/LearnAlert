@@ -260,14 +260,14 @@ private enum HomeAlertTarget {
 
     var detail: String {
         switch self {
-        case .deck(let deck): "\(deck.cards.count) cards"
+        case .deck(let deck): "\(deck.cardCount) cards"
         case .course(let course): "\(course.totalLessonsCount) lessons"
         }
     }
 
     var canSchedule: Bool {
         switch self {
-        case .deck(let deck): deck.cards.count >= 2
+        case .deck(let deck): deck.cardCount >= 2
         case .course(let course): course.totalLessonsCount > 0
         }
     }
@@ -1036,9 +1036,9 @@ struct HomeLibraryView: View {
     private var activeScheduledCardCount: Int {
         guard let deck = ordinaryDecks.first(where: { $0.name == engine.activeDeckName }) else { return 0 }
         if let sectionId = engine.activeSectionId {
-            return deck.sections.first(where: { $0.id == sectionId })?.cards.count ?? deck.cards.count
+            return deck.sections.first(where: { $0.id == sectionId })?.cards.count ?? deck.cardCount
         }
-        return deck.cards.count
+        return deck.cardCount
     }
 }
 
@@ -1311,7 +1311,7 @@ private struct HomeAlertSetupCard: View {
     }
 
     private var schedulableDecks: [Deck] {
-        decks.filter { $0.cards.count >= 2 }
+        decks.filter { $0.cardCount >= 2 }
     }
 
     private var hasStudyMaterial: Bool { !schedulableDecks.isEmpty || !courses.isEmpty }
@@ -1750,6 +1750,8 @@ private struct HomeStudyCard: View {
     @State private var pulseGlow = false
 
     var body: some View {
+        let summary = deck.librarySummary
+        let progressColor = self.progressColor(for: summary)
         VStack(alignment: .leading, spacing: 8) {
             if isTutorialHighlighted {
                 HStack(spacing: 6) {
@@ -1776,7 +1778,7 @@ private struct HomeStudyCard: View {
                             DeckCreatureView(
                                 stableID: deck.id,
                                 appearanceSeed: deck.appearanceSeed,
-                                cardCount: deck.cards.count
+                                cardCount: summary.cardCount
                             )
                             .frame(width: 96, height: 88)
 
@@ -1787,18 +1789,18 @@ private struct HomeStudyCard: View {
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
 
-                                Text("\(deck.deckType) · \(deck.cards.count) cards")
+                                Text("\(deck.deckType) · \(summary.cardCount) cards")
                                     .font(.subheadline)
                                     .foregroundStyle(LearnAlertStyle.textSecondary)
 
                                 Spacer(minLength: 0)
 
                                 HStack(spacing: 6) {
-                                    if deck.cycleStreak > 0 {
+                                    if summary.cycleStreak > 0 {
                                         HStack(spacing: 2) {
                                             Text("🔥")
                                                 .font(.system(size: 11))
-                                            Text("\(deck.cycleStreak)")
+                                            Text("\(summary.cycleStreak)")
                                                 .font(.caption.weight(.semibold))
                                                 .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
                                                 .monospacedDigit()
@@ -1821,7 +1823,7 @@ private struct HomeStudyCard: View {
                                             Capsule()
                                                 .fill(progressColor)
                                                 .frame(
-                                                    width: max(geo.size.width * CGFloat(deck.cycleProgress), deck.cycleProgress > 0 ? 4 : 0),
+                                                    width: max(geo.size.width * CGFloat(summary.cycleProgress), summary.cycleProgress > 0 ? 4 : 0),
                                                     height: 4
                                                 )
                                         }
@@ -1829,7 +1831,7 @@ private struct HomeStudyCard: View {
                                     }
                                     .frame(width: 44, height: 12)
 
-                                    Text(deck.cycleProgress, format: .percent.precision(.fractionLength(0)))
+                                    Text(summary.cycleProgress, format: .percent.precision(.fractionLength(0)))
                                         .monospacedDigit()
                                         .foregroundStyle(progressColor)
 
@@ -1847,7 +1849,7 @@ private struct HomeStudyCard: View {
                     .simultaneousGesture(TapGesture().onEnded {
                         onTapped?()
                     })
-                    .accessibilityLabel("Open \(deck.name), \(deck.cards.count) cards")
+                    .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards")
 
                     Button(action: {
                         if !isTutorialActive {
@@ -1915,11 +1917,11 @@ private struct HomeStudyCard: View {
         }
     }
 
-    private var progressColor: Color {
-        if deck.cycleStreak > 0 {
-            if deck.cycleProgress >= 0.70 {
+    private func progressColor(for summary: DeckLibrarySummary) -> Color {
+        if summary.cycleStreak > 0 {
+            if summary.cycleProgress >= 0.70 {
                 return Color(red: 0.18, green: 0.80, blue: 0.44)
-            } else if deck.cycleProgress >= 0.40 {
+            } else if summary.cycleProgress >= 0.40 {
                 return LearnAlertStyle.appAccent
             } else {
                 return LearnAlertStyle.appAccent
@@ -2084,7 +2086,7 @@ private struct PinnedReorderSheet: View {
                                     Text(deck.name)
                                         .font(.custom("Poppins-Medium", size: 14))
                                         .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    Text("\(deck.cards.count) cards")
+                                    Text("\(deck.cardCount) cards")
                                         .font(.custom("Poppins-Regular", size: 11))
                                         .foregroundStyle(LearnAlertStyle.textSecondary)
                                 }
@@ -2567,7 +2569,7 @@ struct SetupAlertsView: View {
     }
     private var automaticCount: Int {
         let target = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.dailyCardsTarget }
-        return DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cards.count, courseTarget: target)
+        return DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cardCount, courseTarget: target)
     }
     private var hasChanges: Bool { original.map { $0 != draft } ?? false }
     private var canSave: Bool {
@@ -2816,7 +2818,7 @@ struct DeckGridItem: View {
                                     .foregroundStyle(.white)
                                     .lineLimit(1)
                                 Spacer()
-                                Text("\(deck.cards.count) cards")
+                                Text("\(deck.cardCount) cards")
                                     .font(.caption)
                                     .foregroundStyle(.white.opacity(0.76))
                             }
@@ -3171,7 +3173,7 @@ private struct SystemCheckView: View {
             state: requests.isEmpty ? .warning : .good
         ))
 
-        let cardCount = decks.reduce(0) { $0 + $1.cards.count }
+        let cardCount = decks.reduce(0) { $0 + $1.cardCount }
         let reviewedCount = decks.flatMap(\.cards).filter { $0.reviewCount > 0 }.count
         items.append(SystemCheckItem(
             title: "Local library",

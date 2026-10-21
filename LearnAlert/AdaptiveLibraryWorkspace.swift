@@ -84,7 +84,11 @@ struct AdaptiveLibraryWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.layoutDirection) private var direction
     @AppStorage("homeTutorialStep") private var homeTutorialStep = 0
+    @State private var hasLoadedDiscover = false
     private var expanded: Bool { geometry.presentation != .single && selectedTab == 1 }
+    private var shouldLoadDiscover: Bool {
+        hasLoadedDiscover || selectedTab == 1 || geometry.presentation != .single
+    }
 
     var body: some View {
         LibraryPaneLayout(geometry: geometry, expansion: expanded ? 1 : 0, rightToLeft: direction == .rightToLeft) {
@@ -93,12 +97,24 @@ struct AdaptiveLibraryWorkspace: View {
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
                 .accessibilityHidden(selectedTab != 0)
-            PremadeDecksView()
-                .clipped()
-                .opacity(geometry.presentation != .single || selectedTab == 1 ? 1 : 0)
-                .disabled(homeTutorialStep > 0)
-                .allowsHitTesting(homeTutorialStep == 0 && (geometry.presentation != .single || selectedTab == 1))
-                .accessibilityHidden(homeTutorialStep > 0 || (geometry.presentation == .single && selectedTab != 1))
+            Group {
+                if shouldLoadDiscover {
+                    PremadeDecksView()
+                } else {
+                    // Keep the two layout slots without starting the hidden
+                    // community feed and catalog views during Home's launch.
+                    Color.clear
+                }
+            }
+            .clipped()
+            .opacity(geometry.presentation != .single || selectedTab == 1 ? 1 : 0)
+            .disabled(homeTutorialStep > 0)
+            .allowsHitTesting(homeTutorialStep == 0 && (geometry.presentation != .single || selectedTab == 1))
+            .accessibilityHidden(homeTutorialStep > 0 || (geometry.presentation == .single && selectedTab != 1))
+        }
+        .onChange(of: shouldLoadDiscover, initial: true) { _, shouldLoad in
+            // Once visited, retain Discover's scroll position and loaded feed.
+            if shouldLoad { hasLoadedDiscover = true }
         }
         .overlay {
             if geometry.presentation == .columns {

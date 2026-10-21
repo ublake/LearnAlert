@@ -15,10 +15,9 @@ import CryptoKit
 final class CourseProgressManager: ObservableObject {
     static let shared = CourseProgressManager()
 
-    private let appGroupSuite = "group.com.learnalert.shared"
-    private var sharedDefaults: UserDefaults? {
-        UserDefaults(suiteName: appGroupSuite)
-    }
+    private let sharedDefaults: UserDefaults?
+    private let learningStore: CourseLearningStore
+    private var practiceSessions: [String: CoursePracticeSession] = [:]
 
     @Published private(set) var activeCourseId: String?
     @Published private(set) var activeEnrollment: CourseEnrollment?
@@ -31,7 +30,10 @@ final class CourseProgressManager: ObservableObject {
     @Published private(set) var pinnedItemIds: [String] = []
     @Published private(set) var unpinnedExplicitIds: Set<String> = []
 
-    private init() {
+    init(defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
+         learningStore: CourseLearningStore = .shared) {
+        sharedDefaults = defaults
+        self.learningStore = learningStore
         reloadFromSharedDefaults()
     }
 
@@ -56,20 +58,10 @@ final class CourseProgressManager: ObservableObject {
         }
         self.enrolledCourseIds = enrolled
 
-        // Load progress maps & checkpoint results
-        for course in CourseCurriculumCatalog.courses {
-            progressMap[course.id] = loadProgressMap(for: course.id)
-            checkpointResults[course.id] = loadCheckpointResults(for: course.id)
-        }
-
-        // Load SRS records
-        self.srsRecords = loadSRSRecords()
-
-        // Load processed event tokens for deduplication
-        let tokens = defaults.stringArray(forKey: "course_processed_event_tokens") ?? []
-        self.processedEventTokens = Set(tokens)
-
-        let snapshot = CourseLearningStore.shared.snapshot()
+        // The shared store already migrates legacy defaults. Read its complete
+        // snapshot once rather than decoding the file separately for each field/course.
+        let snapshot = learningStore.snapshot()
+        practiceSessions = snapshot.practiceSessions
         progressMap = snapshot.progress
         checkpointResults = snapshot.checkpoints
         srsRecords = snapshot.srs
@@ -90,6 +82,7 @@ final class CourseProgressManager: ObservableObject {
         snapshot.checkpoints = checkpointResults
         snapshot.srs = srsRecords
         snapshot.courseSRS = scopedSRSRecords
+        snapshot.practiceSessions = practiceSessions
         return snapshot
     }
 
@@ -401,13 +394,12 @@ final class CourseProgressManager: ObservableObject {
     // MARK: - Lesson Progression & Gating Logic
 
     func getLessonRecord(courseId: String, lessonId: String) -> CourseLessonProgressRecord {
-        let map = progressMap[courseId] ?? loadProgressMap(for: courseId)
-        return map[lessonId] ?? CourseLessonProgressRecord(status: .locked)
+        progressMap[courseId]?[lessonId] ?? CourseLessonProgressRecord(status: .locked)
     }
 
     func getLessonStatus(courseId: String, lessonId: String) -> LessonStatus {
         guard let course = CourseCurriculumCatalog.course(for: courseId) else { return .locked }
-        return CourseLearningStore.shared.snapshot().status(course: course, lessonId: lessonId)
+        return learningSnapshot.status(course: course, lessonId: lessonId)
     }
 
     /// Check if all regular lessons in a section are completed
@@ -416,14 +408,13 @@ final class CourseProgressManager: ObservableObject {
               let unit = course.units.first(where: { $0.id == sectionId }) else {
             return false
         }
-        let snapshot = CourseLearningStore.shared.snapshot()
+        let snapshot = learningSnapshot
         return unit.lessons.allSatisfy { snapshot.status(course: course, lessonId: $0.id) == .completed }
     }
 
     /// Check if a section checkpoint has been passed
     func isCheckpointPassed(courseId: String, sectionId: String) -> Bool {
-        let results = checkpointResults[courseId] ?? loadCheckpointResults(for: courseId)
-        guard let result = results[sectionId] else { return false }
+        guard let result = checkpointResults[courseId]?[sectionId] else { return false }
         return result.passed
     }
 
@@ -445,7 +436,7 @@ final class CourseProgressManager: ObservableObject {
            let unit = course.units.first(where: { $0.id == sectionId }), let quiz = unit.checkpointQuiz,
            quiz.id == checkpointId, totalQuestions == quiz.questions.count,
            score == totalQuestions - Set(missedQuestionIds).count,
-           let result = CourseLearningStore.shared.transaction({ $0.checkpoint(course: course, unit: unit, missed: missedQuestionIds) }) ?? nil {
+           let result = learningStore.transaction({ $0.checkpoint(course: course, unit: unit, missed: missedQuestionIds) }) ?? nil {
             reloadFromSharedDefaults()
             reconcilePendingNotifications(for: course)
             return result
@@ -468,7 +459,7 @@ final class CourseProgressManager: ObservableObject {
         isCorrect: Bool, eventToken: String? = nil) -> Bool {
         guard let course = CourseCurriculumCatalog.course(for: courseId),
               course.units.contains(where: { $0.id == sectionId && $0.lessons.contains(where: { $0.id == lessonId }) }) else { return false }
-        let applied = CourseLearningStore.shared.transaction {
+        let applied = learningStore.transaction {
             $0.answer(course: course, lessonId: lessonId, cardId: cardId, correct: isCorrect, token: eventToken ?? UUID().uuidString)
         } ?? false
         reloadFromSharedDefaults()
@@ -503,7 +494,7 @@ final class CourseProgressManager: ObservableObject {
     // MARK: - Resumable In-App Practice
 
     func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
-        let session = CourseLearningStore.shared.transaction {
+        let session = learningStore.transaction {
             $0.resumePractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId)
         } ?? nil
         reloadFromSharedDefaults()
@@ -512,7 +503,7 @@ final class CourseProgressManager: ObservableObject {
 
     @discardableResult
     func recordPracticeAnswer(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String, correct: Bool) -> Bool {
-        let saved = CourseLearningStore.shared.transaction {
+        let saved = learningStore.transaction {
             $0.answerPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId, cardId: cardId, correct: correct)
         } ?? false
         reloadFromSharedDefaults()
@@ -521,7 +512,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func finishPractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String) -> CoursePracticeCompletion? {
-        let completion = CourseLearningStore.shared.transaction {
+        let completion = learningStore.transaction {
             $0.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId)
         } ?? nil
         reloadFromSharedDefaults()
@@ -530,7 +521,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func answeredCardsCount(course: CourseDefinition, lesson: CourseLesson) -> Int {
-        let state = CourseLearningStore.shared.snapshot()
+        let state = learningSnapshot
         let key = CourseLearningSnapshot.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil)!
         let answered = Set(state.practiceSessions[key]?.answers.keys.map { $0 } ?? [])
         let mastered = Set(state.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
@@ -541,13 +532,13 @@ final class CourseProgressManager: ObservableObject {
 
     /// Generates the next batch of cards to study: combines new cards from current lesson and due SRS cards from completed lessons.
     func nextStudyBatch(for course: CourseDefinition, maxCount: Int = 10) -> [CourseLessonCard] {
-        CourseLearningStore.shared.snapshot().batch(course: course, count: maxCount)
+        learningStore.snapshot().batch(course: course, count: maxCount)
     }
 
     // MARK: - Current State Queries
 
     func currentLesson(for course: CourseDefinition) -> CourseLesson? {
-        CourseLearningStore.shared.snapshot().currentLesson(course: course)
+        learningSnapshot.currentLesson(course: course)
     }
 
     func completedLessonsCount(for course: CourseDefinition) -> Int {
@@ -556,7 +547,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     func completionPercentage(for course: CourseDefinition) -> Double {
-        CourseLearningStore.shared.snapshot().completionFraction(course: course)
+        learningSnapshot.completionFraction(course: course)
     }
 
     func completedCards(for course: CourseDefinition) -> [CourseLessonCard] {
@@ -572,7 +563,7 @@ final class CourseProgressManager: ObservableObject {
     // MARK: - Scheduling Pointer & Notification Reconciliation (Requirements 6 & 14)
 
     func updateSchedulePointer(course: CourseDefinition) {
-        let snapshot = CourseLearningStore.shared.snapshot()
+        let snapshot = learningStore.snapshot()
         let current = snapshot.currentLesson(course: course)
         guard let unit = snapshot.pendingCheckpoint(course: course) ?? course.units.first(where: { $0.lessons.contains(where: { $0.id == current?.id }) }) ?? course.units.last else { return }
         let card = snapshot.batch(course: course, count: 1).first
@@ -595,8 +586,8 @@ final class CourseProgressManager: ObservableObject {
     /// Reconcile queued course alerts safely using iOS background scheduling rules
     func reconcilePendingNotifications(for course: CourseDefinition) {
         // Course notifications resolve live shared progress when expanded. No unrelated deck is rescheduled.
-        updateSchedulePointer(course: course)
         guard CourseNotificationScheduler.activePlan?.courseId == course.id else { return }
+        updateSchedulePointer(course: course)
         Task {
             do { try await CourseNotificationScheduler.replenish() }
             catch { print("Course notification refresh failed: \(error.localizedDescription)") }
@@ -622,7 +613,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     private func saveProgressMap(_ map: [String: CourseLessonProgressRecord], for courseId: String) {
-        CourseLearningStore.shared.transaction { state in
+        learningStore.transaction { state in
             // Enrollment only initializes absent records, preserving extension progress.
             for (id, record) in map where state.progress[courseId]?[id] == nil {
                 state.progress[courseId, default: [:]][id] = record
@@ -631,7 +622,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     private func loadProgressMap(for courseId: String) -> [String: CourseLessonProgressRecord] {
-        CourseLearningStore.shared.snapshot().progress[courseId] ?? [:]
+        learningStore.snapshot().progress[courseId] ?? [:]
     }
 
     private func saveCheckpointResults(_ results: [String: CourseCheckpointResult], for courseId: String) {
@@ -642,7 +633,7 @@ final class CourseProgressManager: ObservableObject {
     }
 
     private func loadCheckpointResults(for courseId: String) -> [String: CourseCheckpointResult] {
-        CourseLearningStore.shared.snapshot().checkpoints[courseId] ?? [:]
+        learningStore.snapshot().checkpoints[courseId] ?? [:]
     }
 
     private func saveSRSRecords(_ records: [String: CourseCardSRSRecord]) {
@@ -653,6 +644,6 @@ final class CourseProgressManager: ObservableObject {
     }
 
     private func loadSRSRecords() -> [String: CourseCardSRSRecord] {
-        CourseLearningStore.shared.snapshot().srs
+        learningStore.snapshot().srs
     }
 }

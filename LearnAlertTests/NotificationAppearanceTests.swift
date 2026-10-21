@@ -6,6 +6,28 @@ import UserNotifications
 @MainActor
 @Suite("Notification appearance")
 struct NotificationAppearanceTests {
+    @Test("Ordinary launch and deck handoffs do not reload course progress")
+    func ordinaryLaunchSkipsCourseReload() throws {
+        let suite = "test-handoff-startup-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = NotificationManager(registerForNotifications: false)
+        var reloads = 0
+        manager.consumePendingStudyHandoff(defaults: defaults) { reloads += 1 }
+        #expect(reloads == 0 && manager.pendingStudyHandoff == nil)
+        let deckID = UUID(), cardID = UUID()
+        defaults.set(deckID.uuidString, forKey: "handoffDeckId")
+        defaults.set(cardID.uuidString, forKey: "handoffCardId")
+        defaults.set(true, forKey: "handoffWasRevealed")
+        manager.consumePendingStudyHandoff(defaults: defaults) { reloads += 1 }
+        #expect(reloads == 0)
+        #expect(manager.pendingStudyHandoff?.deckId == deckID)
+        #expect(manager.pendingStudyHandoff?.cardId == cardID)
+        #expect(manager.pendingStudyHandoff?.wasRevealed == true)
+        #expect(defaults.string(forKey: "handoffDeckId") == nil)
+        #expect(defaults.string(forKey: "handoffCardId") == nil)
+    }
+
     @Test("Opening a Customize preview shows gesture help and clears only its synthetic handoff")
     func customizationPreviewRouting() throws {
         let suite = "test-preview-routing-\(UUID().uuidString)"

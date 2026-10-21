@@ -189,4 +189,87 @@ struct DeckSchedulingTests {
         #expect(slots.allSatisfy { calendar.component(.hour, from: $0.date) == 17 })
         #expect(slots[1].date.timeIntervalSince(slots[0].date) == 25 * 3600)
     }
+
+    @Test("Daily replenishment fetches only scheduled cards in the selected deck and section")
+    func boundedDailyCardFetch() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("daily-fetch-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
+            configurations: ModelConfiguration(url: directory.appendingPathComponent("test.sqlite"), cloudKitDatabase: .none))
+        let context = ModelContext(container)
+        let deck = Deck(name: "Large import"), otherDeck = Deck(name: "Other")
+        let section = DeckSection(title: "Selected", deck: deck)
+        let otherSection = DeckSection(title: "Other section", deck: deck)
+        context.insert(deck); context.insert(otherDeck)
+        context.insert(section); context.insert(otherSection)
+        let selected = Flashcard(question: "Scheduled", deck: deck, section: section)
+        let outsideSection = Flashcard(question: "Wrong section", deck: deck, section: otherSection)
+        let outsideDeck = Flashcard(question: "Wrong deck", deck: otherDeck)
+        for card in [selected, outsideSection, outsideDeck] { context.insert(card) }
+        for index in 0..<500 { context.insert(Flashcard(question: "Unscheduled \(index)", deck: deck, section: section)) }
+        try context.save()
+        let ids = [selected.id, selected.id, outsideSection.id, outsideDeck.id, UUID()]
+        let scoped = try DailyDeckAlertScheduler.scheduledCards(cardIDs: ids, deckID: deck.id,
+            sectionID: section.id, in: context)
+        #expect(scoped.map(\.id) == [selected.id])
+        let wholeDeck = try DailyDeckAlertScheduler.scheduledCards(cardIDs: ids, deckID: deck.id,
+            sectionID: nil, in: context)
+        #expect(Set(wholeDeck.map(\.id)) == Set([selected.id, outsideSection.id]))
+        #expect(try DailyDeckAlertScheduler.scheduledCards(cardIDs: [], deckID: deck.id,
+            sectionID: nil, in: context).isEmpty)
+    }
+
+    @Test("Mastery stopping checks every scoped card, including cards outside the next daily slots")
+    func scopedDailyMastery() throws {
+        let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let context = ModelContext(container)
+        let deck = Deck(name: "Mastery"), otherDeck = Deck(name: "Other")
+        let section = DeckSection(title: "Known", deck: deck)
+        context.insert(deck); context.insert(otherDeck); context.insert(section)
+        let now = Date()
+        let known = Flashcard(question: "Known", deck: deck, section: section)
+        known.masteryScore = 3; known.lastReviewedDate = now
+        let due = Flashcard(question: "Due Anki", deck: deck, cardType: .anki)
+        due.masteryScore = 3
+        var state = AnkiReviewState(); state.dueDate = now.addingTimeInterval(-60)
+        due.ankiReviewState = state
+        let unrelated = Flashcard(question: "Other deck", deck: otherDeck)
+        for card in [known, due, unrelated] { context.insert(card) }
+        for index in 0..<205 {
+            let card = Flashcard(question: "Known \(index)", deck: deck, section: section)
+            card.masteryScore = 3; card.lastReviewedDate = now
+            context.insert(card)
+        }
+        try context.save()
+        #expect(try DailyDeckAlertScheduler.allCardsMastered(deckID: deck.id, sectionID: section.id, in: context, now: now))
+        #expect(try !DailyDeckAlertScheduler.allCardsMastered(deckID: deck.id, sectionID: nil, in: context, now: now))
+        state.dueDate = now.addingTimeInterval(86_400); due.ankiReviewState = state
+        try context.save()
+        #expect(try DailyDeckAlertScheduler.allCardsMastered(deckID: deck.id, sectionID: nil, in: context, now: now))
+        due.masteryScore = 2
+        try context.save()
+        #expect(try !DailyDeckAlertScheduler.allCardsMastered(deckID: deck.id, sectionID: nil, in: context, now: now))
+    }
+
+    @Test("A cancelled or replaced daily plan cannot resume adding old notifications")
+    func dailyPlanCancellation() throws {
+        let suite = "daily-plan-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let plan = DailyDeckAlertPlan(deckId: UUID(), sectionId: nil, cardIds: [UUID()], anchor: Date(),
+            hour: 17, minute: 0, expiresAt: nil)
+        let data = try JSONEncoder().encode(plan)
+        defaults.set(data, forKey: "dailyDeckAlertPlan")
+        #expect(DailyDeckAlertScheduler.isCurrent(planData: data, defaults: defaults))
+        defaults.set(true, forKey: "extensionDidStopAlerts")
+        #expect(!DailyDeckAlertScheduler.isCurrent(planData: data, defaults: defaults))
+        defaults.set(false, forKey: "extensionDidStopAlerts")
+        var replacement = plan; replacement.id = UUID().uuidString
+        defaults.set(try JSONEncoder().encode(replacement), forKey: "dailyDeckAlertPlan")
+        #expect(!DailyDeckAlertScheduler.isCurrent(planData: data, defaults: defaults))
+        defaults.removeObject(forKey: "dailyDeckAlertPlan")
+        #expect(!DailyDeckAlertScheduler.isCurrent(planData: data, defaults: defaults))
+    }
 }

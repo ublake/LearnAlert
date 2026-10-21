@@ -392,17 +392,22 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
 
     @MainActor
-    func consumePendingStudyHandoff() {
-        CourseProgressManager.shared.reloadFromSharedDefaults()
-        if let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"), let id = defaults.string(forKey: "handoffCourseId") {
+    func consumePendingStudyHandoff(
+        defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
+        reloadCourseProgress: @MainActor () -> Void = { CourseProgressManager.shared.reloadFromSharedDefaults() }
+    ) {
+        guard let defaults else { return }
+        // Most launches have no handoff. Loading every course's progress here
+        // makes an ordinary launch pay for notification-only routing work.
+        if let id = defaults.string(forKey: "handoffCourseId") {
             if let course = CourseCurriculumCatalog.course(for: id) {
+                reloadCourseProgress()
                 pendingCourseHandoff = CourseHandoff.destination(course: course, snapshot: CourseLearningStore.shared.snapshot(),
                     requestedSectionId: defaults.string(forKey: "handoffCourseSectionId"), openPath: defaults.bool(forKey: "handoffCourseOpenPath"))
             }
             ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults.removeObject(forKey: $0) }
         }
-        guard let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
-              let deckString = defaults.string(forKey: "handoffDeckId"),
+        guard let deckString = defaults.string(forKey: "handoffDeckId"),
               let cardString = defaults.string(forKey: "handoffCardId"),
               let deckId = UUID(uuidString: deckString),
               let cardId = UUID(uuidString: cardString) else { return }

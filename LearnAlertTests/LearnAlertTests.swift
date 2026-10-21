@@ -389,6 +389,49 @@ struct SmartRepetitionAndLockingTests {
         #expect(deck.cycleStreak == 1)
         #expect(deck.cycleProgress == 2.0 / 6.0)
     }
+
+    @Test("Library summaries preserve study order and cap each card's mastery")
+    func deckLibrarySummary() {
+        let deck = Deck(name: "Imported Deck", deckType: "Anki")
+        let first = Flashcard(question: "First", options: [], correctAnswer: "A")
+        first.orderIndex = 0
+        first.streak = 2
+        first.masteryScore = 1
+        let second = Flashcard(question: "Second", options: [], correctAnswer: "B")
+        second.orderIndex = 1
+        second.streak = 5
+        second.masteryScore = 7
+        let third = Flashcard(question: "Third", options: [], correctAnswer: "C")
+        third.orderIndex = 2
+        deck.cards = [third, first, second]
+
+        let summary = deck.librarySummary
+        #expect(summary.cardCount == 3)
+        #expect(summary.cycleStreak == 5)
+        #expect(summary.cycleProgress == 4.0 / 9.0)
+        #expect(deck.cardCount == summary.cardCount)
+        #expect(deck.cycleStreak == summary.cycleStreak)
+        #expect(deck.cycleProgress == summary.cycleProgress)
+        #expect(deck.cards.map(\.id) == [first.id, second.id, third.id])
+    }
+
+    @Test("Library summaries reflect reviews and card additions and removals")
+    func deckLibrarySummaryUpdates() {
+        let deck = Deck(name: "Changing Deck")
+        #expect(deck.cardCount == 0)
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0))
+
+        let card = Flashcard(question: "Q", options: ["A"], correctAnswer: "A")
+        deck.cards.append(card)
+        #expect(deck.cardCount == 1)
+        #expect(deck.librarySummary.cycleProgress == 0)
+
+        card.processAnswer(isCorrect: true)
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 1, cycleStreak: 1, cycleProgress: 1.0 / 3.0))
+
+        deck.cards.removeAll()
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0))
+    }
 }
 
 @Suite("PDF Page Range & Section Selection Tests")
