@@ -101,7 +101,10 @@ class Deck {
 
     var cards: [Flashcard] {
         get {
-            storedCards?.sorted(by: { $0.orderIndex < $1.orderIndex }) ?? []
+            // SwiftData property access is expensive inside a sort comparator.
+            // Read each order value once before comparing plain integers.
+            (storedCards ?? []).map { ($0.orderIndex, $0) }
+                .sorted { $0.0 < $1.0 }.map { $0.1 }
         }
         set {
             storedCards = newValue
@@ -198,7 +201,8 @@ class DeckSection {
 
     var cards: [Flashcard] {
         get {
-            storedCards?.sorted(by: { $0.orderIndex < $1.orderIndex }) ?? []
+            (storedCards ?? []).map { ($0.orderIndex, $0) }
+                .sorted { $0.0 < $1.0 }.map { $0.1 }
         }
         set {
             storedCards = newValue

@@ -1,6 +1,56 @@
 import SwiftUI
 import SwiftData
 
+/// Values reused by the header, filters, and folder rows during one render.
+/// The caller supplies study order once; grouping and statistics share one pass.
+struct DeckDetailSnapshot {
+    let cardCount: Int
+    private(set) var dueCount = 0
+    private(set) var masteredCount = 0
+    private(set) var sectionCounts: [UUID: Int] = [:]
+    private(set) var uncategorizedCount = 0
+    private(set) var filteredCards: [Flashcard] = []
+    private(set) var groupedCards: [UUID: [Flashcard]] = [:]
+    private(set) var uncategorizedCards: [Flashcard] = []
+
+    init(cards: [Flashcard], searchText: String, selectedSectionFilter: String, now: Date = Date()) {
+        cardCount = cards.count
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let selectedID = UUID(uuidString: selectedSectionFilter)
+        for card in cards {
+            let sectionID = card.section?.id
+            if let sectionID { sectionCounts[sectionID, default: 0] += 1 }
+            else { uncategorizedCount += 1 }
+
+            if card.cardType == .anki {
+                // Both computed card properties decode the same review JSON.
+                let review = card.ankiReviewState
+                if review.dueDate <= now { dueCount += 1 }
+                if review.interval >= 7 * AnkiReviewScheduling.day { masteredCount += 1 }
+            } else {
+                if card.nextReviewDate <= now { dueCount += 1 }
+                if card.interval >= 7 { masteredCount += 1 }
+            }
+
+            if selectedSectionFilter == "NONE" {
+                guard sectionID == nil else { continue }
+            } else if let selectedID {
+                guard sectionID == selectedID else { continue }
+            }
+            guard query.isEmpty || Self.matches(card, query: query) else { continue }
+            filteredCards.append(card)
+            if let sectionID { groupedCards[sectionID, default: []].append(card) }
+            else { uncategorizedCards.append(card) }
+        }
+    }
+
+    private static func matches(_ card: Flashcard, query: String) -> Bool {
+        if card.question.lowercased().contains(query) || card.correctAnswer.lowercased().contains(query) || card.hint.lowercased().contains(query) { return true }
+        if card.options.contains(where: { $0.lowercased().contains(query) }) { return true }
+        return card.matchingPairs.contains { $0.leftItem.lowercased().contains(query) || $0.rightItem.lowercased().contains(query) }
+    }
+}
+
 struct DeckDetailView: View {
     @Bindable var deck: Deck
     @Environment(\.modelContext) private var context
@@ -25,41 +75,10 @@ struct DeckDetailView: View {
     @State private var editingFolderName: String = ""
     @State private var showingRenameFolderAlert = false
 
-    private var orderedSections: [DeckSection] {
-        deck.sections.sorted { $0.orderIndex < $1.orderIndex }
-    }
-
-    private var cardsDueToday: Int {
-        deck.cards.filter { $0.nextReviewDate <= Date() }.count
-    }
-
-    private var filteredCards: [Flashcard] {
-        var result = deck.cards
-
-        if selectedSectionFilter != "ALL" {
-            if selectedSectionFilter == "NONE" {
-                result = result.filter { $0.section == nil }
-            } else if let id = UUID(uuidString: selectedSectionFilter) {
-                result = result.filter { $0.section?.id == id }
-            }
-        }
-
-        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            result = result.filter { card in
-                card.question.lowercased().contains(query) ||
-                card.correctAnswer.lowercased().contains(query) ||
-                card.matchingLeftItems.contains { $0.lowercased().contains(query) } ||
-                card.matchingRightItems.contains { $0.lowercased().contains(query) } ||
-                card.options.contains { $0.lowercased().contains(query) } ||
-                card.hint.lowercased().contains(query)
-            }
-        }
-
-        return result
-    }
-
     var body: some View {
+        let cards = deck.cards
+        let orderedSections = deck.sections
+        let snapshot = DeckDetailSnapshot(cards: cards, searchText: searchText, selectedSectionFilter: selectedSectionFilter)
         ZStack {
             LearnAlertStyle.courseCanvas
                 .ignoresSafeArea()
@@ -93,7 +112,7 @@ struct DeckDetailView: View {
                     .transition(.opacity.combined(with: .scale))
                 }
 
-                deckHeader
+                deckHeader(snapshot: snapshot)
 
                 // Inline Rename Deck Banner
                 if isEditingDeck {
@@ -136,20 +155,19 @@ struct DeckDetailView: View {
                 if !orderedSections.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        sectionFilterPill(title: "All", tag: "ALL", count: deck.cards.count)
+                        sectionFilterPill(title: "All", tag: "ALL", count: snapshot.cardCount)
 
                         ForEach(orderedSections) { section in
                             sectionFilterPill(
                                 title: section.name,
                                 tag: section.id.uuidString,
-                                count: section.cards.count,
+                                count: snapshot.sectionCounts[section.id, default: 0],
                                 colorHex: section.colorHex
                             )
                         }
 
-                        let uncategorizedCount = deck.cards.filter { $0.section == nil }.count
-                        if uncategorizedCount > 0 && !deck.sections.isEmpty {
-                            sectionFilterPill(title: "Unsorted", tag: "NONE", count: uncategorizedCount)
+                        if snapshot.uncategorizedCount > 0 {
+                            sectionFilterPill(title: "Unsorted", tag: "NONE", count: snapshot.uncategorizedCount)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -158,16 +176,16 @@ struct DeckDetailView: View {
                 }
 
                 // Cards List
-                if filteredCards.isEmpty {
+                if snapshot.filteredCards.isEmpty {
                     VStack(spacing: 12) {
                         Spacer()
                         Image(systemName: "rectangle.stack.badge.plus")
                             .font(.system(size: 44))
                             .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
-                        Text(deck.cards.isEmpty ? "No cards in this deck yet" : "No cards match your filter")
+                        Text(snapshot.cardCount == 0 ? "No cards in this deck yet" : "No cards match your filter")
                             .font(.custom("Poppins-Medium", size: 15))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
-                        if deck.cards.isEmpty {
+                        if snapshot.cardCount == 0 {
                             Button("Add First Card") {
                                 showingCreateCard = true
                             }
@@ -180,9 +198,7 @@ struct DeckDetailView: View {
                     List {
                         if selectedSectionFilter == "ALL" && !orderedSections.isEmpty {
                             ForEach(orderedSections) { section in
-                                let sectionCards = section.cards.filter { card in
-                                    searchText.isEmpty || filteredCards.contains(where: { $0.id == card.id })
-                                }
+                                let sectionCards = snapshot.groupedCards[section.id, default: []]
                                 if !sectionCards.isEmpty {
                                     Section {
                                         if !collapsedFolderIDs.contains(section.id) {
@@ -200,9 +216,7 @@ struct DeckDetailView: View {
                                 }
                             }
 
-                            let uncategorized = deck.cards.filter { card in
-                                card.section == nil && (searchText.isEmpty || filteredCards.contains(where: { c in c.id == card.id }))
-                            }
+                            let uncategorized = snapshot.uncategorizedCards
                             if !uncategorized.isEmpty {
                                 Section {
                                     ForEach(uncategorized) { card in
@@ -219,12 +233,12 @@ struct DeckDetailView: View {
                                 }
                             }
                         } else {
-                            ForEach(filteredCards) { card in
+                            ForEach(snapshot.filteredCards) { card in
                                 cardRow(card)
                                     .deleteDisabled(homeTutorialStep > 0)
                             }
                             .onDelete { offsets in
-                                delete(offsets, from: filteredCards)
+                                delete(offsets, from: snapshot.filteredCards)
                             }
                         }
                     }
@@ -266,7 +280,7 @@ struct DeckDetailView: View {
                             Button { showingCommunityShare = true } label: {
                                 Label("Share to Community", systemImage: "square.and.arrow.up")
                             }
-                            .disabled(deck.cards.isEmpty)
+                            .disabled(snapshot.cardCount == 0)
                         }
 
                         Button {
@@ -324,7 +338,7 @@ struct DeckDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Reset Progress", role: .destructive) {
-                deck.cards.forEach { $0.resetProgress() }
+                cards.forEach { $0.resetProgress() }
                 try? context.save()
             }
             Button("Cancel", role: .cancel) { }
@@ -433,21 +447,21 @@ struct DeckDetailView: View {
         }
     }
 
-    private var deckHeader: some View {
+    private func deckHeader(snapshot: DeckDetailSnapshot) -> some View {
         VStack(spacing: 9) {
             HStack(spacing: 8) {
-                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: deck.cards.count,
-                                 compactStack: DeckCreatureAppearance.visibleLayerCount(for: deck.cards.count) >= 7)
+                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: snapshot.cardCount,
+                                 compactStack: DeckCreatureAppearance.visibleLayerCount(for: snapshot.cardCount) >= 7)
                     .frame(width: 34, height: 28).accessibilityHidden(true)
-                compactStat("Cards", value: deck.cards.count, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
-                compactStat("Due", value: cardsDueToday, icon: "clock.badge.exclamationmark", color: cardsDueToday > 0 ? .orange : .green)
-                compactStat("Mastered", value: deck.cards.filter { $0.interval >= 7 }.count, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
+                compactStat("Cards", value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
+                compactStat("Due", value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
+                compactStat("Mastered", value: snapshot.masteredCount, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
             }
             HStack(spacing: 8) {
                 deckAction("Add cards", icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
                 deckAction("Add folder", icon: "folder.badge.plus") { showingCreateCategory = true }
                 deckAction("Study", icon: "play.fill", prominent: true) { showingStudy = true }
-                    .disabled(deck.cards.isEmpty)
+                    .disabled(snapshot.cardCount == 0)
             }
         }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
     }
@@ -478,15 +492,12 @@ struct DeckDetailView: View {
     }
 
     private func delete(_ offsets: IndexSet, from list: [Flashcard]) {
-        let ankiFolders = Set(offsets.compactMap { list[$0].ankiContent?.mediaFolder })
-        let media = offsets.flatMap { list[$0].fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
-        for index in offsets {
-            let card = list[index]
-            if let idx = deck.cards.firstIndex(where: { $0.id == card.id }) {
-                let removed = deck.cards.remove(at: idx)
-                context.delete(removed)
-            }
-        }
+        let removed = offsets.map { list[$0] }
+        let removedIDs = Set(removed.map(\.id))
+        let ankiFolders = Set(removed.compactMap { $0.ankiContent?.mediaFolder })
+        let media = removed.flatMap { $0.fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
+        deck.cards = deck.cards.filter { !removedIDs.contains($0.id) }
+        removed.forEach { context.delete($0) }
         if (try? context.save()) != nil {
             AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
             CardAttachmentCleanup.removeUnreferenced(media, context: context)
@@ -495,8 +506,10 @@ struct DeckDetailView: View {
 
     private func deleteSection(_ section: DeckSection) {
         deck.cards.filter { $0.section?.id == section.id }.forEach { $0.section = nil }
-        if let idx = deck.sections.firstIndex(where: { $0.id == section.id }) {
-            let removed = deck.sections.remove(at: idx)
+        var sections = deck.sections
+        if let idx = sections.firstIndex(where: { $0.id == section.id }) {
+            let removed = sections.remove(at: idx)
+            deck.sections = sections
             context.delete(removed)
         }
         try? context.save()

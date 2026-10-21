@@ -82,17 +82,28 @@ extension Deck {
     }
     var communitySharingRestriction: String? { sharingRestriction(allowAnkiUploads: false) }
 
-    func sharingRestriction(allowAnkiUploads: Bool) -> String? {
-        if isAnkiImport && !allowAnkiUploads {
+    /// Cheap menu/form gates use provenance only. Legacy content matching still
+    /// runs in sharingRestriction immediately before an actual publish request.
+    func provenanceSharingRestriction(allowAnkiUploads: Bool) -> String? {
+        if !allowAnkiUploads && (sourceKind == "anki" || sourceAnkiDeckID != nil) {
             return "Uploading decks imported from Anki are not supported yet"
         }
         if sourceCommunityID != nil { return "Downloaded community decks can’t be republished. Share a deck you created." }
         if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and courses can’t be published to the community." }
+        return nil
+    }
+
+    func sharingRestriction(allowAnkiUploads: Bool) -> String? {
+        if let reason = provenanceSharingRestriction(allowAnkiUploads: allowAnkiUploads) { return reason }
+        let orderedCards = cards
+        if !allowAnkiUploads && orderedCards.contains(where: { $0.sourceAnkiCardID != nil || $0.cardType == .anki }) {
+            return "Uploading decks imported from Anki are not supported yet"
+        }
         func key(_ question: String, _ answer: String, _ left: [String], _ right: [String]) -> [String] {
             func normalized(_ text: String) -> String { text.precomposedStringWithCompatibilityMapping.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
             return [normalized(question), normalized(answer)] + zip(left, right).flatMap { [normalized($0), normalized($1)] }
         }
-        let local = Set(cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) })
+        let local = Set(orderedCards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) })
         // Legacy copies predate provenance IDs. New managed imports are protected
         // by sourcePremadeID above; this synchronous fallback uses bundled content.
         if PremadeDeckCatalog.bundledDecks.contains(where: { premade in
@@ -102,7 +113,7 @@ extension Deck {
     }
 
     var canShareToCommunity: Bool { communitySharingRestriction == nil }
-    var canPresentCommunitySharing: Bool { sharingRestriction(allowAnkiUploads: true) == nil }
+    var canPresentCommunitySharing: Bool { provenanceSharingRestriction(allowAnkiUploads: true) == nil }
 }
 
 struct CommunityAPIError: LocalizedError {

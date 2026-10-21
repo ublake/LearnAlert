@@ -240,6 +240,18 @@ struct CoursezyHeaderView: View {
 }
 
 // MARK: - Tab 1: Home Library
+enum HomeScheduleDeckCounts {
+    /// A SQL count avoids materializing a large deck's card relationship merely
+    /// to decide whether it has the two cards required for scheduling.
+    static func count(for deck: Deck) throws -> Int {
+        guard let context = deck.modelContext else { return deck.cardCount }
+        let deckID = deck.id
+        var descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.deck?.id == deckID })
+        descriptor.includePendingChanges = true
+        return try context.fetchCount(descriptor)
+    }
+}
+
 private enum HomeAlertTarget {
     case deck(Deck)
     case course(CourseDefinition)
@@ -260,14 +272,14 @@ private enum HomeAlertTarget {
 
     var detail: String {
         switch self {
-        case .deck(let deck): "\(deck.cardCount) cards"
+        case .deck(let deck): "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards"
         case .course(let course): "\(course.totalLessonsCount) lessons"
         }
     }
 
     var canSchedule: Bool {
         switch self {
-        case .deck(let deck): deck.cardCount >= 2
+        case .deck(let deck): ((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) >= 2
         case .course(let course): course.totalLessonsCount > 0
         }
     }
@@ -1297,8 +1309,9 @@ private struct HomeAlertSetupCard: View {
     let showDeckRequirement: () -> Void
     let schedule: (HomeAlertTarget) -> Void
     @State private var pulseScheduleButton = false
+    @State private var librarySaveRevision = 0
 
-    private var selectedTarget: HomeAlertTarget? {
+    private func selectedTarget(from schedulableDecks: [Deck]) -> HomeAlertTarget? {
         if let deck = schedulableDecks.first(where: { $0.id.uuidString == targetDeckId }) {
             return .deck(deck)
         }
@@ -1309,12 +1322,6 @@ private struct HomeAlertSetupCard: View {
         }
         return schedulableDecks.first.map(HomeAlertTarget.deck) ?? courses.first.map(HomeAlertTarget.course)
     }
-
-    private var schedulableDecks: [Deck] {
-        decks.filter { $0.cardCount >= 2 }
-    }
-
-    private var hasStudyMaterial: Bool { !schedulableDecks.isEmpty || !courses.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1373,10 +1380,19 @@ private struct HomeAlertSetupCard: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in
+            // Counts no longer observe every card relationship. Explicit saves
+            // (including imports) refresh availability after additions/deletions.
+            librarySaveRevision &+= 1
+        }
     }
 
     private var setupContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let _ = librarySaveRevision
+        let schedulableDecks = decks.filter { ((try? HomeScheduleDeckCounts.count(for: $0)) ?? $0.cardCount) >= 2 }
+        let selectedTarget = self.selectedTarget(from: schedulableDecks)
+        let hasStudyMaterial = !schedulableDecks.isEmpty || !courses.isEmpty
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Alert Schedule")
                     .font(.headline)

@@ -6,6 +6,43 @@ import Testing
 @MainActor
 @Suite("Deck schedules", .serialized)
 struct DeckSchedulingTests {
+    @Test("Home schedule counts use persisted deck scope and include unsaved card edits")
+    func homeScheduleCounts() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("home-schedule-counts-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
+            configurations: ModelConfiguration(url: directory.appendingPathComponent("library.sqlite"), cloudKitDatabase: .none))
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let deck = Deck(name: "Persisted"), other = Deck(name: "Other")
+        context.insert(deck); context.insert(other)
+        for index in 0..<3 { context.insert(Flashcard(question: "Q\(index)", deck: deck)) }
+        context.insert(Flashcard(question: "Unrelated", deck: other))
+        try context.save()
+
+        // Read from a fresh context so the count must work against SQLite,
+        // rather than depending on an already materialized card relationship.
+        let reader = ModelContext(container)
+        reader.autosaveEnabled = false
+        let deckID = deck.id
+        let loaded = try #require(reader.fetch(FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckID })).first)
+        #expect(try HomeScheduleDeckCounts.count(for: loaded) == 3)
+        let inserted = Flashcard(question: "Unsaved addition", deck: loaded)
+        reader.insert(inserted)
+        #expect(try HomeScheduleDeckCounts.count(for: loaded) == 4)
+        try reader.save()
+        let loadedCards = try reader.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.deck?.id == deckID }))
+        reader.delete(try #require(loadedCards.first))
+        #expect(try HomeScheduleDeckCounts.count(for: loaded) == 3)
+        try reader.save()
+        #expect(try HomeScheduleDeckCounts.count(for: loaded) == 3)
+
+        let unattached = Deck(name: "Not inserted")
+        unattached.cards = [Flashcard(question: "A"), Flashcard(question: "B")]
+        #expect(try HomeScheduleDeckCounts.count(for: unattached) == 2)
+    }
+
     @Test("An explicit save applies the edited deck preferences before rescheduling and leaves defaults alone")
     func saveAndReschedule() async throws {
         let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
