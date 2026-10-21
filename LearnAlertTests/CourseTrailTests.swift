@@ -122,7 +122,7 @@ struct CourseTrailTests {
         #expect(retry)
         #expect(state.practiceSessions[key]?.answers[failed.id] == true)
         #expect(state.batch(course: course, count: 10).allSatisfy { $0.activity?.practiceGroup == nextGroup.activity?.practiceGroup })
-        #expect(state.srs[failed.id]?.reviewCount == 2)
+        #expect(state.srsRecord(courseId: course.id, cardId: failed.id)?.reviewCount == 2)
     }
 
     @Test("Tracing guides fade after two attempts and return for errors or a minute of hesitation")

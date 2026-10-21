@@ -175,6 +175,9 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
     public let estimatedHours: Int
     public let outcomes: [String]
     public let units: [CourseUnit]
+    /// Complete authored section guides; an empty list deliberately hides a guide.
+    public let guides: [String: [CourseGuideTopic]]?
+    public let guidePresentation: [String: CourseGuidePresentation]?
 
     public var totalLessonsCount: Int {
         units.reduce(0) { $0 + $1.lessons.count }
@@ -196,7 +199,9 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         summary: String,
         estimatedHours: Int,
         outcomes: [String],
-        units: [CourseUnit]
+        units: [CourseUnit],
+        guides: [String: [CourseGuideTopic]]? = nil,
+        guidePresentation: [String: CourseGuidePresentation]? = nil
     ) {
         self.id = id
         self.title = title
@@ -208,6 +213,8 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         self.estimatedHours = estimatedHours
         self.outcomes = outcomes
         self.units = units
+        self.guides = guides
+        self.guidePresentation = guidePresentation
     }
 }
 
@@ -345,6 +352,10 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let matchingRightItems: [String]
     public let promptImageName: String?
     public let optionImageNames: [String]
+    public let answerImageName: String?
+    public let promptAudioName: String?
+    public let fieldMedia: [String: CardFieldMedia]?
+    public let correctOptionIndex: Int?
     public let vocabularyItem: KoreanVocabularyItem?
     public let grammarNote: String?
     public let speechText: String?
@@ -368,6 +379,10 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         matchingRightItems: [String] = [],
         promptImageName: String? = nil,
         optionImageNames: [String] = [],
+        answerImageName: String? = nil,
+        promptAudioName: String? = nil,
+        fieldMedia: [String: CardFieldMedia]? = nil,
+        correctOptionIndex: Int? = nil,
         vocabularyItem: KoreanVocabularyItem? = nil,
         grammarNote: String? = nil,
         speechText: String? = nil,
@@ -388,6 +403,10 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         self.matchingRightItems = matchingRightItems
         self.promptImageName = promptImageName
         self.optionImageNames = optionImageNames
+        self.answerImageName = answerImageName
+        self.promptAudioName = promptAudioName
+        self.fieldMedia = fieldMedia
+        self.correctOptionIndex = correctOptionIndex
         self.vocabularyItem = vocabularyItem
         self.grammarNote = grammarNote
         self.speechText = speechText
@@ -398,6 +417,19 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         self.previousQuestion = previousQuestion
         self.activity = activity
     }
+
+    var resolvedFieldMedia: [String: CardFieldMedia] {
+        var fields = fieldMedia ?? [:]
+        if let promptImageName { fields["prompt", default: .init()].image = promptImageName }
+        if let promptAudioName { fields["prompt", default: .init()].audio = promptAudioName }
+        if let answerImageName { fields["answer", default: .init()].image = answerImageName }
+        for (index, image) in optionImageNames.enumerated() where !image.isEmpty {
+            fields["option:\(index)", default: .init()].image = image
+        }
+        return fields.filter { !$0.value.isEmpty }
+    }
+    var hasChoiceMedia: Bool { resolvedFieldMedia.keys.contains { $0.hasPrefix("option:") } }
+    var resolvedCorrectOptionIndex: Int? { correctOptionIndex ?? options.firstIndex(of: correctAnswer) }
 
     public var isListeningQuestion: Bool { cardType == "listening" || cardType == "listeningWrite" || activity?.kind == .listenChoose }
     public var usesTypedAnswer: Bool { cardType == "fillBlank" || cardType == "listeningWrite" }
@@ -703,5 +735,33 @@ public struct CourseAnswerEvent: Codable, Hashable {
         self.isCorrect = isCorrect
         self.eventToken = eventToken
         self.timestamp = timestamp
+    }
+}
+
+extension CourseLessonCard {
+    private enum CodingKeys: String, CodingKey {
+        case id, question, options, correctAnswer, hint, cardType, matchingLeftItems, matchingRightItems
+        case promptImageName, optionImageNames, answerImageName, promptAudioName, fieldMedia, correctOptionIndex
+        case vocabularyItem, grammarNote, speechText, conceptTag, explanation, acceptedAnswers, readingPrompt, previousQuestion, activity
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), question: try c.decode(String.self, forKey: .question),
+            options: try c.decodeIfPresent([String].self, forKey: .options) ?? [],
+            correctAnswer: try c.decode(String.self, forKey: .correctAnswer),
+            hint: try c.decodeIfPresent(String.self, forKey: .hint) ?? "", cardType: try c.decode(String.self, forKey: .cardType),
+            matchingLeftItems: try c.decodeIfPresent([String].self, forKey: .matchingLeftItems) ?? [],
+            matchingRightItems: try c.decodeIfPresent([String].self, forKey: .matchingRightItems) ?? [],
+            promptImageName: try c.decodeIfPresent(String.self, forKey: .promptImageName),
+            optionImageNames: try c.decodeIfPresent([String].self, forKey: .optionImageNames) ?? [],
+            answerImageName: try c.decodeIfPresent(String.self, forKey: .answerImageName),
+            promptAudioName: try c.decodeIfPresent(String.self, forKey: .promptAudioName),
+            fieldMedia: try c.decodeIfPresent([String: CardFieldMedia].self, forKey: .fieldMedia),
+            correctOptionIndex: try c.decodeIfPresent(Int.self, forKey: .correctOptionIndex),
+            vocabularyItem: try c.decodeIfPresent(KoreanVocabularyItem.self, forKey: .vocabularyItem),
+            grammarNote: try c.decodeIfPresent(String.self, forKey: .grammarNote), speechText: try c.decodeIfPresent(String.self, forKey: .speechText),
+            conceptTag: try c.decodeIfPresent(String.self, forKey: .conceptTag), explanation: try c.decodeIfPresent(String.self, forKey: .explanation),
+            acceptedAnswers: try c.decodeIfPresent([String].self, forKey: .acceptedAnswers), readingPrompt: try c.decodeIfPresent(String.self, forKey: .readingPrompt),
+            previousQuestion: try c.decodeIfPresent(String.self, forKey: .previousQuestion), activity: try c.decodeIfPresent(CourseActivity.self, forKey: .activity))
     }
 }

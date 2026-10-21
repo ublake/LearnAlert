@@ -39,7 +39,7 @@ struct CourseTrailProjection: Equatable {
                 let learned = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
                     .intersection(Set(lesson.cards.map(\.id)))
                 let needsReview = status != .locked && status != .completed && !lesson.cards.isEmpty && lesson.cards.allSatisfy {
-                    learned.contains($0.id) || (snapshot.srs[$0.id]?.reviewCount ?? 0) > 0
+                    learned.contains($0.id) || (snapshot.srsRecord(courseId: course.id, cardId: $0.id)?.reviewCount ?? 0) > 0
                 }
                 return CourseTrailMilestone(id: lesson.id, unitId: unit.id, title: lesson.title,
                     icon: lesson.nodeType.icon, status: needsReview ? .reviewDue : status,

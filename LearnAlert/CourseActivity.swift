@@ -111,3 +111,23 @@ enum HangulStrokeGuide {
         }
     }
 }
+
+extension CourseActivity {
+    private enum CodingKeys: String, CodingKey {
+        case kind, sequence, rule, example, symbol, layout, tokens, slots, slotLabels, optionHints, readingCue, practiceGroup
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(kind: try c.decode(Kind.self, forKey: .kind), sequence: try c.decode(Int.self, forKey: .sequence))
+        rule = try c.decodeIfPresent(String.self, forKey: .rule)
+        example = try c.decodeIfPresent(String.self, forKey: .example)
+        symbol = try c.decodeIfPresent(String.self, forKey: .symbol)
+        layout = try c.decodeIfPresent(Layout.self, forKey: .layout) ?? .inline
+        tokens = try c.decodeIfPresent([String].self, forKey: .tokens) ?? []
+        slots = try c.decodeIfPresent([String].self, forKey: .slots) ?? []
+        slotLabels = try c.decodeIfPresent([String].self, forKey: .slotLabels) ?? []
+        optionHints = try c.decodeIfPresent([String: String].self, forKey: .optionHints) ?? [:]
+        readingCue = try c.decodeIfPresent(String.self, forKey: .readingCue)
+        practiceGroup = try c.decodeIfPresent(String.self, forKey: .practiceGroup)
+    }
+}

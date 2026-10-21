@@ -524,6 +524,7 @@ struct PDFPageRangeTests {
     }
 }
 
+@MainActor
 @Suite("Course Curriculum Catalog & Progression Tests")
 struct CourseCurriculumTests {
 

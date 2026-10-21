@@ -18,9 +18,12 @@ enum CardAudioStore {
         return directory
     }
 
-    static func url(named name: String) -> URL { directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent) }
+    static func url(named name: String) -> URL {
+        ManagedCatalogMedia.url(reference: name) ?? directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
+    }
 
     static func contentType(for name: String) throws -> String {
+        if let type = ManagedCatalogMedia.contentType(reference: name), type.hasPrefix("audio/") { return type }
         switch URL(fileURLWithPath: name).pathExtension.lowercased() {
         case "mp3": return "audio/mpeg"
         case "m4a": return "audio/mp4"
@@ -58,7 +61,10 @@ enum CardAudioStore {
         return name
     }
 
-    static func delete(named name: String) { try? FileManager.default.removeItem(at: url(named: name)) }
+    static func delete(named name: String) {
+        guard !name.hasPrefix("catalog:") else { return }
+        try? FileManager.default.removeItem(at: url(named: name))
+    }
 }
 
 @MainActor

@@ -1,19 +1,68 @@
 import SwiftUI
 
-struct CourseGuideTopic: Identifiable {
-    var id: String { title }
-    let title: String
-    let rule: String
-    let examples: [String]
+public struct CourseGuideTopic: Identifiable, Codable, Hashable {
+    public var id: String { title }
+    public let title: String
+    public let rule: String
+    public let examples: [String]
+}
+
+public struct CourseGuidePresentation: Codable, Hashable {
+    public var showsHangulDiagram: Bool = false
+    public var referenceTitle: String?
+    public var referenceURL: String?
+    public var diagramTitle: String?
+    public var diagramFooter: String?
+    public var diagramExamples: [CourseGuideDiagramExample]?
+}
+
+public struct CourseGuideDiagramExample: Codable, Hashable {
+    public let syllable: String
+    public let caption: String
+    public let initial: String
+    public let vowel: String
+    public var finalLetter: String? = nil
+    public var layout: String = "beside"
+
+    static let bundled: [CourseGuideDiagramExample] = [
+        .init(syllable: "가", caption: "Vertical vowel", initial: "ㄱ", vowel: "ㅏ"),
+        .init(syllable: "고", caption: "Horizontal vowel", initial: "ㄱ", vowel: "ㅗ", layout: "below"),
+        .init(syllable: "한", caption: "With batchim", initial: "ㅎ", vowel: "ㅏ", finalLetter: "ㄴ")
+    ]
+}
+
+extension CourseGuideDiagramExample {
+    private enum CodingKeys: String, CodingKey { case syllable, caption, initial, vowel, finalLetter, layout }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(syllable: try c.decode(String.self, forKey: .syllable), caption: try c.decode(String.self, forKey: .caption),
+            initial: try c.decode(String.self, forKey: .initial), vowel: try c.decode(String.self, forKey: .vowel),
+            finalLetter: try c.decodeIfPresent(String.self, forKey: .finalLetter), layout: try c.decodeIfPresent(String.self, forKey: .layout) ?? "beside")
+    }
+}
+
+extension CourseGuidePresentation {
+    private enum CodingKeys: String, CodingKey { case showsHangulDiagram, referenceTitle, referenceURL, diagramTitle, diagramFooter, diagramExamples }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(showsHangulDiagram: try c.decodeIfPresent(Bool.self, forKey: .showsHangulDiagram) ?? false,
+            referenceTitle: try c.decodeIfPresent(String.self, forKey: .referenceTitle),
+            referenceURL: try c.decodeIfPresent(String.self, forKey: .referenceURL),
+            diagramTitle: try c.decodeIfPresent(String.self, forKey: .diagramTitle),
+            diagramFooter: try c.decodeIfPresent(String.self, forKey: .diagramFooter),
+            diagramExamples: try c.decodeIfPresent([CourseGuideDiagramExample].self, forKey: .diagramExamples))
+    }
 }
 
 /// Bundled, original teaching notes. No network connection is needed in an alert.
 enum CourseSectionGuides {
     static func topics(course: CourseDefinition, unit: CourseUnit) -> [CourseGuideTopic] {
+        if let guides = course.guides { return guides[unit.id] ?? [] }
         func topic(_ title: String, _ rule: String, _ examples: [String]) -> CourseGuideTopic {
             CourseGuideTopic(title: title, rule: rule, examples: examples)
         }
         guard course.language == "Korean" else {
+            guard course.language == "Spanish" else { return lessonNotes(unit) }
             return [
                 topic("Read the sounds", "Spanish vowels have steady sounds: a, e, i, o, u. Avoid the English habit of gliding into a second vowel. H is silent; ñ is a different letter from n. Written accents show stress when a word does not follow the usual pattern.", ["hola → the h is silent", "niño → boy; the ñ sounds like ny", "café → stress the final syllable"]),
                 topic("Choose ser or estar", "Use ser for identity, origin, and defining characteristics. Use estar for location and a person's current condition. ‘Permanent versus temporary’ is only a rough shortcut: an event's location uses ser, and some lasting conditions use estar.", ["Soy estudiante. → I am a student.", "Estoy en casa. → I am at home.", "Estoy bien. → I am well."]),
@@ -128,10 +177,15 @@ struct CourseGuideContent: View {
     let course: CourseDefinition
     let unit: CourseUnit
     var compact = false
+    private var presentation: CourseGuidePresentation {
+        course.guidePresentation?[unit.id] ?? (course.guides == nil && course.language == "Korean" && unit.unitNumber == 1
+            ? CourseGuidePresentation(showsHangulDiagram: true, referenceTitle: "More about Hangul · National Institute of Korean Language", referenceURL: "https://www.korean.go.kr/eng_hangeul/principle/001.html")
+            : CourseGuidePresentation())
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 24 : 32) {
             Text(unit.title).font(compact ? .title3.bold() : .title.bold())
-            if course.language == "Korean" && unit.unitNumber == 1 { HangulStackingDiagram() }
+            if presentation.showsHangulDiagram { HangulStackingDiagram(presentation: presentation) }
             ForEach(CourseSectionGuides.topics(course: course, unit: unit)) { topic in
                 VStack(alignment: .leading, spacing: 12) {
                     Text(topic.title).font(.headline)
@@ -141,8 +195,9 @@ struct CourseGuideContent: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
-            if course.language == "Korean" && unit.unitNumber == 1 {
-                Link("More about Hangul · National Institute of Korean Language", destination: URL(string: "https://www.korean.go.kr/eng_hangeul/principle/001.html")!)
+            if let title = presentation.referenceTitle, let rawURL = presentation.referenceURL,
+               let url = URL(string: rawURL), url.scheme == "https" {
+                Link(title, destination: url)
                     .font(.footnote).frame(minHeight: 44)
             }
         }
@@ -150,15 +205,27 @@ struct CourseGuideContent: View {
 }
 
 struct HangulStackingDiagram: View {
+    var presentation = CourseGuidePresentation()
+    private var title: String { presentation.diagramTitle ?? "How the letters fit" }
+    private var footer: String { presentation.diagramFooter ?? "Initial → vowel → final (if present)" }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("How the letters fit").font(.headline)
+            if !title.isEmpty { Text(title).font(.headline) }
             HStack(alignment: .top, spacing: 12) {
-                block("가", caption: "Vertical vowel") { HStack(spacing: 4) { letter("ㄱ", .teal); letter("ㅏ", .orange) } }
-                block("고", caption: "Horizontal vowel") { VStack(spacing: 4) { letter("ㄱ", .teal); letter("ㅗ", .orange) } }
-                block("한", caption: "With batchim") { VStack(spacing: 4) { HStack(spacing: 4) { letter("ㅎ", .teal); letter("ㅏ", .orange) }; letter("ㄴ", .indigo) } }
+                ForEach(Array((presentation.diagramExamples ?? CourseGuideDiagramExample.bundled).enumerated()), id: \.offset) { _, example in
+                    block(example.syllable, caption: example.caption) {
+                        VStack(spacing: 4) {
+                            if example.layout == "below" {
+                                VStack(spacing: 4) { letter(example.initial, .teal); letter(example.vowel, .orange) }
+                            } else {
+                                HStack(spacing: 4) { letter(example.initial, .teal); letter(example.vowel, .orange) }
+                            }
+                            if let final = example.finalLetter, !final.isEmpty { letter(final, .indigo) }
+                        }
+                    }
+                }
             }
-            Text("Initial → vowel → final (if present)").font(.caption).foregroundStyle(.secondary)
+            if !footer.isEmpty { Text(footer).font(.caption).foregroundStyle(.secondary) }
         }.accessibilityElement(children: .combine)
     }
     private func letter(_ text: String, _ color: Color) -> some View {

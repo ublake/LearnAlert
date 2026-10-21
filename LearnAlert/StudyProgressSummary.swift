@@ -53,14 +53,20 @@ struct StudyProgressSummary {
         let ordinaryCards = ordinaryDecks.flatMap(\.cards).filter { seenCardIDs.insert($0.id).inserted }
         var seenCourseIDs = Set<String>()
         let enrolledCourses = sourceCourses.filter { seenCourseIDs.insert($0.id).inserted }
-        let courseCardIDs = Set(enrolledCourses.flatMap { $0.units.flatMap(\.lessons).flatMap(\.cards).map(\.id) })
-        let courseSRS = courseCardIDs.compactMap { snapshot.srs[$0] }
-        let reviewedCourseIDs = Set(courseCardIDs.filter { (snapshot.srs[$0]?.reviewCount ?? 0) > 0 || (snapshot.srs[$0]?.masteryScore ?? 0) > 0 })
-            .union(enrolledCourses.flatMap { course in
-                course.units.flatMap(\.lessons).flatMap { lesson in
-                    Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? []).intersection(Set(lesson.cards.map(\.id)))
-                }
-            })
+        struct CourseCardIdentity: Hashable { let courseId: String; let cardId: String }
+        let courseCardIDs = Set(enrolledCourses.flatMap { course in
+            course.units.flatMap(\.lessons).flatMap(\.cards).map { CourseCardIdentity(courseId: course.id, cardId: $0.id) }
+        })
+        let courseSRS = courseCardIDs.compactMap { snapshot.srsRecord(courseId: $0.courseId, cardId: $0.cardId) }
+        let reviewedCourseIDs = Set(courseCardIDs.filter {
+            let record = snapshot.srsRecord(courseId: $0.courseId, cardId: $0.cardId)
+            return (record?.reviewCount ?? 0) > 0 || (record?.masteryScore ?? 0) > 0
+        }).union(enrolledCourses.flatMap { course in
+            course.units.flatMap(\.lessons).flatMap { lesson in
+                Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? []).intersection(Set(lesson.cards.map(\.id)))
+                    .map { CourseCardIdentity(courseId: course.id, cardId: $0) }
+            }
+        })
 
         self.decks = ordinaryDecks.map { deck in
             let cards = deck.cards

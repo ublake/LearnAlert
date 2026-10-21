@@ -1,11 +1,25 @@
 import SwiftUI
 
 /// Stable field keys keep attachments aligned even when their text is empty or duplicated.
-struct CardFieldMedia: Codable, Equatable, Sendable {
+public struct CardFieldMedia: Codable, Hashable, Sendable {
     var image: String? = nil
     var audio: String? = nil
     var isEmpty: Bool { image?.isEmpty != false && audio?.isEmpty != false }
     func hasContent(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !isEmpty }
+}
+
+extension CardFieldMedia {
+    private enum CodingKeys: String, CodingKey { case image, audio, imageID, audioID }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(image: try values.decodeIfPresent(String.self, forKey: .image) ?? values.decodeIfPresent(String.self, forKey: .imageID),
+            audio: try values.decodeIfPresent(String.self, forKey: .audio) ?? values.decodeIfPresent(String.self, forKey: .audioID))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encodeIfPresent(image, forKey: .image)
+        try values.encodeIfPresent(audio, forKey: .audio)
+    }
 }
 
 enum CardChoiceIdentity {

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 import SwiftData
 import UIKit
 import AuthenticationServices
@@ -54,9 +55,29 @@ struct LearnAlertApp: App {
                     guard scenePhase == .active else { return }
                     await CommunitySession.shared.validateAppleCredential()
                 }
+                .task(id: scenePhase == .active) {
+                    guard scenePhase == .active else { return }
+                    // Assign stable source IDs before a remotely renamed lesson is installed.
+                    syncManagedCourseDecks()
+                    while !Task.isCancelled {
+                        await ManagedCatalogStore.shared.refresh()
+                        do { try await Task.sleep(for: .seconds(60)) }
+                        catch { return }
+                    }
+                }
+                .onReceive(ManagedCatalogStore.shared.$revision.dropFirst()) { _ in syncManagedCourseDecks() }
                 .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
                     CommunitySession.shared.appleCredentialRevoked()
                 }
+        }
+    }
+
+    @MainActor private func syncManagedCourseDecks() {
+        let manager = CourseProgressManager.shared
+        manager.reloadFromSharedDefaults()
+        for course in manager.allEnrolledCourses {
+            manager.syncManagedCourseDeckIfNeeded(for: course, in: sharedDatabase.container.mainContext)
+            manager.reconcilePendingNotifications(for: course)
         }
     }
 }

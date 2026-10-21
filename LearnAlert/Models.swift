@@ -9,7 +9,7 @@ import SwiftUI
 import Foundation
 import SwiftData
 
-enum FlashcardType: String, CaseIterable, Identifiable {
+enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     case vocabulary = "vocabulary"
     case multipleChoice = "multiple_choice"
     case tapReveal = "tap_reveal"
@@ -160,6 +160,7 @@ class DeckSection {
     var colorHex: String = "#00FFFF"
     var orderIndex: Int = 0
     var sourcePageNumber: Int?
+    var sourceCourseUnitID: String?
 
     var name: String {
         get { title }
@@ -209,6 +210,7 @@ class Flashcard {
     var correctOptionIndex: Int?
     @Attribute(.externalStorage) var ankiContentData: Data?
     var sourceAnkiCardID: String?
+    var sourceCourseCardID: String?
 
     var ankiContent: AnkiCardContent? {
         get { ankiContentData.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) } }
@@ -546,7 +548,7 @@ public enum CardImageStore {
 
     public static func saveImage(_ image: UIImage, name: String? = nil) -> String? {
         // Editing a bundled picture creates a private copy instead of shadowing shared course art.
-        let filename = name.flatMap { $0.hasPrefix("course-vocab-") ? nil : $0 } ?? "\(UUID().uuidString).jpg"
+        let filename = name.flatMap { $0.hasPrefix("course-vocab-") || $0.hasPrefix("catalog:") ? nil : $0 } ?? "\(UUID().uuidString).jpg"
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
 
         let maxDim: CGFloat = 1200
@@ -594,6 +596,7 @@ public enum CardImageStore {
     public static func loadImage(named filename: String?) -> UIImage? {
         guard let filename, !filename.isEmpty else { return nil }
         if let image = vocabularyImages[filename] { return image }
+        if let url = ManagedCatalogMedia.url(reference: filename) { return UIImage(contentsOfFile: url.path) }
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
         if let image = UIImage(contentsOfFile: fileURL.path) {
             return image
@@ -605,7 +608,7 @@ public enum CardImageStore {
     }
 
     public static func deleteImage(named filename: String?) {
-        guard let filename, !filename.isEmpty else { return }
+        guard let filename, !filename.isEmpty, !filename.hasPrefix("catalog:") else { return }
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: fileURL)
     }

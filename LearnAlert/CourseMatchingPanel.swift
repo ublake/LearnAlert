@@ -59,6 +59,17 @@ struct CourseMatchingPanel: View {
     }
 
     var body: some View {
+        if card.resolvedFieldMedia.keys.contains(where: { $0.hasPrefix("left:") || $0.hasPrefix("right:") }) {
+            CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
+                fields: card.resolvedFieldMedia, isGraded: submitted) { correct in
+                    guard !submitted else { return }
+                    submitted = true
+                    onAnswer(correct)
+                }
+        } else { classicBody }
+    }
+
+    private var classicBody: some View {
         VStack(spacing: immersive ? 20 : compact ? 8 : 12) {
             HStack {
                 Label(statusText, systemImage: statusIcon)

@@ -131,16 +131,16 @@ struct CourseLearningTests {
         let lesson = course.units[0].lessons[0]
         let card = try #require(lesson.cards.first { $0.cardType == "fillBlank" })
         for score in 0..<3 {
-            #expect(!card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+            #expect(!card.canOfferTypedRecall(masteryScore: state.srsRecord(courseId: course.id, cardId: card.id)?.masteryScore ?? 0))
             let saved = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: true, token: "recall-\(score)")
             #expect(saved)
         }
-        #expect(card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+        #expect(card.canOfferTypedRecall(masteryScore: state.srsRecord(courseId: course.id, cardId: card.id)?.masteryScore ?? 0))
         #expect(card.practiceQuestionText(audioEnabled: true) == "Which spelling means: student")
         #expect(card.practiceQuestionText(audioEnabled: true, typedRecall: true) == "Write in Korean: student")
         let missed = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: false, token: "recall-miss")
         #expect(missed)
-        #expect(!card.canOfferTypedRecall(masteryScore: state.srs[card.id]?.masteryScore ?? 0))
+        #expect(!card.canOfferTypedRecall(masteryScore: state.srsRecord(courseId: course.id, cardId: card.id)?.masteryScore ?? 0))
         let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
         #expect(audio.practiceQuestionText(audioEnabled: true) == "Listen. Choose what you heard.")
         #expect(audio.practiceQuestionText(audioEnabled: false) == "Find the Korean for: student")
@@ -302,10 +302,10 @@ struct CourseLearningTests {
         let lesson = course.units[0].lessons[0], card = lesson.cards[0]
         let outcome2 = !state.answer(course: course, lessonId: course.units[1].lessons[0].id, cardId: course.units[1].lessons[0].cards[0].id, correct: true, token: "locked"); #expect(outcome2)
         let outcome3 = !state.answer(course: course, lessonId: lesson.id, cardId: "unknown", correct: true, token: "unknown"); #expect(outcome3)
-        #expect(state.srs.isEmpty && state.eventTokens.isEmpty)
+        #expect(state.srs.isEmpty && state.courseSRS.isEmpty && state.eventTokens.isEmpty)
         let outcome4 = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: true, token: "once"); #expect(outcome4)
         let outcome5 = !state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: false, token: "once"); #expect(outcome5)
-        #expect(state.srs[card.id]?.reviewCount == 1)
+        #expect(state.srsRecord(courseId: course.id, cardId: card.id)?.reviewCount == 1)
     }
 
     @Test("Old answer tokens cannot be replayed after many later answers")
@@ -316,7 +316,7 @@ struct CourseLearningTests {
         #expect(first)
         state.eventTokens.append(contentsOf: (0..<4001).map { "later-\($0)" })
         let replayed = state.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: true, token: "original")
-        #expect(!replayed && state.srs[card.id]?.reviewCount == 1)
+        #expect(!replayed && state.srsRecord(courseId: course.id, cardId: card.id)?.reviewCount == 1)
     }
 
     @Test("Checkpoint gates the next section and preserves a previous pass")
@@ -414,7 +414,7 @@ struct CourseLearningTests {
         let duplicate = reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
             sessionId: session.id, cardId: session.cardIds[0], correct: true) }
         #expect(duplicate == false)
-        #expect(reopened.snapshot().srs[session.cardIds[0]]?.reviewCount == 1)
+        #expect(reopened.snapshot().srsRecord(courseId: course.id, cardId: session.cardIds[0])?.reviewCount == 1)
         for cardId in session.cardIds.dropFirst(2) {
             #expect(reopened.transaction { $0.answerPractice(course: course, lessonId: lesson.id, checkpointUnitId: nil,
                 sessionId: session.id, cardId: cardId, correct: true) } == true)
@@ -461,12 +461,14 @@ struct CourseLearningTests {
         #expect(fraction > 0 && fraction < 1 / Double(course.totalLessonsCount))
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
         json.removeValue(forKey: "practiceSessions")
+        json["srs"] = (json["courseSRS"] as? [String: Any])?[course.id]
+        json.removeValue(forKey: "courseSRS")
         var legacy = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
         let resumedValue = legacy.resumePractice(course: course, lessonId: lesson.id, checkpointUnitId: nil)
         let resumed = try #require(resumedValue)
         #expect(resumed.answers[lesson.cards[0].id] == true)
         #expect(resumed.answers[resumed.cardIds[try #require(resumed.nextIndex)]] == nil)
-        #expect(legacy.eventTokens == ["notification"] && legacy.srs[lesson.cards[0].id]?.reviewCount == 1)
+        #expect(legacy.eventTokens == ["notification"] && legacy.srsRecord(courseId: course.id, cardId: lesson.cards[0].id)?.reviewCount == 1)
         #expect(legacy.completionFraction(course: course) == fraction)
         #expect(legacy.resumePractice(course: course, lessonId: course.units[1].lessons[0].id, checkpointUnitId: nil) == nil)
     }

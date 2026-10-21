@@ -31,7 +31,7 @@ struct CourseActivityPanel: View {
         _choices = State(initialValue: (activity.kind == .buildBlock || activity.kind == .placeTokens ? activity.tokens : card.options).shuffled())
     }
 
-    private var audio: Bool { allowAudio && speech.canPlay(card.speechText ?? "") && !prefersReading && !reading }
+    private var audio: Bool { allowAudio && (card.resolvedFieldMedia["prompt"]?.audio != nil || speech.canPlay(card.speechText ?? "")) && !prefersReading && !reading }
     private var isPlacement: Bool { activity.kind == .buildBlock || activity.kind == .placeTokens }
     private var compact: Bool { notificationCompact && !immersive && activity.kind != .trace }
 
@@ -50,8 +50,12 @@ struct CourseActivityPanel: View {
             Text(CourseKoreanText.attributed(activity.kind == .listenChoose && !audio ? "Read and choose" : card.question))
                 .font(immersive ? .title2.bold() : .headline).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-            if let image = card.promptImageName {
+            if let image = card.resolvedFieldMedia["prompt"]?.image {
                 CourseVocabularyImage(name: image, label: card.vocabularyItem?.contextualMeaning ?? "Vocabulary picture", compact: !immersive)
+            }
+            if activity.kind != .listenChoose, let audioName = card.resolvedFieldMedia["prompt"]?.audio,
+               allowAudio && !prefersReading && !reading {
+                CardAudioPlaybackButton(name: audioName)
             }
             if activity.kind == .teach {
                 teaching
@@ -70,6 +74,9 @@ struct CourseActivityPanel: View {
                     if activity.kind == .listenChoose { listeningControl }
                     optionGrid
                 }
+            }
+            if activity.kind != .teach, result != nil, let media = card.resolvedFieldMedia["answer"] {
+                CardFieldContent(media: media, imageHeight: immersive ? 224 : 120)
             }
             if let result, !immersive {
                 Label(card.feedbackTitle(isCorrect: result), systemImage: result ? (card.isReadThrough ? "book.closed.fill" : "checkmark.circle.fill") : "arrow.counterclockwise")
@@ -93,12 +100,18 @@ struct CourseActivityPanel: View {
             if allowAudio, let text = card.speechText, speech.canPlay(text) {
                 Button { speech.speak(text) } label: { Label("Hear the example", systemImage: "speaker.wave.2.fill").frame(minHeight: 44) }
             }
+            if let media = card.resolvedFieldMedia["answer"] { CardFieldContent(media: media, imageHeight: immersive ? 224 : 120) }
             if result == nil { Button("Got it") { finish(true) }.buttonStyle(.borderedProminent).controlSize(.large) }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var listeningControl: some View {
-        if audio, let text = card.speechText {
+        if let audioName = card.resolvedFieldMedia["prompt"]?.audio, allowAudio && !prefersReading && !reading {
+            HStack(spacing: 12) {
+                CardAudioPlaybackButton(name: audioName)
+                Button("Use text") { reading = true; onReadingRequested() }.frame(minHeight: 44)
+            }
+        } else if audio, let text = card.speechText {
             if compact {
                 HStack(spacing: 8) {
                     Button { speech.speak(text) } label: {
@@ -136,25 +149,34 @@ struct CourseActivityPanel: View {
         }
     }
 
-    private var optionGrid: some View {
-        LazyVGrid(columns: optionColumns, spacing: compact ? 8 : 12) {
-            ForEach(choices, id: \.self) { option in
-                Button { selected = option; finish(card.accepts(option)) } label: {
-                    VStack(spacing: compact ? 4 : 8) {
-                        Text(option).font(option.count <= 3 ? .system(size: immersive ? 40 : 30, weight: .medium) : .body.weight(.medium))
-                            .fixedSize(horizontal: false, vertical: true)
-                        if hints, !checkpoint, let hint = activity.optionHints[option] {
-                            Text(CourseKoreanText.attributed(hint)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }
-                        if result != nil && (selected == option || card.accepts(option)) {
-                            Image(systemName: card.accepts(option) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundStyle(card.accepts(option) ? Color.green : .orange)
-                        }
-                    }.padding(compact ? 8 : 12).frame(maxWidth: .infinity, minHeight: immersive ? 120 : compact ? 56 : 92)
-                        .background(optionBackground(option), in: RoundedRectangle(cornerRadius: 18))
-                        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.16), lineWidth: 1))
-                }.buttonStyle(.plain).disabled(result != nil)
-                    .accessibilityLabel(option + (hints && !checkpoint ? ", " + (activity.optionHints[option] ?? "") : ""))
+    @ViewBuilder private var optionGrid: some View {
+        if card.hasChoiceMedia {
+            CardMediaChoiceList(options: card.options, fields: card.resolvedFieldMedia,
+                correctIndex: card.resolvedCorrectOptionIndex, selection: selected, isGraded: result != nil) { value in
+                    guard let index = CardChoiceIdentity.index(value, options: card.options) else { return }
+                    selected = value
+                    finish(index == card.resolvedCorrectOptionIndex)
+                }
+        } else {
+            LazyVGrid(columns: optionColumns, spacing: compact ? 8 : 12) {
+                ForEach(choices, id: \.self) { option in
+                    Button { selected = option; finish(card.accepts(option)) } label: {
+                        VStack(spacing: compact ? 4 : 8) {
+                            Text(option).font(option.count <= 3 ? .system(size: immersive ? 40 : 30, weight: .medium) : .body.weight(.medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                            if hints, !checkpoint, let hint = activity.optionHints[option] {
+                                Text(CourseKoreanText.attributed(hint)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            }
+                            if result != nil && (selected == option || card.accepts(option)) {
+                                Image(systemName: card.accepts(option) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundStyle(card.accepts(option) ? Color.green : .orange)
+                            }
+                        }.padding(compact ? 8 : 12).frame(maxWidth: .infinity, minHeight: immersive ? 120 : compact ? 56 : 92)
+                            .background(optionBackground(option), in: RoundedRectangle(cornerRadius: 18))
+                            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.16), lineWidth: 1))
+                    }.buttonStyle(.plain).disabled(result != nil)
+                        .accessibilityLabel(option + (hints && !checkpoint ? ", " + (activity.optionHints[option] ?? "") : ""))
+                }
             }
         }
     }

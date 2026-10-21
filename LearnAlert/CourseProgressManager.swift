@@ -9,6 +9,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 import Combine
+import CryptoKit
 
 @MainActor
 final class CourseProgressManager: ObservableObject {
@@ -25,6 +26,7 @@ final class CourseProgressManager: ObservableObject {
     @Published private(set) var progressMap: [String: [String: CourseLessonProgressRecord]] = [:] // courseId -> [lessonId: Record]
     @Published private(set) var checkpointResults: [String: [String: CourseCheckpointResult]] = [:] // courseId -> [sectionId: Result]
     @Published private(set) var srsRecords: [String: CourseCardSRSRecord] = [:] // cardId -> SRSRecord
+    @Published private(set) var scopedSRSRecords: [String: [String: CourseCardSRSRecord]] = [:]
     @Published private(set) var processedEventTokens: Set<String> = []
     @Published private(set) var pinnedItemIds: [String] = []
     @Published private(set) var unpinnedExplicitIds: Set<String> = []
@@ -71,6 +73,7 @@ final class CourseProgressManager: ObservableObject {
         progressMap = snapshot.progress
         checkpointResults = snapshot.checkpoints
         srsRecords = snapshot.srs
+        scopedSRSRecords = snapshot.courseSRS
         processedEventTokens = Set(snapshot.eventTokens)
 
         // Load pinned state
@@ -86,6 +89,7 @@ final class CourseProgressManager: ObservableObject {
         snapshot.progress = progressMap
         snapshot.checkpoints = checkpointResults
         snapshot.srs = srsRecords
+        snapshot.courseSRS = scopedSRSRecords
         return snapshot
     }
 
@@ -259,29 +263,82 @@ final class CourseProgressManager: ObservableObject {
 
     // MARK: - Course Deck Creation & Sync
 
+    // Runtime-only marks never suppress a migration after installing a new build.
+    // The actual deck must still exist in the current context before a mark is used.
+    private var automaticCourseSyncDigests: [UUID: String] = [:]
+
+    @discardableResult
+    func syncManagedCourseDeckIfNeeded(for course: CourseDefinition, in context: ModelContext) -> Bool {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let digest = (try? encoder.encode(course)).map { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
+        let linkedId = loadEnrollment(for: course.id)?.linkedDeckId
+        let decks = (try? context.fetch(FetchDescriptor<Deck>())) ?? []
+        let existing = decks.first { $0.id.uuidString == linkedId }
+            ?? decks.first { $0.sourcePremadeID == "course:\(course.id)" }
+        if let existing, let digest, automaticCourseSyncDigests[existing.id] == digest { return false }
+        let deck = createOrSyncCourseDeck(for: course, in: context)
+        // A failed save leaves changes pending and must be retried on the next refresh.
+        if !context.hasChanges, let digest { automaticCourseSyncDigests[deck.id] = digest }
+        return true
+    }
+
     func createOrSyncCourseDeck(for course: CourseDefinition, in context: ModelContext) -> Deck {
+        struct LegacyCardKey: Hashable { let sectionId: UUID; let question: String }
         let deckName = "\(course.flagEmoji) \(course.title)"
         let allDecks = (try? context.fetch(FetchDescriptor<Deck>())) ?? []
         let linkedId = loadEnrollment(for: course.id)?.linkedDeckId
-        let existing = allDecks.first(where: { $0.id.uuidString == linkedId }) ?? allDecks.first(where: {
-            $0.deckType == "Course" && ($0.name == deckName || (course.id == "korean-course" && $0.name == "🇰🇷 Korean Foundations"))
-        })
+        let existing = allDecks.first(where: { $0.id.uuidString == linkedId })
+            ?? allDecks.first(where: { $0.sourcePremadeID == "course:\(course.id)" })
+            ?? allDecks.first(where: {
+                $0.deckType == "Course" && ($0.name == deckName || (course.id == "korean-course" && $0.name == "🇰🇷 Korean Foundations"))
+            })
         let deck = existing ?? Deck(name: deckName, colorHex: course.colorHex, deckType: "Course", orderIndex: allDecks.count)
-        if existing == nil { context.insert(deck) }
-        deck.name = deckName
-        deck.sourcePremadeID = "course:\(course.id)"
+        automaticCourseSyncDigests.removeValue(forKey: deck.id)
+        if deck.name != deckName { deck.name = deckName }
+        if deck.colorHex != course.colorHex { deck.colorHex = course.colorHex }
+        if deck.sourcePremadeID != "course:\(course.id)" { deck.sourcePremadeID = "course:\(course.id)" }
         if var enrollment = loadEnrollment(for: course.id), enrollment.linkedDeckId != deck.id.uuidString {
             enrollment.linkedDeckId = deck.id.uuidString
             saveEnrollment(enrollment)
             if activeCourseId == course.id { activeEnrollment = enrollment }
         }
+
+        // These getters sort SwiftData relationships. Snapshot each relationship once,
+        // work with local arrays/indexes, and update inverse relationships in bulk.
         let originalCards = deck.cards
+        let originalSections = deck.sections
+        let originalCardIds = Set(originalCards.map(\.id))
+        let originalSectionIds = Set(originalSections.map(\.id))
+        let originalSectionMembers = Dictionary(uniqueKeysWithValues: originalSections.map { ($0.id, Set($0.cards.map(\.id))) })
+        let originalPositions = Dictionary(uniqueKeysWithValues: originalCards.enumerated().map { ($0.element.id, $0.offset) })
+        var cardsBySource: [String: Flashcard] = [:]
+        var legacyCards: [LegacyCardKey: [Flashcard]] = [:]
+        for card in originalCards {
+            if let source = card.sourceCourseCardID { if cardsBySource[source] == nil { cardsBySource[source] = card } }
+            else if let sectionId = card.section?.id { legacyCards[LegacyCardKey(sectionId: sectionId, question: card.question), default: []].append(card) }
+        }
+        var sectionsBySource: [String: DeckSection] = [:]
+        var legacySections: [String: DeckSection] = [:]
+        for section in originalSections {
+            if let source = section.sourceCourseUnitID { if sectionsBySource[source] == nil { sectionsBySource[source] = section } }
+            else if legacySections[section.name] == nil { legacySections[section.name] = section }
+        }
+        var allSections = originalSections
+        var authoredCards: [Flashcard] = []
+        var destinationSections: [UUID: DeckSection] = [:]
         var usedIds: Set<UUID> = []
         var order = 0
         for unit in course.units {
-            let section = deck.sections.first(where: { $0.name == unit.title }) ?? DeckSection(name: unit.title, orderIndex: unit.unitNumber)
-            if !deck.sections.contains(where: { $0.id == section.id }) { deck.sections.append(section) }
-            section.deck = deck
+            let section = sectionsBySource[unit.id] ?? legacySections.removeValue(forKey: unit.title)
+                ?? DeckSection(name: unit.title, orderIndex: unit.unitNumber)
+            sectionsBySource[unit.id] = section
+            if section.sourceCourseUnitID != unit.id { section.sourceCourseUnitID = unit.id }
+            if section.name != unit.title { section.name = unit.title }
+            if section.summary != unit.subtitle { section.summary = unit.subtitle }
+            if section.colorHex != unit.colorHex { section.colorHex = unit.colorHex }
+            if section.orderIndex != unit.unitNumber { section.orderIndex = unit.unitNumber }
+            if !originalSectionIds.contains(section.id) { allSections.append(section) }
             for definition in unit.lessons.flatMap(\.cards) {
                 let type: FlashcardType
                 switch definition.cardType {
@@ -292,29 +349,52 @@ final class CourseProgressManager: ObservableObject {
                 default: type = .multipleChoice
                 }
                 let deckQuestion = definition.practiceQuestionText(audioEnabled: false)
-                let previousQuestions = [definition.questionText(audioEnabled: false), definition.previousQuestion].compactMap { $0 }
-                let card = originalCards.first(where: {
-                    !usedIds.contains($0.id) && ($0.question == deckQuestion || previousQuestions.contains($0.question)) && $0.section?.id == section.id
-                }) ?? Flashcard(question: deckQuestion, options: definition.options, correctAnswer: definition.correctAnswer)
-                card.question = deckQuestion
-                card.options = definition.options
-                card.correctAnswer = definition.correctAnswer
-                card.hint = definition.hint
-                card.cardType = type
-                card.matchingLeftItems = definition.matchingLeftItems
-                card.matchingRightItems = definition.matchingRightItems
-                card.promptImageName = definition.promptImageName
-                card.optionImageNames = definition.optionImageNames
-                card.orderIndex = order; order += 1
-                card.deck = deck; card.section = section
-                if !deck.cards.contains(where: { $0.id == card.id }) { deck.cards.append(card) }
-                if !section.cards.contains(where: { $0.id == card.id }) { section.cards.append(card) }
+                let previousQuestions = [deckQuestion, definition.questionText(audioEnabled: false), definition.previousQuestion].compactMap { $0 }
+                let legacyCandidates = Set(previousQuestions).compactMap { question in
+                    legacyCards[LegacyCardKey(sectionId: section.id, question: question)]?.first { !usedIds.contains($0.id) }
+                }
+                let legacy = legacyCandidates.min { (originalPositions[$0.id] ?? 0) < (originalPositions[$1.id] ?? 0) }
+                let card = cardsBySource[definition.id] ?? legacy ?? Flashcard(question: deckQuestion,
+                    options: definition.options, correctAnswer: definition.correctAnswer, hint: definition.hint,
+                    cardType: type, matchingLeftItems: definition.matchingLeftItems, matchingRightItems: definition.matchingRightItems,
+                    promptImageName: definition.promptImageName, answerImageName: definition.answerImageName, optionImageNames: definition.optionImageNames)
+                if card.sourceCourseCardID != definition.id { card.sourceCourseCardID = definition.id }
+                if card.question != deckQuestion { card.question = deckQuestion }
+                if card.options != definition.options { card.options = definition.options }
+                if card.correctAnswer != definition.correctAnswer { card.correctAnswer = definition.correctAnswer }
+                if card.hint != definition.hint { card.hint = definition.hint }
+                if card.cardType != type { card.cardType = type }
+                if card.matchingLeftItems != definition.matchingLeftItems { card.matchingLeftItems = definition.matchingLeftItems }
+                if card.matchingRightItems != definition.matchingRightItems { card.matchingRightItems = definition.matchingRightItems }
+                if card.fieldMedia != definition.resolvedFieldMedia { card.fieldMedia = definition.resolvedFieldMedia }
+                if card.correctOptionIndex != definition.correctOptionIndex { card.correctOptionIndex = definition.correctOptionIndex }
+                if card.orderIndex != order { card.orderIndex = order }
+                order += 1
+                authoredCards.append(card)
+                destinationSections[card.id] = section
                 usedIds.insert(card.id)
             }
         }
-        // Keep any extra saved cards and their review history.
-        for card in originalCards where !usedIds.contains(card.id) { card.orderIndex = order; order += 1 }
-        do { try context.save() } catch { print("Course deck could not be saved: \(error.localizedDescription)") }
+        // Preserve removed/authored extras and every saved review value.
+        let extras = originalCards.filter { !usedIds.contains($0.id) }
+        for card in extras {
+            if card.orderIndex != order { card.orderIndex = order }
+            order += 1
+        }
+        let allCards = authoredCards + extras
+        var sectionMembers: [UUID: [Flashcard]] = [:]
+        for card in allCards {
+            if let section = destinationSections[card.id] ?? card.section { sectionMembers[section.id, default: []].append(card) }
+        }
+        for section in allSections {
+            let members = sectionMembers[section.id] ?? []
+            if originalSectionMembers[section.id] != Set(members.map(\.id)) { section.cards = members }
+        }
+        if originalSectionIds != Set(allSections.map(\.id)) { deck.sections = allSections }
+        if originalCardIds != Set(allCards.map(\.id)) { deck.cards = allCards }
+        if existing == nil { context.insert(deck) }
+        do { if context.hasChanges { try context.save() } }
+        catch { print("Course deck could not be saved: \(error.localizedDescription)") }
         return deck
     }
 
@@ -365,8 +445,7 @@ final class CourseProgressManager: ObservableObject {
            let unit = course.units.first(where: { $0.id == sectionId }), let quiz = unit.checkpointQuiz,
            quiz.id == checkpointId, totalQuestions == quiz.questions.count,
            score == totalQuestions - Set(missedQuestionIds).count,
-           let result = CourseLearningStore.shared.transaction({ $0.checkpoint(course: course, unit: unit, missed: missedQuestionIds,
-                passingThreshold: enrollment(for: courseId)?.checkpointPassingThreshold) }) ?? nil {
+           let result = CourseLearningStore.shared.transaction({ $0.checkpoint(course: course, unit: unit, missed: missedQuestionIds) }) ?? nil {
             reloadFromSharedDefaults()
             reconcilePendingNotifications(for: course)
             return result
@@ -443,8 +522,7 @@ final class CourseProgressManager: ObservableObject {
 
     func finishPractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String) -> CoursePracticeCompletion? {
         let completion = CourseLearningStore.shared.transaction {
-            $0.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId,
-                passingThreshold: enrollment(for: course.id)?.checkpointPassingThreshold)
+            $0.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId)
         } ?? nil
         reloadFromSharedDefaults()
         if completion != nil { reconcilePendingNotifications(for: course) }
@@ -487,7 +565,7 @@ final class CourseProgressManager: ObservableObject {
             .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
             .flatMap { lesson in
                 let learned = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
-                return lesson.cards.filter { $0.activity == nil || learned.contains($0.id) || snapshot.srs[$0.id] != nil }
+                return lesson.cards.filter { $0.activity == nil || learned.contains($0.id) || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil }
             }
     }
 

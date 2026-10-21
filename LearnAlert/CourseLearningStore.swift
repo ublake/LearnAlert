@@ -30,22 +30,52 @@ struct CoursePracticeCompletion {
 struct CourseLearningSnapshot: Codable {
     var progress: [String: [String: CourseLessonProgressRecord]] = [:]
     var checkpoints: [String: [String: CourseCheckpointResult]] = [:]
+    /// Read-only legacy records from releases before managed courses existed.
     var srs: [String: CourseCardSRSRecord] = [:]
+    /// IDs are local to a course. New records never share mastery across courses.
+    var courseSRS: [String: [String: CourseCardSRSRecord]] = [:]
     var eventTokens: [String] = []
     var practiceSessions: [String: CoursePracticeSession] = [:]
     var traceAttempts: [String: Int] = [:]
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, eventTokens, practiceSessions, traceAttempts }
+    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, courseSRS, eventTokens, practiceSessions, traceAttempts }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         progress = try values.decodeIfPresent([String: [String: CourseLessonProgressRecord]].self, forKey: .progress) ?? [:]
         checkpoints = try values.decodeIfPresent([String: [String: CourseCheckpointResult]].self, forKey: .checkpoints) ?? [:]
         srs = try values.decodeIfPresent([String: CourseCardSRSRecord].self, forKey: .srs) ?? [:]
+        courseSRS = try values.decodeIfPresent([String: [String: CourseCardSRSRecord]].self, forKey: .courseSRS) ?? [:]
         eventTokens = try values.decodeIfPresent([String].self, forKey: .eventTokens) ?? []
         practiceSessions = try values.decodeIfPresent([String: CoursePracticeSession].self, forKey: .practiceSessions) ?? [:]
         traceAttempts = try values.decodeIfPresent([String: Int].self, forKey: .traceAttempts) ?? [:]
+        migrateLegacySRS()
+    }
+
+    // Only the original bundled author owns pre-managed unqualified history.
+    // An AI course reusing a Korean/Spanish card ID must start with fresh SRS.
+    private static let legacySRSOwners: [String: String] = {
+        var owners: [String: String] = [:]
+        for course in CourseCurriculumCatalog.bundledCourses {
+            for card in course.units.flatMap(\.lessons).flatMap(\.cards) {
+                if owners[card.id] == nil { owners[card.id] = course.id }
+            }
+        }
+        return owners
+    }()
+
+    func srsRecord(courseId: String, cardId: String) -> CourseCardSRSRecord? {
+        if let record = courseSRS[courseId]?[cardId] { return record }
+        guard let legacy = srs[cardId], Self.legacySRSOwners[cardId] == courseId else { return nil }
+        return legacy
+    }
+
+    mutating func migrateLegacySRS() {
+        for (cardId, record) in srs {
+            guard let courseId = Self.legacySRSOwners[cardId], courseSRS[courseId]?[cardId] == nil else { continue }
+            courseSRS[courseId, default: [:]][cardId] = record
+        }
     }
 
     static func practiceKey(courseId: String, lessonId: String?, checkpointUnitId: String?) -> String? {
@@ -194,19 +224,19 @@ struct CourseLearningSnapshot: Codable {
                 let learned = Set(progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
                 return lesson.cards.filter { card in
                     // Replacing a passed unit never turns unseen workshop material into due reviews.
-                    (card.activity == nil || srs[card.id] != nil || learned.contains(card.id)) &&
-                    (srs[card.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true)
+                    (card.activity == nil || srsRecord(courseId: course.id, cardId: card.id) != nil || learned.contains(card.id)) &&
+                    (srsRecord(courseId: course.id, cardId: card.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true)
                 }
             }
-            .sorted { (srs[$0.id]?.nextReviewDate ?? .distantPast) < (srs[$1.id]?.nextReviewDate ?? .distantPast) }
+            .sorted { (srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         let lesson = reviewOnly ? nil : currentLesson(course: course)
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
-        var fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srs[$0.id].map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
+        var fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srsRecord(courseId: course.id, cardId: $0.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
         if let lesson, let focused = focusedLearningCards(lesson: lesson, mastered: mastered) {
             // Missed tasks return within this letter's group; future letters stay gated.
             fresh = focused.sorted {
-                let lhs = srs[$0.id]?.lastReviewedDate ?? .distantPast
-                let rhs = srs[$1.id]?.lastReviewedDate ?? .distantPast
+                let lhs = srsRecord(courseId: course.id, cardId: $0.id)?.lastReviewedDate ?? .distantPast
+                let rhs = srsRecord(courseId: course.id, cardId: $1.id)?.lastReviewedDate ?? .distantPast
                 return lhs == rhs ? $0.learningStage < $1.learningStage : lhs < rhs
             }
             return Array(fresh.prefix(count))
@@ -230,7 +260,7 @@ struct CourseLearningSnapshot: Codable {
             (unit.checkpointQuiz == nil || checkpoints[course.id]?[unit.id]?.passed == true) &&
             unit.lessons.allSatisfy { lesson in
                 status(course: course, lessonId: lesson.id) == .completed &&
-                lesson.cards.allSatisfy { (srs[$0.id]?.masteryScore ?? 0) >= 3 }
+                lesson.cards.allSatisfy { (srsRecord(courseId: course.id, cardId: $0.id)?.masteryScore ?? 0) >= 3 }
             }
         }
     }
@@ -245,9 +275,9 @@ struct CourseLearningSnapshot: Codable {
            let focused = focusedLearningCards(lesson: lesson, mastered: Set(progress[course.id]?[lessonId]?.masteredCardIds ?? [])),
            !focused.contains(where: { $0.id == cardId }) { return false }
         eventTokens.append(token)
-        var srsRecord = srs[cardId] ?? CourseCardSRSRecord(cardId: cardId)
-        srsRecord.processAnswer(isCorrect: correct)
-        srs[cardId] = srsRecord
+        var recordForCard = srsRecord(courseId: course.id, cardId: cardId) ?? CourseCardSRSRecord(cardId: cardId)
+        recordForCard.processAnswer(isCorrect: correct)
+        courseSRS[course.id, default: [:]][cardId] = recordForCard
         var record = progress[course.id]?[lessonId] ?? CourseLessonProgressRecord(status: .current)
         record.totalAttemptsCount += 1
         if correct {
@@ -270,7 +300,7 @@ struct CourseLearningSnapshot: Codable {
         let score = quiz.questions.count - failures.count
         let result = CourseCheckpointResult(checkpointId: quiz.id, sectionId: unit.id,
             score: score, totalQuestions: quiz.questions.count,
-            passed: Double(score) / Double(max(1, quiz.questions.count)) >= min(1, max(0.5, passingThreshold ?? quiz.passingScoreThreshold)),
+            passed: Double(score) / Double(max(1, quiz.questions.count)) >= min(1, max(0, passingThreshold ?? quiz.passingScoreThreshold)),
             missedQuestionIds: quiz.questions.filter { failures.contains($0.id) }.map(\.id),
             missedConcepts: Array(Set(quiz.questions.filter { failures.contains($0.id) }.compactMap(\.conceptTag))).sorted())
         // A failed practice retake never locks a previously passed section.
@@ -314,6 +344,7 @@ final class CourseLearningStore {
             }
         }
         if let data = defaults?.data(forKey: "course_srs_records") { state.srs = try JSONDecoder().decode([String: CourseCardSRSRecord].self, from: data) }
+        state.migrateLegacySRS()
         state.eventTokens = defaults?.stringArray(forKey: "course_processed_event_tokens") ?? []
         return state
     }

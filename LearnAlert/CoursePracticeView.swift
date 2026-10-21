@@ -98,7 +98,7 @@ struct CoursePracticeView: View {
                             CourseQuestionPanel(card: practiceCards[index], immersive: true, checkpoint: isCheckpoint,
                                 allowAudio: course.language == "Korean", prefersReading: prefersReading,
                                 allowTypedRecall: practiceCards[index].canOfferTypedRecall(
-                                    masteryScore: manager.srsRecords[practiceCards[index].id]?.masteryScore ?? 0,
+                                    masteryScore: manager.learningSnapshot.srsRecord(courseId: course.id, cardId: practiceCards[index].id)?.masteryScore ?? 0,
                                     checkpoint: isCheckpoint),
                                 onReadingRequested: { prefersReading = true }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)-\(presentationId)")
@@ -214,7 +214,7 @@ struct CoursePracticeView: View {
                 Text(finishTitle).font(.largeTitle.bold()).multilineTextAlignment(.center)
                 Text("\(practiceCards.count - missed.count) of \(practiceCards.count) correct").font(.title3).foregroundStyle(.secondary)
                 if let result, !result.passed {
-                    Text("\(Int(result.percentage * 100))% · \(Int((manager.enrollment(for: course.id)?.checkpointPassingThreshold ?? checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))% to pass")
+                    Text("\(Int(result.percentage * 100))% · \(Int((checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))% to pass")
                         .font(.subheadline).foregroundStyle(.secondary)
                     if !result.missedConcepts.isEmpty { Text(result.missedConcepts.joined(separator: " · ")).font(.callout).multilineTextAlignment(.center) }
                     Button("Practice missed questions") { reviewMisses = true }.buttonStyle(.bordered).controlSize(.large)

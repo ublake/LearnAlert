@@ -27,9 +27,9 @@ struct StudyProgressSummaryTests {
         }
         var snapshot = CourseLearningSnapshot()
         snapshot.progress[course.id] = ["lesson-one": .init(status: .completed, masteredCardIds: ["one", "two", "removed-card"])]
-        snapshot.srs["one"] = CourseCardSRSRecord(cardId: "one", masteryScore: 3, reviewCount: 3, correctCount: 3)
-        snapshot.srs["two"] = CourseCardSRSRecord(cardId: "two", masteryScore: 1, reviewCount: 2, correctCount: 1)
-        snapshot.srs["removed-card"] = CourseCardSRSRecord(cardId: "removed-card", masteryScore: 3, reviewCount: 800, correctCount: 800)
+        snapshot.courseSRS[course.id, default: [:]]["one"] = CourseCardSRSRecord(cardId: "one", masteryScore: 3, reviewCount: 3, correctCount: 3)
+        snapshot.courseSRS[course.id, default: [:]]["two"] = CourseCardSRSRecord(cardId: "two", masteryScore: 1, reviewCount: 2, correctCount: 1)
+        snapshot.courseSRS[course.id, default: [:]]["removed-card"] = CourseCardSRSRecord(cardId: "removed-card", masteryScore: 3, reviewCount: 800, correctCount: 800)
 
         let summary = StudyProgressSummary(decks: [regular, community, backingByType, backingBySource, regular],
                                            courses: [course, course], snapshot: snapshot)
@@ -60,7 +60,7 @@ struct StudyProgressSummaryTests {
             deck.cards.append(card)
         }
         var snapshot = CourseLearningSnapshot()
-        snapshot.srs["one"] = CourseCardSRSRecord(cardId: "one", reviewCount: 100, correctCount: 100)
+        snapshot.courseSRS[course().id, default: [:]]["one"] = CourseCardSRSRecord(cardId: "one", reviewCount: 100, correctCount: 100)
         let summary = StudyProgressSummary(decks: [deck], courses: [course()], snapshot: snapshot)
         #expect(summary.reviewCount == 407)
         #expect(summary.quizReviewCount == 7 && summary.quizCorrectCount == 4)

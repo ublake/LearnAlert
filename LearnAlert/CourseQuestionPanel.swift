@@ -68,7 +68,7 @@ struct CourseQuestionPanel: View {
     }
     private var canTryTyping: Bool { allowTypedRecall && !checkpoint && card.usesTypedAnswer && !card.options.isEmpty }
     private var compact: Bool { notificationCompact && !immersive }
-    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && speech.canPlay(card.speechText ?? "") }
+    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && (card.resolvedFieldMedia["prompt"]?.audio != nil || speech.canPlay(card.speechText ?? "")) }
     @State private var selectedWord: String?
 
     var body: some View {
@@ -87,13 +87,20 @@ struct CourseQuestionPanel: View {
                     inspecting = true
                     return .handled
                 })
-            if let image = CardImageStore.loadImage(named: card.promptImageName) {
+            if let image = CardImageStore.loadImage(named: card.resolvedFieldMedia["prompt"]?.image) {
                 Image(uiImage: image).resizable().scaledToFit()
                     .frame(maxWidth: immersive ? 224 : compact ? 96 : 160, maxHeight: immersive ? 224 : compact ? 96 : 160)
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .accessibilityLabel("Vocabulary picture")
             }
-            if listening, let text = card.speechText {
+            if let audioName = card.resolvedFieldMedia["prompt"]?.audio, allowAudio && !prefersReading && !readingInstead {
+                CardAudioPlaybackButton(name: audioName)
+                if card.isListeningQuestion && grade == nil {
+                    Button("I can’t listen right now") { readingInstead = true; onReadingRequested() }
+                        .font(.subheadline).frame(minHeight: 44)
+                }
+            }
+            if listening, card.resolvedFieldMedia["prompt"]?.audio == nil, let text = card.speechText {
                 HStack(spacing: compact ? 8 : 16) {
                     Button { speech.speak(text) } label: {
                         Label(speech.isSpeaking ? "Play again" : "Listen", systemImage: "speaker.wave.2.fill")
@@ -125,7 +132,14 @@ struct CourseQuestionPanel: View {
                 if hint { Text(CourseKoreanText.attributed(card.hint)).font(.callout).foregroundStyle(.secondary) }
             }
             if usesChoices {
-                if card.optionImageNames.count == card.options.count && !card.optionImageNames.isEmpty {
+                if card.fieldMedia?.keys.contains(where: { $0.hasPrefix("option:") }) == true {
+                    CardMediaChoiceList(options: card.options.map(card.practiceOptionText), fields: card.resolvedFieldMedia,
+                        correctIndex: card.resolvedCorrectOptionIndex, selection: selectedOption, isGraded: grade != nil) { value in
+                            guard let index = CardChoiceIdentity.index(value, options: card.options) else { return }
+                            selectedOption = value
+                            submit(index == card.resolvedCorrectOptionIndex)
+                        }
+                } else if card.optionImageNames.count == card.options.count && !card.optionImageNames.isEmpty {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: immersive ? 16 : 8) {
                         ForEach(Array(choiceOrder.enumerated()), id: \.element) { position, index in
                             let option = card.options[index]
@@ -181,6 +195,7 @@ struct CourseQuestionPanel: View {
             } else if card.cardType == "matching" {
                 CourseMatchingPanel(card: card, immersive: immersive, onAnswer: submit)
             } else if card.cardType == "vocabulary" {
+                if let media = card.resolvedFieldMedia["answer"] { CardFieldContent(media: media, imageHeight: immersive ? 224 : 120) }
                 VStack(alignment: .leading, spacing: compact ? 10 : 16) {
                     Text(CourseKoreanText.attributed(card.vocabularyItem?.contextualMeaning ?? card.correctAnswer)).font(immersive ? .title3 : .body).fixedSize(horizontal: false, vertical: true)
                     if let note = card.grammarNote, note != card.correctAnswer { Text(CourseKoreanText.attributed(note)).font(.callout).foregroundStyle(.secondary) }
@@ -194,6 +209,8 @@ struct CourseQuestionPanel: View {
                     .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
             } else {
                 if revealed {
+                    if let media = card.resolvedFieldMedia["answer"] { CardFieldContent(media: media, imageHeight: immersive ? 224 : 120) }
+
                     Text(CourseKoreanText.attributed(card.correctAnswer)).font(.title3)
                     if grade == nil {
                         HStack {
@@ -213,6 +230,9 @@ struct CourseQuestionPanel: View {
                           systemImage: writingAnswer ? "list.bullet" : "keyboard")
                         .font(.subheadline.weight(.medium)).frame(minHeight: 44)
                 }.buttonStyle(.borderless)
+            }
+            if grade != nil && !revealed && card.cardType != "vocabulary", let media = card.resolvedFieldMedia["answer"] {
+                CardFieldContent(media: media, imageHeight: immersive ? 224 : 120)
             }
             if let grade, !immersive {
                 Label(card.feedbackTitle(isCorrect: grade), systemImage: grade ? (card.isReadThrough ? "book.closed.fill" : "checkmark.circle.fill") : "arrow.counterclockwise")

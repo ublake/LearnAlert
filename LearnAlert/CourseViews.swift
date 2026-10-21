@@ -11,7 +11,12 @@ import SwiftData
 // MARK: - 1. Course Overview View
 
 struct CourseOverviewView: View {
-    let course: CourseDefinition
+    private let originalCourse: CourseDefinition
+    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
+    var course: CourseDefinition { managedCatalog.course(for: originalCourse.id) ?? originalCourse }
+    init(course: CourseDefinition) {
+        self.originalCourse = course
+    }
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @ObservedObject private var engine = StudyEngine.shared
@@ -637,7 +642,13 @@ private struct PlanSummaryRow: View {
 // MARK: - 3. Course Path View (Interactive Scrollable Journey)
 
 struct CoursePathView: View {
-    let course: CourseDefinition
+    private let originalCourse: CourseDefinition
+    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
+    var course: CourseDefinition { managedCatalog.course(for: originalCourse.id) ?? originalCourse }
+    init(course: CourseDefinition, initialCheckpointSectionId: String? = nil) {
+        self.originalCourse = course
+        self.initialCheckpointSectionId = initialCheckpointSectionId
+    }
     var initialCheckpointSectionId: String? = nil
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

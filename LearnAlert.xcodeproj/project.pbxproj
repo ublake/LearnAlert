@@ -188,6 +188,7 @@
 				KoreanLexicon.swift,
 				ImageCardFlipView.swift,
 				NotificationViewportGeometry.swift,
+				ManagedCatalog.swift,
 				Models.swift,
 				DeckAlertSettings.swift,
 				DailyDeckAlertScheduler.swift,

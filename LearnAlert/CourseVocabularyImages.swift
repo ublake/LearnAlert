@@ -5,6 +5,7 @@ import UIKit
 /// The bundled 1 x 1 PNG files reserve filenames until real artwork is supplied.
 enum CourseVocabularyImages {
     static func image(named name: String) -> UIImage? {
+        if name.hasPrefix("catalog:") { return CardImageStore.loadImage(named: name) }
         guard let resource = resourceName(from: name) else { return nil }
 
         // Xcode may preserve the folder or flatten its files into the bundle.

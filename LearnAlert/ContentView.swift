@@ -274,6 +274,7 @@ private enum HomeAlertTarget {
 }
 
 struct HomeLibraryView: View {
+    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
     @Query(sort: \Deck.orderIndex) private var allDecks: [Deck]
     @Environment(\.modelContext) private var context
     @ObservedObject private var sharedDB = SharedDatabase.shared

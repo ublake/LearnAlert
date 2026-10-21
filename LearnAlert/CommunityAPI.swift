@@ -93,7 +93,9 @@ extension Deck {
             return [normalized(question), normalized(answer)] + zip(left, right).flatMap { [normalized($0), normalized($1)] }
         }
         let local = Set(cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) })
-        if PremadeDeckCatalog.decks.contains(where: { premade in
+        // Legacy copies predate provenance IDs. New managed imports are protected
+        // by sourcePremadeID above; this synchronous fallback uses bundled content.
+        if PremadeDeckCatalog.bundledDecks.contains(where: { premade in
             !premade.cards.isEmpty && Set(premade.cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) }).isSubset(of: local)
         }) { return "Built-in decks can’t be published to the community." }
         return nil

@@ -613,13 +613,15 @@ public enum CourseCurriculumCatalog {
     ))
 
     // MARK: - All Active Courses
-    public static let courses: [CourseDefinition] = [
+    public static let bundledCourses: [CourseDefinition] = [
         spanishCourse,
         koreanCourse
     ]
 
-    public static func course(for id: String) -> CourseDefinition? {
-        courses.first(where: { $0.id == id })
+    @MainActor public static var courses: [CourseDefinition] { ManagedCatalogStore.shared.courses }
+
+    @MainActor public static func course(for id: String) -> CourseDefinition? {
+        ManagedCatalogStore.shared.course(for: id)
     }
 
     // MARK: - Coming Soon Languages
