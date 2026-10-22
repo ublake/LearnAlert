@@ -36,6 +36,8 @@ struct CourseNotificationSessionView: View {
     let openApp: (String?) -> Void
     var mediaPlaybackChanged: (Bool) -> Void = { _ in }
     var contentHeightChanged: (_ height: CGFloat, _ preserveDrawingHeight: Bool) -> Void = { _, _ in }
+    @State private var assessmentPending = false
+    @State private var starterNeedsApp = false
     @State private var reviewingCheckpoint = false
     @State private var card: CourseLessonCard?
     @State private var checkpoint: CourseUnit?
@@ -154,7 +156,10 @@ struct CourseNotificationSessionView: View {
     @ViewBuilder
     private var practiceContent: some View {
         VStack(spacing: compact ? 8 : 14) {
-            if readyAfterAnswer, let checkpoint {
+            if assessmentPending || starterNeedsApp {
+                Text(assessmentPending ? "Your starter check is saved in the app." : "Meet the new words in the app first.").font(.headline)
+                Button(assessmentPending ? "Resume starter check" : "Open visual starter") { openApp(nil) }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+            } else if readyAfterAnswer, let checkpoint {
                 checkpointPrompt(checkpoint)
             } else if let card {
                 // Audio begins only from Play. Listening exercises retain a reading alternative.
@@ -269,6 +274,8 @@ struct CourseNotificationSessionView: View {
             return
         }
         refreshProgress(snapshot)
+        assessmentPending = snapshot.activeAssessment(courseID: course.id).map { $0.finalizedAt == nil } ?? false
+        starterNeedsApp = course.learning?.starter?.lessonIDs.contains(snapshot.currentLesson(course: course)?.id ?? "") == true && CourseNotificationProgress.nextLearningCard(course: course, snapshot: snapshot, excluding: []) == nil
         reviewingCheckpoint = checkpoint != nil && (reviewingCheckpoint || reviewOnly || CourseNotificationScheduler.isContinuingPractice(courseId: course.id, checkpointUnitId: checkpoint?.id))
         exerciseAttemptID = pending?.attemptID
         let pendingCard = pending.flatMap { acknowledgement in

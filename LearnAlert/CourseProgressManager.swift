@@ -16,8 +16,11 @@ final class CourseProgressManager: ObservableObject {
     static let shared = CourseProgressManager()
 
     private let sharedDefaults: UserDefaults?
-    private let learningStore: CourseLearningStore
+    let learningStore: CourseLearningStore
+    let isPreview: Bool
+    private let courseProvider: @MainActor (String) -> CourseDefinition?
     private var practiceSessions: [String: CoursePracticeSession] = [:]
+    @Published private var cachedLearningSnapshot = CourseLearningSnapshot()
 
     @Published private(set) var progressRecoveryNotice: String?
     @Published private(set) var progressReadError: String?
@@ -33,16 +36,18 @@ final class CourseProgressManager: ObservableObject {
     @Published private(set) var unpinnedExplicitIds: Set<String> = []
 
     init(defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
-         learningStore: CourseLearningStore = .shared) {
+         learningStore: CourseLearningStore = .shared, isPreview: Bool = false, courseProvider: @escaping @MainActor (String) -> CourseDefinition? = { CourseCurriculumCatalog.course(for: $0) }) {
         sharedDefaults = defaults
         self.learningStore = learningStore
+        self.isPreview = isPreview
+        self.courseProvider = courseProvider
         reloadFromSharedDefaults()
     }
 
     func reloadFromSharedDefaults() {
-        guard let defaults = sharedDefaults else { return }
+        let defaults = sharedDefaults
 
-        let activeId = defaults.string(forKey: "course_active_enrollment_id")
+        let activeId = defaults?.string(forKey: "course_active_enrollment_id")
         self.activeCourseId = activeId
 
         if let activeId, let enrollment = loadEnrollment(for: activeId) {
@@ -52,7 +57,7 @@ final class CourseProgressManager: ObservableObject {
         }
 
         // Load enrolled course IDs
-        var enrolled = defaults.stringArray(forKey: "course_enrolled_ids") ?? []
+        var enrolled = defaults?.stringArray(forKey: "course_enrolled_ids") ?? []
         for course in CourseCurriculumCatalog.courses {
             if loadEnrollment(for: course.id) != nil && !enrolled.contains(course.id) {
                 enrolled.append(course.id)
@@ -65,6 +70,7 @@ final class CourseProgressManager: ObservableObject {
         let snapshot = learningStore.snapshot()
         if let error = learningStore.lastError { progressReadError = error; return }
         progressReadError = nil
+        cachedLearningSnapshot = snapshot
         progressRecoveryNotice = snapshot.progressRecoveryNotice
         practiceSessions = snapshot.practiceSessions
         progressMap = snapshot.progress
@@ -74,8 +80,8 @@ final class CourseProgressManager: ObservableObject {
         processedEventTokens = Set(snapshot.eventTokens)
 
         // Load pinned state
-        self.pinnedItemIds = defaults.stringArray(forKey: "home_pinned_item_ids") ?? []
-        let unpinnedList = defaults.stringArray(forKey: "home_unpinned_explicit_ids") ?? []
+        self.pinnedItemIds = defaults?.stringArray(forKey: "home_pinned_item_ids") ?? []
+        let unpinnedList = defaults?.stringArray(forKey: "home_unpinned_explicit_ids") ?? []
         self.unpinnedExplicitIds = Set(unpinnedList)
     }
 
@@ -88,15 +94,9 @@ final class CourseProgressManager: ObservableObject {
 
     // MARK: - Enrolled Courses
 
-    var learningSnapshot: CourseLearningSnapshot {
-        var snapshot = CourseLearningSnapshot()
-        snapshot.progress = progressMap
-        snapshot.checkpoints = checkpointResults
-        snapshot.srs = srsRecords
-        snapshot.courseSRS = scopedSRSRecords
-        snapshot.practiceSessions = practiceSessions
-        return snapshot
-    }
+    /// Keep all versioned fields, including future route/assessment evidence,
+    /// together. Reconstructing only legacy maps silently loses UI projections.
+    var learningSnapshot: CourseLearningSnapshot { cachedLearningSnapshot }
 
     var allEnrolledCourses: [CourseDefinition] {
         enrolledCourseIds.compactMap { id in
@@ -193,6 +193,7 @@ final class CourseProgressManager: ObservableObject {
             autoPronounceInStudy: loadEnrollment(for: course.id)?.autoPronounceInStudy ?? false
         )
 
+        if !isEnrolled(in: course.id) { _ = learningStore.transaction { $0.assignRoute(course: course, returningLearner: false); return true } }
         saveEnrollment(enrollment)
 
         if !enrolledCourseIds.contains(course.id) {
@@ -469,7 +470,7 @@ final class CourseProgressManager: ObservableObject {
     @discardableResult
     func recordCardAnswer(courseId: String, sectionId: String, lessonId: String, cardId: String,
         isCorrect: Bool, eventToken: String? = nil, exerciseAttemptID: String? = nil) -> Bool {
-        guard let course = CourseCurriculumCatalog.course(for: courseId),
+        guard let course = courseProvider(courseId),
               course.units.contains(where: { $0.id == sectionId && $0.lessons.contains(where: { $0.id == lessonId }) }) else { return false }
         let applied = learningStore.transaction {
             $0.answer(course: course, lessonId: lessonId, cardId: cardId, correct: isCorrect, token: eventToken ?? UUID().uuidString, exerciseAttemptID: exerciseAttemptID)
@@ -550,13 +551,21 @@ final class CourseProgressManager: ObservableObject {
     // MARK: - Current State Queries
 
     func currentLesson(for course: CourseDefinition) -> CourseLesson? {
-        learningSnapshot.currentLesson(course: course)
+        let snapshot = learningSnapshot
+        if course.learning?.starter != nil, snapshot.routes[course.id] == nil {
+            let returning = isEnrolled(in: course.id) || snapshot.progress[course.id]?.values.contains(where: { $0.totalAttemptsCount > 0 || $0.status == .completed }) == true || snapshot.practiceSessions.keys.contains(where: { $0.hasPrefix(course.id + ":") })
+            _ = learningStore.transaction { $0.assignRoute(course: course, returningLearner: returning); return true }
+            reloadFromSharedDefaults()
+        }
+        return learningSnapshot.currentLesson(course: course)
     }
 
     func completedLessonsCount(for course: CourseDefinition) -> Int {
         let snapshot = learningSnapshot
-        return course.units.flatMap(\.lessons).filter { snapshot.status(course: course, lessonId: $0.id) == .completed }.count
+        return course.units.flatMap(\.lessons).filter { (snapshot.routes[course.id]?.lessonIDs.contains($0.id) ?? true) && snapshot.status(course: course, lessonId: $0.id) == .completed }.count
     }
+
+    func progressLessonsCount(for course: CourseDefinition) -> Int { learningSnapshot.routes[course.id]?.lessonIDs.count ?? course.totalLessonsCount }
 
     func completionPercentage(for course: CourseDefinition) -> Double {
         learningSnapshot.completionFraction(course: course)
@@ -598,7 +607,7 @@ final class CourseProgressManager: ObservableObject {
     /// Reconcile queued course alerts safely using iOS background scheduling rules
     func reconcilePendingNotifications(for course: CourseDefinition) {
         // Course notifications resolve live shared progress when expanded. No unrelated deck is rescheduled.
-        guard CourseNotificationScheduler.activePlan?.courseId == course.id else { return }
+        guard !isPreview, CourseNotificationScheduler.activePlan?.courseId == course.id else { return }
         updateSchedulePointer(course: course)
         Task {
             do { try await CourseNotificationScheduler.replenish() }

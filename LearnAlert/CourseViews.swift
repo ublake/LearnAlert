@@ -21,6 +21,8 @@ struct CourseOverviewView: View {
     @ObservedObject private var progressManager = CourseProgressManager.shared
     @ObservedObject private var engine = StudyEngine.shared
 
+    @State private var showingStarterPreview = false
+    @State private var showingVisualStarter = false
     @State private var guideUnit: CourseUnit?
     @State private var showingOnboardingSheet = false
     @State private var showingPathView = false
@@ -48,6 +50,15 @@ struct CourseOverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                #if DEBUG
+                if course.id == "spanish-course" {
+                    Button("Preview visual starter · separate progress") { showingStarterPreview = true }
+                        .buttonStyle(.bordered).frame(minHeight: 44)
+                }
+                #endif
+                if course.learning?.starter != nil {
+                    Button("Start with pictures") { showingVisualStarter = true }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                }
                 // Hero Banner Card
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top) {
@@ -87,7 +98,7 @@ struct CourseOverviewView: View {
                     if isEnrolled {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("\(progressManager.completedLessonsCount(for: course)) of \(course.totalLessonsCount) Lessons")
+                                Text("\(progressManager.completedLessonsCount(for: course)) of \(progressManager.progressLessonsCount(for: course)) Lessons")
                                     .font(.custom("Poppins-SemiBold", size: 12))
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
                                 Spacer()
@@ -276,6 +287,8 @@ struct CourseOverviewView: View {
             .padding(.top, 14)
         }
         .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+        .sheet(isPresented: $showingStarterPreview) { CourseStarterPreviewHost(baseCourse: course) }
+        .sheet(isPresented: $showingVisualStarter) { NavigationStack { CourseStarterHomeView(course: course, manager: progressManager) } }
         .navigationTitle(course.language)
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
@@ -671,7 +684,7 @@ struct CoursePathView: View {
                         Text(course.flagEmoji).font(.largeTitle)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(course.title).font(.title3.bold())
-                            Text("\(trail.milestones.filter { $0.status == .completed }.count) of \(trail.milestones.count) milestones")
+                            Text("\(trail.progressMilestones.filter { $0.status == .completed }.count) of \(trail.progressMilestones.count) milestones")
                                 .font(.caption).foregroundStyle(.secondary).contentTransition(.numericText())
                         }
                         Spacer()

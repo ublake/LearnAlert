@@ -140,6 +140,7 @@ extension CourseActivity {
 public struct CourseLearningGraph: Codable, Hashable {
     public var vocabulary: [String: CourseLexicalSense]
     public var concepts: [String: CourseConcept]
+    public var starter: CourseStarterDefinition? = nil
 }
 public struct CourseLexicalSense: Codable, Hashable {
     public var lemma: String
@@ -172,7 +173,19 @@ public struct CourseExercise: Codable, Hashable {
     public var correctChoiceID: String?
     public var tiles: [CourseWordTile]?
     public var acceptedOrders: [[String]]? // tile text, not occurrence identity
-    public var usesPracticeRenderer: Bool { ["pictureChoice", "wordBank", "exposure"].contains(format) }
+    public var choices: [CourseWordTile]? = nil
+    public var pairs: [CourseExercisePair]? = nil
+    public var prerequisiteIDs: [String]? = nil
+    public var stimulusText: String? = nil
+    public var stimulusCount: Int? = nil
+    public var usesPracticeRenderer: Bool { ["pictureChoice", "choice", "matching", "wordBank", "exposure"].contains(format) }
+}
+
+struct CoursePairDecision: Codable, Equatable {
+    var firstRightID: String
+    var independent: Bool
+    var assisted: Bool
+    var usedElimination: Bool
 }
 
 /// Pure, serializable reducer. Duplicate words are different finite tile instances.
@@ -183,6 +196,11 @@ struct CourseExerciseState: Codable, Equatable {
     var result: Bool?
     var usedHelp = false
     var revision: Int = 0
+    var activePairID: String? = nil
+    var pairChoices: [String: String]? = nil
+    var pairOrder: [String]? = nil
+    // Missing on pre-v5 drafts means unknown history: never infer independence.
+    var pairDecisions: [String: CoursePairDecision]? = [:]
 
     /// Stable within an attempt (including relaunch), varied across new attempts.
     func orderedIDs(_ ids: [String]) -> [String] {
@@ -211,13 +229,63 @@ struct CourseExerciseState: Codable, Equatable {
         selectedIDs.insert(id, at: index); revision += 1
     }
     mutating func select(_ id: String, exercise: CourseExercise) {
-        guard result == nil, exercise.pictures?.contains(where: { $0.id == id }) == true else { return }
+        guard result == nil, (exercise.pictures?.contains(where: { $0.id == id }) == true || exercise.choices?.contains(where: { $0.id == id }) == true) else { return }
         choiceID = id; revision += 1
+    }
+    mutating func selectPair(_ id: String, exercise: CourseExercise) {
+        guard result == nil, exercise.pairs?.contains(where: { $0.id == id }) == true, pairChoices?[id] == nil else { return }
+        activePairID = id; revision += 1
+    }
+    mutating func matchPair(_ id: String, exercise: CourseExercise) {
+        guard result == nil, let left = activePairID, exercise.pairs?.contains(where: { $0.id == id }) == true,
+              pairChoices?.values.contains(id) != true else { return }
+        if pairChoices == nil { pairChoices = [:] }; if pairOrder == nil { pairOrder = [] }
+        if var decisions = pairDecisions {
+            let forced = decisions.keys.filter { $0 != left }.count >= (exercise.pairs?.count ?? 0) - 1
+            if var decision = decisions[left] {
+                decision.assisted = decision.assisted || usedHelp
+                decision.usedElimination = decision.usedElimination || forced
+                decisions[left] = decision
+            } else {
+                decisions[left] = CoursePairDecision(firstRightID: id, independent: !forced, assisted: usedHelp, usedElimination: forced)
+            }
+            pairDecisions = decisions
+        }
+        pairChoices?[left] = id; pairOrder?.append(left); activePairID = nil; revision += 1
+    }
+    mutating func clearPair(_ id: String) {
+        guard result == nil, pairChoices?[id] != nil else { return }
+        pairChoices?.removeValue(forKey: id); pairOrder?.removeAll { $0 == id }; revision += 1
+    }
+    /// Every host must carry forward first-response and assistance history.
+    func preservesEvidence(from old: CourseExerciseState, exercise: CourseExercise) -> Bool {
+        guard !old.usedHelp || usedHelp else { return false }
+        guard exercise.format == "matching" else { return true }
+        guard let previous = old.pairDecisions else { return pairDecisions == nil }
+        guard let decisions = pairDecisions else { return false }
+        for (id, prior) in previous {
+            guard let next = decisions[id], next.firstRightID == prior.firstRightID,
+                  next.independent == prior.independent,
+                  !prior.assisted || next.assisted,
+                  !prior.usedElimination || next.usedElimination else { return false }
+        }
+        let additions = decisions.keys.filter { previous[$0] == nil }
+        guard additions.count <= 1 else { return false }
+        if let id = additions.first {
+            let forced = previous.count >= (exercise.pairs?.count ?? 0) - 1
+            guard old.activePairID == id, old.pairChoices?[id] == nil,
+                  let right = pairChoices?[id], exercise.pairs?.contains(where: { $0.id == right }) == true,
+                  old.pairChoices?.values.contains(right) != true,
+                  decisions[id] == CoursePairDecision(firstRightID: right, independent: !forced, assisted: usedHelp, usedElimination: forced) else { return false }
+        }
+        return true
     }
     func canSubmit(_ exercise: CourseExercise) -> Bool {
         switch exercise.format {
         case "exposure": return true
         case "pictureChoice": return choiceID != nil && exercise.pictures?.contains(where: { $0.id == choiceID }) == true
+        case "choice": return choiceID != nil && exercise.choices?.contains(where: { $0.id == choiceID }) == true
+        case "matching": return !(exercise.pairs ?? []).isEmpty && exercise.pairs?.allSatisfy { pairChoices?[$0.id] != nil } == true
         case "wordBank": return !selectedIDs.isEmpty
         default: return false
         }
@@ -226,7 +294,8 @@ struct CourseExerciseState: Codable, Equatable {
         guard result == nil, canSubmit(exercise) else { return nil }
         switch exercise.format {
         case "exposure": result = true
-        case "pictureChoice": result = choiceID == exercise.correctChoiceID
+        case "pictureChoice", "choice": result = choiceID == exercise.correctChoiceID
+        case "matching": result = exercise.pairs?.allSatisfy { pairChoices?[$0.id] == $0.id } == true
         case "wordBank":
             let tiles = exercise.tiles ?? []
             guard Set(tiles.map(\.id)).count == tiles.count,
@@ -250,4 +319,69 @@ struct CourseExerciseEvidence: Codable {
     var correct: Bool
     var assisted: Bool
     var timestamp: Date
+    var pairEvidence: [CoursePairEvidence]? = nil
+}
+
+
+public struct CourseExercisePair: Codable, Hashable, Identifiable {
+    public var id: String
+    public var label: String
+    public var image: String
+    public var description: String
+    public var vocabularyIDs: [String]
+    public var conceptIDs: [String]
+}
+struct CoursePairEvidence: Codable {
+    var pairID: String
+    var correct: Bool
+    var vocabularyIDs: [String]
+    var conceptIDs: [String]
+    var firstRightID: String? = nil
+    var assisted: Bool? = nil
+    var usedElimination: Bool? = nil
+}
+public struct CourseStarterDefinition: Codable, Hashable {
+    public var id: String
+    public var revision: String
+    public var lessonIDs: [String]
+    public var assessment: CourseAssessmentBlueprint
+}
+public struct CourseAssessmentBlueprint: Codable, Hashable {
+    public var id: String
+    public var title: String
+    public var revision: String
+    public var lessonIDs: [String]
+    public var forms: [String: [CourseAssessmentItem]]
+    public var objectiveIDs: [String]
+    public var passingTotal: Int
+    public var passingPerObjective: Int
+}
+public struct CourseAssessmentItem: Codable, Hashable, Identifiable {
+    public var id: String { card.id }
+    public var card: CourseLessonCard
+    public var objectiveID: String
+    public var remediationLessonIDs: [String]
+}
+struct CourseRouteAssignment: Codable {
+    var revision: String
+    var lessonIDs: [String]
+    var originalContinueLessonID: String?
+    var starterSelected: Bool
+    var returningLearner: Bool
+}
+struct CourseAssessmentAttempt: Codable, Identifiable {
+    var id: String
+    var courseID: String
+    var blueprint: CourseAssessmentBlueprint
+    var formID: String
+    var items: [CourseAssessmentItem]
+    var states: [String: CourseExerciseState]
+    var skippedIDs: [String] = []
+    var index = 0
+    var finalizedAt: Date? = nil
+    var passed: Bool? = nil
+    var activeItem: CourseAssessmentItem? { items.indices.contains(index) ? items[index] : nil }
+    var score: Int { items.filter { !skippedIDs.contains($0.id) && states[$0.id]?.result == true }.count }
+    func score(objectiveID: String) -> Int { items.filter { $0.objectiveID == objectiveID && !skippedIDs.contains($0.id) && states[$0.id]?.result == true }.count }
+    var remediationLessonIDs: [String] { Array(Set(items.filter { skippedIDs.contains($0.id) || states[$0.id]?.result != true }.flatMap(\.remediationLessonIDs))).sorted() }
 }

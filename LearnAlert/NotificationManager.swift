@@ -28,8 +28,10 @@ struct StudyHandoff: Identifiable, Hashable {
 struct CourseHandoff: Identifiable, Hashable {
     let id: String
     var sectionId: String? = nil
+    var assessmentID: String? = nil
 
     static func destination(course: CourseDefinition, snapshot: CourseLearningSnapshot, requestedSectionId: String? = nil, openPath: Bool = false) -> CourseHandoff {
+        if !openPath, let active = snapshot.activeAssessment(courseID: course.id), active.finalizedAt == nil { return CourseHandoff(id: course.id, assessmentID: active.id) }
         guard !openPath, let pending = snapshot.pendingCheckpoint(course: course),
               requestedSectionId == nil || requestedSectionId == pending.id else { return CourseHandoff(id: course.id) }
         return CourseHandoff(id: course.id, sectionId: pending.id)

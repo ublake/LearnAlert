@@ -8,18 +8,20 @@ struct CourseTrailMilestone: Identifiable, Equatable {
     let status: LessonStatus
     let fraction: Double
     let isCheckpoint: Bool
-    var isCurrent: Bool { status == .current || status == .available || status == .reviewDue }
+    var assessmentAccess = false
+    var isCurrent: Bool { !assessmentAccess && (status == .current || status == .available || status == .reviewDue) }
     var needsReview: Bool { status == .reviewDue }
     var percentage: String { "\(Int(min(1, max(0, fraction)) * 100))%" }
     var showsProgress: Bool { isCurrent && !isCheckpoint && (fraction > 0 || needsReview) }
     var symbol: String {
-        status == .completed ? "checkmark" : status == .locked ? "lock.fill" : needsReview ? "arrow.clockwise" : icon
+        status == .completed ? "checkmark" : assessmentAccess ? "arrow.forward" : status == .locked ? "lock.fill" : needsReview ? "arrow.clockwise" : icon
     }
     func tint(_ courseColor: Color) -> Color {
         needsReview ? .yellow : status == .completed ? .green : courseColor
     }
     var detail: String {
         if status == .completed { return isCheckpoint ? "Passed" : "Complete" }
+        if assessmentAccess { return "Access from starter check" }
         if status == .locked { return "Locked" }
         if needsReview { return "Needs review" }
         if isCheckpoint { return "Ready for your quiz" }
@@ -29,10 +31,22 @@ struct CourseTrailMilestone: Identifiable, Equatable {
 
 struct CourseTrailProjection: Equatable {
     let milestones: [CourseTrailMilestone]
-    var focus: CourseTrailMilestone? { milestones.first(where: \.isCurrent) ?? milestones.last }
+    private let preferredFocusID: String?
+    private let routeFallbackID: String?
+    private let routeProgressIDs: Set<String>?
+    var progressMilestones: [CourseTrailMilestone] { milestones.filter { routeProgressIDs?.contains($0.id) ?? true } }
+    var focus: CourseTrailMilestone? {
+        if let preferred = milestones.first(where: { $0.id == preferredFocusID }) { return preferred }
+        if routeProgressIDs != nil { return milestones.first(where: { $0.id == routeFallbackID }) }
+        return milestones.first(where: \.isCurrent) ?? milestones.last
+    }
     var currentUnit: [CourseTrailMilestone] { milestones.filter { $0.unitId == focus?.unitId } }
 
     init(course: CourseDefinition, snapshot: CourseLearningSnapshot) {
+        preferredFocusID = snapshot.currentLesson(course: course)?.id ?? snapshot.pendingCheckpoint(course: course)?.checkpointQuiz?.id
+        let routeIDs = snapshot.routes[course.id]?.lessonIDs
+        routeFallbackID = routeIDs?.last(where: { id in course.units.flatMap(\.lessons).contains { $0.id == id } })
+        routeProgressIDs = routeIDs.map { ids in Set(ids).union(course.units.filter { unit in unit.lessons.contains { ids.contains($0.id) } }.compactMap { $0.checkpointQuiz?.id }) }
         milestones = course.units.flatMap { unit in
             var nodes = unit.lessons.map { lesson in
                 let status = snapshot.status(course: course, lessonId: lesson.id)
@@ -43,7 +57,7 @@ struct CourseTrailProjection: Equatable {
                 }
                 return CourseTrailMilestone(id: lesson.id, unitId: unit.id, title: lesson.title,
                     icon: lesson.nodeType.icon, status: needsReview ? .reviewDue : status,
-                    fraction: status == .completed ? 1 : Double(learned.count) / Double(max(1, lesson.cards.count)), isCheckpoint: false)
+                    fraction: status == .completed ? 1 : Double(learned.count) / Double(max(1, lesson.cards.count)), isCheckpoint: false, assessmentAccess: snapshot.assessmentAccess[course.id]?.contains(lesson.id) == true && status != .completed)
             }
             if let quiz = unit.checkpointQuiz {
                 let passed = snapshot.checkpoints[course.id]?[unit.id]?.passed == true

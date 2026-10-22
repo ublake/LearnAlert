@@ -391,13 +391,13 @@ private struct CourseWordDefinition: View {
 struct CourseExercisePersistence {
     var load: @MainActor () -> CourseExerciseState?
     var save: @MainActor (CourseExerciseState) -> Bool
-    @MainActor static func shared(courseID: String, card: CourseLessonCard) -> Self {
+    @MainActor static func shared(courseID: String, card: CourseLessonCard, store: CourseLearningStore = .shared) -> Self {
         Self(load: {
-            let saved = CourseLearningStore.shared.snapshot().exerciseDrafts[CourseLearningSnapshot.exerciseKey(courseID: courseID, cardID: card.id)]
+            let saved = store.snapshot().exerciseDrafts[CourseLearningSnapshot.exerciseKey(courseID: courseID, cardID: card.id)]
             return saved?.exercise == card.activity?.exercise ? saved?.state : nil
         }, save: { state in
             guard let exercise = card.activity?.exercise else { return false }
-            return CourseLearningStore.shared.transaction {
+            return store.transaction {
                 $0.saveExercise(courseID: courseID, cardID: card.id, exercise: exercise, state: state)
             } ?? false
         })
@@ -420,5 +420,13 @@ extension EnvironmentValues {
     var courseExerciseAttemptReported: (@MainActor (String) -> Void)? {
         get { self[CourseExerciseAttemptReportedKey.self] }
         set { self[CourseExerciseAttemptReportedKey.self] = newValue }
+    }
+}
+
+private struct CourseAssessmentPresentationKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var courseAssessmentPresentation: Bool {
+        get { self[CourseAssessmentPresentationKey.self] }
+        set { self[CourseAssessmentPresentationKey.self] = newValue }
     }
 }

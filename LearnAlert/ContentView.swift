@@ -165,7 +165,10 @@ struct ContentView: View {
                 if showing { selectedTab = 2 }
             }
             .navigationDestination(item: $notificationManager.pendingCourseHandoff) { handoff in
-                if let course = CourseCurriculumCatalog.course(for: handoff.id) { CoursePathView(course: course, initialCheckpointSectionId: handoff.sectionId) }
+                if let course = CourseCurriculumCatalog.course(for: handoff.id) {
+                    if handoff.assessmentID != nil { CourseStarterAssessmentView(course: course, manager: .shared) }
+                    else { CoursePathView(course: course, initialCheckpointSectionId: handoff.sectionId) }
+                }
             }
             .navigationDestination(item: $notificationManager.pendingStudyHandoff) { handoff in
                 if let deck = decks.first(where: { $0.id == handoff.deckId }) {

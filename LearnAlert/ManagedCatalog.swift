@@ -362,10 +362,12 @@ final class ManagedCatalogStore: ObservableObject {
     private let cacheURL: URL
     private let defaults: UserDefaults?
     private let session: URLSession
+    private let developmentPreview: Bool
 
-    init(directory: URL? = nil, defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"), session: URLSession = .shared) {
+    init(directory: URL? = nil, defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"), session: URLSession = .shared, developmentPreview: Bool = false) {
         self.defaults = defaults
         self.session = session
+        self.developmentPreview = developmentPreview
         let base = directory ?? ManagedCatalogMedia.directory.deletingLastPathComponent()
         cacheURL = base.appendingPathComponent("managed-catalog-v1.json")
         reloadFromDisk()
@@ -423,7 +425,7 @@ final class ManagedCatalogStore: ObservableObject {
     }
 
     func refresh(force: Bool = false) async {
-        guard !refreshing, force || lastAttempt.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
+        guard !developmentPreview, !refreshing, force || lastAttempt.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
         refreshing = true
         lastAttempt = Date()
         defer { refreshing = false }
@@ -558,5 +560,31 @@ enum ManagedCatalogMedia {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)
         try asset.contentType.write(to: url.appendingPathExtension("mime"), atomically: true, encoding: .utf8)
+    }
+}
+
+
+extension ManagedCatalogStore {
+    /// Development-only isolated host calls this; production cache is never used.
+    func installStarterPreview(baseCourse: CourseDefinition, componentData: Data) throws {
+        guard developmentPreview, baseCourse.id == "spanish-course",
+              let component = try JSONSerialization.jsonObject(with: componentData) as? [String: Any],
+              let unit = component["unit"] as? [String: Any], let learning = component["learning"] as? [String: Any],
+              var document = try JSONSerialization.jsonObject(with: JSONEncoder().encode(baseCourse)) as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
+        var units = document["units"] as? [[String: Any]] ?? []
+        guard !units.contains(where: { $0["id"] as? String == unit["id"] as? String }) else { throw CocoaError(.coderReadCorrupt) }
+        units.append(unit); document["units"] = units
+        var guides = document["guides"] as? [String: Any] ?? [:]
+        if let id = unit["id"] as? String { guides[id] = [Any]() }; document["guides"] = guides
+        var graph = document["learning"] as? [String: Any] ?? [:]
+        for field in ["vocabulary", "concepts"] {
+            var entries = graph[field] as? [String: Any] ?? [:]
+            entries.merge(learning[field] as? [String: Any] ?? [:]) { _, pilot in pilot }; graph[field] = entries
+        }
+        graph["starter"] = learning["starter"]; document["learning"] = graph
+        let envelope: [String: Any] = ["id": baseCourse.id, "kind": "course", "revision": 1, "document": document]
+        let data = try JSONSerialization.data(withJSONObject: envelope)
+        let item = ManagedCatalogItem(id: baseCourse.id, kind: "course", title: baseCourse.title, revision: 1, updatedAt: 0, contentURL: "development-preview:spanish-course")
+        try install(.init(schemaVersion: 1, revision: "development-preview-pilot-1", initialized: true, items: [item]), documents: [baseCourse.id: data])
     }
 }

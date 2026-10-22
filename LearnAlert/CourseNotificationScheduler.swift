@@ -40,7 +40,12 @@ struct CourseNotificationProgress: Equatable {
     }
 
     static func nextLearningCard(course: CourseDefinition, snapshot: CourseLearningSnapshot, excluding: Set<String>) -> CourseLessonCard? {
-        let batch = snapshot.batch(course: course, count: 60, randomized: true)
+        let taught = Set(snapshot.exerciseEvidence.values.filter { $0.courseID == course.id && $0.mode == "exposure" }.map(\.cardID))
+            .union(snapshot.progress[course.id]?.values.flatMap(\.masteredCardIds) ?? [])
+        let batch = snapshot.batch(course: course, count: 60, randomized: true).filter { card in
+            guard let prerequisites = card.activity?.exercise?.prerequisiteIDs else { return true }
+            return !card.isExposure && prerequisites.allSatisfy { taught.contains($0) }
+        }
         return batch.first { !excluding.contains($0.id) }
             ?? batch.first { $0.activity?.practiceGroup != nil }
     }
@@ -102,6 +107,9 @@ enum CourseNotificationScheduler {
         guard let data = defaults?.data(forKey: "course_alert_plan") else { return nil }
         return try? JSONDecoder().decode(CourseAlertPlan.self, from: data)
     }
+    static func shouldStopWhenMastered(course: CourseDefinition, snapshot: CourseLearningSnapshot, enabled: Bool) -> Bool {
+        enabled && snapshot.isFullyMastered(course: course)
+    }
     static func clear() { defaults?.removeObject(forKey: "course_alert_plan"); defaults?.synchronize() }
     static func continuePractice(courseId: String, checkpointUnitId: String) {
         defaults?.set(checkpointUnitId, forKey: "course_checkpoint_practice_\(courseId)")
@@ -134,7 +142,7 @@ enum CourseNotificationScheduler {
         if let error = CourseLearningStore.shared.lastError { throw NSError(domain: "CourseLearning", code: 1, userInfo: [NSLocalizedDescriptionKey: error]) }
         let progress = CourseNotificationProgress(course: course, snapshot: snapshot)
         let continuingPractice = isContinuingPractice(courseId: course.id, checkpointUnitId: progress.checkpointUnitId)
-        if plan.stopWhenMastered == true && snapshot.isFullyMastered(course: course) {
+        if shouldStopWhenMastered(course: course, snapshot: snapshot, enabled: plan.stopWhenMastered == true) {
             center.removePendingNotificationRequests(withIdentifiers: pending.filter { $0.content.userInfo["courseId"] as? String == course.id }.map(\.identifier))
             clear()
             defaults?.set(true, forKey: "extensionDidStopAlerts")

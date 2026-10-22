@@ -35,7 +35,7 @@ struct CoursePracticeView: View {
     var lessonId: String? = nil
     var checkpointUnit: CourseUnit? = nil
     let onDismiss: () -> Void
-    @ObservedObject private var manager = CourseProgressManager.shared
+    @ObservedObject var manager = CourseProgressManager.shared
     @State private var index = 0
     @State private var presentationId = UUID()
     @State private var answered = false
@@ -111,7 +111,7 @@ struct CoursePracticeView: View {
                                 onReadingRequested: { stopPlayback(); prefersReading = true },
                                 onListeningRequested: { prefersReading = false }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)-\(presentationId)")
-                                .environment(\.courseExercisePersistence, .shared(courseID: course.id, card: practiceCards[index]))
+                                .environment(\.courseExercisePersistence, .shared(courseID: course.id, card: practiceCards[index], store: manager.learningStore))
                                 .environment(\.courseExerciseAttemptReported, { exerciseAttemptID = $0 })
                         }.padding(.horizontal, 24).padding(.vertical, 24)
                             .tint(Color(hex: course.colorHex))
@@ -138,7 +138,7 @@ struct CoursePracticeView: View {
             .onDisappear { stopPlayback() }
             .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
             .fullScreenCover(isPresented: $reviewMisses) {
-                CourseCheckpointRemediation(course: course, cards: missedCards) { reviewMisses = false }
+                CourseCheckpointRemediation(course: course, cards: missedCards, onDismiss: { reviewMisses = false }, manager: manager)
             }
         }
     }
@@ -154,7 +154,7 @@ struct CoursePracticeView: View {
                     Text(finished ? "Session complete" : "\(index + 1) of \(practiceCards.count)")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                if let currentUnit {
+                if let currentUnit, !CourseSectionGuides.topics(course: course, unit: currentUnit).isEmpty {
                     Button { stopPlayback(); guideUnit = currentUnit } label: {
                         Image(systemName: "book.closed").frame(width: 44, height: 44)
                     }.accessibilityLabel("Section guide")
@@ -265,14 +265,14 @@ struct CoursePracticeView: View {
         if savesSession {
             guard manager.recordPracticeAnswer(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id,
                 sessionId: session, cardId: card.id, correct: correct, exerciseAttemptID: exerciseAttemptID) else {
-                pendingGrade = correct; saveError = CourseLearningStore.shared.lastError ?? "Your progress couldn’t be saved. Please try again."; return
+                pendingGrade = correct; saveError = manager.learningStore.lastError ?? "Your progress couldn’t be saved. Please try again."; return
             }
             savedAnswers[card.id] = correct
         } else if !isCheckpoint, let unit = course.units.first(where: { $0.lessons.contains(where: { $0.cards.contains(where: { $0.id == card.id }) }) }),
            let lesson = unit.lessons.first(where: { $0.cards.contains(where: { $0.id == card.id }) }) {
             let success = manager.recordCardAnswer(courseId: course.id, sectionId: unit.id, lessonId: lesson.id,
                 cardId: card.id, isCorrect: correct, eventToken: "\(session)-\(card.id)", exerciseAttemptID: exerciseAttemptID)
-            if !success { pendingGrade = correct; saveError = CourseLearningStore.shared.lastError ?? "This lesson is locked. Return to the path."; return }
+            if !success { pendingGrade = correct; saveError = manager.learningStore.lastError ?? "This lesson is locked. Return to the path."; return }
         }
         pendingGrade = nil; saveError = nil
         if !correct { missed.append(card.id) }
@@ -283,7 +283,7 @@ struct CoursePracticeView: View {
     private func restoreSession() {
         guard savesSession else { orderedIds = cards.shuffled().map(\.id); loaded = true; return }
         guard let restored = manager.resumePractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id) else {
-            saveError = CourseLearningStore.shared.lastError ?? "This practice is unavailable. Return to the path."
+            saveError = manager.learningStore.lastError ?? "This practice is unavailable. Return to the path."
             return
         }
         orderedIds = restored.cardIds
@@ -304,16 +304,16 @@ struct CoursePracticeView: View {
         stopPlayback()
         presentationId = UUID()
         if !savesSession, practiceCards[index].activity?.exercise != nil {
-            guard CourseLearningStore.shared.transaction({
+            guard manager.learningStore.transaction({
                 return $0.acknowledgeRenderedExercise(courseID: course.id, card: practiceCards[index], attemptID: exerciseAttemptID)
             }) == true else { saveError = "Continue couldn’t be saved. Try again."; return }
         }
         if savesSession {
             if practiceCards[index].activity?.exercise?.usesPracticeRenderer == true {
-                guard CourseLearningStore.shared.transaction({
+                guard manager.learningStore.transaction({
                     $0.continueExercise(courseID: course.id, lessonID: lessonId, checkpointID: checkpointUnit?.id, sessionID: session, cardID: practiceCards[index].id, attemptID: exerciseAttemptID)
                 }) == true else {
-                    saveError = CourseLearningStore.shared.lastError ?? "Continue couldn’t be saved. Try again."; return
+                    saveError = manager.learningStore.lastError ?? "Continue couldn’t be saved. Try again."; return
                 }
             }
             answered = false
@@ -327,7 +327,7 @@ struct CoursePracticeView: View {
         stopPlayback()
         if savesSession {
             guard let completion = manager.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id, sessionId: session) else {
-                saveError = CourseLearningStore.shared.lastError ?? "Your result couldn’t be saved. Please try again."
+                saveError = manager.learningStore.lastError ?? "Your result couldn’t be saved. Please try again."
                 // The final answer is already saved; retry only finalization.
                 index = max(0, practiceCards.count - 1); answered = true
                 return
@@ -350,7 +350,8 @@ private struct CourseCheckpointRemediation: View {
     let course: CourseDefinition
     let cards: [CourseLessonCard]
     let onDismiss: () -> Void
+    @ObservedObject var manager = CourseProgressManager.shared
     var body: some View {
-        CoursePracticeView(course: course, title: "Targeted practice", cards: cards, onDismiss: onDismiss)
+        CoursePracticeView(course: course, title: "Targeted practice", cards: cards, onDismiss: onDismiss, manager: manager)
     }
 }

@@ -467,6 +467,7 @@ struct CoursePracticeExercisePanel: View {
     let checkpoint: Bool
     let onAnswer: (Bool) -> Void
     @Environment(\.courseNotificationCompact) private var notification
+    @Environment(\.courseAssessmentPresentation) private var assessment
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.courseExercisePersistence) private var persistence
@@ -482,10 +483,12 @@ struct CoursePracticeExercisePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(exercise.format == "exposure" ? "Discover" : exercise.format == "pictureChoice" ? "Choose a picture" : "Build a sentence")
+            Text(exercise.format == "exposure" ? "Discover" : exercise.format == "pictureChoice" ? "Choose a picture" : exercise.format == "choice" ? "Choose an answer" : exercise.format == "matching" ? "Match" : "Build a phrase")
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             Text(card.question).font(immersive ? .title2.bold() : .headline).fixedSize(horizontal: false, vertical: true)
             if exercise.format == "pictureChoice" { pictureGrid }
+            else if exercise.format == "choice" { choiceList }
+            else if exercise.format == "matching" { matchingBoard }
             else if exercise.format == "wordBank" { wordBank }
             else {
                 if let image = card.resolvedFieldMedia["prompt"]?.image {
@@ -495,22 +498,27 @@ struct CoursePracticeExercisePanel: View {
                 if !card.hint.isEmpty { Text(card.hint).font(.body).foregroundStyle(.secondary) }
             }
             if state.result == nil {
-                if !checkpoint, let rule = card.activity?.rule, !rule.isEmpty, exercise.format != "exposure" {
+                if !checkpoint, !assessment, let rule = card.activity?.rule, !rule.isEmpty, exercise.format != "exposure" {
                     DisclosureGroup("Why?", isExpanded: $help) { Text(rule).font(.callout).fixedSize(horizontal: false, vertical: true) }
                         .onChange(of: help) { _, expanded in
                             if expanded && !state.usedHelp { update { $0.usedHelp = true; $0.revision += 1 } }
                         }
                 }
-                Button(exercise.format == "exposure" ? "Ready to practice" : "Check") {
+                Button(assessment ? "Save answer" : exercise.format == "exposure" ? "Ready to practice" : "Check") {
                     update { _ = $0.submit(exercise) }
                     if let result = state.result, error == nil { reportAttempt?(state.attemptID); onAnswer(result) }
                 }.buttonStyle(.borderedProminent).controlSize(.large)
                     .frame(minHeight: 44).disabled(!state.canSubmit(exercise))
+            } else if assessment {
+                Label("Answer saved", systemImage: "checkmark.circle").font(.headline)
             } else if let correct = state.result {
                 Label(exercise.format == "exposure" ? "Ready" : correct ? "Correct" : "Let’s remember this one",
                       systemImage: exercise.format == "exposure" ? "book.closed" : correct ? "checkmark.circle.fill" : "arrow.counterclockwise")
                     .font(.headline).foregroundStyle(correct ? Color.green : .orange)
-                if !correct { Text(card.correctAnswer).font(.body.weight(.semibold)) }
+                if !correct {
+                    if exercise.format == "matching" { ForEach(exercise.pairs ?? []) { pair in Text("\(pair.label) → \(pair.description)").font(.body.weight(.semibold)) } }
+                    else { Text(card.correctAnswer).font(.body.weight(.semibold)) }
+                }
             }
             if let error {
                 Text(error).font(.callout).foregroundStyle(.red)
@@ -540,6 +548,61 @@ struct CoursePracticeExercisePanel: View {
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(state.choiceID == picture.id ? Color.accentColor : Color.primary.opacity(0.18), lineWidth: state.choiceID == picture.id ? 2 : 1))
                     }.buttonStyle(.plain).disabled(state.result != nil)
                         .accessibilityLabel(picture.description).accessibilityAddTraits(state.choiceID == picture.id ? .isSelected : [])
+                }
+            }
+        }
+    }
+    @ViewBuilder private var stimulus: some View {
+        if let image = card.resolvedFieldMedia["prompt"]?.image {
+            let count = min(2, max(1, exercise.stimulusCount ?? 1))
+            HStack(spacing: 16) {
+                ForEach(0..<count, id: \.self) { _ in CourseVocabularyImage(name: image, label: exercise.stimulusText ?? card.hint, compact: true) }
+            }.accessibilityElement(children: .ignore).accessibilityLabel(exercise.stimulusText ?? card.hint)
+        }
+        if let text = exercise.stimulusText, !text.isEmpty, !card.question.localizedCaseInsensitiveContains(text) { Text(text).font(.body).foregroundStyle(.secondary) }
+    }
+    private var choiceList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            stimulus
+            ForEach(state.orderedIDs((exercise.choices ?? []).map(\.id)), id: \.self) { id in
+                if let choice = exercise.choices?.first(where: { $0.id == id }) {
+                    Button { update { $0.select(id, exercise: exercise) } } label: {
+                        HStack(alignment: .top) {
+                            Text(choice.text).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            if state.choiceID == id { Image(systemName: "checkmark.circle.fill") }
+                        }.padding(16).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                            .background(Color.primary.opacity(state.choiceID == id ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain).disabled(state.result != nil).accessibilityAddTraits(state.choiceID == id ? .isSelected : [])
+                }
+            }
+        }
+    }
+    private var matchingBoard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Tap a Spanish label, then its picture. Tap a placed match to change it.").font(.caption).foregroundStyle(.secondary)
+            ForEach(exercise.pairs ?? []) { pair in
+                Button {
+                    update { if $0.pairChoices?[pair.id] != nil { $0.clearPair(pair.id) } else { $0.selectPair(pair.id, exercise: exercise) } }
+                } label: {
+                    HStack {
+                        Text(pair.label).font(.body.weight(.semibold))
+                        Spacer()
+                        if let right = state.pairChoices?[pair.id], let match = exercise.pairs?.first(where: { $0.id == right }) { Text(match.description).font(.body) }
+                        else if state.activePairID == pair.id { Image(systemName: "arrow.down") }
+                    }.padding(16).frame(minHeight: 48).background(Color.primary.opacity(state.activePairID == pair.id ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: 14))
+                }.buttonStyle(.plain).disabled(state.result != nil).accessibilityAddTraits(state.activePairID == pair.id ? .isSelected : [])
+            }
+            CourseWrappingLayout {
+                ForEach(state.orderedIDs((exercise.pairs ?? []).map(\.id)), id: \.self) { id in
+                    if let pair = exercise.pairs?.first(where: { $0.id == id }), state.pairChoices?.values.contains(id) != true {
+                        Button { update { $0.matchPair(id, exercise: exercise) } } label: {
+                            VStack(spacing: 8) {
+                                if !voiceOver, let image = CourseVocabularyImages.image(named: pair.image) { Image(uiImage: image).resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true) }
+                                else { Text(pair.description).font(.body).fixedSize(horizontal: false, vertical: true) }
+                            }.padding(12).frame(minWidth: 100, minHeight: 48).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+                        }.buttonStyle(.plain).disabled(state.result != nil || state.activePairID == nil).accessibilityLabel(pair.description)
+                    }
                 }
             }
         }
