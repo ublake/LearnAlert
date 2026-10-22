@@ -80,6 +80,7 @@ struct DeckStudyView: View {
                     QuizResultsView(
                     deckID: deck.id,
                     appearanceSeed: deck.appearanceSeed,
+                    colorHex: deck.colorHex,
                     deckName: deck.name,
                     score: correctCount * 30,
                     correctCount: correctCount,
@@ -811,6 +812,7 @@ private struct QuizUtilityControls: View {
 private struct QuizResultsView: View {
     let deckID: UUID
     let appearanceSeed: Int64?
+    let colorHex: String
     let deckName: String
     let score: Int
     let correctCount: Int
@@ -845,7 +847,8 @@ private struct QuizResultsView: View {
                 stableID: deckID,
                 appearanceSeed: appearanceSeed,
                 cardCount: totalCount,
-                isCelebrating: true
+                isCelebrating: true,
+                colorHex: colorHex
             )
             .frame(width: 154, height: 138)
 

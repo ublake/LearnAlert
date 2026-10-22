@@ -8,6 +8,7 @@ struct CreateDeckView: View {
 
     @State private var deckName = ""
     @State private var selectedColorHex = ""
+    @State private var previewID = UUID()
     @FocusState private var isNameFocused: Bool
 
     private let availableColors = [
@@ -102,9 +103,14 @@ struct CreateDeckView: View {
 
                         // 2. Deck Accent Color Selection
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("ACCENT COLOR")
-                                .font(.caption.bold())
-                                .foregroundStyle(LearnAlertStyle.textSecondary)
+                            HStack {
+                                Text("ACCENT COLOR")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                                Spacer()
+                                DeckCreatureView(stableID: previewID, appearanceSeed: nil, cardCount: 10, colorHex: effectiveColorHex)
+                                    .frame(width: 44, height: 36)
+                            }
 
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 14) {

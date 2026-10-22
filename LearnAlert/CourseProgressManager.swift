@@ -33,6 +33,7 @@ final class CourseProgressManager: ObservableObject {
     @Published private(set) var scopedSRSRecords: [String: [String: CourseCardSRSRecord]] = [:]
     @Published private(set) var processedEventTokens: Set<String> = []
     @Published private(set) var pinnedItemIds: [String] = []
+    @Published private(set) var libraryItemIds: [String] = []
     @Published private(set) var unpinnedExplicitIds: Set<String> = []
 
     init(defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
@@ -81,6 +82,7 @@ final class CourseProgressManager: ObservableObject {
 
         // Load pinned state
         self.pinnedItemIds = defaults?.stringArray(forKey: "home_pinned_item_ids") ?? []
+        self.libraryItemIds = defaults?.stringArray(forKey: "home_library_item_ids") ?? []
         let unpinnedList = defaults?.stringArray(forKey: "home_unpinned_explicit_ids") ?? []
         self.unpinnedExplicitIds = Set(unpinnedList)
     }
@@ -142,6 +144,20 @@ final class CourseProgressManager: ObservableObject {
     func movePinned(from source: IndexSet, to destination: Int) {
         pinnedItemIds.move(fromOffsets: source, toOffset: destination)
         savePinnedState()
+    }
+
+    func moveLibraryItem(_ source: String, over target: String, available: [String]) {
+        // Reordering never changes an item's pin state.
+        guard source != target, available.contains(source), available.contains(target),
+              isPinned(id: source) == isPinned(id: target) else { return }
+        if isPinned(id: source) {
+            pinnedItemIds = HomeLibraryOrdering.moving(source, over: target, in: pinnedItemIds)
+            savePinnedState()
+        } else {
+            let current = HomeLibraryOrdering.ordered(available, saved: libraryItemIds)
+            libraryItemIds = HomeLibraryOrdering.moving(source, over: target, in: current)
+            sharedDefaults?.set(libraryItemIds, forKey: "home_library_item_ids")
+        }
     }
 
     private func savePinnedState() {
@@ -233,12 +249,6 @@ final class CourseProgressManager: ObservableObject {
         StudyEngine.shared.endMinute = endMinute
         StudyEngine.shared.customVolume = dailyCardsTarget
         StudyEngine.shared.volumeSelectionIndex = 5
-
-        // Automatically pin when first started unless user explicitly unpinned it
-        let coursePinKey = "course:\(course.id)"
-        if !unpinnedExplicitIds.contains(coursePinKey) && !pinnedItemIds.contains(coursePinKey) {
-            pin(id: coursePinKey)
-        }
 
         updateSchedulePointer(course: course)
         return deck

@@ -10,6 +10,23 @@ struct DeckCreatureAppearance: Equatable, Sendable {
         var color: Color {
             Color(red: red, green: green, blue: blue)
         }
+
+        init(red: Double, green: Double, blue: Double) {
+            self.red = red; self.green = green; self.blue = blue
+        }
+
+        init?(hex: String) {
+            let digits = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+            guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+            self.init(red: Double((value >> 16) & 255) / 255,
+                      green: Double((value >> 8) & 255) / 255,
+                      blue: Double(value & 255) / 255)
+        }
+
+        func lightened(by amount: Double) -> Self {
+            Self(red: red + (1 - red) * amount, green: green + (1 - green) * amount,
+                 blue: blue + (1 - blue) * amount)
+        }
     }
 
     struct Palette: Equatable, Sendable {
@@ -38,9 +55,17 @@ struct DeckCreatureAppearance: Equatable, Sendable {
     let tabOnLeadingEdge: Bool
     let bookmarkOnLeadingEdge: Bool
 
-    static func make(stableID: String, savedSeed: Int64?) -> Self {
+    static func make(stableID: String, savedSeed: Int64?, colorHex: String? = nil) -> Self {
         var generator = DeckCreatureGenerator(stableID: stableID, savedSeed: savedSeed)
-        let palette = palettes[generator.nextInt(upperBound: palettes.count)]
+        // Always consume the palette draw so changing color preserves the face and stack.
+        let originalPalette = palettes[generator.nextInt(upperBound: palettes.count)]
+        let palette: Palette
+        if let colorHex, let color = RGB(hex: colorHex) {
+            palette = Palette(front: color, middle: color.lightened(by: 0.40), back: color.lightened(by: 0.75),
+                              accent: originalPalette.accent, ink: originalPalette.ink)
+        } else {
+            palette = originalPalette
+        }
         let frontTilt = generator.nextDouble(in: -1.3...1.3)
         var tilts = [frontTilt]
         var offsets = [0.0]
@@ -139,25 +164,27 @@ struct DeckCreatureView: View {
     let cardCount: Int
     var isCelebrating = false
     var compactStack = false
+    let colorHex: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("deckCreaturesHaveFaces") private var deckCreaturesHaveFaces = false
     @State private var bounceOffset: CGFloat = 0
 
-    init(stableID: UUID, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false) {
-        self.init(stableID: stableID.uuidString.lowercased(), appearanceSeed: appearanceSeed, cardCount: cardCount, isCelebrating: isCelebrating, compactStack: compactStack)
+    init(stableID: UUID, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false, colorHex: String? = nil) {
+        self.init(stableID: stableID.uuidString.lowercased(), appearanceSeed: appearanceSeed, cardCount: cardCount, isCelebrating: isCelebrating, compactStack: compactStack, colorHex: colorHex)
     }
 
-    init(stableID: String, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false) {
+    init(stableID: String, appearanceSeed: Int64?, cardCount: Int, isCelebrating: Bool = false, compactStack: Bool = false, colorHex: String? = nil) {
         self.stableID = stableID
         self.appearanceSeed = appearanceSeed
         self.cardCount = max(cardCount, 0)
         self.isCelebrating = isCelebrating
         self.compactStack = compactStack
+        self.colorHex = colorHex
     }
 
     private var appearance: DeckCreatureAppearance {
-        DeckCreatureAppearance.make(stableID: stableID, savedSeed: appearanceSeed)
+        DeckCreatureAppearance.make(stableID: stableID, savedSeed: appearanceSeed, colorHex: colorHex)
     }
 
     private var growth: Double {

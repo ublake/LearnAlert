@@ -298,7 +298,7 @@ struct HomeLibraryView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
 
-    @State private var draggedDeck: Deck?
+    @State private var draggedLibraryID: String?
     @State private var isSearchExpanded = false
     @State private var showingAIComposer = false
     @State private var showingAlertSettings = false
@@ -524,48 +524,60 @@ struct HomeLibraryView: View {
         .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
     }
 
-    @ViewBuilder
+    private var libraryIDs: [String] {
+        enrolledCourses.map { "course:" + $0.id } + ordinaryDecks.map { "deck:" + $0.id.uuidString }
+    }
+
+    private var unpinnedItems: [HomeLibraryItem] {
+        let items = unpinnedCourses.map(HomeLibraryItem.course) + unpinnedDecks.map(HomeLibraryItem.deck)
+        let lookup = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ordered = HomeLibraryOrdering.ordered(items.map(\.id), saved: progressManager.libraryItemIds).compactMap { lookup[$0] }
+        if homeTutorialStep > 0, let tutorialID = activeTutorialDeck?.id {
+            let id = "deck:" + tutorialID.uuidString
+            return ordered.filter { $0.id == id } + ordered.filter { $0.id != id }
+        }
+        return ordered
+    }
+
     private var pinnedLibraryCards: some View {
-        ForEach(pinnedItems) { item in
+        ForEach(pinnedItems) { item in libraryCard(item, pinned: true) }
+    }
+
+    @ViewBuilder
+    private func libraryCard(_ item: HomeLibraryItem, pinned: Bool) -> some View {
+        Group {
             switch item {
             case .course(let course):
-                let isTargeted = engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId
                 HomeCourseCard(
-                    course: course,
-                    isPinned: true,
-                    isTargeted: isTargeted,
-                    onContinue: {
-                        resumeCourse(course)
-                    },
-                    onOpenOverview: {
-                        selectedCourseForOverview = course
-                    },
-                    schedule: {
-                        scheduleCourse(course)
-                    },
-                    togglePin: {
-                        progressManager.togglePin(id: "course:\(course.id)")
-                    },
-                    unenroll: {
-                        coursePendingUnenroll = course
-                    }
-                )
+                    course: course, isPinned: pinned,
+                    isTargeted: engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId,
+                    onContinue: { resumeCourse(course) },
+                    onOpenOverview: { selectedCourseForOverview = course },
+                    schedule: { scheduleCourse(course) },
+                    togglePin: { progressManager.togglePin(id: item.id) },
+                    unenroll: { coursePendingUnenroll = course }
+                ).disabled(homeTutorialStep > 0).allowsHitTesting(homeTutorialStep == 0)
             case .deck(let deck):
-                let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
+                let highlighted = !pinned && homeTutorialStep == 1 && deck.id == activeTutorialDeck?.id
+                let dimmed = !pinned && homeTutorialStep == 1 && !highlighted
                 HomeStudyCard(
-                    deck: deck,
-                    isPinned: true,
-                    isTargeted: isTargeted,
-                    isTutorialHighlighted: false,
-                    isTutorialActive: homeTutorialStep > 0,
-                    onTapped: nil,
+                    deck: deck, isPinned: pinned,
+                    isTargeted: engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString),
+                    isTutorialHighlighted: highlighted, isTutorialActive: homeTutorialStep > 0,
+                    onTapped: { if highlighted { homeTutorialStep = 2 } },
                     schedule: { quickSchedule(deck, fromDeckCard: true) },
-                    togglePin: { progressManager.togglePin(id: "deck:\(deck.id.uuidString)") },
+                    togglePin: { progressManager.togglePin(id: item.id) },
                     shuffleAppearance: { shuffleAppearance(for: deck) },
                     delete: { deckPendingDeletion = deck }
                 )
+                .opacity(dimmed ? 0.18 : 1).blur(radius: dimmed ? 2 : 0)
+                .disabled(homeTutorialStep > 0 && !highlighted)
+                .allowsHitTesting(homeTutorialStep == 0 || highlighted)
             }
         }
+        .modifier(HomeLibraryDragModifier(id: item.id, enabled: homeTutorialStep == 0, dragging: $draggedLibraryID,
+            accepts: { source in libraryIDs.contains(source) && progressManager.isPinned(id: source) == pinned },
+            move: { source, target in progressManager.moveLibraryItem(source, over: target, available: libraryIDs) }))
     }
 
     @ViewBuilder
@@ -621,61 +633,8 @@ struct HomeLibraryView: View {
                         .disabled(homeTutorialStep > 0)
                         .allowsHitTesting(homeTutorialStep == 0)
 
-                    Group {
-                        // Unpinned Courses
-                        ForEach(unpinnedCourses) { course in
-                            let isTargeted = engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId
-                            HomeCourseCard(
-                                course: course,
-                                isPinned: false,
-                                isTargeted: isTargeted,
-                                onContinue: {
-                                    resumeCourse(course)
-                                },
-                                onOpenOverview: {
-                                    selectedCourseForOverview = course
-                                },
-                                schedule: {
-                                    scheduleCourse(course)
-                                },
-                                togglePin: {
-                                    progressManager.togglePin(id: "course:\(course.id)")
-                                },
-                                unenroll: {
-                                    coursePendingUnenroll = course
-                                }
-                            )
-                            .disabled(homeTutorialStep > 0)
-                            .allowsHitTesting(homeTutorialStep == 0)
-                        }
-
-                        // Unpinned Decks
-                        ForEach(unpinnedDecks) { deck in
-                            let isTargeted = engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString)
-                            let isHighlightedInTour = homeTutorialStep == 1 && (deck.id == activeTutorialDeck?.id)
-                            let isOtherDeckInStep1 = homeTutorialStep == 1 && !isHighlightedInTour
-
-                            HomeStudyCard(
-                                deck: deck,
-                                isPinned: false,
-                                isTargeted: isTargeted,
-                                isTutorialHighlighted: isHighlightedInTour,
-                                isTutorialActive: homeTutorialStep > 0,
-                                onTapped: {
-                                    if homeTutorialStep == 1 && isHighlightedInTour {
-                                        homeTutorialStep = 2
-                                    }
-                                },
-                                schedule: { quickSchedule(deck, fromDeckCard: true) },
-                                togglePin: { progressManager.togglePin(id: "deck:\(deck.id.uuidString)") },
-                                shuffleAppearance: { shuffleAppearance(for: deck) },
-                                delete: { deckPendingDeletion = deck }
-                            )
-                            .opacity(isOtherDeckInStep1 ? 0.18 : 1.0)
-                            .blur(radius: isOtherDeckInStep1 ? 2.0 : 0)
-                            .disabled(homeTutorialStep > 0 && !isHighlightedInTour)
-                            .allowsHitTesting(homeTutorialStep == 0 || isHighlightedInTour)
-                        }
+                    ForEach(unpinnedItems) { item in
+                        libraryCard(item, pinned: false)
                     }
                     .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
                     .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
@@ -1800,7 +1759,8 @@ private struct HomeStudyCard: View {
                             DeckCreatureView(
                                 stableID: deck.id,
                                 appearanceSeed: deck.appearanceSeed,
-                                cardCount: summary.cardCount
+                                cardCount: summary.cardCount,
+                                colorHex: deck.colorHex
                             )
                             .frame(width: 96, height: 88)
 
@@ -2007,15 +1967,15 @@ private struct HomeCourseCard: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(LearnAlertStyle.appAccentForeground)
                     .frame(width: 42, height: 42)
-                    .background(LearnAlertStyle.appAccent.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
             }.buttonStyle(.plain).accessibilityLabel("Open \(course.language) decks")
-            Menu {
-                Button(isPinned ? "Unpin" : "Pin", action: togglePin)
-                Button("Remove from library", role: .destructive, action: unenroll)
-            } label: { Image(systemName: "ellipsis").frame(width: 30, height: 44) }
+
         }.padding(.horizontal, 14).padding(.vertical, 12)
             .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
+            .contextMenu {
+                Button(action: togglePin) { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
+                Button("Remove from library", systemImage: "xmark.circle", role: .destructive, action: unenroll)
+            }
     }
 }
 
@@ -2935,19 +2895,6 @@ private enum DeckFileImport {
             result.append(option)
         }
         return result
-    }
-}
-
-struct DeckDropDelegate: DropDelegate {
-    let item: Deck; var decks: [Deck]; @Binding var draggedItem: Deck?; let context: ModelContext
-    func performDrop(info: DropInfo) -> Bool { draggedItem = nil; return true }
-    func dropEntered(info: DropInfo) {
-        guard let draggedItem, draggedItem.id != item.id else { return }
-        guard let from = decks.firstIndex(of: draggedItem), let to = decks.firstIndex(of: item) else { return }
-        var updatedDecks = decks
-        updatedDecks.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        for (index, deck) in updatedDecks.enumerated() { deck.orderIndex = index }
-        try? context.save()
     }
 }
 

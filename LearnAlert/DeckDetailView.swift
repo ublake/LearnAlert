@@ -522,7 +522,7 @@ struct DeckDetailView: View {
         VStack(spacing: 9) {
             HStack(spacing: 8) {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: snapshot.cardCount,
-                                 compactStack: DeckCreatureAppearance.visibleLayerCount(for: snapshot.cardCount) >= 7)
+                                 compactStack: DeckCreatureAppearance.visibleLayerCount(for: snapshot.cardCount) >= 7, colorHex: deck.colorHex)
                     .frame(width: 34, height: 28).accessibilityHidden(true)
                 compactStat("Cards", value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
                 compactStat("Due", value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
