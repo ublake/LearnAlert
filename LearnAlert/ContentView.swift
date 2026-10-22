@@ -311,7 +311,6 @@ struct HomeLibraryView: View {
     @State private var deckPendingDeletion: Deck?
     @State private var homeAlertMessage: String?
     @State private var showingQuickScheduleTipToast = false
-    @State private var showingPinnedReorderSheet = false
     @State private var selectedCourseStudy: HomeCourseStudySelection?
     @State private var selectedCourseForOverview: CourseDefinition?
     @State private var coursePendingUnenroll: CourseDefinition?
@@ -597,21 +596,6 @@ struct HomeLibraryView: View {
                 .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
                 .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
                 .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
-
-                if pinnedItems.count > 1 && homeTutorialStep == 0 {
-                    Button {
-                        showingPinnedReorderSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Reorder")
-                                .font(.custom("Poppins-Medium", size: 12))
-                        }
-                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                    }
-                    .buttonStyle(.plain)
-                }
             }
             .padding(.horizontal, 20)
 
@@ -844,13 +828,6 @@ struct HomeLibraryView: View {
         }
         .sheet(isPresented: $showingAIComposer) {
             GeneratedQuizImportView()
-        }
-        .sheet(isPresented: $showingPinnedReorderSheet) {
-            PinnedReorderSheet(
-                progressManager: progressManager,
-                enrolledCourses: enrolledCourses,
-                decks: ordinaryDecks
-            )
         }
         .navigationDestination(item: $selectedCourseForOverview) { course in
             CoursePathView(course: course)
@@ -1976,72 +1953,6 @@ private struct HomeCourseCard: View {
                 Button(action: togglePin) { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
                 Button("Remove from library", systemImage: "xmark.circle", role: .destructive, action: unenroll)
             }
-    }
-}
-
-// MARK: - PinnedReorderSheet
-private struct PinnedReorderSheet: View {
-    @ObservedObject var progressManager: CourseProgressManager
-    let enrolledCourses: [CourseDefinition]
-    let decks: [Deck]
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(progressManager.pinnedItemIds, id: \.self) { itemId in
-                    HStack(spacing: 12) {
-                        Image(systemName: "line.3.horizontal")
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                        if itemId.hasPrefix("course:") {
-                            let courseId = String(itemId.dropFirst("course:".count))
-                            if let course = enrolledCourses.first(where: { $0.id == courseId }) {
-                                Text(course.flagEmoji)
-                                    .font(.system(size: 20))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(course.title)
-                                        .font(.custom("Poppins-Medium", size: 14))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    Text("Course")
-                                        .font(.custom("Poppins-Regular", size: 11))
-                                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                                }
-                            }
-                        } else if itemId.hasPrefix("deck:") {
-                            let deckId = String(itemId.dropFirst("deck:".count))
-                            if let deck = decks.first(where: { $0.id.uuidString == deckId }) {
-                                Image(systemName: "rectangle.stack.fill")
-                                    .foregroundStyle(LearnAlertStyle.sky)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(deck.name)
-                                        .font(.custom("Poppins-Medium", size: 14))
-                                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    Text("\(deck.cardCount) cards")
-                                        .font(.custom("Poppins-Regular", size: 11))
-                                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                                }
-                            }
-                        }
-
-                        Spacer()
-                    }
-                    .padding(.vertical, 4)
-                }
-                .onMove { indices, newOffset in
-                    progressManager.movePinned(from: indices, to: newOffset)
-                }
-            }
-            .listStyle(.insetGrouped)
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Reorder Pinned")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
     }
 }
 
