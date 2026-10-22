@@ -166,8 +166,7 @@ struct ContentView: View {
             }
             .navigationDestination(item: $notificationManager.pendingCourseHandoff) { handoff in
                 if let course = CourseCurriculumCatalog.course(for: handoff.id) {
-                    if handoff.assessmentID != nil { CourseStarterAssessmentView(course: course, manager: .shared) }
-                    else { CoursePathView(course: course, initialCheckpointSectionId: handoff.sectionId) }
+                    CoursePathView(course: course)
                 }
             }
             .navigationDestination(item: $notificationManager.pendingStudyHandoff) { handoff in
@@ -276,7 +275,7 @@ private enum HomeAlertTarget {
     var detail: String {
         switch self {
         case .deck(let deck): "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards"
-        case .course(let course): "\(course.totalLessonsCount) lessons"
+        case .course(let course): "\(LanguageDeckProjection.topics(course).count) topic decks"
         }
     }
 
@@ -332,12 +331,15 @@ struct HomeLibraryView: View {
         let timestamp = Date()
     }
 
+    @AppStorage("languageCollections") private var languageCollections = ""
+
     private var ordinaryDecks: [Deck] {
-        allDecks.filter { $0.deckType != "Course" }
+        allDecks.filter { $0.deckType != "Course" && !($0.sourceKind?.hasPrefix("language") ?? false) }
     }
 
     private var enrolledCourses: [CourseDefinition] {
-        progressManager.allEnrolledCourses
+        let ids = Set(languageCollections.split(separator: "|").map(String.init))
+        return CourseCurriculumCatalog.courses.filter { ids.contains($0.id) || progressManager.isEnrolled(in: $0.id) }
     }
 
     private enum HomeLibraryItem: Identifiable, Equatable {
@@ -899,16 +901,17 @@ struct HomeLibraryView: View {
                 onDismiss: { selectedCourseStudy = nil })
         }
         .confirmationDialog(
-            "Unenroll from \(coursePendingUnenroll?.title ?? "this course")?",
+            "Remove \(coursePendingUnenroll?.language ?? "this collection") from your library?",
             isPresented: Binding(
                 get: { coursePendingUnenroll != nil },
                 set: { if !$0 { coursePendingUnenroll = nil } }
             ),
             titleVisibility: .visible
         ) {
-            Button("Unenroll", role: .destructive) {
+            Button("Remove", role: .destructive) {
                 if let course = coursePendingUnenroll {
                     progressManager.unenroll(courseId: course.id)
+                    languageCollections = languageCollections.split(separator: "|").filter { $0 != Substring(course.id) }.joined(separator: "|")
                     coursePendingUnenroll = nil
                 }
             }
@@ -1987,83 +1990,28 @@ private struct HomeCourseCard: View {
     private var trail: CourseTrailProjection { CourseTrailProjection(course: course, snapshot: progressManager.learningSnapshot) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Button(action: onOpenOverview) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        Text(course.flagEmoji).font(.system(size: 28))
-                            .frame(width: 48, height: 48)
-                            .background(Color(hex: course.colorHex).opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(course.title).font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
-                            Text(course.levelTag).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 0)
-                        if isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Pinned") }
+                HStack(spacing: 12) {
+                    Text(course.flagEmoji).font(.largeTitle)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(course.language).font(.title3.weight(.semibold)).foregroundStyle(.primary)
+                        Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text(trail.focus?.status == .completed ? "Course complete" : trail.focus?.title ?? "Learning path")
-                        .font(.subheadline).foregroundStyle(LearnAlertStyle.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    Spacer()
+                    if isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
+                }.contentShape(Rectangle())
             }.buttonStyle(.plain)
-            VStack(alignment: .leading, spacing: 8) {
-                let statsLayout = dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-                    : AnyLayout(HStackLayout(spacing: 8))
-                statsLayout {
-                    Text(completionPercent, format: .percent.precision(.fractionLength(0)))
-                        .font(.caption.weight(.semibold))
-                    if !dynamicTypeSize.isAccessibilitySize { Spacer() }
-                    if let lesson = currentLesson {
-                        let answered = progressManager.answeredCardsCount(course: course, lesson: lesson)
-                        if answered > 0 {
-                            Text("\(answered) of \(lesson.cards.count) answered")
-                                .font(.caption)
-                        }
-                    }
-                }
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-                if isPinned {
-                    CourseMiniTrail(milestones: trail.currentUnit, color: Color(hex: course.colorHex))
-                } else {
-                    ProgressView(value: completionPercent).tint(Color(hex: course.colorHex))
-                }
+            HStack {
+                Button("Open decks", action: onContinue).buttonStyle(.borderedProminent)
+                Spacer()
+                Menu {
+                    Button(isPinned ? "Unpin" : "Pin", action: togglePin)
+                    Button("Remove from library", role: .destructive, action: unenroll)
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
             }
-            HStack(spacing: 12) {
-                Button(action: onContinue) {
-                    HStack(spacing: 8) {
-                        Text(trail.focus?.isCheckpoint == true ? (trail.focus?.needsReview == true ? "Review checkpoint" : trail.focus?.status == .completed ? "Review" : "View checkpoint") : trail.focus?.needsReview == true || trail.focus?.status == .completed ? "Review" : "Continue")
-                        Image(systemName: "arrow.right").font(.caption.weight(.bold))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(LearnAlertStyle.appAccentInk)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(LearnAlertStyle.appAccent, in: RoundedRectangle(cornerRadius: 14))
-                    .lightModeOutline(cornerRadius: 14)
-                }.buttonStyle(.plain)
-                Button(action: schedule) {
-                    Image(systemName: isTargeted ? "bell.badge.fill" : "bell")
-                        .foregroundStyle(isTargeted ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-                        .frame(width: 48, height: 48)
-                        .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                        .lightModeOutline(cornerRadius: 14)
-                }.buttonStyle(.plain)
-                    .accessibilityLabel(isTargeted ? "Course alerts active" : "Schedule \(course.title)")
-            }
-        }.padding(16)
-        .appCardSurface()
-        .contextMenu {
-            Button(action: togglePin) {
-                Label(isPinned ? "Unpin Course" : "Pin Course", systemImage: isPinned ? "pin.slash" : "pin")
-            }
-            Button(action: schedule) {
-                Label("Schedule Alerts", systemImage: "bell.badge")
-            }
-            Button(role: .destructive, action: unenroll) {
-                Label("Unenroll", systemImage: "xmark.circle")
-            }
-        }
+        }.padding(16).background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
     }
 }
 

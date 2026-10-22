@@ -153,9 +153,9 @@ class StudyEngine: ObservableObject {
             Task {
                 defer { restoringCourse = false }
                 do {
-                    scheduledDates = try await CourseNotificationScheduler.replenish()
-                    savedDatesData = try JSONEncoder().encode(scheduledDates)
-                    if scheduledDates.isEmpty, plan.expiresAt != nil || plan.stopWhenMastered == true { stopAlerts() }
+                    if let course = CourseCurriculumCatalog.course(for: plan.courseId) {
+                        _ = try await startAlerts(for: course)
+                    } else { stopAlerts() }
                 } catch { print("Course alerts could not be restored: \(error.localizedDescription)") }
             }
             return
@@ -205,10 +205,8 @@ class StudyEngine: ObservableObject {
     /// not rebuild their SwiftData cards on the main thread.
     @discardableResult
     func startAlerts(for course: CourseDefinition, courseReviewOnly: Bool = false) async throws -> Int {
-        guard let enrollment = CourseProgressManager.shared.enrollment(for: course.id) else {
-            throw NSError(domain: "LearnAlert.Course", code: 404, userInfo: [NSLocalizedDescriptionKey: "Start this course before scheduling its alerts."])
-        }
-        return try await startAlerts(for: course, enrollment: enrollment, courseReviewOnly: courseReviewOnly)
+        let deck = try LanguageTopicStore.collection(course: course, context: context)
+        return try await startAlerts(for: deck, courseReviewOnly: false)
     }
 
     private func startAlerts(for course: CourseDefinition, enrollment: CourseEnrollment, courseReviewOnly: Bool) async throws -> Int {
@@ -250,11 +248,6 @@ class StudyEngine: ObservableObject {
 
     @discardableResult
     func startAlerts(for deck: Deck, section: DeckSection? = nil, courseReviewOnly: Bool = false) async throws -> Int {
-        let manager = CourseProgressManager.shared
-        if let course = manager.allEnrolledCourses.first(where: { manager.enrollment(for: $0.id)?.linkedDeckId == deck.id.uuidString }),
-           let enrollment = manager.enrollment(for: course.id) {
-            return try await startAlerts(for: course, enrollment: enrollment, courseReviewOnly: courseReviewOnly)
-        }
         selectSettings(for: deck)
         CourseNotificationScheduler.clear()
         DailyDeckAlertScheduler.clear()

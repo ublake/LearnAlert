@@ -655,7 +655,7 @@ struct CardInteractivePreviewSheet: View {
                         .coursezyCard()
 
                         // Options / Answer
-                        if card.cardType == .multipleChoice {
+                        if card.cardType == .multipleChoice || card.cardType == .fillBlank && !card.options.isEmpty {
                             CardMediaChoiceList(options: card.options, fields: card.fieldMedia,
                                 correctIndex: card.resolvedCorrectOptionIndex, selection: selectedAnswer,
                                 isGraded: selectedAnswer != nil) { selectedAnswer = $0 }

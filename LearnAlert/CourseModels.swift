@@ -179,6 +179,7 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
     public let guides: [String: [CourseGuideTopic]]?
     public let guidePresentation: [String: CourseGuidePresentation]?
     public let learning: CourseLearningGraph?
+    public let presentation: String?
 
     public var totalLessonsCount: Int {
         units.reduce(0) { $0 + $1.lessons.count }
@@ -203,7 +204,8 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         units: [CourseUnit],
         guides: [String: [CourseGuideTopic]]? = nil,
         guidePresentation: [String: CourseGuidePresentation]? = nil,
-        learning: CourseLearningGraph? = nil
+        learning: CourseLearningGraph? = nil,
+        presentation: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -218,6 +220,7 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         self.guides = guides
         self.guidePresentation = guidePresentation
         self.learning = learning
+        self.presentation = presentation
     }
 }
 
@@ -812,5 +815,144 @@ extension CourseLessonCard {
             conceptTag: try c.decodeIfPresent(String.self, forKey: .conceptTag), explanation: try c.decodeIfPresent(String.self, forKey: .explanation),
             acceptedAnswers: try c.decodeIfPresent([String].self, forKey: .acceptedAnswers), readingPrompt: try c.decodeIfPresent(String.self, forKey: .readingPrompt),
             previousQuestion: try c.decodeIfPresent(String.self, forKey: .previousQuestion), activity: try c.decodeIfPresent(CourseActivity.self, forKey: .activity))
+    }
+}
+
+/// A read-only adapter for old and managed course documents. The user-facing
+/// model is now a collection of ordinary topic decks, without gates or lectures.
+@MainActor
+enum LanguageDeckProjection {
+    struct Topic: Identifiable {
+        let id: String
+        let title: String
+        let cards: [CourseLessonCard]
+    }
+    private struct Word { let text: String; let image: String }
+    private static var cached: [String: (source: CourseDefinition, topics: [Topic])] = [:]
+
+    static func topics(_ course: CourseDefinition) -> [Topic] {
+        if let value = cached[course.id], value.source == course { return value.topics }
+        if course.presentation == "deck_collection" {
+            let topics = course.units.flatMap(\.lessons).filter { !$0.cards.isEmpty }.map { Topic(id: $0.id, title: $0.title, cards: $0.cards) }
+            cached[course.id] = (course, topics)
+            return topics
+        }
+        let all = course.units.flatMap(\.lessons).flatMap(\.cards)
+        var words: [Word] = []
+        func addWord(_ text: String, _ image: String?) {
+            guard let image, !image.isEmpty, !text.isEmpty, text.count < 60,
+                  !words.contains(where: { $0.text == text || $0.image == image }) else { return }
+            words.append(Word(text: text, image: image))
+        }
+        for sense in (course.learning?.vocabulary ?? [:]).sorted(by: { $0.key < $1.key }).map(\.value) {
+            addWord([sense.article, sense.lemma].compactMap { $0 }.joined(separator: " "), sense.image)
+        }
+        let bundled = CourseCurriculumCatalog.bundledCourses.first { $0.language == course.language }?.units.flatMap(\.lessons).flatMap(\.cards) ?? []
+        let articles = ["manzana":"la", "plátano":"el", "naranja":"la", "uvas":"las", "gato":"el", "perro":"el", "conejo":"el", "pájaro":"el", "café":"el", "agua":"el", "arroz":"el", "leche":"la", "libro":"el", "mochila":"la", "silla":"la", "reloj":"el"]
+        for card in all + bundled {
+            if let image = card.promptImageName, !card.correctAnswer.isEmpty {
+                let word = course.language == "Spanish" && articles[card.correctAnswer] != nil ? articles[card.correctAnswer]! + " " + card.correctAnswer : card.correctAnswer
+                addWord(word, image)
+            }
+        }
+        for card in all + bundled {
+            if let item = card.vocabularyItem { addWord(item.surface, card.promptImageName) }
+            for (index, image) in card.optionImageNames.enumerated() where card.options.indices.contains(index) { addWord(card.options[index], image) }
+        }
+        let answers = Array(Set(all.map(\.correctAnswer).filter { !$0.isEmpty && $0.count < 90 })).sorted()
+        func distractors(_ answer: String) -> [String] {
+            let korean = answer.unicodeScalars.contains { (0xAC00...0xD7AF).contains($0.value) || (0x3130...0x318F).contains($0.value) }
+            let related = answers.filter { value in
+                value != answer && value.unicodeScalars.contains { (0xAC00...0xD7AF).contains($0.value) || (0x3130...0x318F).contains($0.value) } == korean
+            }
+            return [answer] + Array(related.prefix(3))
+        }
+        func regular(_ card: CourseLessonCard) -> CourseLessonCard? {
+            if card.activity?.kind == .trace { return nil }
+            var question = card.isListeningQuestion ? CourseAudioPolicy.readingQuestion(for: card) : card.question
+            var options = card.options, answer = card.correctAnswer, type = card.cardType
+            var media = card.resolvedFieldMedia.filter { $0.key != "hint" }
+            var index = card.correctOptionIndex
+            var left = card.matchingLeftItems, right = card.matchingRightItems
+            if let exercise = card.activity?.exercise {
+                switch exercise.format {
+                case "exposure": return nil
+                case "pictureChoice":
+                    let pictures = exercise.pictures ?? []
+                    guard pictures.count >= 2, let correct = pictures.firstIndex(where: { $0.id == exercise.correctChoiceID }) else { return nil }
+                    options = pictures.map { _ in "" }; index = correct; answer = ""; type = "multipleChoice"
+                    for (i, picture) in pictures.enumerated() { media["option:\(i)"] = .init(image: picture.image) }
+                    question = exercise.stimulusText ?? question
+                case "choice":
+                    let choices = exercise.choices ?? []
+                    guard choices.count >= 2, let correct = choices.firstIndex(where: { $0.id == exercise.correctChoiceID }) else { return nil }
+                    options = choices.map(\.text); index = correct; answer = options[correct]; type = "multipleChoice"
+                case "matching", "textMatching":
+                    let pairs = exercise.pairs ?? []
+                    guard pairs.count >= 2 else { return nil }
+                    left = pairs.map(\.label); right = pairs.map { exercise.format == "textMatching" || $0.image.isEmpty ? $0.description : "" }; type = "matching"
+                    for (i, pair) in pairs.enumerated() where exercise.format != "textMatching" && !pair.image.isEmpty { media["right:\(i)"] = .init(image: pair.image) }
+                case "wordBank":
+                    guard let order = exercise.acceptedOrders?.first, !order.isEmpty else { return nil }
+                    answer = order.joined(separator: " "); options = distractors(answer); index = 0; type = "multipleChoice"
+                default: return nil
+                }
+            } else if card.activity?.kind == .teach || card.id.hasSuffix("-guide") { return nil }
+            if type == "matching" || card.activity?.kind == .matchPairs { type = "matching" }
+            else if ["fillBlank", "fill_blank", "listeningWrite"].contains(type) {
+                if options.count < 2 { options = distractors(answer) }
+                guard options.count >= 2 else { return nil }
+                index = index ?? options.firstIndex(of: answer)
+                type = question.range(of: #"_{2,}|\{blank\}|\[blank\]"#, options: .regularExpression) != nil ? "fillBlank" : "multipleChoice"
+            } else if options.count >= 2 { type = "multipleChoice"; index = index ?? options.firstIndex(of: answer) }
+            else if ["vocabulary", "tapReveal", "tap_reveal"].contains(type) {
+                guard answer.count < 90, !answer.isEmpty else { return nil }
+                options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice"
+            } else { options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice" }
+            guard type == "matching" ? !left.isEmpty && left.count == right.count : index != nil else { return nil }
+            return CourseLessonCard(id: card.id, question: question, options: options, correctAnswer: answer,
+                cardType: type, matchingLeftItems: left, matchingRightItems: right,
+                fieldMedia: media, correctOptionIndex: index)
+        }
+        let result: [Topic] = course.units.flatMap { unit in
+            unit.lessons.compactMap { lesson in
+                var cards = lesson.cards.compactMap(regular)
+                let existingIDs = Set(cards.map(\.id))
+                let pairs = cards.flatMap { card in zip(card.matchingLeftItems, card.matchingRightItems).map { ($0, $1) } }.filter { !$0.0.isEmpty && !$0.1.isEmpty }
+                for card in Array(cards) where card.cardType == "matching" {
+                    for (i, pair) in zip(card.matchingLeftItems, card.matchingRightItems).prefix(8).enumerated() where !pair.0.isEmpty && !pair.1.isEmpty {
+                        for reverse in [false, true] {
+                            let answer = reverse ? pair.0 : pair.1
+                            let alternatives = Array(Set(pairs.map { reverse ? $0.0 : $0.1 })).sorted().filter { $0 != answer }
+                            let choices = [answer] + Array(alternatives.prefix(3))
+                            let id = card.id + "-pair-\(i)-" + (reverse ? "reverse" : "forward")
+                            if choices.count >= 2 && !existingIDs.contains(id) {
+                                cards.append(.init(id: id, question: reverse ? pair.1 : pair.0, options: choices, correctAnswer: answer, correctOptionIndex: 0))
+                            }
+                        }
+                    }
+                }
+                let senseIDs = Set(lesson.cards.flatMap { $0.activity?.exercise?.vocabularyIDs ?? [] })
+                let lexical = senseIDs.compactMap { course.learning?.vocabulary[$0] }.map { [$0.article, $0.lemma].compactMap { $0 }.joined(separator: " ") }
+                let terms = Set(lesson.cards.flatMap { $0.options + $0.matchingLeftItems + $0.matchingRightItems + [$0.correctAnswer] })
+                let lessonWords = words.filter { word in
+                    let plain = word.text.replacingOccurrences(of: #"^(el|la|los|las) "#, with: "", options: .regularExpression)
+                    return lexical.contains(word.text) || terms.contains(word.text) || terms.contains(plain) || lesson.cards.contains { $0.vocabularyItem?.surface == word.text }
+                }
+                for word in lessonWords.prefix(8) where words.count >= 4 {
+                    let imageKey = word.image.replacingOccurrences(of: #"[^A-Za-z0-9-]"#, with: "-", options: .regularExpression)
+                    let choices = [word] + Array(words.filter { $0.text != word.text && $0.image != word.image }.prefix(3))
+                    guard choices.count == 4 else { continue }
+                    let images = Dictionary(uniqueKeysWithValues: choices.enumerated().map { ("option:\($0.offset)", CardFieldMedia(image: $0.element.image)) })
+                    if !existingIDs.contains(lesson.id + "-visual-" + imageKey + "-picture") { cards.append(.init(id: lesson.id + "-visual-" + imageKey + "-picture", question: word.text, options: choices.map { _ in "" }, correctAnswer: "", fieldMedia: images, correctOptionIndex: 0)) }
+                    if !existingIDs.contains(lesson.id + "-visual-" + imageKey + "-word") { cards.append(.init(id: lesson.id + "-visual-" + imageKey + "-word", question: "", options: choices.map(\.text), correctAnswer: word.text, fieldMedia: ["prompt": .init(image: word.image)], correctOptionIndex: 0)) }
+                }
+                guard !cards.isEmpty else { return nil }
+                return Topic(id: lesson.id, title: lesson.nodeType == .checkpoint ? "Review" : lesson.title, cards: cards)
+            }
+        }
+        if cached.count > 12 { cached.removeAll() }
+        cached[course.id] = (course, result)
+        return result
     }
 }

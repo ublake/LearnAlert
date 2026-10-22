@@ -132,7 +132,7 @@ struct PremadeDecksView: View {
         ) {
             DiscoverCategoryTile(
                 title: "Language courses",
-                subtitle: "Structured language learning.",
+                subtitle: "Quiz and flashcard collections.",
                 badge: "\(CourseCurriculumCatalog.courses.count) available",
                 symbol: "character.bubble.fill",
                 color: StudyStudioStyle.blue,
@@ -163,7 +163,7 @@ struct PremadeDecksView: View {
             Text("Courses & exam decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
-                    searchRow(title: course.title, subtitle: "Guided language course", symbol: "character.book.closed", action: "Open")
+                    searchRow(title: course.title, subtitle: "Language topic decks", symbol: "character.book.closed", action: "Open")
                 }.buttonStyle(.plain)
             }
             ForEach(decks) { deck in
@@ -248,7 +248,7 @@ private struct CoursesCatalogListView: View {
                     Text("Language Courses")
                         .font(.custom("Poppins-Bold", size: 24))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Structured tracks with spaced repetition & lock-screen alerts")
+                    Text("Small topic decks. Pick one and start practising.")
                         .font(.custom("Poppins-Regular", size: 12))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -317,7 +317,7 @@ private struct LanguageCourseHeroCard: View {
                         .lineLimit(2)
 
                     HStack(spacing: 8) {
-                        Text("\(course.totalLessonsCount) lessons • ~\(course.estimatedHours) hrs")
+                        Text("\(LanguageDeckProjection.topics(course).count) topic decks")
                             .font(.custom("Poppins-Medium", size: 10))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
 

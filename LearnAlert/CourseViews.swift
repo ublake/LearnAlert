@@ -654,7 +654,7 @@ private struct PlanSummaryRow: View {
 
 // MARK: - 3. Course Path View (Interactive Scrollable Journey)
 
-struct CoursePathView: View {
+struct LegacyCoursePathView: View {
     private let originalCourse: CourseDefinition
     @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
     var course: CourseDefinition { managedCatalog.course(for: originalCourse.id) ?? originalCourse }

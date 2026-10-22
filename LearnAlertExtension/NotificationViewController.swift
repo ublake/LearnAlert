@@ -343,7 +343,7 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Question Box & Prompt Image
-                if activeCardType != "images" && activeCardType != "anki" {
+                if activeCardType != "images" && activeCardType != "anki" && !(activeCardType == "fill_blank" && !activeOptions.isEmpty) {
                     VStack(spacing: 12) {
                         CardFieldContent(text: activeQuestion, media: activeMedia["prompt"] ?? .init(), imageHeight: 160)
                             .font(.system(size: isCompactLayout ? 16 : 18, weight: .bold))
@@ -430,6 +430,14 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Card Type Presentation: Fill in the Blank
+                else if activeCardType == "fill_blank" && !activeOptions.isEmpty {
+                    VStack(spacing: 12) {
+                        if let prompt = activeMedia["prompt"], !prompt.isEmpty { CardFieldContent(media: prompt, imageHeight: 120) }
+                        CardBlankChoicePanel(prompt: activeQuestion, options: activeOptions,
+                            answerIndex: activeCorrectIndex, fields: activeMedia,
+                            isGraded: isGraded, onGrade: { gradeCard(isCorrect: $0) }).id(activeCardId)
+                    }.environment(\.colorScheme, isLight ? .light : .dark)
+                }
                 else if activeCardType == "fill_blank" && !activeCorrectAnswer.isEmpty {
                     VStack(spacing: 14) {
                         HStack(spacing: 10) {
@@ -1284,7 +1292,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         AlertTimelineStore.shared.delivered(notification)
         Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
-        let userInfo = content.userInfo
+        var userInfo = content.userInfo
 
         if let courseId = userInfo["courseId"] as? String {
             let profile = userInfo["courseDeliveryProfile"] as? String
@@ -1306,23 +1314,20 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 }.padding(24)))
                 return
             }
-            isCourseContent = true
-            fitContent(540)
-            let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false, openApp: { [weak self] sectionId in
-                let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-                defaults?.set(courseId, forKey: "handoffCourseId")
-                defaults?.set(sectionId, forKey: "handoffCourseSectionId")
-                defaults?.set(sectionId == nil, forKey: "handoffCourseOpenPath")
-                defaults?.synchronize()
-                self?.extensionContext?.performNotificationDefaultAction()
-            }, mediaPlaybackChanged: { [weak self] playing in
-                if playing { self?.extensionContext?.mediaPlayingStarted() }
-                else { self?.extensionContext?.mediaPlayingPaused() }
-            }, contentHeightChanged: { [weak self] height, preserveDrawingHeight in
-                self?.fitContent(height, preserveDrawingHeight: preserveDrawingHeight)
-            })
-            show(AnyView(courseView.id(course.id + ":" + notification.request.identifier)))
-            return
+            // Old course alerts are rendered and graded by the same deck UI.
+            do {
+                let context = ModelContext(SharedDatabase.shared.container)
+                let deck = try LanguageTopicStore.collection(course: course, context: context)
+                if let card = deck.cards.min(by: { $0.nextReviewDate < $1.nextReviewDate }) {
+                    userInfo["deckId"] = deck.id.uuidString; userInfo["cardId"] = card.id.uuidString
+                    userInfo["deckName"] = deck.name; userInfo["cardType"] = card.cardType.rawValue
+                    userInfo["question"] = card.question; userInfo["options"] = card.options
+                    userInfo["correctAnswer"] = card.correctAnswer
+                }
+            } catch {
+                show(AnyView(Text("Open LearnAlert to load your language decks.").padding(24)))
+                return
+            }
         }
 
         isCourseContent = false

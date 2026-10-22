@@ -547,7 +547,7 @@ private struct QuizSessionView: View {
                                 .frame(maxWidth: .infinity, alignment: .center)
                         }
 
-                        if cardType != .images && cardType != .anki && !question.isEmpty {
+                        if cardType != .images && cardType != .anki && !(cardType == .fillBlank && !options.isEmpty) && !question.isEmpty {
                             Text(question)
                                 .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
                                 .foregroundStyle(QuizTheme.ink)
@@ -576,7 +576,9 @@ private struct QuizSessionView: View {
                                 onGrade: onGrade
                             )
                         case .fillBlank:
-                            if correctAnswer.isEmpty {
+                            if !options.isEmpty {
+                                CardBlankChoicePanel(prompt: question, options: options, answerIndex: correctOptionIndex ?? options.firstIndex(of: correctAnswer), fields: fieldMedia, isGraded: isGraded, onGrade: onGrade)
+                            } else if correctAnswer.isEmpty {
                                 QuizRevealCard(answer: "", media: fieldMedia["answer"] ?? .init(), isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
                             } else {
                                 QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)

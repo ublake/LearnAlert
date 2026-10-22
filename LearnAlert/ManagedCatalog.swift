@@ -377,12 +377,9 @@ private struct ManagedCatalogCache: Codable {
 /// required to study; a failed refresh never mixes old lessons with new checkpoint data.
 @MainActor
 final class ManagedCatalogStore: ObservableObject {
-    static let shared = ManagedCatalogStore(profile: CourseDeliveryContracts.profile, replacementAllowed: { previous, candidate in
-        let snapshot = CourseLearningStore.shared.snapshot()
-        guard CourseLearningStore.shared.lastError == nil else { return false }
-        return snapshot.permitsCourseReplacement(previous: previous, candidate: candidate)
-    })
-    static let legacyShared = ManagedCatalogStore()
+    // Language collections use the ordinary, compatible catalog documents.
+    static let shared = ManagedCatalogStore()
+    static let legacyShared = shared
     static let practiceV1Shared = ManagedCatalogStore(profile: "practice-v1")
     @Published private(set) var revision: String?
     @Published private(set) var lastError: String?

@@ -8,6 +8,7 @@ import SwiftUI
 
 import Foundation
 import SwiftData
+import CryptoKit
 
 enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     case vocabulary = "vocabulary"
@@ -47,7 +48,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
         case .multipleChoice: "Practice with 4 options and immediate feedback"
         case .tapReveal: "Front-and-back flip with self assessment"
         case .vocabulary: "Word, pronunciation, and dictionary definition"
-        case .fillBlank: "Type the missing keyword in context"
+        case .fillBlank: "Fill a sentence by typing or choosing an answer"
         case .matching: "Connect paired terms and definitions"
         case .images: "Review one picture or reveal an image on the back"
         case .anki: "Imported Anki templates, formatting, and media"
@@ -440,6 +441,17 @@ class Flashcard {
             return
         }
         recordAggregateReview(wasCorrect: wasCorrect, at: Date())
+        // Whole-collection alerts and topic study share the same authored card.
+        // Copy review state only; each deck keeps its own editable presentation.
+        if deck?.sourceKind == "languageTopic", let courseID = deck?.sourceId,
+           let sourceID = sourceCourseCardID, let context = modelContext {
+            let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.sourceCourseCardID == sourceID })
+            for sibling in (try? context.fetch(descriptor)) ?? [] where sibling.id != id && sibling.deck?.sourceKind == "languageTopic" && sibling.deck?.sourceId == courseID {
+                sibling.reviewCount = reviewCount; sibling.correctCount = correctCount
+                sibling.masteryScore = masteryScore; sibling.lastReviewedDate = lastReviewedDate
+                sibling.streak = streak; sibling.longestStreak = longestStreak
+            }
+        }
     }
 
     private func recordAggregateReview(wasCorrect: Bool, at date: Date) {
@@ -814,5 +826,59 @@ public enum NotificationLayoutMode: String, CaseIterable, Identifiable {
         case .automatic: "Adaptive standard layout with spacious padding"
         case .compact: "Reduced padding for fast, focused study"
         }
+    }
+}
+
+@MainActor
+enum LanguageTopicStore {
+    private static func type(for value: String) -> FlashcardType {
+        switch value {
+        case "matching": return .matching
+        case "fillBlank", "fill_blank": return .fillBlank
+        case "vocabulary": return .vocabulary
+        case "tapReveal", "tap_reveal": return .tapReveal
+        default: return .multipleChoice
+        }
+    }
+    static func collection(course: CourseDefinition, context: ModelContext) throws -> Deck {
+        let cards = LanguageDeckProjection.topics(course).flatMap(\.cards)
+        return try open(course: course, topic: .init(id: "all", title: course.language, cards: cards), context: context)
+    }
+    static func open(course: CourseDefinition, topic: LanguageDeckProjection.Topic, context: ModelContext, learningSnapshot: CourseLearningSnapshot? = nil) throws -> Deck {
+        let source = "language:\(course.id):\(topic.id)"
+        let existing = try context.fetch(FetchDescriptor<Deck>())
+        let found = existing.first(where: { $0.sourcePremadeID == source })
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let fingerprint = "language-v1:" + SHA256.hash(data: try encoder.encode(topic.cards)).map { String(format: "%02x", $0) }.joined()
+        if let found, found.sourceText == fingerprint { return found }
+        let deck = found ?? Deck(name: topic.title, colorHex: course.colorHex, deckType: "Quiz")
+        let savedCards = Dictionary(deck.cards.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { a, _ in a })
+        deck.name = topic.title; deck.colorHex = course.colorHex
+        deck.sourcePremadeID = source; deck.sourceKind = "languageTopic"; deck.sourceId = course.id
+        let old = existing.filter { $0.sourcePremadeID == "course:\(course.id)" || $0.sourceKind == "languageTopic" && $0.sourceId == course.id }.flatMap(\.cards)
+        let learning = learningSnapshot ?? CourseLearningStore.shared.snapshot()
+        let progress = Dictionary(old.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { a, b in a.reviewCount >= b.reviewCount ? a : b })
+        deck.cards = topic.cards.enumerated().map { index, definition in
+            let card = savedCards[definition.id] ?? Flashcard(question: definition.question, options: definition.options, correctAnswer: definition.correctAnswer,
+                cardType: type(for: definition.cardType),
+                matchingLeftItems: definition.matchingLeftItems, matchingRightItems: definition.matchingRightItems)
+            card.question = definition.question; card.options = definition.options; card.correctAnswer = definition.correctAnswer; card.hint = ""
+            card.cardType = type(for: definition.cardType)
+            card.matchingLeftItems = definition.matchingLeftItems; card.matchingRightItems = definition.matchingRightItems
+            card.sourceCourseCardID = definition.id; card.orderIndex = index; card.fieldMedia = definition.resolvedFieldMedia; card.correctOptionIndex = definition.correctOptionIndex
+            if savedCards[definition.id] == nil, let previous = progress[definition.id] {
+                card.reviewCount = previous.reviewCount; card.correctCount = previous.correctCount; card.masteryScore = previous.masteryScore
+                card.lastReviewedDate = previous.lastReviewedDate; card.streak = previous.streak; card.longestStreak = previous.longestStreak
+            }
+            if savedCards[definition.id] == nil, let record = learning.srsRecord(courseId: course.id, cardId: definition.id), record.reviewCount > card.reviewCount {
+                card.reviewCount = record.reviewCount; card.correctCount = record.correctCount; card.masteryScore = record.masteryScore
+                card.lastReviewedDate = record.lastReviewedDate; card.streak = record.streak; card.longestStreak = max(card.longestStreak, record.streak)
+            }
+            return card
+        }
+        deck.sourceText = fingerprint
+        if found == nil { context.insert(deck) }
+        do { try context.save() } catch { if found == nil { context.delete(deck) }; throw error }
+        return deck
     }
 }

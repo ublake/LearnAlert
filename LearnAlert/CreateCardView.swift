@@ -12,6 +12,8 @@ struct CreateCardView: View {
     @State private var selectedType: FlashcardType?
     @State private var question = ""
     @State private var answer = ""
+    @State private var blankUsesChoices = false
+    private var hasChoiceAnswers: Bool { selectedType == .multipleChoice || selectedType == .fillBlank && blankUsesChoices }
     @State private var options = ["", "", "", ""]
     @State private var correctOptionIndex = 0
     @State private var visibleOptionCount = 4
@@ -39,6 +41,8 @@ struct CreateCardView: View {
     private var isFormValid: Bool {
         guard let selectedType, !isLoadingImage else { return false }
         switch selectedType {
+        case .fillBlank where blankUsesChoices:
+            return hasContent("prompt", question) && question.range(of: #"_{2,}|\{blank\}|\[blank\]"#, options: .regularExpression) != nil && (0..<visibleOptionCount).allSatisfy { hasContent("option:\($0)", options[$0]) }
         case .vocabulary, .tapReveal, .fillBlank, .anki:
             return hasContent("prompt", question) && hasContent("answer", answer)
         case .multipleChoice:
@@ -120,7 +124,7 @@ struct CreateCardView: View {
                 default: frontBackEditor
                 }
                 if selectedType != .images {
-                    Text("Swipe left on \(selectedType == .multipleChoice ? "answer choices" : "fields") to add images or audio files.")
+                    Text("Swipe left on \(hasChoiceAnswers ? "answer choices" : "fields") to add images or audio files.")
                         .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                     VStack(alignment: .leading, spacing: 8) {
                         Button { withAnimation(.snappy) { hintEnabled.toggle() } } label: {
@@ -155,12 +159,22 @@ struct CreateCardView: View {
                 Button { if !question.contains("___") { question += question.isEmpty ? "___" : " ___" } } label: { Label("Insert blank", systemImage: "plus.square.dashed").font(.caption) }.frame(maxWidth: .infinity, alignment: .trailing)
             }
             mediaField("prompt", title: selectedType == .vocabulary ? "TERM" : selectedType == .fillBlank ? "SENTENCE" : "FRONT", placeholder: selectedType == .fillBlank ? "Sentence with a ___ blank" : "Text, image or audio", text: $question)
-            mediaField("answer", title: selectedType == .vocabulary ? "DEFINITION" : "ANSWER", placeholder: "Text, image or audio", text: $answer)
+            if selectedType == .fillBlank {
+                Toggle("Answer choices", isOn: $blankUsesChoices.animation(.snappy))
+                    .font(.subheadline).accessibilityHint("Choose an answer to place it into the sentence instead of typing.")
+            }
+            if selectedType == .fillBlank && blankUsesChoices { answerChoicesEditor }
+            else { mediaField("answer", title: selectedType == .vocabulary ? "DEFINITION" : "ANSWER", placeholder: "Text, image or audio", text: $answer) }
         }.padding(12).editorSurface()
     }
     private var multipleChoiceEditor: some View {
         VStack(spacing: 12) {
             mediaField("prompt", title: "QUESTION", placeholder: "Text, image or audio", text: $question)
+            answerChoicesEditor
+        }.padding(12).editorSurface()
+    }
+    private var answerChoicesEditor: some View {
+        VStack(spacing: 10) {
             HStack {
                 Text("CHOICES").font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
                 Spacer()
@@ -176,7 +190,7 @@ struct CreateCardView: View {
                     mediaField("option:\(index)", title: "", placeholder: "Choice \(index + 1)", text: $options[index])
                 }
             }
-        }.padding(12).editorSurface()
+        }
     }
     private var matchingEditor: some View {
         VStack(spacing: 12) {
@@ -238,6 +252,7 @@ struct CreateCardView: View {
     private func setupData() {
         guard !didSetUpData else { return }; didSetUpData = true
         guard let card = cardToEdit else { return }
+        blankUsesChoices = card.cardType == .fillBlank && !card.options.isEmpty
         selectedType = card.cardType; question = card.question; answer = card.correctAnswer; hint = card.hint
         fields = card.fieldMedia; hintEnabled = hasContent("hint", hint)
         selectedSectionId = card.section?.id.uuidString ?? "NONE"
@@ -252,7 +267,7 @@ struct CreateCardView: View {
         guard let type = selectedType, isFormValid else { return }
         var final = fields
         var savedImages: [String] = []
-        let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : type == .multipleChoice ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
+        let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : hasChoiceAnswers ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
         for (key, image) in images where allowed.contains(key) {
             guard let name = CardImageStore.saveImage(image) else {
                 savedImages.forEach { CardImageStore.deleteImage(named: $0) }; error = "Your image couldn’t be saved. Please try again."; return
@@ -265,9 +280,9 @@ struct CreateCardView: View {
         let card = cardToEdit ?? Flashcard(question: "", cardType: type)
         let old = (card.question, card.correctAnswer, card.options, card.hint, card.matchingLeftItems, card.matchingRightItems, card.fieldMedia, card.correctOptionIndex, card.section)
         card.question = type == .images ? "" : trim(question)
-        card.options = type == .multipleChoice ? options.prefix(visibleOptionCount).map(trim) : []
-        card.correctAnswer = type == .multipleChoice ? trim(options[correctOptionIndex]) : type == .matching || type == .images ? "" : trim(answer)
-        card.correctOptionIndex = type == .multipleChoice ? correctOptionIndex : nil
+        card.options = hasChoiceAnswers ? options.prefix(visibleOptionCount).map(trim) : []
+        card.correctAnswer = hasChoiceAnswers ? trim(options[correctOptionIndex]) : type == .matching || type == .images ? "" : trim(answer)
+        card.correctOptionIndex = hasChoiceAnswers ? correctOptionIndex : nil
         card.hint = hintEnabled && type != .images ? trim(hint) : ""
         card.matchingLeftItems = type == .matching ? matchingLeft.prefix(visiblePairCount).map(trim) : []
         card.matchingRightItems = type == .matching ? matchingRight.prefix(visiblePairCount).map(trim) : []
