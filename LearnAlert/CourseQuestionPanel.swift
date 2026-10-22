@@ -42,10 +42,12 @@ struct CourseQuestionPanel: View {
     let card: CourseLessonCard
     var immersive = false
     var checkpoint = false
-    var allowAudio = true
+    var allowRecordedAudio = true
+    var allowKoreanSpeech = false
     var prefersReading = false
     var allowTypedRecall = false
     var onReadingRequested: () -> Void = {}
+    var onListeningRequested: () -> Void = {}
     let onAnswer: (Bool) -> Void
     @State private var typed = ""
     @State private var writingAnswer = false
@@ -68,15 +70,28 @@ struct CourseQuestionPanel: View {
     }
     private var canTryTyping: Bool { allowTypedRecall && !checkpoint && card.usesTypedAnswer && !card.options.isEmpty }
     private var compact: Bool { notificationCompact && !immersive }
-    private var listening: Bool { card.isListeningQuestion && allowAudio && !prefersReading && !readingInstead && (card.resolvedFieldMedia["prompt"]?.audio != nil || speech.canPlay(card.speechText ?? "")) }
+    private var audioSource: CourseAudioSource? {
+        CourseAudioPolicy.source(for: card, allowRecordedAudio: allowRecordedAudio, allowKoreanSpeech: allowKoreanSpeech)
+    }
+    private var reading: Bool { prefersReading || readingInstead }
+    private var listening: Bool { CourseAudioPolicy.isListening(card: card, source: audioSource, prefersReading: reading) }
+    private var manualPronunciationText: String? {
+        guard allowKoreanSpeech, !reading, !card.isListeningQuestion || grade != nil else { return nil }
+        let typingAnswer = card.usesTypedAnswer && (writingAnswer || card.options.isEmpty)
+        guard !typingAnswer || grade != nil else { return nil }
+        if case .recording? = audioSource { return nil }
+        guard let text = card.primaryKoreanText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty, speech.canPlay(text) else { return nil }
+        return text
+    }
     @State private var selectedWord: String?
 
     var body: some View {
         VStack(spacing: compact ? 8 : 16) {
             if let activity = card.activity {
                 CourseActivityPanel(card: card, activity: activity, immersive: immersive, checkpoint: checkpoint,
-                    allowAudio: allowAudio, prefersReading: prefersReading,
-                    onReadingRequested: onReadingRequested, onAnswer: submit)
+                    allowRecordedAudio: allowRecordedAudio, allowKoreanSpeech: allowKoreanSpeech, prefersReading: reading,
+                    onReadingRequested: requestReading, onListeningRequested: requestListening, onAnswer: submit)
             } else {
             Text(questionText).font(immersive ? .title.weight(.bold) : .title3.weight(.semibold)).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity).padding(immersive ? 0 : compact ? 8 : 16)
@@ -93,32 +108,10 @@ struct CourseQuestionPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .accessibilityLabel("Vocabulary picture")
             }
-            if let audioName = card.resolvedFieldMedia["prompt"]?.audio, allowAudio && !prefersReading && !readingInstead {
-                CardAudioPlaybackButton(name: audioName)
-                if card.isListeningQuestion && grade == nil {
-                    Button("I can’t listen right now") { readingInstead = true; onReadingRequested() }
-                        .font(.subheadline).frame(minHeight: 44)
-                }
-            }
-            if listening, card.resolvedFieldMedia["prompt"]?.audio == nil, let text = card.speechText {
-                HStack(spacing: compact ? 8 : 16) {
-                    Button { speech.speak(text) } label: {
-                        Label(speech.isSpeaking ? "Play again" : "Listen", systemImage: "speaker.wave.2.fill")
-                            .font(.headline).frame(maxWidth: .infinity, minHeight: immersive ? 80 : compact ? 44 : 56)
-                    }.buttonStyle(.borderedProminent)
-                    Button { speech.speak(text, speed: .slow) } label: {
-                        Image(systemName: "tortoise.fill").frame(width: compact ? 44 : 56, height: immersive ? 80 : compact ? 44 : 56)
-                    }.buttonStyle(.bordered).accessibilityLabel("Listen slowly")
-                }
-                if grade == nil {
-                    Button("I can’t listen right now") {
-                        speech.stop(); readingInstead = true; onReadingRequested()
-                    }.font(.subheadline).frame(minHeight: 44)
-                }
-            }
+            promptAudioControls
             if !checkpoint && (!listening || grade != nil) {
                 HStack(spacing: 8) {
-                    if let text = card.primaryKoreanText, allowAudio && speech.canPlay(text) && !prefersReading && !readingInstead && (!writingAnswer || grade != nil) {
+                    if let text = manualPronunciationText {
                         Button { KoreanSpeechManager.shared.speak(text) } label: { Image(systemName: "speaker.wave.2.fill").frame(width: 44, height: 44) }
                             .accessibilityLabel("Pronounce in Korean")
                         Button { KoreanSpeechManager.shared.speak(text, speed: .slow) } label: { Image(systemName: "tortoise.fill").frame(width: 44, height: 44) }
@@ -251,6 +244,7 @@ struct CourseQuestionPanel: View {
             }
         }
         .onAppear { if optionIndices.isEmpty { optionIndices = Array(card.options.indices).shuffled() } }
+        .onChange(of: prefersReading) { _, value in if !value { readingInstead = false } }
         .sheet(isPresented: $inspecting) {
             NavigationStack {
                 ScrollView {
@@ -266,7 +260,7 @@ struct CourseQuestionPanel: View {
                             let words = Array(Set(item.surface.components(separatedBy: .whitespaces).filter { !$0.isEmpty })).sorted()
                             FlowWordList(words: words) { selectedWord = $0 }
                         }
-                        if let selectedWord { CourseWordDefinition(word: selectedWord, context: card.vocabularyItem, allowAudio: allowAudio) }
+                        if let selectedWord { CourseWordDefinition(word: selectedWord, context: card.vocabularyItem, allowKoreanSpeech: allowKoreanSpeech) }
                         if let note = card.grammarNote ?? card.vocabularyItem?.breakdownNote { Text(CourseKoreanText.attributed(note)) }
                     }.padding(20)
                 }.navigationTitle("Details").navigationBarTitleDisplayMode(.inline)
@@ -274,6 +268,34 @@ struct CourseQuestionPanel: View {
             }.presentationDetents([.medium, .large])
         }
     }
+    @ViewBuilder private var promptAudioControls: some View {
+        if !reading, let source = audioSource {
+            switch source {
+            case .recording(let name):
+                CardAudioPlaybackButton(name: name)
+            case .koreanSpeech(let text):
+                if listening {
+                    HStack(spacing: compact ? 8 : 16) {
+                        Button { speech.speak(text) } label: {
+                            Label(speech.isSpeaking ? "Play again" : "Listen", systemImage: "speaker.wave.2.fill")
+                                .font(.headline).frame(maxWidth: .infinity, minHeight: immersive ? 80 : compact ? 44 : 56)
+                        }.buttonStyle(.borderedProminent)
+                        Button { speech.speak(text, speed: .slow) } label: {
+                            Image(systemName: "tortoise.fill").frame(width: compact ? 44 : 56, height: immersive ? 80 : compact ? 44 : 56)
+                        }.buttonStyle(.bordered).accessibilityLabel("Listen slowly")
+                    }
+                }
+            }
+            if card.isListeningQuestion && grade == nil {
+                Button("I can’t listen right now", action: requestReading)
+                    .font(.subheadline).frame(minHeight: 44)
+            }
+        } else if reading, card.isListeningQuestion, audioSource != nil, grade == nil {
+            Button("Back to listening", action: requestListening).font(.subheadline).frame(minHeight: 44)
+        }
+    }
+    private func requestReading() { speech.stop(); readingInstead = true; onReadingRequested() }
+    private func requestListening() { readingInstead = false; onListeningRequested() }
     private func optionBorder(_ option: String) -> Color {
         if grade != nil && card.accepts(option) { return Color.green.opacity(0.6) }
         if grade != nil && option == selectedOption { return Color.orange.opacity(0.6) }
@@ -285,7 +307,9 @@ struct CourseQuestionPanel: View {
         return immersive ? Color(.secondarySystemGroupedBackground) : Color.primary.opacity(0.04)
     }
     private var questionText: AttributedString {
-        let prompt = card.cardType == "vocabulary" ? (card.vocabularyItem?.surface ?? card.question) : card.practiceQuestionText(audioEnabled: listening, typedRecall: writingAnswer)
+        let prompt = card.isListeningQuestion && !listening ? CourseAudioPolicy.readingQuestion(for: card)
+            : card.cardType == "vocabulary" ? (card.vocabularyItem?.surface ?? card.question)
+            : card.practiceQuestionText(audioEnabled: listening, typedRecall: writingAnswer)
         var text = AttributedString(prompt)
         guard !checkpoint, let expression = try? NSRegularExpression(pattern: "[가-힣ㄱ-ㅎㅏ-ㅣ]+") else { return CourseKoreanText.attributed(text) }
         for match in expression.matches(in: prompt, range: NSRange(prompt.startIndex..., in: prompt)) {
@@ -316,7 +340,7 @@ private struct FlowWordList: View {
 private struct CourseWordDefinition: View {
     let word: String
     let context: KoreanVocabularyItem?
-    var allowAudio = true
+    var allowKoreanSpeech = false
     private var entry: KoreanWordEntry? { KoreanLexicon.lookup(word) }
     private var lookup: String { entry?.dictionaryForm ?? word }
     var body: some View {
@@ -328,7 +352,7 @@ private struct CourseWordDefinition: View {
             }
             if let example = context?.exampleKorean { Text(CourseKoreanText.attributed(example)).font(.callout) }
             if let meaning = context?.exampleEnglish { Text(meaning).font(.callout).foregroundStyle(.secondary) }
-            if allowAudio {
+            if allowKoreanSpeech && KoreanSpeechManager.shared.canPlay(word) {
                 HStack {
                     Button { KoreanSpeechManager.shared.speak(word) } label: {
                         Image(systemName: "speaker.wave.2").frame(width: 44, height: 44)

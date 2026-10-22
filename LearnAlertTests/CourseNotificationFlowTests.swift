@@ -32,7 +32,7 @@ struct CourseNotificationFlowTests {
         ]
         for width in [CGFloat(320), 360, 393] {
             for (name, card) in fixtures {
-                let content = CourseQuestionPanel(card: card, allowAudio: true) { _ in }
+                let content = CourseQuestionPanel(card: card, allowRecordedAudio: true, allowKoreanSpeech: true) { _ in }
                     .environment(\.courseNotificationCompact, true)
                     .environment(\.dynamicTypeSize, .large)
                     .environment(\.colorScheme, .dark)

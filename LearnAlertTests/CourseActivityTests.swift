@@ -57,7 +57,7 @@ struct CourseActivityTests {
         }
     }
 
-    @Test("Only the first Korean unit uses the course activity system")
+    @Test("Bundled workshop activities are limited to the first Korean unit")
     func activityScope() {
         #expect(unit.lessons.count == 5)
         #expect(practice.allSatisfy { $0.activity != nil })
@@ -65,7 +65,7 @@ struct CourseActivityTests {
             "teach", "trace", "buildBlock", "placeTokens", "listenChoose", "situation", "matchPairs"
         ]))
         #expect(course.units.dropFirst().flatMap(\.lessons).flatMap(\.cards).allSatisfy { $0.activity == nil })
-        for other in CourseCurriculumCatalog.courses where other.language != "Korean" {
+        for other in CourseCurriculumCatalog.bundledCourses where other.language != "Korean" {
             #expect(other.units.flatMap(\.lessons).flatMap(\.cards).allSatisfy { $0.activity == nil })
         }
     }
@@ -260,7 +260,7 @@ struct CourseActivityTests {
                 let width: CGFloat = immersive ? 402 : 360
                 for (label, card) in fixtures {
                     let renderer = ImageRenderer(content: CourseQuestionPanel(card: card, immersive: immersive,
-                        allowAudio: label == "listen") { _ in }
+                        allowRecordedAudio: label == "listen", allowKoreanSpeech: label == "listen") { _ in }
                         .environment(\.courseNotificationCompact, !immersive && label != "trace")
                         .padding(immersive ? 24 : 16).frame(width: width)
                         .background(Color(.systemGroupedBackground)).environment(\.colorScheme, scheme))

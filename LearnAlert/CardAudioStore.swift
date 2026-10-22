@@ -22,6 +22,18 @@ enum CardAudioStore {
         ManagedCatalogMedia.url(reference: name) ?? directory.appendingPathComponent(URL(fileURLWithPath: name).lastPathComponent)
     }
 
+    /// Availability is local-only; checking a course card never downloads or
+    /// opens an audio player just to decide whether to show its play control.
+    static func isAvailable(named name: String) -> Bool {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              (try? contentType(for: name)) != nil else { return false }
+        let url = url(named: name)
+        guard FileManager.default.isReadableFile(atPath: url.path),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, let size = values.fileSize else { return false }
+        return size > 0
+    }
+
     static func contentType(for name: String) throws -> String {
         if let type = ManagedCatalogMedia.contentType(reference: name), type.hasPrefix("audio/") { return type }
         switch URL(fileURLWithPath: name).pathExtension.lowercased() {
@@ -71,8 +83,12 @@ enum CardAudioStore {
 final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
     @Published var errorMessage: String?
+    static let playbackChanges = PassthroughSubject<Bool, Never>()
+    static var isAnyPlaying: Bool { active?.isPlaying == true }
     private static weak var active: CardAudioPlayer?
     private var player: AVAudioPlayer?
+
+    static func stopActive() { active?.stop() }
 
     func toggle(name: String) {
         if isPlaying { stop(); return }
@@ -87,14 +103,35 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             player.prepareToPlay()
             self.player = player
             isPlaying = player.play()
-            if !isPlaying { errorMessage = "This audio clip could not be played." }
-        } catch { errorMessage = "This audio clip could not be played. Try attaching it again." }
+            if isPlaying {
+                Self.playbackChanges.send(true)
+            } else {
+                stop()
+                errorMessage = "This audio clip could not be played."
+            }
+        } catch {
+            stop()
+            errorMessage = "This audio clip could not be played. Try attaching it again."
+        }
     }
 
-    func stop() { player?.stop(); player = nil; isPlaying = false; if Self.active === self { Self.active = nil } }
+    func stop() {
+        let wasActive = Self.active === self
+        let wasPlaying = isPlaying
+        player?.stop()
+        player = nil
+        isPlaying = false
+        if wasActive { Self.active = nil }
+        if wasActive || wasPlaying { Self.playbackChanges.send(Self.isAnyPlaying) }
+    }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in self.isPlaying = false }
+        let finishedPlayerID = ObjectIdentifier(player)
+        Task { @MainActor in
+            // A queued completion from a previous clip must not stop a newer one.
+            guard let current = self.player, ObjectIdentifier(current) == finishedPlayerID else { return }
+            self.stop()
+        }
     }
 }
 

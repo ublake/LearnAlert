@@ -341,6 +341,52 @@ public struct CourseLesson: Identifiable, Codable, Hashable {
     }
 }
 
+/// Presentation-only permissions and source selection. Nothing here is stored
+/// in curriculum JSON or learner progress.
+enum CourseAudioSource: Equatable {
+    case recording(String)
+    case koreanSpeech(String)
+}
+
+enum CourseAudioPolicy {
+    static func allowsKoreanSpeech(for language: String) -> Bool {
+        ["korean", "ko", "ko-kr"].contains(language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    static func source(for card: CourseLessonCard, allowRecordedAudio: Bool, allowKoreanSpeech: Bool,
+                       recordingAvailable: (String) -> Bool, canSpeak: (String) -> Bool) -> CourseAudioSource? {
+        if allowRecordedAudio {
+            // A legacy attachment must not hide a usable field-media recording.
+            let names = [card.promptAudioName, card.fieldMedia?["prompt"]?.audio]
+            for name in names.compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
+                where !name.isEmpty && recordingAvailable(name) {
+                return .recording(name)
+            }
+        }
+        guard allowKoreanSpeech, let text = card.speechText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty, canSpeak(text) else { return nil }
+        return .koreanSpeech(text)
+    }
+
+    @MainActor
+    static func source(for card: CourseLessonCard, allowRecordedAudio: Bool, allowKoreanSpeech: Bool) -> CourseAudioSource? {
+        source(for: card, allowRecordedAudio: allowRecordedAudio, allowKoreanSpeech: allowKoreanSpeech,
+               recordingAvailable: { CardAudioStore.isAvailable(named: $0) },
+               canSpeak: { KoreanSpeechManager.shared.canPlay($0) })
+    }
+
+    static func isListening(card: CourseLessonCard, source: CourseAudioSource?, prefersReading: Bool) -> Bool {
+        card.isListeningQuestion && source != nil && !prefersReading
+    }
+
+    static func readingQuestion(for card: CourseLessonCard) -> String {
+        if let prompt = card.readingPrompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return prompt }
+        if let cue = card.activity?.readingCue, !cue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return cue }
+        guard let text = card.speechText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return card.question }
+        return "What does ‘\(text)’ mean?"
+    }
+}
+
 public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let id: String
     public let question: String

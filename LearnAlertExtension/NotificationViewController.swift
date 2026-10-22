@@ -1266,15 +1266,21 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         KoreanSpeechManager.shared.stop()
+        if isCourseContent { CardAudioPlayer.stopActive() }
         extensionContext?.mediaPlayingPaused()
     }
 
     func mediaPause() {
         KoreanSpeechManager.shared.stop()
+        if isCourseContent { CardAudioPlayer.stopActive() }
         extensionContext?.mediaPlayingPaused()
     }
 
     func didReceive(_ notification: UNNotification) {
+        if isCourseContent {
+            KoreanSpeechManager.shared.stop()
+            CardAudioPlayer.stopActive()
+        }
         AlertTimelineStore.shared.delivered(notification)
         Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
@@ -1296,7 +1302,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             }, contentHeightChanged: { [weak self] height, preserveDrawingHeight in
                 self?.fitContent(height, preserveDrawingHeight: preserveDrawingHeight)
             })
-            show(AnyView(courseView))
+            show(AnyView(courseView.id(course.id + ":" + notification.request.identifier)))
             return
         }
 

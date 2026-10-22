@@ -48,6 +48,7 @@ struct CourseNotificationSessionView: View {
     @State private var showingGuide = false
     @State private var readyAfterAnswer = false
     @State private var guidePage = 0
+    @State private var prefersReading = false
 
     // Tracing stays on its existing presentation pending a separate interaction decision.
     private var compact: Bool { showingGuide || card?.activity?.kind != .trace }
@@ -85,9 +86,10 @@ struct CourseNotificationSessionView: View {
             load()
             Task { try? await CourseNotificationScheduler.replenish() }
         }
-        .onReceive(KoreanSpeechManager.shared.$isSpeaking) { mediaPlaybackChanged($0) }
+        .onReceive(KoreanSpeechManager.shared.$isSpeaking) { mediaPlaybackChanged($0 || CardAudioPlayer.isAnyPlaying) }
+        .onReceive(CardAudioPlayer.playbackChanges) { mediaPlaybackChanged($0 || KoreanSpeechManager.shared.isSpeaking) }
         .onDisappear {
-            KoreanSpeechManager.shared.stop()
+            stopPlayback()
             mediaPlaybackChanged(false)
         }
     }
@@ -107,7 +109,7 @@ struct CourseNotificationSessionView: View {
             }
             if guideUnit != nil {
                 Button {
-                    KoreanSpeechManager.shared.stop()
+                    stopPlayback()
                     guidePage = 0
                     showingGuide.toggle()
                 } label: {
@@ -148,7 +150,11 @@ struct CourseNotificationSessionView: View {
                 checkpointPrompt(checkpoint)
             } else if let card {
                 // Audio begins only from Play. Listening exercises retain a reading alternative.
-                CourseQuestionPanel(card: card, allowAudio: true) { correct in answer(card, correct: correct) }
+                CourseQuestionPanel(card: card, allowRecordedAudio: true,
+                    allowKoreanSpeech: CourseAudioPolicy.allowsKoreanSpeech(for: course.language),
+                    prefersReading: prefersReading,
+                    onReadingRequested: { stopPlayback(); prefersReading = true },
+                    onListeningRequested: { prefersReading = false }) { correct in answer(card, correct: correct) }
                     .id(card.id + answerToken)
                 if let pendingGrade {
                     Button("Retry saving answer") { answer(card, correct: pendingGrade) }.buttonStyle(.borderedProminent)
@@ -236,7 +242,7 @@ struct CourseNotificationSessionView: View {
     }
 
     private func load() {
-        KoreanSpeechManager.shared.stop()
+        stopPlayback()
         let snapshot = CourseLearningStore.shared.snapshot()
         if let failure = CourseLearningStore.shared.lastError {
             error = "Your progress couldn’t be loaded. Open the app to try again. \(failure)"
@@ -260,6 +266,7 @@ struct CourseNotificationSessionView: View {
 
     private func answer(_ card: CourseLessonCard, correct: Bool) {
         guard !answered, let lesson = course.units.flatMap(\.lessons).first(where: { $0.cards.contains(where: { $0.id == card.id }) }) else { return }
+        stopPlayback()
         let token = "notification-\(requestId)-\(answerToken)-\(card.id)"
         let hadCheckpoint = checkpoint != nil
         let saved = CourseLearningStore.shared.transaction { snapshot in
@@ -284,5 +291,10 @@ struct CourseNotificationSessionView: View {
             readyAfterAnswer = !hadCheckpoint && checkpoint != nil
         }
         Task { try? await CourseNotificationScheduler.replenish() }
+    }
+
+    private func stopPlayback() {
+        KoreanSpeechManager.shared.stop()
+        CardAudioPlayer.stopActive()
     }
 }

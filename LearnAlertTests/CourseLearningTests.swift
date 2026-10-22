@@ -208,9 +208,9 @@ struct CourseLearningTests {
         #expect(perfect.complete && !perfect.hadMistake)
     }
 
-    @Test("Every section bundles detailed guides and worked examples offline")
+    @Test("Every bundled section includes detailed guides and worked examples offline")
     func sectionGuides() {
-        for course in CourseCurriculumCatalog.courses {
+        for course in CourseCurriculumCatalog.bundledCourses {
             for unit in course.units {
                 let topics = CourseSectionGuides.topics(course: course, unit: unit)
                 #expect(topics.count >= 7)
@@ -225,7 +225,7 @@ struct CourseLearningTests {
 
     @Test("Picture vocabulary resolves bundled art and keeps image choices aligned")
     func pictureVocabulary() throws {
-        for course in CourseCurriculumCatalog.courses {
+        for course in CourseCurriculumCatalog.bundledCourses {
             let cards = course.units.flatMap(\.lessons).flatMap(\.cards).filter { $0.activity == nil }
             let prompts = cards.filter { $0.promptImageName != nil }
             let choices = cards.filter { !$0.optionImageNames.isEmpty }
@@ -643,9 +643,9 @@ struct CourseLearningTests {
         let audio = try #require(lesson.cards.first { $0.cardType == "listeningWrite" })
         for scheme in [ColorScheme.light, .dark] {
             for (name, view) in [
-                ("beginner", CourseQuestionPanel(card: beginner, immersive: true, allowAudio: false) { _ in }),
-                ("mastered-recall", CourseQuestionPanel(card: recall, immersive: true, allowAudio: false, allowTypedRecall: true) { _ in }),
-                ("dictation-alternative", CourseQuestionPanel(card: audio, immersive: true, allowAudio: false) { _ in })
+                ("beginner", CourseQuestionPanel(card: beginner, immersive: true, allowRecordedAudio: false, allowKoreanSpeech: false) { _ in }),
+                ("mastered-recall", CourseQuestionPanel(card: recall, immersive: true, allowRecordedAudio: false, allowKoreanSpeech: false, allowTypedRecall: true) { _ in }),
+                ("dictation-alternative", CourseQuestionPanel(card: audio, immersive: true, allowRecordedAudio: false, allowKoreanSpeech: false) { _ in })
             ] {
                 let renderer = ImageRenderer(content: view.padding(24).frame(width: 402)
                     .background(Color(.systemGroupedBackground)).environment(\.colorScheme, scheme))

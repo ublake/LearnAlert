@@ -6,9 +6,11 @@ struct CourseActivityPanel: View {
     let activity: CourseActivity
     let immersive: Bool
     let checkpoint: Bool
-    let allowAudio: Bool
+    let allowRecordedAudio: Bool
+    let allowKoreanSpeech: Bool
     let prefersReading: Bool
     let onReadingRequested: () -> Void
+    let onListeningRequested: () -> Void
     let onAnswer: (Bool) -> Void
     @ObservedObject private var speech = KoreanSpeechManager.shared
     @Environment(\.dynamicTypeSize) private var textSize
@@ -22,16 +24,20 @@ struct CourseActivityPanel: View {
     @State private var placementMessage: String?
 
     init(card: CourseLessonCard, activity: CourseActivity, immersive: Bool, checkpoint: Bool,
-         allowAudio: Bool, prefersReading: Bool, onReadingRequested: @escaping () -> Void,
+         allowRecordedAudio: Bool = true, allowKoreanSpeech: Bool = false, prefersReading: Bool,
+         onReadingRequested: @escaping () -> Void, onListeningRequested: @escaping () -> Void = {},
          onAnswer: @escaping (Bool) -> Void) {
         self.card = card; self.activity = activity; self.immersive = immersive; self.checkpoint = checkpoint
-        self.allowAudio = allowAudio; self.prefersReading = prefersReading
-        self.onReadingRequested = onReadingRequested; self.onAnswer = onAnswer
+        self.allowRecordedAudio = allowRecordedAudio; self.allowKoreanSpeech = allowKoreanSpeech; self.prefersReading = prefersReading
+        self.onReadingRequested = onReadingRequested; self.onListeningRequested = onListeningRequested; self.onAnswer = onAnswer
         _placement = State(initialValue: CoursePlacementState(count: activity.slots.count))
         _choices = State(initialValue: (activity.kind == .buildBlock || activity.kind == .placeTokens ? activity.tokens : card.options).shuffled())
     }
 
-    private var audio: Bool { allowAudio && (card.resolvedFieldMedia["prompt"]?.audio != nil || speech.canPlay(card.speechText ?? "")) && !prefersReading && !reading }
+    private var audioSource: CourseAudioSource? {
+        CourseAudioPolicy.source(for: card, allowRecordedAudio: allowRecordedAudio, allowKoreanSpeech: allowKoreanSpeech)
+    }
+    private var audio: Bool { audioSource != nil && !prefersReading && !reading }
     private var isPlacement: Bool { activity.kind == .buildBlock || activity.kind == .placeTokens }
     private var compact: Bool { notificationCompact && !immersive && activity.kind != .trace }
 
@@ -47,16 +53,17 @@ struct CourseActivityPanel: View {
                         .accessibilityValue(hints ? "On" : "Off")
                 }
             }
-            Text(CourseKoreanText.attributed(activity.kind == .listenChoose && !audio ? "Read and choose" : card.question))
+            Text(CourseKoreanText.attributed(card.isListeningQuestion && !audio ? CourseAudioPolicy.readingQuestion(for: card) : card.question))
                 .font(immersive ? .title2.bold() : .headline).multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
             if let image = card.resolvedFieldMedia["prompt"]?.image {
                 CourseVocabularyImage(name: image, label: card.vocabularyItem?.contextualMeaning ?? "Vocabulary picture", compact: !immersive)
             }
-            if activity.kind != .listenChoose, let audioName = card.resolvedFieldMedia["prompt"]?.audio,
-               allowAudio && !prefersReading && !reading {
-                CardAudioPlaybackButton(name: audioName)
+            if !card.isListeningQuestion && activity.kind != .teach, audio,
+               case let .recording(name)? = audioSource {
+                CardAudioPlaybackButton(name: name)
             }
+            if card.isListeningQuestion { listeningControl }
             if activity.kind == .teach {
                 teaching
             } else {
@@ -71,7 +78,6 @@ struct CourseActivityPanel: View {
                 } else if isPlacement {
                     placementPanel
                 } else {
-                    if activity.kind == .listenChoose { listeningControl }
                     optionGrid
                 }
             }
@@ -86,7 +92,7 @@ struct CourseActivityPanel: View {
             }
         }
         .onAppear { if choices.isEmpty { choices = (isPlacement ? activity.tokens : card.options).shuffled() } }
-        .onDisappear { speech.stop() }
+        .onChange(of: prefersReading) { _, value in if !value { reading = false } }
     }
 
     private var teaching: some View {
@@ -97,8 +103,13 @@ struct CourseActivityPanel: View {
                     .multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(compact ? 10 : 20)
                     .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
             }
-            if allowAudio, let text = card.speechText, speech.canPlay(text) {
-                Button { speech.speak(text) } label: { Label("Hear the example", systemImage: "speaker.wave.2.fill").frame(minHeight: 44) }
+            if !card.isListeningQuestion, audio, let source = audioSource {
+                switch source {
+                case .recording(let name):
+                    CardAudioPlaybackButton(name: name)
+                case .koreanSpeech(let text):
+                    Button { speech.speak(text) } label: { Label("Hear the example", systemImage: "speaker.wave.2.fill").frame(minHeight: 44) }
+                }
             }
             if let media = card.resolvedFieldMedia["answer"] { CardFieldContent(media: media, imageHeight: immersive ? 224 : 120) }
             if result == nil { Button("Got it") { finish(true) }.buttonStyle(.borderedProminent).controlSize(.large) }
@@ -106,25 +117,37 @@ struct CourseActivityPanel: View {
     }
 
     @ViewBuilder private var listeningControl: some View {
-        if let audioName = card.resolvedFieldMedia["prompt"]?.audio, allowAudio && !prefersReading && !reading {
-            HStack(spacing: 12) {
-                CardAudioPlaybackButton(name: audioName)
-                Button("Use text") { reading = true; onReadingRequested() }.frame(minHeight: 44)
-            }
-        } else if audio, let text = card.speechText {
-            if compact {
-                HStack(spacing: 8) {
-                    Button { speech.speak(text) } label: {
-                        Label(speech.isSpeaking ? "Again" : "Play", systemImage: speech.isSpeaking ? "waveform" : "play.fill")
-                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.borderedProminent).accessibilityLabel("Play Korean sound")
-                    Button { speech.speak(text, speed: .slow) } label: {
-                        Image(systemName: "tortoise.fill").frame(width: 44, height: 44)
-                    }.buttonStyle(.plain).accessibilityLabel("Play slowly")
-                    Button("Use text") { speech.stop(); reading = true; onReadingRequested() }
-                        .font(.subheadline).frame(minHeight: 44)
+        if audio, let source = audioSource {
+            VStack(spacing: compact ? 4 : 8) {
+                switch source {
+                case .recording(let name):
+                    CardAudioPlaybackButton(name: name)
+                case .koreanSpeech(let text):
+                    spokenListeningControl(text)
                 }
-            } else {
+                if result == nil {
+                    Button("I can’t listen right now", action: requestReading).font(.subheadline).frame(minHeight: 44)
+                }
+            }
+        } else if audioSource != nil, result == nil {
+            Button("Back to listening", action: requestListening).font(.subheadline).frame(minHeight: 44)
+        } else if audioSource == nil && (allowRecordedAudio || allowKoreanSpeech) {
+            Text("Audio is unavailable. Using text practice.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private func spokenListeningControl(_ text: String) -> some View {
+        if compact {
+            HStack(spacing: 8) {
+                Button { speech.speak(text) } label: {
+                    Label(speech.isSpeaking ? "Again" : "Play", systemImage: speech.isSpeaking ? "waveform" : "play.fill")
+                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(.borderedProminent).accessibilityLabel("Play Korean sound")
+                Button { speech.speak(text, speed: .slow) } label: {
+                    Image(systemName: "tortoise.fill").frame(width: 44, height: 44)
+                }.buttonStyle(.plain).accessibilityLabel("Play slowly")
+            }
+        } else {
             VStack(spacing: 8) {
                 Button { speech.speak(text) } label: {
                     VStack(spacing: 10) {
@@ -135,19 +158,13 @@ struct CourseActivityPanel: View {
                         Text(speech.isSpeaking ? "Play again" : "Play sound").font(.subheadline.weight(.semibold))
                     }.frame(maxWidth: .infinity)
                 }.buttonStyle(.plain).accessibilityLabel("Play Korean sound")
-                HStack(spacing: 16) {
-                    Button("Slower") { speech.speak(text, speed: .slow) }.frame(minHeight: 44)
-                    Button("Use text") { speech.stop(); reading = true; onReadingRequested() }.frame(minHeight: 44)
-                }.font(.subheadline)
-            }
-            }
-        } else {
-            VStack(spacing: 6) {
-                Text(CourseKoreanText.attributed(activity.readingCue ?? card.readingPrompt ?? "Choose the matching Korean.")).font(.callout)
-                if allowAudio && !speech.canPlay(card.speechText ?? "") { Text("Korean audio is unavailable. Using text practice.").font(.caption).foregroundStyle(.secondary) }
+                Button("Slower") { speech.speak(text, speed: .slow) }.font(.subheadline).frame(minHeight: 44)
             }
         }
     }
+
+    private func requestReading() { speech.stop(); reading = true; onReadingRequested() }
+    private func requestListening() { reading = false; onListeningRequested() }
 
     @ViewBuilder private var optionGrid: some View {
         if card.hasChoiceMedia {
@@ -256,6 +273,7 @@ struct CourseActivityPanel: View {
         return Color(.secondarySystemGroupedBackground)
     }
     private var activityLabel: String {
+        if card.isListeningQuestion { return audio ? "Listen" : "Read" }
         switch activity.kind {
         case .teach: return "Learn"
         case .trace: return "Trace"
@@ -267,6 +285,7 @@ struct CourseActivityPanel: View {
         }
     }
     private var activityIcon: String {
+        if card.isListeningQuestion { return audio ? "waveform" : "textformat" }
         switch activity.kind {
         case .teach: return "sparkles"
         case .trace: return "hand.draw"

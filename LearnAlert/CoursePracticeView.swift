@@ -66,6 +66,13 @@ struct CoursePracticeView: View {
     }
 
     private var savesSession: Bool { lessonId != nil || checkpointUnit != nil }
+    private var allowKoreanSpeech: Bool { CourseAudioPolicy.allowsKoreanSpeech(for: course.language) }
+
+    private func isListening(_ card: CourseLessonCard) -> Bool {
+        CourseAudioPolicy.isListening(card: card,
+            source: CourseAudioPolicy.source(for: card, allowRecordedAudio: true, allowKoreanSpeech: allowKoreanSpeech),
+            prefersReading: prefersReading)
+    }
 
     private var isCheckpoint: Bool { checkpointUnit != nil }
     private var missedCards: [CourseLessonCard] { practiceCards.filter { missed.contains($0.id) } }
@@ -92,15 +99,16 @@ struct CoursePracticeView: View {
                     ScrollView {
                         VStack(spacing: 16) {
                             if practiceCards[index].activity == nil {
-                            Text(isCheckpoint ? "CHECKPOINT" : practiceCards[index].isListeningQuestion && !prefersReading ? "LISTENING" : practiceCards[index].optionImageNames.isEmpty && practiceCards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
+                            Text(isCheckpoint ? "CHECKPOINT" : practiceCards[index].isListeningQuestion ? (isListening(practiceCards[index]) ? "LISTENING" : "READING") : practiceCards[index].optionImageNames.isEmpty && practiceCards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
                                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)
                             }
                             CourseQuestionPanel(card: practiceCards[index], immersive: true, checkpoint: isCheckpoint,
-                                allowAudio: course.language == "Korean", prefersReading: prefersReading,
+                                allowRecordedAudio: true, allowKoreanSpeech: allowKoreanSpeech, prefersReading: prefersReading,
                                 allowTypedRecall: practiceCards[index].canOfferTypedRecall(
                                     masteryScore: manager.learningSnapshot.srsRecord(courseId: course.id, cardId: practiceCards[index].id)?.masteryScore ?? 0,
                                     checkpoint: isCheckpoint),
-                                onReadingRequested: { prefersReading = true }) { correct in record(correct: correct) }
+                                onReadingRequested: { stopPlayback(); prefersReading = true },
+                                onListeningRequested: { prefersReading = false }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)-\(presentationId)")
                         }.padding(.horizontal, 24).padding(.vertical, 24)
                             .tint(Color(hex: course.colorHex))
@@ -123,7 +131,7 @@ struct CoursePracticeView: View {
                 manager.setAutoPronounce(value, courseId: course.id)
                 if value { speakCurrent() } else { KoreanSpeechManager.shared.stop() }
             }
-            .onDisappear { KoreanSpeechManager.shared.stop() }
+            .onDisappear { stopPlayback() }
             .sheet(item: $guideUnit) { unit in CourseGuideSheet(course: course, unit: unit) }
             .fullScreenCover(isPresented: $reviewMisses) {
                 CourseCheckpointRemediation(course: course, cards: missedCards) { reviewMisses = false }
@@ -143,11 +151,11 @@ struct CoursePracticeView: View {
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 if let currentUnit {
-                    Button { KoreanSpeechManager.shared.stop(); guideUnit = currentUnit } label: {
+                    Button { stopPlayback(); guideUnit = currentUnit } label: {
                         Image(systemName: "book.closed").frame(width: 44, height: 44)
                     }.accessibilityLabel("Section guide")
                 }
-                if !isCheckpoint && course.language == "Korean" {
+                if !isCheckpoint && allowKoreanSpeech {
                     Button { if prefersReading { prefersReading = false }; autoPronounce.toggle() } label: {
                         Image(systemName: autoPronounce ? "speaker.wave.2.fill" : "speaker.slash")
                             .frame(width: 44, height: 44)
@@ -233,13 +241,21 @@ struct CoursePracticeView: View {
         return "Practice complete"
     }
     private func speakCurrent() {
-        guard autoPronounce, !prefersReading, !isCheckpoint, course.language == "Korean", practiceCards.indices.contains(index),
+        guard autoPronounce, !prefersReading, !isCheckpoint, allowKoreanSpeech, practiceCards.indices.contains(index),
               // Don't speak the answer to a production exercise before it is graded.
               !practiceCards[index].usesTypedAnswer, !practiceCards[index].isListeningQuestion, let text = practiceCards[index].primaryKoreanText else { return }
+        // Uploaded recordings are always played deliberately. Do not replace
+        // an available recording with automatic synthesis of the same prompt.
+        if case .recording = CourseAudioPolicy.source(for: practiceCards[index], allowRecordedAudio: true, allowKoreanSpeech: allowKoreanSpeech) { return }
         KoreanSpeechManager.shared.speak(text)
+    }
+    private func stopPlayback() {
+        KoreanSpeechManager.shared.stop()
+        CardAudioPlayer.stopActive()
     }
     private func record(correct: Bool) {
         guard !answered else { return }
+        stopPlayback()
         let card = practiceCards[index]
         if savesSession {
             guard manager.recordPracticeAnswer(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id,
@@ -276,6 +292,7 @@ struct CoursePracticeView: View {
     }
 
     private func advance() {
+        stopPlayback()
         presentationId = UUID()
         if savesSession {
             answered = false
@@ -286,6 +303,7 @@ struct CoursePracticeView: View {
     }
 
     private func finishSession() {
+        stopPlayback()
         if savesSession {
             guard let completion = manager.finishPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id, sessionId: session) else {
                 saveError = CourseLearningStore.shared.lastError ?? "Your result couldn’t be saved. Please try again."
@@ -299,6 +317,7 @@ struct CoursePracticeView: View {
     }
 
     private func reset() {
+        stopPlayback()
         index = 0; answered = false; missed = []; finished = false; result = nil
         savedAnswers = [:]; session = UUID().uuidString; loaded = false
         restoreSession()
