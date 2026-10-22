@@ -13,28 +13,33 @@ struct AnkiCardView: View {
     var centered = false
     var animatedReveal = false
     var loadingChanged: ((Bool) -> Void)? = nil
+    private let preparedDocument: String?
+    private let preparedMediaIndex: [String: String]?
     @StateObject private var localRenderer: AnkiCardRenderer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     init(content: AnkiCardContent, showingBack: Bool, mediaDirectory: URL? = nil,
          compact: Bool = false, centered: Bool = false, animatedReveal: Bool = false,
-         renderer: AnkiCardRenderer? = nil, loadingChanged: ((Bool) -> Void)? = nil) {
+         renderer: AnkiCardRenderer? = nil, loadingChanged: ((Bool) -> Void)? = nil,
+         preparedDocument: String? = nil, preparedMediaIndex: [String: String]? = nil) {
         self.content = content; self.showingBack = showingBack; self.mediaDirectory = mediaDirectory
         self.compact = compact; self.centered = centered; self.animatedReveal = animatedReveal
         self.loadingChanged = loadingChanged
+        self.preparedDocument = preparedDocument; self.preparedMediaIndex = preparedMediaIndex
         _localRenderer = StateObject(wrappedValue: renderer ?? AnkiCardRenderer())
     }
 
     var body: some View {
         AnkiRenderedSurface(renderer: localRenderer,
-            document: Self.document(content: content, showingBack: showingBack,
+            document: preparedDocument ?? Self.document(content: content, showingBack: showingBack,
                 configuration: .init(dark: colorScheme == .dark, compact: compact, centered: centered,
                     animatedReveal: animatedReveal, reduceMotion: reduceMotion)),
-            directory: mediaDirectory ?? content.mediaURL, compact: compact, loadingChanged: loadingChanged)
+            directory: mediaDirectory ?? content.mediaURL, compact: compact, loadingChanged: loadingChanged,
+            mediaIndex: preparedMediaIndex)
     }
 
-    static func document(content: AnkiCardContent, showingBack: Bool, configuration: AnkiRenderConfiguration) -> String {
+    nonisolated static func document(content: AnkiCardContent, showingBack: Bool, configuration: AnkiRenderConfiguration) -> String {
         let dark = configuration.dark, compact = configuration.compact, centered = configuration.centered
         let animatedReveal = configuration.animatedReveal, reduceMotion = configuration.reduceMotion
         let html = showingBack ? content.backHTML : content.frontHTML
@@ -83,7 +88,7 @@ struct AnkiCardView: View {
 
     /// Keep imported structure and behavior, but let the host surface show through.
     /// Only presentation is adapted; the saved HTML/CSS and media are untouched.
-    private static func nativeThemeCSS(dark: Bool) -> String {
+    nonisolated private static func nativeThemeCSS(dark: Bool) -> String {
         """
         :root {
           --la-ink: \(dark ? "#f2f5fa" : "#19213d");
@@ -108,7 +113,7 @@ struct AnkiCardView: View {
         """
     }
 
-    private static func nativeThemeScript(dark: Bool) -> String {
+    nonisolated private static func nativeThemeScript(dark: Bool) -> String {
         """
         (() => {
           const dark=\(dark ? "true" : "false"), ink=dark?[242,245,250]:[25,33,61];
@@ -256,7 +261,7 @@ struct AnkiCardView: View {
     }
 }
 
-struct AnkiRenderConfiguration: Equatable {
+nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
     var dark = false
     var compact = false
     var centered = true
@@ -310,11 +315,11 @@ struct AnkiRenderConfiguration: Equatable {
             self?.isLoading = false
         }
     }
-    func load(_ document: String, directory: URL?) {
+    func load(_ document: String, directory: URL?, mediaIndex: [String: String]? = nil) {
         guard coordinator.document != document || coordinator.directory != directory else { return }
         coordinator.stop(); error = nil; isLoading = true
         coordinator.document = document; coordinator.directory = directory
-        coordinator.media?.directory = directory
+        coordinator.media?.setDirectory(directory, preparedIndex: mediaIndex)
         webView.loadHTMLString(document, baseURL: URL(string: "anki-media://deck/"))
     }
     func retry() {
@@ -338,6 +343,7 @@ private struct AnkiRenderedSurface: View {
     let directory: URL?
     let compact: Bool
     let loadingChanged: ((Bool) -> Void)?
+    var mediaIndex: [String: String]? = nil
     var body: some View {
         ZStack {
             AnkiNativeWebView(renderer: renderer)
@@ -356,8 +362,8 @@ private struct AnkiRenderedSurface: View {
         }
         .onAppear { renderer.coordinator.permitsPlayback = true }
         .onDisappear { renderer.coordinator.permitsPlayback = false; renderer.coordinator.stop() }
-        .onChange(of: document, initial: true) { _, value in renderer.load(value, directory: directory) }
-        .onChange(of: directory) { _, value in renderer.load(document, directory: value) }
+        .onChange(of: document, initial: true) { _, value in renderer.load(value, directory: directory, mediaIndex: mediaIndex) }
+        .onChange(of: directory) { _, value in renderer.load(document, directory: value, mediaIndex: mediaIndex) }
         .onChange(of: renderer.isLoading, initial: true) { _, value in loadingChanged?(value || renderer.error != nil) }
         .onChange(of: renderer.error) { _, value in loadingChanged?(renderer.isLoading || value != nil) }
     }
@@ -365,8 +371,15 @@ private struct AnkiRenderedSurface: View {
 
 final class AnkiMediaSchemeHandler: NSObject, WKURLSchemeHandler {
     var index: [String: String] = [:]
+    private var mediaDirectory: URL?
     var directory: URL? {
-        didSet { index = directory.map { AnkiCardContent.mediaIndex(in: $0) } ?? [:] }
+        get { mediaDirectory }
+        set { setDirectory(newValue) }
+    }
+    func setDirectory(_ directory: URL?, preparedIndex: [String: String]? = nil) {
+        guard mediaDirectory != directory || preparedIndex != nil else { return }
+        mediaDirectory = directory
+        index = preparedIndex ?? directory.map { AnkiCardContent.mediaIndex(in: $0) } ?? [:]
     }
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         guard let requestURL = urlSchemeTask.request.url else { urlSchemeTask.didFailWithError(URLError(.badURL)); return }

@@ -121,12 +121,7 @@ struct DeckCardPreviewRow: View {
                 // DisclosureGroup may evaluate its content while collapsed. Keep
                 // WebKit creation behind an explicit condition as well.
                 if expandedAnki, let content {
-                Text("Front").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
-                AnkiCardView(content: content, showingBack: false, compact: true).frame(height: 190)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                Text("Back").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
-                AnkiCardView(content: content, showingBack: true, compact: true).frame(height: 190)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    AnkiExpandedPreview(content: content)
                 } else if expandedAnki { ProgressView("Loading card…") }
             } label: { Text("Formatted card").font(.caption2) }.tint(LearnAlertStyle.appAccentForeground)
         }
@@ -166,6 +161,14 @@ nonisolated enum AnkiLibraryPreview {
         return value
     }
 
+    static func mediaIndex(in directory: URL) -> [String: String] {
+        let key = directory as NSURL
+        if let saved = indexes.object(forKey: key) { return saved.values }
+        let index = Index(AnkiCardContent.mediaIndex(in: directory))
+        indexes.setObject(index, forKey: key)
+        return index.values
+    }
+
     private static func thumbnail(_ content: AnkiCardContent) -> UIImage? {
         let html = String(content.frontHTML.prefix(32_768)) + String(content.backHTML.prefix(32_768))
         guard !Task.isCancelled, let regex = imagePattern,
@@ -173,11 +176,7 @@ nonisolated enum AnkiLibraryPreview {
               let range = Range(match.range(at: 1), in: html) else { return nil }
         let name = String(html[range]).replacingOccurrences(of: "&amp;", with: "&").removingPercentEncoding ?? String(html[range])
         guard let directory = content.mediaURL else { return nil }
-        let key = directory as NSURL
-        let index: Index
-        if let saved = indexes.object(forKey: key) { index = saved }
-        else { index = Index(AnkiCardContent.mediaIndex(in: directory)); indexes.setObject(index, forKey: key) }
-        guard let url = AnkiCardContent.safeMediaURL(name: name, directory: directory, index: index.values),
+        guard let url = AnkiCardContent.safeMediaURL(name: name, directory: directory, index: mediaIndex(in: directory)),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 192] as CFDictionary) else { return nil }
         return UIImage(cgImage: thumbnail)
