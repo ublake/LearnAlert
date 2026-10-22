@@ -20,6 +20,13 @@ private final class CommunityTestProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() { }
 }
 
+@MainActor private final class MemoryCredentialStorage: CommunityCredentialStorage {
+ var data: Data?; var failSave = false; var deletes = 0
+ func load() -> Data? { data }
+ func save(_ value: Data) throws { if failSave { throw CommunityAPIError(status:500,message:"Your profile could not be saved securely. Please try again.") }; data=value }
+ func delete() { data=nil; deletes += 1 }
+}
+
 @Suite("Community media transfers", .serialized)
 @MainActor
 struct CommunityTransferTests {
@@ -698,7 +705,7 @@ struct CommunityTransferTests {
             (200, try json(["token": responseToken, "expiresAt": Int(Date().timeIntervalSince1970) + 3600, "handle": "@buddy"]))
         }
         defer { CommunityTestProtocol.response = nil }
-        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api()) { _ in .authorized }
+        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api(), credentialStorage: MemoryCredentialStorage()) { _ in .authorized }
         defer { session.signOut() }
         let signedIn = await session.signIn(identityToken: "identity", nonce: "nonce", givenName: nil)
         #expect(signedIn, "Session error: \(session.errorMessage ?? "none")")
@@ -729,7 +736,7 @@ struct CommunityTransferTests {
             return (200, try json(["handle": "@buddy", "avatar": ["hair": 0, "eyes": 0, "mouth": 0], "isComplete": true, "authorID": "public-id"]))
         }
         defer { CommunityTestProtocol.response = nil }
-        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api()) { id in
+        let session = CommunitySession(service: "com.learnalert.tests.\(UUID())", api: api(), credentialStorage: MemoryCredentialStorage()) { id in
             checkedIDs.append(id)
             if appleOffline { throw URLError(.notConnectedToInternet) }
             return state
@@ -809,4 +816,35 @@ struct CommunityTransferTests {
         let file = try #require(AnkiCardContent.safeMediaURL(name: "tone.wav", directory: restoredDirectory))
         #expect(try Data(contentsOf: file) == bytes)
     }
+    @Test("Injected storage retains reload/lifecycle and fails closed without keychain")
+    func fixtureStorageErrors() async throws {
+        let storage = MemoryCredentialStorage(); var author = "first"
+        CommunityTestProtocol.response = { request in
+            if request.httpMethod == "POST" { return (200, try json(["token":"synthetic", "expiresAt":Int(Date().timeIntervalSince1970)+3600,"handle":"@buddy"])) }
+            return (200, try json(["handle":"@buddy","avatar":["hair":0,"eyes":0,"mouth":0],"isComplete":true,"authorID":author]))
+        }
+        defer { CommunityTestProtocol.response = nil }
+        let session = CommunitySession(service:"review.synthetic",api:api(),credentialStorage:storage) { _ in .authorized }
+        defer { session.signOut() }
+        storage.failSave=true
+        let failed = await session.signIn(identityToken:"fixture",nonce:"fixture",givenName:nil)
+        #expect(!failed && session.credentials == nil && storage.data == nil)
+        #expect(session.errorMessage?.contains("securely") == true)
+        storage.failSave=false
+        let success = await session.signIn(identityToken:"fixture",nonce:"fixture",givenName:nil)
+        try #require(success)
+        await session.refreshProfile(); #expect(session.profile.authorID == "first")
+        let durable = try #require(storage.data)
+        let restored = CommunitySession(service:"review.synthetic",api:api(),credentialStorage:storage) { _ in .authorized }
+        #expect(restored.token == session.token && restored.profile.authorID == "first")
+        storage.failSave=true; author="unpersisted"; await session.refreshProfile()
+        #expect(session.profile.authorID == "first" && storage.data == durable)
+        #expect(session.errorMessage?.contains("securely") == true)
+        storage.failSave=false; session.handle(CommunityAPIError(status:401,message:"Expired"))
+        #expect(session.credentials == nil && storage.data == nil && storage.deletes == 1)
+        let signedIn = await session.signIn(identityToken:"fixture",nonce:"fixture",givenName:nil)
+        try #require(signedIn); session.appleCredentialRevoked()
+        #expect(session.credentials == nil && storage.data == nil && storage.deletes == 2)
+    }
+
 }

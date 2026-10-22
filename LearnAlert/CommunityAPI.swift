@@ -355,12 +355,20 @@ struct CommunityAPI {
 }
 
 @MainActor
+protocol CommunityCredentialStorage: AnyObject {
+    func load() -> Data?
+    func save(_ data: Data) throws
+    func delete()
+}
+
+@MainActor
 final class CommunitySession: ObservableObject {
     static let shared = CommunitySession()
     @Published private(set) var credentials: CommunityAPI.SignInResult?
     @Published var isSigningIn = false
     @Published var errorMessage: String?
     private let service: String
+    private let credentialStorage: CommunityCredentialStorage?
     private let api: CommunityAPI
     private let credentialState: (String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 
@@ -373,19 +381,24 @@ final class CommunitySession: ObservableObject {
     var needsProfileSetup: Bool { isSignedIn && !profile.isComplete }
     var isRestricted: Bool { profile.accountStatus == "banned" || profile.accountStatus == "suspended" }
 
-    init(service: String = "com.learnalert.community", api: CommunityAPI? = nil,
+    init(service: String = "com.learnalert.community", api: CommunityAPI? = nil, credentialStorage: CommunityCredentialStorage? = nil,
          credentialState: @escaping (String) async throws -> ASAuthorizationAppleIDProvider.CredentialState = { userID in
              try await ASAuthorizationAppleIDProvider().credentialState(forUserID: userID)
          }) {
         self.service = service
         self.api = api ?? CommunityAPI()
         self.credentialState = credentialState
-        var query = keychainQuery
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data {
-            credentials = try? JSONDecoder().decode(CommunityAPI.SignInResult.self, from: data)
+        self.credentialStorage = credentialStorage
+        if let credentialStorage {
+            if let data = credentialStorage.load() { credentials = try? JSONDecoder().decode(CommunityAPI.SignInResult.self, from: data) }
+        } else {
+            var query = keychainQuery
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            var result: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data {
+                credentials = try? JSONDecoder().decode(CommunityAPI.SignInResult.self, from: data)
+            }
         }
     }
 
@@ -395,17 +408,21 @@ final class CommunitySession: ObservableObject {
 
     private func persist(_ result: CommunityAPI.SignInResult) throws {
         let data = try JSONEncoder().encode(result)
-        var update: [String: Any] = [kSecValueData as String: data]
-        update[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemUpdate(keychainQuery as CFDictionary, update as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = keychainQuery
-            for (key, value) in update { item[key] = value }
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+        if let credentialStorage {
+            try credentialStorage.save(data)
+        } else {
+            var update: [String: Any] = [kSecValueData as String: data]
+            update[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let status = SecItemUpdate(keychainQuery as CFDictionary, update as CFDictionary)
+            if status == errSecItemNotFound {
+                var item = keychainQuery
+                for (key, value) in update { item[key] = value }
+                guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+                    throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
+                }
+            } else if status != errSecSuccess {
                 throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
             }
-        } else if status != errSecSuccess {
-            throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
         }
         credentials = result
     }
@@ -490,7 +507,7 @@ final class CommunitySession: ObservableObject {
     }
 
     func signOut() {
-        SecItemDelete(keychainQuery as CFDictionary)
+        if let credentialStorage { credentialStorage.delete() } else { SecItemDelete(keychainQuery as CFDictionary) }
         credentials = nil
         errorMessage = nil
     }
@@ -504,7 +521,7 @@ final class CommunitySession: ObservableObject {
 
     func handle(_ error: Error) {
         if let apiError = error as? CommunityAPIError, apiError.status == 401 {
-            SecItemDelete(keychainQuery as CFDictionary)
+            if let credentialStorage { credentialStorage.delete() } else { SecItemDelete(keychainQuery as CFDictionary) }
             credentials = nil
         } else if let apiError = error as? CommunityAPIError,
                   ["ACCOUNT_BANNED", "ACCOUNT_SUSPENDED"].contains(apiError.code?.uppercased() ?? ""),

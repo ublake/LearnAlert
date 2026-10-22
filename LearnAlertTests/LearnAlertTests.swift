@@ -573,7 +573,7 @@ struct CourseCurriculumTests {
 
     @Test("Catalog provides valid Spanish and Korean introductory courses")
     func catalogCoursesCompleteness() {
-        let courses = CourseCurriculumCatalog.courses
+        let courses = CourseCurriculumCatalog.bundledCourses
         #expect(courses.count >= 2)
 
         let spanish = courses.first { $0.id == "spanish-course" }
