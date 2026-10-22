@@ -44,6 +44,7 @@ struct CoursePracticeView: View {
     @State private var result: CourseCheckpointResult?
     @State private var session = UUID().uuidString
     @State private var saveError: String?
+    @State private var exerciseAttemptID: String?
     @State private var pendingGrade: Bool?
     @State private var reviewMisses = false
     @State private var autoPronounce = false
@@ -110,6 +111,8 @@ struct CoursePracticeView: View {
                                 onReadingRequested: { stopPlayback(); prefersReading = true },
                                 onListeningRequested: { prefersReading = false }) { correct in record(correct: correct) }
                                 .id("\(session)-\(index)-\(presentationId)")
+                                .environment(\.courseExercisePersistence, .shared(courseID: course.id, card: practiceCards[index]))
+                                .environment(\.courseExerciseAttemptReported, { exerciseAttemptID = $0 })
                         }.padding(.horizontal, 24).padding(.vertical, 24)
                             .tint(Color(hex: course.colorHex))
                             .frame(maxWidth: 640).frame(maxWidth: .infinity)
@@ -119,7 +122,8 @@ struct CoursePracticeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { sessionHeader }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if loaded && !finished && practiceCards.indices.contains(index) { answerFooter }
+                if loaded && !finished && practiceCards.indices.contains(index),
+                   answered || practiceCards[index].activity?.exercise == nil || saveError != nil { answerFooter }
             }
             .onAppear {
                 autoPronounce = manager.enrollment(for: course.id)?.autoPronounceInStudy ?? false
@@ -177,7 +181,7 @@ struct CoursePracticeView: View {
                 Text(saveError).font(.callout).foregroundStyle(.red)
                 if let pendingGrade { Button("Retry saving") { record(correct: pendingGrade) } }
             }
-            if answered {
+            if answered && practiceCards[index].activity?.exercise == nil {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: lastCorrect ? (practiceCards[index].isReadThrough ? "book.closed.fill" : "checkmark.circle.fill") : "arrow.counterclockwise.circle.fill")
                         .font(.title2).foregroundStyle(lastCorrect ? (practiceCards[index].isReadThrough ? CourseKoreanText.emphasisColor : Color.green) : Color.orange)
@@ -220,7 +224,8 @@ struct CoursePracticeView: View {
                     .frame(width: 128, height: 128)
                     .background(Color(hex: course.colorHex).opacity(0.12), in: Circle())
                 Text(finishTitle).font(.largeTitle.bold()).multilineTextAlignment(.center)
-                Text("\(practiceCards.count - missed.count) of \(practiceCards.count) correct").font(.title3).foregroundStyle(.secondary)
+                let scored = practiceCards.filter { $0.activity?.exercise?.format != "exposure" }
+                Text("\(scored.filter { !missed.contains($0.id) }.count) of \(scored.count) practice questions correct").font(.title3).foregroundStyle(.secondary)
                 if let result, !result.passed {
                     Text("\(Int(result.percentage * 100))% · \(Int((checkpointUnit?.checkpointQuiz?.passingScoreThreshold ?? 0.8) * 100))% to pass")
                         .font(.subheadline).foregroundStyle(.secondary)
@@ -250,7 +255,7 @@ struct CoursePracticeView: View {
         KoreanSpeechManager.shared.speak(text)
     }
     private func stopPlayback() {
-        KoreanSpeechManager.shared.stop()
+        if allowKoreanSpeech { KoreanSpeechManager.shared.stop() }
         CardAudioPlayer.stopActive()
     }
     private func record(correct: Bool) {
@@ -259,14 +264,14 @@ struct CoursePracticeView: View {
         let card = practiceCards[index]
         if savesSession {
             guard manager.recordPracticeAnswer(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnit?.id,
-                sessionId: session, cardId: card.id, correct: correct) else {
+                sessionId: session, cardId: card.id, correct: correct, exerciseAttemptID: exerciseAttemptID) else {
                 pendingGrade = correct; saveError = CourseLearningStore.shared.lastError ?? "Your progress couldn’t be saved. Please try again."; return
             }
             savedAnswers[card.id] = correct
         } else if !isCheckpoint, let unit = course.units.first(where: { $0.lessons.contains(where: { $0.cards.contains(where: { $0.id == card.id }) }) }),
            let lesson = unit.lessons.first(where: { $0.cards.contains(where: { $0.id == card.id }) }) {
             let success = manager.recordCardAnswer(courseId: course.id, sectionId: unit.id, lessonId: lesson.id,
-                cardId: card.id, isCorrect: correct, eventToken: "\(session)-\(card.id)")
+                cardId: card.id, isCorrect: correct, eventToken: "\(session)-\(card.id)", exerciseAttemptID: exerciseAttemptID)
             if !success { pendingGrade = correct; saveError = CourseLearningStore.shared.lastError ?? "This lesson is locked. Return to the path."; return }
         }
         pendingGrade = nil; saveError = nil
@@ -284,17 +289,33 @@ struct CoursePracticeView: View {
         orderedIds = restored.cardIds
         session = restored.id
         savedAnswers = restored.answers
+        exerciseAttemptID = restored.pendingContinueAttemptID
         missed = restored.missedCardIds
         saveError = nil
         loaded = true
-        if let next = restored.nextIndex { index = next }
+        if let pending = restored.pendingContinueCardID, let position = orderedIds.firstIndex(of: pending) {
+            index = position; answered = true; lastCorrect = restored.answers[pending] ?? false
+        } else if let next = restored.nextIndex { index = next; answered = false }
         else { finishSession() }
     }
 
     private func advance() {
+        guard answered else { return }
         stopPlayback()
         presentationId = UUID()
+        if !savesSession, practiceCards[index].activity?.exercise != nil {
+            guard CourseLearningStore.shared.transaction({
+                return $0.acknowledgeRenderedExercise(courseID: course.id, card: practiceCards[index], attemptID: exerciseAttemptID)
+            }) == true else { saveError = "Continue couldn’t be saved. Try again."; return }
+        }
         if savesSession {
+            if practiceCards[index].activity?.exercise?.usesPracticeRenderer == true {
+                guard CourseLearningStore.shared.transaction({
+                    $0.continueExercise(courseID: course.id, lessonID: lessonId, checkpointID: checkpointUnit?.id, sessionID: session, cardID: practiceCards[index].id, attemptID: exerciseAttemptID)
+                }) == true else {
+                    saveError = CourseLearningStore.shared.lastError ?? "Continue couldn’t be saved. Try again."; return
+                }
+            }
             answered = false
             restoreSession()
         } else if index + 1 < practiceCards.count {

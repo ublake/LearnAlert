@@ -178,6 +178,7 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
     /// Complete authored section guides; an empty list deliberately hides a guide.
     public let guides: [String: [CourseGuideTopic]]?
     public let guidePresentation: [String: CourseGuidePresentation]?
+    public let learning: CourseLearningGraph?
 
     public var totalLessonsCount: Int {
         units.reduce(0) { $0 + $1.lessons.count }
@@ -201,7 +202,8 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         outcomes: [String],
         units: [CourseUnit],
         guides: [String: [CourseGuideTopic]]? = nil,
-        guidePresentation: [String: CourseGuidePresentation]? = nil
+        guidePresentation: [String: CourseGuidePresentation]? = nil,
+        learning: CourseLearningGraph? = nil
     ) {
         self.id = id
         self.title = title
@@ -215,6 +217,7 @@ public struct CourseDefinition: Identifiable, Codable, Hashable {
         self.units = units
         self.guides = guides
         self.guidePresentation = guidePresentation
+        self.learning = learning
     }
 }
 

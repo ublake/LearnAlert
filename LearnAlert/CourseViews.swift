@@ -877,3 +877,60 @@ private struct StatPill: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
+
+
+/// Visible after re-upgrade; nothing claims a silent or seamless history merge.
+struct CourseProgressRecoveryBanner: View {
+    @ObservedObject private var manager: CourseProgressManager
+    init(manager: CourseProgressManager = .shared) { _manager = ObservedObject(wrappedValue: manager) }
+    @State private var showingRecovery = false
+    var body: some View {
+        if let notice = manager.progressRecoveryNotice ?? manager.progressReadError.map({ "Course progress couldn’t be loaded. Your saved files haven’t been replaced. " + $0 }) {
+            Button { showingRecovery = true } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle").font(.headline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(manager.progressRecoveryNotice != nil ? "Older progress found" : "Progress needs attention").font(.headline)
+                        Text(manager.progressRecoveryNotice != nil
+                             ? "Older work hasn’t been added. Review and export histories."
+                             : "Saved files are unchanged. Review recovery.")
+                            .font(.callout).fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                }.foregroundStyle(.primary).frame(minHeight: 44)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemGroupedBackground))
+            }.buttonStyle(.plain)
+                .accessibilityHint(notice + " Opens the recovery explanation and export action.")
+                .sheet(isPresented: $showingRecovery) { CourseProgressRecoverySheet(manager: manager) }
+        }
+    }
+}
+private struct CourseProgressRecoverySheet: View {
+    @ObservedObject private var manager: CourseProgressManager
+    init(manager: CourseProgressManager = .shared) { _manager = ObservedObject(wrappedValue: manager) }
+    @Environment(\.dismiss) private var dismiss
+    @State private var exportURL: URL?
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Keep both progress histories").font(.title2.bold())
+                    Text("Your current history stays active. Work saved by an older app version is preserved separately and has not been added to your lessons, scores or reviews.")
+                    Text("The recovery file includes both histories and the original source records. Exporting does not combine or automatically restore them. LearnAlert has not sent these files anywhere.")
+                    if let exportURL {
+                        ShareLink(item: exportURL) { Label("Export both histories", systemImage: "square.and.arrow.up").frame(minHeight: 44) }
+                            .buttonStyle(.borderedProminent)
+                    } else { Button("Prepare recovery export", action: prepare).frame(minHeight: 44) }
+                    if let error { Text(error).foregroundStyle(.red).font(.callout) }
+                }.padding(24)
+            }.navigationTitle("Progress recovery").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+    private func prepare() {
+        do { exportURL = try manager.exportProgressRecovery(); error = nil }
+        catch { self.error = "The export couldn’t be prepared. Your histories remain saved. " + error.localizedDescription }
+    }
+}

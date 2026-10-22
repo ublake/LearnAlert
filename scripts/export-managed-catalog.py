@@ -25,6 +25,13 @@ chunks.append((base/'CardFieldMedia.swift').read_text().split('enum CardChoiceId
 chunks.append((base/'AnkiCardContent.swift').read_text().split('nonisolated enum AnkiMediaCleanup')[0].replace('import SwiftData',''))
 chunks.append((base/'ManagedCatalog.swift').read_text().split('// The manifest')[0].replace('import Foundation','').replace('import Combine',''))
 chunks.append('''
+// Export does not play or resolve runtime audio. Keep these service boundaries
+// deterministic so schema export never initializes an audio device/synthesizer.
+enum CardAudioStore { static func isAvailable(named: String?) -> Bool { false } }
+final class KoreanSpeechManager {
+ static let shared = KoreanSpeechManager()
+ func canPlay(_ text: String) -> Bool { false }
+}
 struct Deck { var sourceCommunityID: String?; var sourcePremadeID: String? }
 final class ManagedCatalogStore {
  static let shared = ManagedCatalogStore()
@@ -53,7 +60,7 @@ let courses = CourseCurriculumCatalog.bundledCourses.map { course in
   ? CourseGuidePresentation(showsHangulDiagram:true,referenceTitle:"More about Hangul · National Institute of Korean Language",referenceURL:"https://www.korean.go.kr/eng_hangeul/principle/001.html",diagramTitle:"How the letters fit",diagramFooter:"Initial → vowel → final (if present)",diagramExamples:CourseGuideDiagramExample.bundled)
   : CourseGuidePresentation())
  })
- return CourseDefinition(id:course.id,title:course.title,language:course.language,flagEmoji:course.flagEmoji,levelTag:course.levelTag,colorHex:course.colorHex,summary:course.summary,estimatedHours:course.estimatedHours,outcomes:course.outcomes,units:course.units,guides:guides,guidePresentation:presentation)
+ return CourseDefinition(id:course.id,title:course.title,language:course.language,flagEmoji:course.flagEmoji,levelTag:course.levelTag,colorHex:course.colorHex,summary:course.summary,estimatedHours:course.estimatedHours,outcomes:course.outcomes,units:course.units,guides:guides,guidePresentation:presentation,learning:course.learning)
 }
 let encoder = JSONEncoder();encoder.outputFormatting = [.prettyPrinted,.sortedKeys,.withoutEscapingSlashes]
 let items = courses.map(SeedItem.course) + PremadeDeckCatalog.bundledDecks.filter{$0.category == "Exam Prep"}.map(SeedItem.exam)

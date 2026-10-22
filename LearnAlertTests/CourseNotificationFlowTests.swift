@@ -162,23 +162,23 @@ struct CourseNotificationFlowTests {
         #expect(CourseNotificationProgress(course: course, snapshot: state).unitId == course.units[1].id)
     }
 
-    @Test("Unfinished legacy completion requires replacement activities without deleting history")
+    @Test("Legacy completion survives replacement activities without deleting history")
     func unfinishedWorkshopMigration() {
         var state = legacyFirstUnit(passed: false)
         let firstLesson = course.units[0].lessons[0]
         let secondLesson = course.units[0].lessons[1]
         let oldIds = Set(state.progress[course.id]?[firstLesson.id]?.masteredCardIds ?? [])
-        #expect(state.status(course: course, lessonId: firstLesson.id) == .current)
-        #expect(state.status(course: course, lessonId: secondLesson.id) == .locked)
+        #expect(state.status(course: course, lessonId: firstLesson.id) == .completed)
+        #expect(state.status(course: course, lessonId: secondLesson.id) == .completed)
         #expect(state.status(course: course, lessonId: course.units[1].lessons[0].id) == .locked)
-        #expect(state.pendingCheckpoint(course: course) == nil)
+        #expect(state.pendingCheckpoint(course: course)?.id == course.units[0].id)
         for card in firstLesson.cards {
             let saved = state.answer(course: course, lessonId: firstLesson.id, cardId: card.id,
                 correct: true, token: "migrate-\(card.id)")
             #expect(saved)
         }
         #expect(state.status(course: course, lessonId: firstLesson.id) == .completed)
-        #expect(state.status(course: course, lessonId: secondLesson.id) == .current)
+        #expect(state.status(course: course, lessonId: secondLesson.id) == .completed)
         let retainedIds = Set(state.progress[course.id]?[firstLesson.id]?.masteredCardIds ?? [])
         #expect(retainedIds.isSuperset(of: oldIds))
         #expect(retainedIds.isSuperset(of: Set(firstLesson.cards.map(\.id))))

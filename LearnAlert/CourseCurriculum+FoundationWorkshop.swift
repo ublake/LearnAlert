@@ -11,7 +11,7 @@ extension CourseCurriculumCatalog {
         return CourseDefinition(id: course.id, title: course.title, language: course.language,
             flagEmoji: course.flagEmoji, levelTag: course.levelTag, colorHex: course.colorHex,
             summary: course.summary, estimatedHours: course.estimatedHours, outcomes: course.outcomes,
-            units: [unit] + course.units.dropFirst())
+            units: [unit] + course.units.dropFirst(), guides: course.guides, guidePresentation: course.guidePresentation, learning: course.learning)
     }
 
     private static var foundationLessons: [CourseLesson] {

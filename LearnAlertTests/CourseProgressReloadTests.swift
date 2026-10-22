@@ -79,7 +79,7 @@ struct CourseProgressReloadTests {
         #expect(initialFraction > 0)
         #expect(manager.answeredCardsCount(course: course, lesson: lesson) == 1)
 
-        let snapshotURL = directory.appendingPathComponent("course-learning-v1.json")
+        let snapshotURL = directory.appendingPathComponent("course-learning-v2.json")
         let savedData = try Data(contentsOf: snapshotURL)
         try Data("not valid JSON".utf8).write(to: snapshotURL)
         #expect(manager.currentLesson(for: course)?.id == lesson.id)

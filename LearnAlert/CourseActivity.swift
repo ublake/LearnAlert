@@ -17,6 +17,8 @@ public struct CourseActivity: Codable, Hashable {
     public var optionHints: [String: String] = [:]
     public var readingCue: String? = nil
     public var practiceGroup: String? = nil
+    /// Additive presentation contract. Existing kind/options/slots remain a playable fallback.
+    public var exercise: CourseExercise? = nil
 }
 
 struct CourseTraceGuidance {
@@ -114,7 +116,7 @@ enum HangulStrokeGuide {
 
 extension CourseActivity {
     private enum CodingKeys: String, CodingKey {
-        case kind, sequence, rule, example, symbol, layout, tokens, slots, slotLabels, optionHints, readingCue, practiceGroup
+        case kind, sequence, rule, example, symbol, layout, tokens, slots, slotLabels, optionHints, readingCue, practiceGroup, exercise
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -129,5 +131,123 @@ extension CourseActivity {
         optionHints = try c.decodeIfPresent([String: String].self, forKey: .optionHints) ?? [:]
         readingCue = try c.decodeIfPresent(String.self, forKey: .readingCue)
         practiceGroup = try c.decodeIfPresent(String.self, forKey: .practiceGroup)
+        exercise = try c.decodeIfPresent(CourseExercise.self, forKey: .exercise)
     }
+}
+
+
+/// Stable lexical senses recur across contexts; concepts identify the particular skill.
+public struct CourseLearningGraph: Codable, Hashable {
+    public var vocabulary: [String: CourseLexicalSense]
+    public var concepts: [String: CourseConcept]
+}
+public struct CourseLexicalSense: Codable, Hashable {
+    public var lemma: String
+    public var meaning: String
+    public var locale: String
+    public var article: String?
+    public var image: String?
+}
+public struct CourseConcept: Codable, Hashable {
+    public var title: String
+    public var prerequisiteIDs: [String]
+    public var vocabularyIDs: [String]
+}
+public struct CoursePictureChoice: Codable, Hashable, Identifiable {
+    public var id: String
+    public var image: String
+    /// English task equivalent, without spelling the Spanish answer.
+    public var description: String
+}
+public struct CourseWordTile: Codable, Hashable, Identifiable {
+    public var id: String
+    public var text: String
+}
+public struct CourseExercise: Codable, Hashable {
+    // Strings deliberately keep future optional metadata decodable by this reader.
+    public var format: String // pictureChoice, wordBank, exposure
+    public var vocabularyIDs: [String]
+    public var conceptIDs: [String]
+    public var pictures: [CoursePictureChoice]?
+    public var correctChoiceID: String?
+    public var tiles: [CourseWordTile]?
+    public var acceptedOrders: [[String]]? // tile text, not occurrence identity
+    public var usesPracticeRenderer: Bool { ["pictureChoice", "wordBank", "exposure"].contains(format) }
+}
+
+/// Pure, serializable reducer. Duplicate words are different finite tile instances.
+struct CourseExerciseState: Codable, Equatable {
+    var attemptID = UUID().uuidString
+    var selectedIDs: [String] = []
+    var choiceID: String?
+    var result: Bool?
+    var usedHelp = false
+    var revision: Int = 0
+
+    /// Stable within an attempt (including relaunch), varied across new attempts.
+    func orderedIDs(_ ids: [String]) -> [String] {
+        func rank(_ id: String) -> UInt64 {
+            var value = (attemptID + ":" + id).utf8.reduce(UInt64(14695981039346656037)) { ($0 ^ UInt64($1)) &* 1099511628211 }
+            value = (value ^ (value >> 30)) &* 0xbf58476d1ce4e5b9
+            value = (value ^ (value >> 27)) &* 0x94d049bb133111eb
+            return value ^ (value >> 31)
+        }
+        return ids.sorted { rank($0) == rank($1) ? $0 < $1 : rank($0) < rank($1) }
+    }
+    mutating func append(_ id: String, exercise: CourseExercise) {
+        guard result == nil, exercise.tiles?.contains(where: { $0.id == id }) == true,
+              !selectedIDs.contains(id) else { return }
+        selectedIDs.append(id); revision += 1
+    }
+    mutating func remove(_ id: String) {
+        guard result == nil, selectedIDs.contains(id) else { return }
+        selectedIDs.removeAll { $0 == id }; revision += 1
+    }
+    mutating func move(_ id: String, before target: String, exercise: CourseExercise) {
+        guard result == nil, id != target, selectedIDs.contains(target),
+              exercise.tiles?.contains(where: { $0.id == id }) == true else { return }
+        selectedIDs.removeAll { $0 == id }
+        guard let index = selectedIDs.firstIndex(of: target) else { return }
+        selectedIDs.insert(id, at: index); revision += 1
+    }
+    mutating func select(_ id: String, exercise: CourseExercise) {
+        guard result == nil, exercise.pictures?.contains(where: { $0.id == id }) == true else { return }
+        choiceID = id; revision += 1
+    }
+    func canSubmit(_ exercise: CourseExercise) -> Bool {
+        switch exercise.format {
+        case "exposure": return true
+        case "pictureChoice": return choiceID != nil && exercise.pictures?.contains(where: { $0.id == choiceID }) == true
+        case "wordBank": return !selectedIDs.isEmpty
+        default: return false
+        }
+    }
+    @discardableResult mutating func submit(_ exercise: CourseExercise) -> Bool? {
+        guard result == nil, canSubmit(exercise) else { return nil }
+        switch exercise.format {
+        case "exposure": result = true
+        case "pictureChoice": result = choiceID == exercise.correctChoiceID
+        case "wordBank":
+            let tiles = exercise.tiles ?? []
+            guard Set(tiles.map(\.id)).count == tiles.count,
+                  selectedIDs.allSatisfy({ id in tiles.contains { $0.id == id } }) else { return nil }
+            let words = selectedIDs.compactMap { id in tiles.first { $0.id == id }?.text }
+            result = exercise.acceptedOrders?.contains(words) == true
+        default: return nil
+        }
+        revision += 1
+        return result
+    }
+}
+
+struct CourseExerciseEvidence: Codable {
+    var attemptID: String
+    var courseID: String
+    var cardID: String
+    var vocabularyIDs: [String]
+    var conceptIDs: [String]
+    var mode: String // exposure, recognition, supportedConstruction
+    var correct: Bool
+    var assisted: Bool
+    var timestamp: Date
 }

@@ -52,7 +52,7 @@ struct CourseNotificationProgress: Equatable {
             .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
             .flatMap { lesson in
                 let known = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
-                return lesson.cards.filter { $0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id) }
+                return lesson.cards.filter { !$0.isExposure && ($0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id)) }
             }
             .sorted { (snapshot.srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (snapshot.srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         var seen = excluding

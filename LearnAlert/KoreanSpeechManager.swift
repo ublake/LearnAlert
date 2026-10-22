@@ -113,9 +113,10 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     // MARK: - AVSpeechSynthesizerDelegate
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        let identifier = ObjectIdentifier(player)
+        // Retain the callback object until the actor checks it: an address alone
+        // can be reused by a replacement player before this task executes.
         Task { @MainActor in
-            guard let current = self.recordingPlayer, ObjectIdentifier(current) == identifier else { return }
+            guard self.recordingPlayer === player else { return }
             self.recordingPlayer = nil
             self.playbackRequestID = nil
             self.isSpeaking = false
@@ -125,13 +126,21 @@ final class KoreanSpeechManager: NSObject, ObservableObject, AVSpeechSynthesizer
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        let identifier = ObjectIdentifier(utterance)
-        Task { @MainActor in self.finishPlayback(identifier) }
+        // Capture utterance strongly across the actor hop, and reject callbacks
+        // from any other synthesizer (including stale test/preview services).
+        Task { @MainActor in
+            guard synthesizer === self.synthesizer else { return }
+            self.finishPlayback(ObjectIdentifier(utterance))
+        }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        let identifier = ObjectIdentifier(utterance)
-        Task { @MainActor in self.finishPlayback(identifier) }
+        // Capture utterance strongly across the actor hop, and reject callbacks
+        // from any other synthesizer (including stale test/preview services).
+        Task { @MainActor in
+            guard synthesizer === self.synthesizer else { return }
+            self.finishPlayback(ObjectIdentifier(utterance))
+        }
     }
 
     private func finishPlayback(_ identifier: ObjectIdentifier) {

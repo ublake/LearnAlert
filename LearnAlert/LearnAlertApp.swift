@@ -29,6 +29,7 @@ struct LearnAlertApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .safeAreaInset(edge: .top, spacing: 0) { CourseProgressRecoveryBanner() }
                 // Inject it into the SwiftUI environment
                 .modelContainer(sharedDatabase.container)
                 .task(id: hasCompletedOnboarding && scenePhase == .active) {

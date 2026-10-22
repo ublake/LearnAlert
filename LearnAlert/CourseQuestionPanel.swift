@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 // Course views also compile in the notification extension, which has no app design system.
 enum CourseSurfaceStyle {
@@ -62,7 +63,7 @@ struct CourseQuestionPanel: View {
     @State private var hint = false
     @State private var inspecting = false
     @State private var readingInstead = false
-    @ObservedObject private var speech = KoreanSpeechManager.shared
+    @StateObject private var speech = CourseSpeechHandle()
 
     private var usesChoices: Bool {
         card.cardType == "multipleChoice" || card.cardType == "listening"
@@ -366,5 +367,58 @@ private struct CourseWordDefinition: View {
                 Link("Look up \(lookup)", destination: url).font(.callout)
             }
         }
+    }
+}
+
+
+/// Rendering a Spanish/read-only card must not initialize AVSpeechSynthesizer.
+@MainActor final class CourseSpeechHandle: ObservableObject {
+    private var manager: KoreanSpeechManager?
+    private var observation: AnyCancellable?
+    var isSpeaking: Bool { manager?.isSpeaking ?? false }
+    func canPlay(_ text: String) -> Bool { service().canPlay(text) }
+    func speak(_ text: String, speed: KoreanSpeechManager.PlaybackSpeed = .normal) { service().speak(text, speed: speed) }
+    func stop() { manager?.stop() }
+    private func service() -> KoreanSpeechManager {
+        if let manager { return manager }
+        let service = KoreanSpeechManager.shared
+        manager = service
+        observation = service.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return service
+    }
+}
+
+struct CourseExercisePersistence {
+    var load: @MainActor () -> CourseExerciseState?
+    var save: @MainActor (CourseExerciseState) -> Bool
+    @MainActor static func shared(courseID: String, card: CourseLessonCard) -> Self {
+        Self(load: {
+            let saved = CourseLearningStore.shared.snapshot().exerciseDrafts[CourseLearningSnapshot.exerciseKey(courseID: courseID, cardID: card.id)]
+            return saved?.exercise == card.activity?.exercise ? saved?.state : nil
+        }, save: { state in
+            guard let exercise = card.activity?.exercise else { return false }
+            return CourseLearningStore.shared.transaction {
+                $0.saveExercise(courseID: courseID, cardID: card.id, exercise: exercise, state: state)
+            } ?? false
+        })
+    }
+}
+private struct CourseExercisePersistenceKey: EnvironmentKey {
+    static let defaultValue: CourseExercisePersistence? = nil
+}
+extension EnvironmentValues {
+    var courseExercisePersistence: CourseExercisePersistence? {
+        get { self[CourseExercisePersistenceKey.self] }
+        set { self[CourseExercisePersistenceKey.self] = newValue }
+    }
+}
+
+private struct CourseExerciseAttemptReportedKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (String) -> Void)? = nil
+}
+extension EnvironmentValues {
+    var courseExerciseAttemptReported: (@MainActor (String) -> Void)? {
+        get { self[CourseExerciseAttemptReportedKey.self] }
+        set { self[CourseExerciseAttemptReportedKey.self] = newValue }
     }
 }

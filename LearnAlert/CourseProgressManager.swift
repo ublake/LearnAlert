@@ -19,6 +19,8 @@ final class CourseProgressManager: ObservableObject {
     private let learningStore: CourseLearningStore
     private var practiceSessions: [String: CoursePracticeSession] = [:]
 
+    @Published private(set) var progressRecoveryNotice: String?
+    @Published private(set) var progressReadError: String?
     @Published private(set) var activeCourseId: String?
     @Published private(set) var activeEnrollment: CourseEnrollment?
     @Published private(set) var enrolledCourseIds: [String] = []
@@ -61,6 +63,9 @@ final class CourseProgressManager: ObservableObject {
         // The shared store already migrates legacy defaults. Read its complete
         // snapshot once rather than decoding the file separately for each field/course.
         let snapshot = learningStore.snapshot()
+        if let error = learningStore.lastError { progressReadError = error; return }
+        progressReadError = nil
+        progressRecoveryNotice = snapshot.progressRecoveryNotice
         practiceSessions = snapshot.practiceSessions
         progressMap = snapshot.progress
         checkpointResults = snapshot.checkpoints
@@ -72,6 +77,13 @@ final class CourseProgressManager: ObservableObject {
         self.pinnedItemIds = defaults.stringArray(forKey: "home_pinned_item_ids") ?? []
         let unpinnedList = defaults.stringArray(forKey: "home_unpinned_explicit_ids") ?? []
         self.unpinnedExplicitIds = Set(unpinnedList)
+    }
+
+    func exportProgressRecovery() throws -> URL {
+        let data = try learningStore.recoveryExportData()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("LearnAlert-progress-recovery-" + UUID().uuidString + ".json")
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     // MARK: - Enrolled Courses
@@ -456,11 +468,11 @@ final class CourseProgressManager: ObservableObject {
     /// Records an answer event with deduplication token. Updates SRS record and checks lesson advancement.
     @discardableResult
     func recordCardAnswer(courseId: String, sectionId: String, lessonId: String, cardId: String,
-        isCorrect: Bool, eventToken: String? = nil) -> Bool {
+        isCorrect: Bool, eventToken: String? = nil, exerciseAttemptID: String? = nil) -> Bool {
         guard let course = CourseCurriculumCatalog.course(for: courseId),
               course.units.contains(where: { $0.id == sectionId && $0.lessons.contains(where: { $0.id == lessonId }) }) else { return false }
         let applied = learningStore.transaction {
-            $0.answer(course: course, lessonId: lessonId, cardId: cardId, correct: isCorrect, token: eventToken ?? UUID().uuidString)
+            $0.answer(course: course, lessonId: lessonId, cardId: cardId, correct: isCorrect, token: eventToken ?? UUID().uuidString, exerciseAttemptID: exerciseAttemptID)
         } ?? false
         reloadFromSharedDefaults()
         reconcilePendingNotifications(for: course)
@@ -502,9 +514,9 @@ final class CourseProgressManager: ObservableObject {
     }
 
     @discardableResult
-    func recordPracticeAnswer(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String, correct: Bool) -> Bool {
+    func recordPracticeAnswer(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String, correct: Bool, exerciseAttemptID: String? = nil) -> Bool {
         let saved = learningStore.transaction {
-            $0.answerPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId, cardId: cardId, correct: correct)
+            $0.answerPractice(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId, sessionId: sessionId, cardId: cardId, correct: correct, exerciseAttemptID: exerciseAttemptID)
         } ?? false
         reloadFromSharedDefaults()
         if saved { reconcilePendingNotifications(for: course) }
@@ -556,7 +568,7 @@ final class CourseProgressManager: ObservableObject {
             .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
             .flatMap { lesson in
                 let learned = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
-                return lesson.cards.filter { $0.activity == nil || learned.contains($0.id) || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil }
+                return lesson.cards.filter { !$0.isExposure && ($0.activity == nil || learned.contains($0.id) || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil) }
             }
     }
 

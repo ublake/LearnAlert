@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 private struct CourseNotificationCompactKey: EnvironmentKey {
     static let defaultValue = false
@@ -40,6 +41,7 @@ struct CourseNotificationSessionView: View {
     @State private var checkpoint: CourseUnit?
     @State private var progress: CourseNotificationProgress?
     @State private var answered = false
+    @State private var exerciseAttemptID: String?
     @State private var pendingGrade: Bool?
     @State private var error: String?
     @State private var complete = false
@@ -86,12 +88,18 @@ struct CourseNotificationSessionView: View {
             load()
             Task { try? await CourseNotificationScheduler.replenish() }
         }
-        .onReceive(KoreanSpeechManager.shared.$isSpeaking) { mediaPlaybackChanged($0 || CardAudioPlayer.isAnyPlaying) }
-        .onReceive(CardAudioPlayer.playbackChanges) { mediaPlaybackChanged($0 || KoreanSpeechManager.shared.isSpeaking) }
+        .onReceive(speechChanges) { mediaPlaybackChanged($0 || CardAudioPlayer.isAnyPlaying) }
+        .onReceive(CardAudioPlayer.playbackChanges) { mediaPlaybackChanged($0 || (CourseAudioPolicy.allowsKoreanSpeech(for: course.language) && KoreanSpeechManager.shared.isSpeaking)) }
         .onDisappear {
             stopPlayback()
             mediaPlaybackChanged(false)
         }
+    }
+
+    private var speechChanges: AnyPublisher<Bool, Never> {
+        CourseAudioPolicy.allowsKoreanSpeech(for: course.language)
+            ? KoreanSpeechManager.shared.$isSpeaking.eraseToAnyPublisher()
+            : Just(false).eraseToAnyPublisher()
     }
 
     private var header: some View {
@@ -156,6 +164,8 @@ struct CourseNotificationSessionView: View {
                     onReadingRequested: { stopPlayback(); prefersReading = true },
                     onListeningRequested: { prefersReading = false }) { correct in answer(card, correct: correct) }
                     .id(card.id + answerToken)
+                    .environment(\.courseExercisePersistence, .shared(courseID: course.id, card: card))
+                    .environment(\.courseExerciseAttemptReported, { exerciseAttemptID = $0 })
                 if let pendingGrade {
                     Button("Retry saving answer") { answer(card, correct: pendingGrade) }.buttonStyle(.borderedProminent)
                 } else if answered && !readyAfterAnswer {
@@ -243,6 +253,16 @@ struct CourseNotificationSessionView: View {
 
     private func load() {
         stopPlayback()
+        if answered, let card, card.activity?.exercise != nil {
+            guard CourseLearningStore.shared.transaction({
+                return $0.acknowledgeRenderedExercise(courseID: course.id, card: card, attemptID: exerciseAttemptID)
+            }) == true else { error = "Continue couldn’t be saved. Try again."; return }
+        }
+        let pending = CourseLearningStore.shared.transaction { $0.resumeNotificationExercise(course: course) } ?? nil
+        if let failure = CourseLearningStore.shared.lastError {
+            error = "Your saved answer couldn’t be reopened. Open the app to try again. " + failure
+            return
+        }
         let snapshot = CourseLearningStore.shared.snapshot()
         if let failure = CourseLearningStore.shared.lastError {
             error = "Your progress couldn’t be loaded. Open the app to try again. \(failure)"
@@ -250,14 +270,20 @@ struct CourseNotificationSessionView: View {
         }
         refreshProgress(snapshot)
         reviewingCheckpoint = checkpoint != nil && (reviewingCheckpoint || reviewOnly || CourseNotificationScheduler.isContinuingPractice(courseId: course.id, checkpointUnitId: checkpoint?.id))
-        if reviewingCheckpoint || reviewOnly {
+        exerciseAttemptID = pending?.attemptID
+        let pendingCard = pending.flatMap { acknowledgement in
+            course.units.flatMap(\.lessons).flatMap(\.cards).first { $0.id == acknowledgement.cardID && $0.activity?.exercise != nil }
+        }
+        if let pendingCard { card = pendingCard }
+        else if reviewingCheckpoint || reviewOnly {
             card = CourseNotificationProgress.practiceCards(course: course, snapshot: snapshot, excluding: answeredCardIds).first
         } else if checkpoint == nil {
             card = CourseNotificationProgress.nextLearningCard(course: course, snapshot: snapshot, excluding: answeredCardIds)
         } else {
             card = nil
         }
-        answered = false
+        answered = pendingCard != nil
+        if let pendingCard { answeredCardIds.insert(pendingCard.id) }
         pendingGrade = nil
         readyAfterAnswer = false
         answerToken = UUID().uuidString
@@ -271,7 +297,7 @@ struct CourseNotificationSessionView: View {
         let hadCheckpoint = checkpoint != nil
         let saved = CourseLearningStore.shared.transaction { snapshot in
             if snapshot.eventTokens.contains(token) { return true }
-            return snapshot.answer(course: course, lessonId: lesson.id, cardId: card.id, correct: correct, token: token)
+            return snapshot.answerNotificationExercise(course: course, lessonID: lesson.id, cardID: card.id, correct: correct, token: token, attemptID: exerciseAttemptID)
         } ?? false
         guard saved else {
             pendingGrade = correct
@@ -294,7 +320,7 @@ struct CourseNotificationSessionView: View {
     }
 
     private func stopPlayback() {
-        KoreanSpeechManager.shared.stop()
+        if CourseAudioPolicy.allowsKoreanSpeech(for: course.language) { KoreanSpeechManager.shared.stop() }
         CardAudioPlayer.stopActive()
     }
 }

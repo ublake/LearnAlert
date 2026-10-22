@@ -12,7 +12,7 @@ struct CourseActivityPanel: View {
     let onReadingRequested: () -> Void
     let onListeningRequested: () -> Void
     let onAnswer: (Bool) -> Void
-    @ObservedObject private var speech = KoreanSpeechManager.shared
+    @StateObject private var speech = CourseSpeechHandle()
     @Environment(\.dynamicTypeSize) private var textSize
     @Environment(\.courseNotificationCompact) private var notificationCompact
     @State private var hints = false
@@ -42,6 +42,10 @@ struct CourseActivityPanel: View {
     private var compact: Bool { notificationCompact && !immersive && activity.kind != .trace }
 
     var body: some View {
+        Group {
+        if let exercise = activity.exercise, exercise.usesPracticeRenderer {
+            CoursePracticeExercisePanel(card: card, exercise: exercise, immersive: immersive, checkpoint: checkpoint, onAnswer: onAnswer)
+        } else {
         VStack(spacing: immersive ? 24 : compact ? 8 : 14) {
             HStack {
                 Label(activityLabel, systemImage: activityIcon).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -93,6 +97,8 @@ struct CourseActivityPanel: View {
         }
         .onAppear { if choices.isEmpty { choices = (isPlacement ? activity.tokens : card.options).shuffled() } }
         .onChange(of: prefersReading) { _, value in if !value { reading = false } }
+        }
+        }
     }
 
     private var teaching: some View {
@@ -227,7 +233,7 @@ struct CourseActivityPanel: View {
                             .frame(maxWidth: .infinity, minHeight: compact ? 44 : 50)
                             .background(Color.accentColor.opacity(placement.selectedToken == token ? 0.22 : 0.07), in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(placement.selectedToken == token ? Color.accentColor : Color.clear, lineWidth: 2))
-                    }.buttonStyle(.plain).draggable(token).disabled(result != nil)
+                    }.buttonStyle(.plain).courseTileDrag(token, enabled: !notificationCompact).disabled(result != nil)
                         .accessibilityLabel("Tile \(token)").accessibilityAddTraits(placement.selectedToken == token ? .isSelected : [])
                 }
             }
@@ -260,7 +266,7 @@ struct CourseActivityPanel: View {
         }.buttonStyle(.plain).disabled(result != nil)
             .accessibilityLabel("\(label), \(placement.values[index] ?? "empty")")
             .accessibilityHint(placement.selectedToken == nil ? "Select a tile first, or activate to clear this space." : "Place selected tile.")
-            .dropDestination(for: String.self) { items, _ in
+            .courseTileDrop(enabled: !notificationCompact) { items in
                 guard result == nil, items.count == 1, let item = items.first else { return false }
                 placementMessage = nil
                 return placement.place(item, in: index, available: activity.tokens)
@@ -280,7 +286,7 @@ struct CourseActivityPanel: View {
         case .buildBlock: return "Build a block"
         case .placeTokens: return "Arrange"
         case .listenChoose: return audio ? "Listen" : "Read"
-        case .situation: return card.promptImageName == nil ? "Use Korean" : "Picture vocabulary"
+        case .situation: return card.promptImageName == nil ? "Use the language" : "Picture vocabulary"
         case .matchPairs: return "Match"
         }
     }
@@ -419,5 +425,179 @@ private struct CourseTracePanel: View {
             if index == 0 { path.move(to: scaled) } else { path.addLine(to: scaled) }
         }
         return path
+    }
+}
+
+
+/// Natural-width rows shared by the answer strip and bank. Text grows vertically.
+struct CourseWrappingLayout: Layout {
+    var spacing: CGFloat = 8
+    private func positions(_ proposal: ProposedViewSize, _ subviews: Subviews) -> ([CGPoint], CGSize) {
+        let width = max(1, proposal.width ?? 320)
+        var points: [CGPoint] = [], x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.init(width: width, height: nil))
+            if x > 0 && x + size.width > width { x = 0; y += row + spacing; row = 0 }
+            points.append(CGPoint(x: x, y: y)); x += min(size.width, width) + spacing; row = max(row, size.height)
+        }
+        return (points, CGSize(width: width, height: y + row))
+    }
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize { positions(proposal, subviews).1 }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (points, _) = positions(.init(width: bounds.width, height: nil), subviews)
+        for (index, view) in subviews.enumerated() {
+            let size = view.sizeThatFits(.init(width: bounds.width, height: nil))
+            view.place(at: CGPoint(x: bounds.minX + points[index].x, y: bounds.minY + points[index].y), proposal: .init(width: min(size.width, bounds.width), height: size.height))
+        }
+    }
+}
+extension View {
+    @ViewBuilder func courseTileDrag(_ id: String, enabled: Bool) -> some View {
+        if enabled { draggable(id) } else { self }
+    }
+    @ViewBuilder func courseTileDrop(enabled: Bool, action: @escaping ([String]) -> Bool) -> some View {
+        if enabled { dropDestination(for: String.self) { items, _ in action(items) } } else { self }
+    }
+}
+
+struct CoursePracticeExercisePanel: View {
+    let card: CourseLessonCard
+    let exercise: CourseExercise
+    let immersive: Bool
+    let checkpoint: Bool
+    let onAnswer: (Bool) -> Void
+    @Environment(\.courseNotificationCompact) private var notification
+    @Environment(\.dynamicTypeSize) private var textSize
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.courseExercisePersistence) private var persistence
+    @Environment(\.courseExerciseAttemptReported) private var reportAttempt
+    @State private var state = CourseExerciseState()
+    @State private var error: String?
+    @State private var reading = false
+    @State private var help = false
+    private var tiles: [CourseWordTile] { exercise.tiles ?? [] }
+    private var pictures: [CoursePictureChoice] { exercise.pictures ?? [] }
+    private var missingPicture: Bool { pictures.contains { CourseVocabularyImages.image(named: $0.image) == nil } }
+    private var readingChoices: Bool { reading || voiceOver || missingPicture }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(exercise.format == "exposure" ? "Discover" : exercise.format == "pictureChoice" ? "Choose a picture" : "Build a sentence")
+                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            Text(card.question).font(immersive ? .title2.bold() : .headline).fixedSize(horizontal: false, vertical: true)
+            if exercise.format == "pictureChoice" { pictureGrid }
+            else if exercise.format == "wordBank" { wordBank }
+            else {
+                if let image = card.resolvedFieldMedia["prompt"]?.image {
+                    CourseVocabularyImage(name: image, label: card.hint, compact: !immersive)
+                }
+                Text(card.correctAnswer).font(.title2.weight(.semibold))
+                if !card.hint.isEmpty { Text(card.hint).font(.body).foregroundStyle(.secondary) }
+            }
+            if state.result == nil {
+                if !checkpoint, let rule = card.activity?.rule, !rule.isEmpty, exercise.format != "exposure" {
+                    DisclosureGroup("Why?", isExpanded: $help) { Text(rule).font(.callout).fixedSize(horizontal: false, vertical: true) }
+                        .onChange(of: help) { _, expanded in
+                            if expanded && !state.usedHelp { update { $0.usedHelp = true; $0.revision += 1 } }
+                        }
+                }
+                Button(exercise.format == "exposure" ? "Ready to practice" : "Check") {
+                    update { _ = $0.submit(exercise) }
+                    if let result = state.result, error == nil { reportAttempt?(state.attemptID); onAnswer(result) }
+                }.buttonStyle(.borderedProminent).controlSize(.large)
+                    .frame(minHeight: 44).disabled(!state.canSubmit(exercise))
+            } else if let correct = state.result {
+                Label(exercise.format == "exposure" ? "Ready" : correct ? "Correct" : "Let’s remember this one",
+                      systemImage: exercise.format == "exposure" ? "book.closed" : correct ? "checkmark.circle.fill" : "arrow.counterclockwise")
+                    .font(.headline).foregroundStyle(correct ? Color.green : .orange)
+                if !correct { Text(card.correctAnswer).font(.body.weight(.semibold)) }
+            }
+            if let error {
+                Text(error).font(.callout).foregroundStyle(.red)
+                Button("Reload saved answer") { restore() }.frame(minHeight: 44)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { restore() }
+    }
+    private var pictureGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !voiceOver && !missingPicture {
+                Button(reading ? "Use pictures" : "Use descriptions") { reading.toggle() }
+                    .font(.subheadline).frame(minHeight: 44)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .top), count: textSize.isAccessibilitySize || readingChoices ? 1 : 2), spacing: 12) {
+                ForEach(state.orderedIDs(pictures.map(\.id)).compactMap { id in pictures.first { $0.id == id } }) { picture in
+                    Button { update { $0.select(picture.id, exercise: exercise) } } label: {
+                        VStack(spacing: 8) {
+                            if !readingChoices, let image = CourseVocabularyImages.image(named: picture.image) {
+                                Image(uiImage: image).resizable().scaledToFit().frame(height: notification ? 84 : 124).accessibilityHidden(true)
+                            } else { Text(picture.description).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true) }
+                            if state.choiceID == picture.id { Label("Selected", systemImage: "checkmark.circle.fill").font(.caption.weight(.semibold)) }
+                        }
+                        .padding(12).frame(maxWidth: .infinity, minHeight: 64)
+                        .background(Color.accentColor.opacity(state.choiceID == picture.id ? 0.14 : 0.04), in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(state.choiceID == picture.id ? Color.accentColor : Color.primary.opacity(0.18), lineWidth: state.choiceID == picture.id ? 2 : 1))
+                    }.buttonStyle(.plain).disabled(state.result != nil)
+                        .accessibilityLabel(picture.description).accessibilityAddTraits(state.choiceID == picture.id ? .isSelected : [])
+                }
+            }
+        }
+    }
+    private var wordBank: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Your sentence").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            CourseWrappingLayout {
+                if state.selectedIDs.isEmpty { Text("Tap words to place them here").font(.body).foregroundStyle(.secondary).frame(minHeight: 44) }
+                ForEach(state.selectedIDs, id: \.self) { id in
+                    if let tile = tiles.first(where: { $0.id == id }) {
+                        tileButton(tile, placed: true)
+                            .courseTileDrop(enabled: !notification) { ids in
+                                guard ids.count == 1, let dragged = ids.first else { return false }
+                                return update { $0.move(dragged, before: id, exercise: exercise) }
+                            }
+                            .accessibilityAction(named: "Move earlier") {
+                                if let index = state.selectedIDs.firstIndex(of: id), index > 0 {
+                                    let before = state.selectedIDs[index - 1]; update { $0.move(id, before: before, exercise: exercise) }
+                                }
+                            }
+                    }
+                }
+            }
+            .padding(12).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+            .courseTileDrop(enabled: !notification) { ids in
+                guard ids.count == 1, let id = ids.first else { return false }
+                return update { $0.append(id, exercise: exercise) }
+            }
+            Text(notification ? "Tap a word to place it. Tap a placed word to return it." : "Tap or drag words. Tap a placed word to return it.")
+                .font(.caption).foregroundStyle(.secondary)
+            CourseWrappingLayout {
+                ForEach(state.orderedIDs(tiles.map(\.id)).compactMap { id in tiles.first { $0.id == id && !state.selectedIDs.contains(id) } }) { tile in tileButton(tile, placed: false) }
+            }
+        }
+    }
+    private func tileButton(_ tile: CourseWordTile, placed: Bool) -> some View {
+        Button { update { if placed { $0.remove(tile.id) } else { $0.append(tile.id, exercise: exercise) } } } label: {
+            Text(tile.text).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14).padding(.vertical, 8).frame(minHeight: 44)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.2)))
+        }.buttonStyle(.plain).disabled(state.result != nil)
+            .courseTileDrag(tile.id, enabled: !notification && state.result == nil)
+            .accessibilityLabel(tile.text).accessibilityHint(placed ? "Return to word bank" : "Add to sentence")
+    }
+    @discardableResult private func update(_ edit: (inout CourseExerciseState) -> Void) -> Bool {
+        var next = state; edit(&next)
+        guard next != state else { return false }
+        guard persistence?.save(next) ?? true else {
+            error = "Your answer couldn’t be saved, or changed in another window. Reload to continue."; return false
+        }
+        state = next; error = nil; return true
+    }
+    private func restore() {
+        state = persistence?.load() ?? CourseExerciseState()
+        error = nil
+        // A crash between durable Check and parent grading safely completes grading.
+        if let result = state.result { reportAttempt?(state.attemptID); onAnswer(result) }
     }
 }

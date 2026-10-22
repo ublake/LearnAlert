@@ -509,7 +509,7 @@ struct CourseLearningTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("course-learning-v1.json")
+        let url = directory.appendingPathComponent("course-learning-v2.json")
         let original = Data("not json".utf8); try original.write(to: url)
         let store = CourseLearningStore(directory: directory, defaults: nil)
         let outcome16 = store.transaction { $0.eventTokens.append("no") } == nil; #expect(outcome16)
