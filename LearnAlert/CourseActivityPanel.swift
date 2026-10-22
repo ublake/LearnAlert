@@ -460,6 +460,14 @@ extension View {
     }
 }
 
+private struct CoursePrivatePreviewAudioKey: EnvironmentKey { static let defaultValue: (String) -> URL? = { _ in nil } }
+extension EnvironmentValues {
+    var coursePrivatePreviewAudio: (String) -> URL? {
+        get { self[CoursePrivatePreviewAudioKey.self] }
+        set { self[CoursePrivatePreviewAudioKey.self] = newValue }
+    }
+}
+
 struct CoursePracticeExercisePanel: View {
     let card: CourseLessonCard
     let exercise: CourseExercise
@@ -476,6 +484,10 @@ struct CoursePracticeExercisePanel: View {
     @State private var error: String?
     @State private var reading = false
     @State private var help = false
+    @Environment(\.coursePrivatePreviewAudio) private var privatePreviewAudio
+    @AppStorage("courseSyntheticVoiceDisclosureAccepted") private var voiceDisclosed = false
+    @State private var showVoiceDisclosure = false
+    @State private var repairUsed = false
     private var tiles: [CourseWordTile] { exercise.tiles ?? [] }
     private var pictures: [CoursePictureChoice] { exercise.pictures ?? [] }
     private var missingPicture: Bool { pictures.contains { CourseVocabularyImages.image(named: $0.image) == nil } }
@@ -483,25 +495,53 @@ struct CoursePracticeExercisePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(exercise.format == "exposure" ? "Discover" : exercise.format == "pictureChoice" ? "Choose a picture" : exercise.format == "choice" ? "Choose an answer" : exercise.format == "matching" ? "Match" : "Build a phrase")
+            Text(exercise.format == "exposure" ? "Discover" : exercise.format == "pictureChoice" ? "Choose a picture" : exercise.format == "choice" ? "Choose an answer" : exercise.isMatching ? "Match" : "Build a phrase")
                 .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            if let context = exercise.context {
+                if let cashier = context.cashierText {
+                    Text("Cashier").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(cashier).font(.title3.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+                    cashierAudio(context, text: cashier)
+                    if exercise.isAppOnlyDialogue, state.result == nil {
+                        Button("Más despacio, por favor.") {
+                            if update({ $0.markHelp("repair") }) { repairUsed = true }
+                        }.font(.subheadline).frame(minHeight: 44).accessibilityHint("Keep this turn and read the cashier line again")
+                        if repairUsed { Text("Read the cashier’s line above. There is no separate slower recording; any replay uses the same stored clip.").font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+                if let goal = context.goalText, !cueNormalized(card.question).contains(cueNormalized(goal)) { Text(goal).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            }
             Text(card.question).font(immersive ? .title2.bold() : .headline).fixedSize(horizontal: false, vertical: true)
             if exercise.format == "pictureChoice" { pictureGrid }
             else if exercise.format == "choice" { choiceList }
-            else if exercise.format == "matching" { matchingBoard }
+            else if exercise.isMatching { matchingBoard }
             else if exercise.format == "wordBank" { wordBank }
             else {
                 if let image = card.resolvedFieldMedia["prompt"]?.image {
                     CourseVocabularyImage(name: image, label: card.hint, compact: !immersive)
+                        .accessibilityHidden(true) // The complete bilingual reveal immediately below is the equivalent.
                 }
-                Text(card.correctAnswer).font(.title2.weight(.semibold))
-                if !card.hint.isEmpty { Text(card.hint).font(.body).foregroundStyle(.secondary) }
+                if let models = exercise.models {
+                    ForEach(models.indices, id: \.self) { index in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(models[index].spanish).font(.title3.weight(.semibold))
+                            Text(models[index].meaning).font(.body).foregroundStyle(.secondary)
+                        }.accessibilityElement(children: .combine)
+                    }
+                } else {
+                    Text(card.correctAnswer).font(.title2.weight(.semibold))
+                    if !card.hint.isEmpty { Text(card.hint).font(.body).foregroundStyle(.secondary) }
+                }
             }
             if state.result == nil {
+                if let outcome = state.outcome {
+                    Text(outcome == "goalMismatch" ? (exercise.context?.goalFeedback ?? "That works in Spanish. Try the requested goal.") : "Try the requested meaning again.")
+                        .font(.callout).foregroundStyle(.secondary).accessibilityAddTraits(.updatesFrequently)
+                }
                 if !checkpoint, !assessment, let rule = card.activity?.rule, !rule.isEmpty, exercise.format != "exposure" {
                     DisclosureGroup("Why?", isExpanded: $help) { Text(rule).font(.callout).fixedSize(horizontal: false, vertical: true) }
                         .onChange(of: help) { _, expanded in
-                            if expanded && !state.usedHelp { update { $0.usedHelp = true; $0.revision += 1 } }
+                            if expanded && !state.usedHelp { update { $0.markHelp("explanation") } }
                         }
                 }
                 Button(assessment ? "Save answer" : exercise.format == "exposure" ? "Ready to practice" : "Check") {
@@ -516,7 +556,7 @@ struct CoursePracticeExercisePanel: View {
                       systemImage: exercise.format == "exposure" ? "book.closed" : correct ? "checkmark.circle.fill" : "arrow.counterclockwise")
                     .font(.headline).foregroundStyle(correct ? Color.green : .orange)
                 if !correct {
-                    if exercise.format == "matching" { ForEach(exercise.pairs ?? []) { pair in Text("\(pair.label) → \(pair.description)").font(.body.weight(.semibold)) } }
+                    if exercise.isMatching { ForEach(exercise.pairs ?? []) { pair in Text("\(pair.label) → \(pair.description)").font(.body.weight(.semibold)) } }
                     else { Text(card.correctAnswer).font(.body.weight(.semibold)) }
                 }
             }
@@ -528,6 +568,26 @@ struct CoursePracticeExercisePanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { restore() }
     }
+    private func cueNormalized(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber || $0.isWhitespace }.split(separator: " ").joined(separator: " ")
+    }
+    @ViewBuilder private func cashierAudio(_ context: CourseExerciseContext, text: String) -> some View {
+        let privateURL = notification ? nil : privatePreviewAudio(text)
+        let approved = context.audioReference.flatMap { CardAudioStore.isAvailable(named: $0) ? $0 : nil }
+        if privateURL != nil || approved != nil {
+            if voiceDisclosed {
+                CardAudioPlaybackButton(name: approved ?? "private-cafe-preview", localURL: privateURL)
+                    .accessibilityHint("AI-generated cashier voice. Reading remains available.")
+            } else {
+                Button("Hear the cashier") { showVoiceDisclosure = true }.frame(minHeight: 44)
+                    .alert("AI-generated voice", isPresented: $showVoiceDisclosure) {
+                        Button("Continue") { voiceDisclosed = true }
+                        Button("Keep reading", role: .cancel) { }
+                    } message: { Text("The cashier recording uses a synthetic voice. You can finish every activity without audio.") }
+            }
+        }
+    }
+
     private var pictureGrid: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !voiceOver && !missingPicture {
@@ -541,6 +601,7 @@ struct CoursePracticeExercisePanel: View {
                             if !readingChoices, let image = CourseVocabularyImages.image(named: picture.image) {
                                 Image(uiImage: image).resizable().scaledToFit().frame(height: notification ? 84 : 124).accessibilityHidden(true)
                             } else { Text(picture.description).font(.body.weight(.medium)).fixedSize(horizontal: false, vertical: true) }
+                            if exercise.showsMeaningLabels == true && !readingChoices { Text(picture.description).font(.caption).foregroundStyle(.secondary) }
                             if state.choiceID == picture.id { Label("Selected", systemImage: "checkmark.circle.fill").font(.caption.weight(.semibold)) }
                         }
                         .padding(12).frame(maxWidth: .infinity, minHeight: 64)
@@ -580,7 +641,7 @@ struct CoursePracticeExercisePanel: View {
     }
     private var matchingBoard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tap a Spanish label, then its picture. Tap a placed match to change it.").font(.caption).foregroundStyle(.secondary)
+            Text(exercise.format == "textMatching" ? "Tap a Spanish phrase, then its meaning. Tap a placed match to change it." : "Tap a Spanish label, then its picture. Tap a placed match to change it.").font(.caption).foregroundStyle(.secondary)
             ForEach(exercise.pairs ?? []) { pair in
                 Button {
                     update { if $0.pairChoices?[pair.id] != nil { $0.clearPair(pair.id) } else { $0.selectPair(pair.id, exercise: exercise) } }
@@ -598,7 +659,7 @@ struct CoursePracticeExercisePanel: View {
                     if let pair = exercise.pairs?.first(where: { $0.id == id }), state.pairChoices?.values.contains(id) != true {
                         Button { update { $0.matchPair(id, exercise: exercise) } } label: {
                             VStack(spacing: 8) {
-                                if !voiceOver, let image = CourseVocabularyImages.image(named: pair.image) { Image(uiImage: image).resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true) }
+                                if exercise.format != "textMatching", !voiceOver, let image = CourseVocabularyImages.image(named: pair.image) { Image(uiImage: image).resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true) }
                                 else { Text(pair.description).font(.body).fixedSize(horizontal: false, vertical: true) }
                             }.padding(12).frame(minWidth: 100, minHeight: 48).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
                         }.buttonStyle(.plain).disabled(state.result != nil || state.activePairID == nil).accessibilityLabel(pair.description)
@@ -633,7 +694,7 @@ struct CoursePracticeExercisePanel: View {
                 return update { $0.append(id, exercise: exercise) }
             }
             Text(notification ? "Tap a word to place it. Tap a placed word to return it." : "Tap or drag words. Tap a placed word to return it.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             CourseWrappingLayout {
                 ForEach(state.orderedIDs(tiles.map(\.id)).compactMap { id in tiles.first { $0.id == id && !state.selectedIDs.contains(id) } }) { tile in tileButton(tile, placed: false) }
             }

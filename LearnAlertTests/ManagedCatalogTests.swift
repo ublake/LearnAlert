@@ -307,7 +307,7 @@ struct ManagedCatalogTests {
         return (make([legacy], nil), make([legacy, component.unit], component.learning))
     }
     private func delivery(_ course: CourseDefinition, revision: Int = 11) throws -> (ManagedCatalogManifest, Data) {
-        let payload = try JSONEncoder().encode(course), digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(), contracts = CourseDeliveryContracts.supported.sorted()
+        let payload = try JSONEncoder().encode(course), digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(), contracts = CourseDeliveryContracts.v1.sorted()
         let document = try JSONSerialization.data(withJSONObject: ["schemaVersion":2,"id":course.id,"kind":"course","revision":revision,"deliveryProfile":"practice-v1","requiredContracts":contracts,"contentDigest":digest,"payload":payload.base64EncodedString()])
         var record = ManagedCatalogItem(id: course.id, kind: "course", title: course.title, revision: revision, updatedAt: 0, contentURL: "https://api.learnalertapp.com/v1/catalog/" + course.id + "?profile=practice-v1&revision=" + String(revision)); record.deliveryProfile = "practice-v1"; record.requiredContracts = contracts; record.contentDigest = digest
         return (.init(schemaVersion: 2, revision: "practice:" + digest, initialized: true, items: [record], deliveryProfile: "practice-v1"), document)

@@ -12,8 +12,8 @@ final class CourseStarterPreviewContext {
         let base = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("VisualStarterDevelopmentPreview", isDirectory: true)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let defaults = UserDefaults(suiteName: "com.learnalert.development.visual-starter")
-        catalog = ManagedCatalogStore(directory: base, defaults: defaults, developmentPreview: true)
-        guard let url = Bundle.main.url(forResource: "visual-starter-pilot", withExtension: "json") else { throw CocoaError(.fileReadNoSuchFile) }
+        catalog = ManagedCatalogStore(directory: base, defaults: defaults, developmentPreview: true, profile: "practice-v2")
+        guard let url = Bundle.main.url(forResource: "visual-cafe-pilot", withExtension: "json") else { throw CocoaError(.fileReadNoSuchFile) }
         try catalog.installStarterPreview(baseCourse: baseCourse, componentData: Data(contentsOf: url))
         guard let installed = catalog.course(for: baseCourse.id) else { throw CocoaError(.coderReadCorrupt) }
         course = installed
@@ -29,17 +29,31 @@ struct CourseStarterPreviewHost: View {
     let baseCourse: CourseDefinition
     @State private var context: CourseStarterPreviewContext?
     @State private var failure: String?
+    @State private var privateAudioQA = false
+    @State private var confirmAudioQA = false
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Group {
-                if let context { CourseStarterHomeView(course: context.course, manager: context.manager) }
+                if let context {
+                    CourseStarterHomeView(course: context.course, manager: context.manager)
+                        .environment(\.coursePrivatePreviewAudio, privateAudioQA ? CoursePrivatePreviewAudio.url : { _ in nil })
+                }
                 else if let failure { ContentUnavailableView("Preview unavailable", systemImage: "exclamationmark.triangle", description: Text(failure)) }
                 else { ProgressView("Opening separate preview…") }
             }
             .navigationTitle("Visual Spanish starter")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close preview") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close preview") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(privateAudioQA ? "Mute QA audio" : "Private audio QA") { if privateAudioQA { privateAudioQA = false; CardAudioPlayer.stopActive() } else { confirmAudioQA = true } }
+                }
+            }
+            .alert("Private audio QA", isPresented: $confirmAudioQA) {
+                Button("Enable for this preview") { privateAudioQA = true; UserDefaults.standard.set(true, forKey: "courseSyntheticVoiceDisclosureAccepted") }
+                Button("Keep silent", role: .cancel) { }
+            } message: { Text("These AI-generated cashier recordings await owner sound and pace approval. This enables manual playback of locally supplied files only. It does not approve or publish them.") }
         }.task {
             guard context == nil else { return }
             do { context = try CourseStarterPreviewContext(baseCourse: baseCourse) }
@@ -65,7 +79,7 @@ struct CourseStarterHomeView: View {
                     Text("Your normal Spanish course, history and alerts stay in their own store.").font(.callout).foregroundStyle(.secondary)
                 }
                 Text("Start with pictures").font(.system(.largeTitle, design: .serif).bold())
-                Text("Four everyday objects. Then one or two. No typing or sound needed.").font(.body).foregroundStyle(.secondary)
+                Text((course.learning?.starter?.lessonIDs.count ?? 0) > 2 ? "Objects, short phrases, then a café visit. No typing or sound needed." : "Four everyday objects. Then one or two. No typing or sound needed.").font(.body).foregroundStyle(.secondary)
                 Button(manager.learningSnapshot.activeAssessment(courseID: course.id)?.finalizedAt == nil && manager.learningSnapshot.activeAssessment(courseID: course.id) != nil ? "Resume starter check" : "Check what I know") { assessment = true }
                     .buttonStyle(.bordered).controlSize(.large)
                 Text("Optional · 12 questions · covers starter lessons 1–2").font(.caption).foregroundStyle(.secondary)
@@ -90,7 +104,7 @@ struct CourseStarterHomeView: View {
                                 Spacer(minLength: 8)
                                 Image(systemName: status == .locked ? "lock" : credit ? "arrow.forward.circle" : status == .completed ? "checkmark.circle" : "play.circle")
                             }
-                            Text(credit ? "Access from starter check · study anytime" : status == .completed ? "Studied · practice again" : status == .locked ? "Study the first lesson to continue" : "Pictures, choices and short phrases")
+                            Text(credit ? "Access from starter check · study anytime" : status == .completed ? "Studied · practice again" : status == .locked ? "Finish the previous lesson to continue" : "Pictures, choices and short phrases")
                                 .font(.callout).foregroundStyle(.secondary)
                         }.padding(.vertical, 16).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                     }.buttonStyle(.plain).disabled(status == .locked)
@@ -205,5 +219,25 @@ struct CourseStarterAssessmentView: View {
             error = manager.learningStore.lastError ?? "The saved question changed. Close and reopen your check."; return
         }
         reload()
+    }
+}
+
+/// No recording bytes are bundled or fetched here. A developer may place the
+/// six reviewed files in this app-only preview folder. Ordinary courses never
+/// receive this lookup environment, and it starts disabled every presentation.
+@MainActor enum CoursePrivatePreviewAudio {
+    static let files: [String: String] = [
+        "Hola. ¿Qué te pongo?": "sp-cafe-cashier-01-order.mp3",
+        "¿Solo o con leche?": "sp-cafe-cashier-02-milk-choice.mp3",
+        "¿Para aquí o para llevar?": "sp-cafe-cashier-03-for-here-or-takeaway.mp3",
+        "¿Algo más?": "sp-cafe-cashier-04-anything-else.mp3",
+        "Son dos euros.": "sp-cafe-cashier-05-price.mp3",
+        "Gracias. Hasta luego.": "sp-cafe-cashier-06-goodbye.mp3"
+    ]
+    static func url(_ utterance: String) -> URL? {
+        guard let file = files[utterance] else { return nil }
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CafePrivateAudioQA", isDirectory: true).appendingPathComponent(file)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 }

@@ -219,7 +219,7 @@ struct CourseStarterTests {
         #expect(CourseHandoff.destination(course: course, snapshot: snapshot).assessmentID == attempt.id)
         #expect(CourseHandoff.destination(course: course, snapshot: snapshot, openPath: true).assessmentID == nil)
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as! [String: Any]
-        #expect(encoded["schemaVersion"] as? Int == 6)
+        #expect(encoded["schemaVersion"] as? Int == 7)
     }
     @Test("New choice, matching and assessment layouts support dark/light and accessibility text")
     func starterLayouts() throws {
@@ -439,7 +439,7 @@ struct CourseStarterTests {
         legacy.clearPair(pairs[0].id); legacy.selectPair(pairs[0].id, exercise: exercise); legacy.matchPair(pairs[0].id, exercise: exercise)
         #expect(legacy.pairDecisions == nil)
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as! [String: Any]
-        #expect(encoded["schemaVersion"] as? Int == 6)
+        #expect(encoded["schemaVersion"] as? Int == 7)
     }
 
     private func expandedTestRoute(_ course: CourseDefinition) throws -> CourseDefinition {

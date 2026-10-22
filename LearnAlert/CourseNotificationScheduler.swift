@@ -41,7 +41,7 @@ struct CourseNotificationProgress: Equatable {
 
     static func nextLearningCard(course: CourseDefinition, snapshot: CourseLearningSnapshot, excluding: Set<String>) -> CourseLessonCard? {
         let batch = snapshot.batch(course: course, count: 60, randomized: true).filter { card in
-            !card.isExposure && snapshot.satisfiesPrerequisites(card: card, course: course)
+            !card.isExposure && card.activity?.exercise?.isAppOnlyDialogue != true && snapshot.satisfiesPrerequisites(card: card, course: course)
         }
         return batch.first { !excluding.contains($0.id) }
             ?? batch.first { $0.activity?.practiceGroup != nil }
@@ -54,7 +54,7 @@ struct CourseNotificationProgress: Equatable {
             .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
             .flatMap { lesson in
                 let known = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
-                return lesson.cards.filter { !$0.isExposure && snapshot.satisfiesPrerequisites(card: $0, course: course) && ($0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id)) }
+                return lesson.cards.filter { !$0.isExposure && $0.activity?.exercise?.isAppOnlyDialogue != true && snapshot.satisfiesPrerequisites(card: $0, course: course) && ($0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id)) }
             }
             .sorted { (snapshot.srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (snapshot.srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         var seen = excluding

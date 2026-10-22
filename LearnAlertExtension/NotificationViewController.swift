@@ -1289,7 +1289,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         if let courseId = userInfo["courseId"] as? String {
             let profile = userInfo["courseDeliveryProfile"] as? String
             let required = userInfo["courseRequiredContracts"] as? [String]
-            let catalog = profile == nil || profile == "legacy-v1" ? ManagedCatalogStore.legacyShared : ManagedCatalogStore.shared
+            let catalog = profile == nil || profile == "legacy-v1" ? ManagedCatalogStore.legacyShared : profile == "practice-v1" ? ManagedCatalogStore.practiceV1Shared : ManagedCatalogStore.shared
             guard let course = catalog.course(for: courseId), CourseDeliveryContracts.notificationCanRender(profile: profile, contracts: required, course: course) else {
                 isCourseContent = true
                 fitContent(240)

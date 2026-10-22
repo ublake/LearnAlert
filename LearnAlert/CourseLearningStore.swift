@@ -14,6 +14,7 @@ struct CoursePracticeSession: Codable {
     var pendingContinueAttemptID: String? = nil
     var exerciseDefinitionsByCard: [String: CourseExercise]? = nil
     var invalidatedExerciseCardIDs: [String]? = nil
+    var dialogueAttemptID: String? = nil
 
     var nextIndex: Int? {
         for (index, id) in cardIds.enumerated() {
@@ -45,7 +46,8 @@ struct CourseLearningSnapshot: Codable {
     var traceAttempts: [String: Int] = [:]
     var notificationExerciseCardIDs: [String: String] = [:]
     var notificationExerciseAttempts: [String: CourseExerciseAcknowledgement] = [:]
-    var schemaVersion = 6
+    var schemaVersion = 7
+    var dialogueAttempts: [String: CourseDialogueAttempt] = [:]
     var routes: [String: CourseRouteAssignment] = [:]
     var assessmentAttempts: [String: CourseAssessmentAttempt] = [:]
     var activeAssessmentIDs: [String: String] = [:]
@@ -58,7 +60,7 @@ struct CourseLearningSnapshot: Codable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case progress, checkpoints, srs, courseSRS, eventTokens, practiceSessions, traceAttempts, schemaVersion, exerciseDrafts, exerciseEvidence, retainedCompletion, notificationExerciseCardIDs, notificationExerciseAttempts, migration, routes, assessmentAttempts, activeAssessmentIDs, assessmentAccess }
+    private enum CodingKeys: String, CodingKey { case dialogueAttempts, progress, checkpoints, srs, courseSRS, eventTokens, practiceSessions, traceAttempts, schemaVersion, exerciseDrafts, exerciseEvidence, retainedCompletion, notificationExerciseCardIDs, notificationExerciseAttempts, migration, routes, assessmentAttempts, activeAssessmentIDs, assessmentAccess }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         progress = try values.decodeIfPresent([String: [String: CourseLessonProgressRecord]].self, forKey: .progress) ?? [:]
@@ -69,8 +71,9 @@ struct CourseLearningSnapshot: Codable {
         practiceSessions = try values.decodeIfPresent([String: CoursePracticeSession].self, forKey: .practiceSessions) ?? [:]
         traceAttempts = try values.decodeIfPresent([String: Int].self, forKey: .traceAttempts) ?? [:]
         let version = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        guard version <= 6 else { throw CocoaError(.coderReadCorrupt) }
-        schemaVersion = 6
+        guard version <= 7 else { throw CocoaError(.coderReadCorrupt) }
+        schemaVersion = 7
+        dialogueAttempts = try values.decodeIfPresent([String: CourseDialogueAttempt].self, forKey: .dialogueAttempts) ?? [:]
         routes = try values.decodeIfPresent([String: CourseRouteAssignment].self, forKey: .routes) ?? [:]
         assessmentAttempts = try values.decodeIfPresent([String: CourseAssessmentAttempt].self, forKey: .assessmentAttempts) ?? [:]
         activeAssessmentIDs = try values.decodeIfPresent([String: String].self, forKey: .activeAssessmentIDs) ?? [:]
@@ -122,6 +125,9 @@ struct CourseLearningSnapshot: Codable {
 
     private func practiceCards(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> [CourseLessonCard]? {
         if let lessonId, status(course: course, lessonId: lessonId) != .locked {
+            let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: nil)!
+            if let session = practiceSessions[key], let id = session.dialogueAttemptID,
+               let visit = dialogueAttempts[id], visit.sessionID == session.id { return visit.cards }
             return course.units.flatMap(\.lessons).first { $0.id == lessonId }?.cards
         }
         if let unit = course.units.first(where: { $0.id == checkpointUnitId }),
@@ -158,8 +164,17 @@ struct CourseLearningSnapshot: Codable {
 
     mutating func resumePractice(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?) -> CoursePracticeSession? {
         guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
-              let cards = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId), !cards.isEmpty else { return nil }
+              var cards = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId), !cards.isEmpty else { return nil }
         var session = practiceSessions[key] ?? CoursePracticeSession(cardIds: [])
+        if let id = session.dialogueAttemptID, let visit = dialogueAttempts[id], visit.sessionID == session.id { cards = visit.cards }
+        else if let definition = course.learning?.dialogues?.values.first(where: { $0.lessonID == lessonId }), checkpointUnitId == nil {
+            // A frozen visit owns the same session and ordinary exercise drafts.
+            // It never creates a second path for card/SRS credit.
+            guard definition.isSupported(cards: cards) else { return nil }
+            let visit = CourseDialogueAttempt(courseID: course.id, sessionID: session.id, definition: definition, cards: cards)
+            dialogueAttempts[visit.id] = visit; session.dialogueAttemptID = visit.id
+        }
+
         let definitions = Dictionary(uniqueKeysWithValues: cards.compactMap { card in card.activity?.exercise.map { (card.id, $0) } })
         var invalidated = Set(session.invalidatedExerciseCardIDs ?? [])
         for id in session.cardIds {
@@ -242,8 +257,19 @@ struct CourseLearningSnapshot: Codable {
         guard let next = session.nextIndex, session.cardIds[next] == cardId,
               satisfiesPrerequisites(card: card, course: course) else { return false }
         if let exerciseAttemptID, exerciseDrafts[Self.exerciseKey(courseID: course.id, cardID: cardId)]?.state.attemptID != exerciseAttemptID { return false }
+        if card.activity?.exercise?.isAppOnlyDialogue == true {
+            guard correct, let id = session.dialogueAttemptID, let visit = dialogueAttempts[id],
+                  visit.sessionID == session.id, visit.canCommit(cardID: cardId),
+                  card.activity?.exercise?.context?.dialogueID == visit.definition.id,
+                  card.activity?.exercise?.context?.dialogueStepID == visit.currentStep?.id else { return false }
+        }
         let attempt = session.attemptCounts?[cardId] ?? 0
-        if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)-attempt-\(attempt)", exerciseAttemptID: exerciseAttemptID) { return false }
+        if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)-attempt-\(attempt)", exerciseAttemptID: exerciseAttemptID, dialogueSessionID: session.id) { return false }
+        if card.activity?.exercise?.isAppOnlyDialogue == true, let id = session.dialogueAttemptID,
+           var visit = dialogueAttempts[id], let identity = exerciseAttemptID ?? exerciseDrafts[Self.exerciseKey(courseID: course.id, cardID: cardId)]?.state.attemptID {
+            guard visit.commit(cardID: cardId, attemptID: identity) else { return false }
+            dialogueAttempts[id] = visit
+        }
         if session.attemptCounts == nil { session.attemptCounts = [:] }
         session.attemptCounts?[cardId] = attempt + 1
         session.answers[cardId] = correct
@@ -359,17 +385,17 @@ struct CourseLearningSnapshot: Codable {
                 let learned = Set(progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
                 return lesson.cards.filter { card in
                     // Replacing a passed unit never turns unseen workshop material into due reviews.
-                    !card.isExposure && satisfiesPrerequisites(card: card, course: course) && (card.activity == nil || srsRecord(courseId: course.id, cardId: card.id) != nil || learned.contains(card.id)) &&
+                    !card.isExposure && card.activity?.exercise?.isAppOnlyDialogue != true && satisfiesPrerequisites(card: card, course: course) && (card.activity == nil || srsRecord(courseId: course.id, cardId: card.id) != nil || learned.contains(card.id)) &&
                     (srsRecord(courseId: course.id, cardId: card.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true)
                 }
             }
             .sorted { (srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         let lesson = reviewOnly ? nil : currentLesson(course: course)
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
-        var fresh = lesson?.cards.filter { satisfiesPrerequisites(card: $0, course: course) && !mastered.contains($0.id) && (srsRecord(courseId: course.id, cardId: $0.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
+        var fresh = lesson?.cards.filter { $0.activity?.exercise?.isAppOnlyDialogue != true && satisfiesPrerequisites(card: $0, course: course) && !mastered.contains($0.id) && (srsRecord(courseId: course.id, cardId: $0.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
         if let lesson, let focused = focusedLearningCards(lesson: lesson, mastered: mastered) {
             // Missed tasks return within this letter's group; future letters stay gated.
-            fresh = focused.filter { satisfiesPrerequisites(card: $0, course: course) }.sorted {
+            fresh = focused.filter { $0.activity?.exercise?.isAppOnlyDialogue != true && satisfiesPrerequisites(card: $0, course: course) }.sorted {
                 let lhs = srsRecord(courseId: course.id, cardId: $0.id)?.lastReviewedDate ?? .distantPast
                 let rhs = srsRecord(courseId: course.id, cardId: $1.id)?.lastReviewedDate ?? .distantPast
                 return lhs == rhs ? $0.learningStage < $1.learningStage : lhs < rhs
@@ -399,16 +425,21 @@ struct CourseLearningSnapshot: Codable {
             return (scope != nil && lessons.isEmpty) || ((unit.checkpointQuiz == nil || checkpoints[course.id]?[unit.id]?.passed == true) &&
             lessons.allSatisfy { lesson in
                 status(course: course, lessonId: lesson.id) == .completed &&
-                lesson.cards.filter { !$0.isExposure }.allSatisfy { (srsRecord(courseId: course.id, cardId: $0.id)?.masteryScore ?? 0) >= 3 }
+                lesson.cards.filter { !$0.isExposure && $0.activity?.exercise?.isAppOnlyDialogue != true }.allSatisfy { (srsRecord(courseId: course.id, cardId: $0.id)?.masteryScore ?? 0) >= 3 }
             })
         }
     }
 
     @discardableResult
-    mutating func answer(course: CourseDefinition, lessonId: String, cardId: String, correct: Bool, token: String, exerciseAttemptID: String? = nil) -> Bool {
+    mutating func answer(course: CourseDefinition, lessonId: String, cardId: String, correct: Bool, token: String, exerciseAttemptID: String? = nil, dialogueSessionID: String? = nil) -> Bool {
         guard status(course: course, lessonId: lessonId) != .locked,
-              let lesson = course.units.flatMap(\.lessons).first(where: { $0.id == lessonId }),
-              let card = lesson.cards.first(where: { $0.id == cardId }) else { return false }
+              let currentLesson = course.units.flatMap(\.lessons).first(where: { $0.id == lessonId }),
+              let card = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: nil)?.first(where: { $0.id == cardId }) else { return false }
+        let lesson = currentLesson
+        if card.activity?.exercise?.isAppOnlyDialogue == true {
+            guard let dialogueSessionID, let visit = dialogueAttempt(courseID: course.id, lessonID: lessonId, sessionID: dialogueSessionID),
+                  visit.canCommit(cardID: cardId), correct else { return false }
+        }
         var eventIdentity = token
         if let exercise = card.activity?.exercise, exercise.usesPracticeRenderer {
             guard let draft = exerciseDrafts[Self.exerciseKey(courseID: course.id, cardID: cardId)],
@@ -431,8 +462,10 @@ struct CourseLearningSnapshot: Codable {
         eventTokens.append(eventIdentity)
         let exercise = card.activity?.exercise
         captureExerciseEvidence(courseID: course.id, card: card)
-        // Viewing an introduction is exposure, not retrieval or spaced mastery.
-        if exercise?.format != "exposure" {
+        // Exposures and the finite visit retain honest task evidence without
+        // manufacturing spaced mastery or permanently due scene reviews.
+        if exercise?.format != "exposure", exercise?.isAppOnlyDialogue != true,
+           exerciseDrafts[Self.exerciseKey(courseID: course.id, cardID: cardId)]?.state.firstResponse?.outcome != "goalMismatch" {
             var recordForCard = srsRecord(courseId: course.id, cardId: cardId) ?? CourseCardSRSRecord(cardId: cardId)
             recordForCard.processAnswer(isCorrect: correct)
             courseSRS[course.id, default: [:]][cardId] = recordForCard
@@ -715,15 +748,15 @@ extension CourseLearningSnapshot {
         if let exercise = card.activity?.exercise, exercise.usesPracticeRenderer, let draft = exerciseDrafts[Self.exerciseKey(courseID: courseID, cardID: card.id)],
            draft.exercise == exercise, let firstResult = draft.state.result,
            exerciseEvidence[draft.state.attemptID] == nil {
-            let independent = exercise.format == "matching" ? (exercise.pairs ?? []).filter { draft.state.pairDecisions?[$0.id]?.independent == true } : []
+            let independent = exercise.isMatching ? (exercise.pairs ?? []).filter { draft.state.pairDecisions?[$0.id]?.independent == true } : []
             let firstCorrect = independent.filter { draft.state.pairDecisions?[$0.id]?.firstRightID == $0.id }
-            let targetVocabulary = exercise.format == "matching" ? Array(Set(firstCorrect.flatMap(\.vocabularyIDs))).sorted() : exercise.vocabularyIDs
-            let targetConcepts = exercise.format == "matching" ? Array(Set(firstCorrect.flatMap(\.conceptIDs))).sorted() : exercise.conceptIDs
+            let targetVocabulary = exercise.isMatching ? Array(Set(firstCorrect.flatMap(\.vocabularyIDs))).sorted() : exercise.vocabularyIDs
+            let targetConcepts = exercise.isMatching ? Array(Set(firstCorrect.flatMap(\.conceptIDs))).sorted() : exercise.conceptIDs
             exerciseEvidence[draft.state.attemptID] = CourseExerciseEvidence(attemptID: draft.state.attemptID,
                 courseID: courseID, cardID: card.id, vocabularyIDs: targetVocabulary, conceptIDs: targetConcepts,
-                mode: exercise.format == "exposure" ? "exposure" : exercise.format == "wordBank" ? "supportedConstruction" : exercise.format == "matching" ? "matching" : "recognition",
+                mode: exercise.format == "exposure" ? "exposure" : exercise.format == "wordBank" ? "supportedConstruction" : exercise.isMatching ? "matching" : "recognition",
                 correct: firstResult, assisted: draft.state.usedHelp, timestamp: Date(),
-                pairEvidence: exercise.format == "matching" ? independent.map { CoursePairEvidence(pairID: $0.id, correct: draft.state.pairDecisions?[$0.id]?.firstRightID == $0.id, vocabularyIDs: $0.vocabularyIDs, conceptIDs: $0.conceptIDs, firstRightID: draft.state.pairDecisions?[$0.id]?.firstRightID, assisted: draft.state.usedHelp || draft.state.pairDecisions?[$0.id]?.assisted == true, usedElimination: draft.state.pairDecisions?[$0.id]?.usedElimination) } : nil)
+                pairEvidence: exercise.isMatching ? independent.map { CoursePairEvidence(pairID: $0.id, correct: draft.state.pairDecisions?[$0.id]?.firstRightID == $0.id, vocabularyIDs: $0.vocabularyIDs, conceptIDs: $0.conceptIDs, firstRightID: draft.state.pairDecisions?[$0.id]?.firstRightID, assisted: draft.state.usedHelp || draft.state.pairDecisions?[$0.id]?.assisted == true, usedElimination: draft.state.pairDecisions?[$0.id]?.usedElimination) } : nil, firstResponse: draft.state.firstResponse, assistanceKinds: draft.state.assistanceKinds, modality: exercise.context?.cashierText == nil ? "imageOrText" : "reading")
         }
     }
 }
@@ -795,7 +828,8 @@ extension CourseLearningSnapshot {
         return true
     }
     mutating func answerNotificationExercise(course: CourseDefinition, lessonID: String, cardID: String, correct: Bool, token: String, attemptID: String?) -> Bool {
-        guard let card = course.units.flatMap(\.lessons).flatMap(\.cards).first(where: { $0.id == cardID }) else { return false }
+        guard let card = course.units.flatMap(\.lessons).flatMap(\.cards).first(where: { $0.id == cardID }),
+              card.activity?.exercise?.isAppOnlyDialogue != true else { return false }
         if card.activity?.exercise?.usesPracticeRenderer == true && attemptID == nil { return false }
         guard answer(course: course, lessonId: lessonID, cardId: cardID, correct: correct, token: token, exerciseAttemptID: attemptID) else { return false }
         if let attemptID {
@@ -895,7 +929,11 @@ extension CourseLearningSnapshot {
         let blueprint = starter.assessment
         guard blueprint.id == "pf-sp-a01", blueprint.lessonIDs == ["pf-sp-l01", "pf-sp-l02"], Set(blueprint.lessonIDs).isSubset(of: Set(starter.lessonIDs)),
               blueprint.forms.count == 2, blueprint.forms.values.allSatisfy({ $0.count == 12 }),
-              blueprint.objectiveIDs.count == 4, blueprint.passingTotal == 10, blueprint.passingPerObjective == 2 else { return nil }
+              blueprint.objectiveIDs.count == 4, blueprint.passingTotal == 10, blueprint.passingPerObjective == 2,
+              blueprint.forms.values.flatMap({ $0 }).allSatisfy({ item in
+                  guard let exercise = item.card.activity?.exercise else { return false }
+                  return ["pictureChoice", "choice", "wordBank"].contains(exercise.format) && exercise.context == nil && exercise.models == nil
+              }) else { return nil }
         let previous = activeAssessment(courseID: course.id)?.formID
         guard let form = blueprint.forms.keys.sorted().first(where: { $0 != previous }), let items = blueprint.forms[form],
               items.allSatisfy({ blueprint.objectiveIDs.contains($0.objectiveID) && $0.card.activity?.exercise?.usesPracticeRenderer == true && $0.card.activity?.exercise?.format != "exposure" }),
@@ -999,5 +1037,14 @@ extension CourseLearningSnapshot {
             if old != new { return false }
         }
         return true
+    }
+}
+
+extension CourseLearningSnapshot {
+    func dialogueAttempt(courseID: String, lessonID: String?, sessionID: String) -> CourseDialogueAttempt? {
+        guard let key = Self.practiceKey(courseId: courseID, lessonId: lessonID, checkpointUnitId: nil),
+              let session = practiceSessions[key], session.id == sessionID, let id = session.dialogueAttemptID,
+              let visit = dialogueAttempts[id], visit.sessionID == sessionID else { return nil }
+        return visit
     }
 }

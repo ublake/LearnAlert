@@ -54,9 +54,11 @@ struct CoursePracticeView: View {
     @State private var orderedIds: [String] = []
     @State private var prefersReading = false
     @State private var guideUnit: CourseUnit?
+    private var visit: CourseDialogueAttempt? { manager.learningSnapshot.dialogueAttempt(courseID: course.id, lessonID: lessonId, sessionID: session) }
     private var practiceCards: [CourseLessonCard] {
-        guard !orderedIds.isEmpty else { return cards }
-        let lookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
+        let source = visit?.cards ?? cards
+        guard !orderedIds.isEmpty else { return source }
+        let lookup = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
         return orderedIds.compactMap { lookup[$0] }
     }
     private var currentUnit: CourseUnit? {
@@ -113,6 +115,17 @@ struct CoursePracticeView: View {
                 } else if practiceCards.indices.contains(index) {
                     ScrollView {
                         VStack(spacing: 16) {
+                            if let visit {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    if visit.committed.isEmpty {
+                                        Text(visit.definition.goal).font(.headline)
+                                        Text(visit.definition.briefing).font(.callout).foregroundStyle(.secondary)
+                                    }
+                                    if visit.completedAt != nil { Label("Visit complete · mixed practice next", systemImage: "checkmark.circle").font(.callout) }
+                                    else if let step = visit.definition.steps.first(where: { $0.cardID == practiceCards[index].id }) { Text("Café · turn \(step.turn) of 6").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+                                    if visit.order["amount"] != nil { Text("Pretend payment: \(visit.order["amount"] ?? "") €" + (visit.order["payment"] == nil ? "" : " · handed over")).font(.callout) }
+                                }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
+                            }
                             if practiceCards[index].activity == nil {
                             Text(isCheckpoint ? "CHECKPOINT" : practiceCards[index].isListeningQuestion ? (isListening(practiceCards[index]) ? "LISTENING" : "READING") : practiceCards[index].optionImageNames.isEmpty && practiceCards[index].promptImageName == nil ? "PRACTICE" : "PICTURE PRACTICE")
                                 .font(.caption.weight(.bold)).tracking(1.5).foregroundStyle(.secondary)

@@ -344,9 +344,9 @@ private struct ManagedCatalogDocument: Decodable {
         requiredContracts = try values.decodeIfPresent([String].self, forKey: .requiredContracts)
         contentDigest = try values.decodeIfPresent(String.self, forKey: .contentDigest)
         if let profile = deliveryProfile {
-            guard profile == CourseDeliveryContracts.profile, try values.decode(Int.self, forKey: .schemaVersion) == 2,
-                  let requiredContracts, CourseDeliveryContracts.supports(requiredContracts),
-                  Set(CourseDeliveryContracts.supported).isSubset(of: Set(requiredContracts)), let contentDigest else { throw CocoaError(.coderReadCorrupt) }
+            guard CourseDeliveryContracts.modernProfiles.contains(profile), try values.decode(Int.self, forKey: .schemaVersion) == 2,
+                  let requiredContracts, CourseDeliveryContracts.supports(requiredContracts), Set(requiredContracts).isSubset(of: CourseDeliveryContracts.required(for: profile)),
+                  CourseDeliveryContracts.required(for: profile).isSubset(of: Set(requiredContracts)), let contentDigest else { throw CocoaError(.coderReadCorrupt) }
             let bytes = try values.decode(Data.self, forKey: .payload)
             guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == contentDigest else { throw CocoaError(.coderReadCorrupt) }
             switch kind {
@@ -383,6 +383,7 @@ final class ManagedCatalogStore: ObservableObject {
         return snapshot.permitsCourseReplacement(previous: previous, candidate: candidate)
     })
     static let legacyShared = ManagedCatalogStore()
+    static let practiceV1Shared = ManagedCatalogStore(profile: "practice-v1")
     @Published private(set) var revision: String?
     @Published private(set) var lastError: String?
     private var cache: ManagedCatalogCache?
@@ -405,14 +406,7 @@ final class ManagedCatalogStore: ObservableObject {
         self.profile = profile
         self.replacementAllowed = replacementAllowed
         let base = directory ?? ManagedCatalogMedia.directory.deletingLastPathComponent()
-        cacheURL = base.appendingPathComponent(profile == "legacy-v1" ? "managed-catalog-v1.json" : profile == CourseDeliveryContracts.profile ? "managed-catalog-v2-practice-v1.json" : "managed-catalog-unsupported.json")
-        if profile == CourseDeliveryContracts.profile, !FileManager.default.fileExists(atPath: cacheURL.path), !FileManager.default.fileExists(atPath: cacheURL.appendingPathExtension("backup").path),
-           let data = try? Data(contentsOf: base.appendingPathComponent("managed-catalog-v1.json")),
-           let old = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
-           let decoded = try? Self.decodeContents(old.manifest, documents: old.documents, profile: "legacy-v1") {
-            if permitsSnapshot(decoded) { cache = old; decodedContents = decoded; revision = old.manifest.revision }
-            else { lastError = "A compatible saved course is needed to resume your assigned route." }
-        }
+        cacheURL = base.appendingPathComponent(profile == "legacy-v1" ? "managed-catalog-v1.json" : CourseDeliveryContracts.modernProfiles.contains(profile) ? "managed-catalog-v2-\(profile).json" : "managed-catalog-unsupported.json")
         reloadFromDisk()
     }
 
@@ -455,13 +449,31 @@ final class ManagedCatalogStore: ObservableObject {
     private func document(_ id: String) -> ManagedCatalogContent? { decodedContents[id] }
 
     func reloadFromDisk() {
-        let paths = profile == CourseDeliveryContracts.profile ? [cacheURL, cacheURL.appendingPathExtension("backup")] : [cacheURL]
-        for path in paths {
+        // Validate the current namespace before any compatible upgrade source.
+        // A backup has exactly the same integrity/admission rules as its primary;
+        // reading an older namespace never rewrites it or changes route assignment.
+        let base = cacheURL.deletingLastPathComponent()
+        var sources: [(URL, String)] = [(cacheURL, profile)]
+        if CourseDeliveryContracts.modernProfiles.contains(profile) {
+            sources.append((cacheURL.appendingPathExtension("backup"), profile))
+            if profile == CourseDeliveryContracts.profile, !FileManager.default.fileExists(atPath: cacheURL.path) {
+                let v1 = base.appendingPathComponent("managed-catalog-v2-practice-v1.json")
+                sources += [(v1, "practice-v1"), (v1.appendingPathExtension("backup"), "practice-v1")]
+            }
+            if !FileManager.default.fileExists(atPath: cacheURL.path), !FileManager.default.fileExists(atPath: cacheURL.appendingPathExtension("backup").path) {
+                sources.append((base.appendingPathComponent("managed-catalog-v1.json"), "legacy-v1"))
+            }
+        }
+        for (path, sourceProfile) in sources {
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: path.path), let modified = attributes[.modificationDate] as? Date else { continue }
             if path == fileSource && modified == fileDate { return }
             guard let data = try? Data(contentsOf: path), let loaded = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
-                  let decoded = try? Self.decodeContents(loaded.manifest, documents: loaded.documents, profile: profile) else { continue }
-            guard permitsSnapshot(decoded) else { continue }
+                  let decoded = try? Self.decodeContents(loaded.manifest, documents: loaded.documents, profile: sourceProfile) else { continue }
+            guard permitsSnapshot(decoded) else {
+                if cache == nil { lastError = "A compatible saved course is needed to resume your assigned route." }
+                continue
+            }
+            if cache == nil { lastError = nil }
             cache = loaded; decodedContents = decoded
             if loaded.manifest.initialized { defaults?.set(true, forKey: "managed_catalog_initialized") }
             fileDate = modified; fileSource = path; revision = loaded.manifest.revision
@@ -475,16 +487,16 @@ final class ManagedCatalogStore: ObservableObject {
         lastAttempt = Date()
         defer { refreshing = false }
         do {
-            if profile == CourseDeliveryContracts.profile,
+            if CourseDeliveryContracts.modernProfiles.contains(profile),
                !FileManager.default.fileExists(atPath: cacheURL.deletingLastPathComponent().appendingPathComponent("managed-catalog-v1.json").path) {
                 let compatible = ManagedCatalogStore(directory: cacheURL.deletingLastPathComponent(), defaults: defaults, session: session)
                 await compatible.refresh(force: true)
                 guard compatible.lastError == nil, compatible.cache != nil else { throw CocoaError(.fileReadUnknown) }
                 if cache == nil && permitsSnapshot(compatible.decodedContents) { cache = compatible.cache; decodedContents = compatible.decodedContents; revision = compatible.revision }
             }
-            let manifestData = try await fetch(profile == "legacy-v1" ? "https://api.learnalertapp.com/v1/catalog" : "https://api.learnalertapp.com/v1/catalog?profile=practice-v1", maximumBytes: 4 * 1024 * 1024)
+            let manifestData = try await fetch(profile == "legacy-v1" ? "https://api.learnalertapp.com/v1/catalog" : "https://api.learnalertapp.com/v1/catalog?profile=\(profile)", maximumBytes: 4 * 1024 * 1024)
             let manifest = try JSONDecoder().decode(ManagedCatalogManifest.self, from: manifestData)
-            if profile == CourseDeliveryContracts.profile && manifest.schemaVersion == 1 {
+            if CourseDeliveryContracts.modernProfiles.contains(profile) && manifest.schemaVersion == 1 {
                 guard cache?.manifest.schemaVersion != 2 else { throw CocoaError(.coderReadCorrupt) }
                 let compatible = ManagedCatalogStore(directory: cacheURL.deletingLastPathComponent(), defaults: defaults, session: session)
                 await compatible.refresh(force: true)
@@ -548,7 +560,7 @@ final class ManagedCatalogStore: ObservableObject {
         guard let url = URL(string: rawURL), url.scheme == "https", url.host == "api.learnalertapp.com" else { throw URLError(.badURL) }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 45)
         request.setValue("application/json, image/*, audio/*", forHTTPHeaderField: "Accept")
-        if profile == CourseDeliveryContracts.profile { request.setValue(CourseDeliveryContracts.supported.sorted().joined(separator: ","), forHTTPHeaderField: "X-LearnAlert-Contracts") }
+        if CourseDeliveryContracts.modernProfiles.contains(profile) { request.setValue(CourseDeliveryContracts.supported.sorted().joined(separator: ","), forHTTPHeaderField: "X-LearnAlert-Contracts") }
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200,
               response.url?.scheme == "https", response.url?.host == "api.learnalertapp.com",
@@ -563,7 +575,7 @@ final class ManagedCatalogStore: ObservableObject {
     }
 
     private func permitsSnapshot(_ decoded: [String: ManagedCatalogContent]) -> Bool {
-        guard profile == CourseDeliveryContracts.profile else { return true }
+        guard CourseDeliveryContracts.modernProfiles.contains(profile) else { return true }
         for content in decoded.values {
             if case .course(let candidate) = content, replacementAllowed?(candidate, candidate) == false { return false }
         }
@@ -609,7 +621,7 @@ final class ManagedCatalogStore: ObservableObject {
         let replacement = ManagedCatalogCache(manifest: manifest, documents: documents, retainedCourses: retained)
         let data = try JSONEncoder().encode(replacement)
         try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if profile == CourseDeliveryContracts.profile {
+        if CourseDeliveryContracts.modernProfiles.contains(profile) {
             // A complete, validated ready snapshot exists before replacing the
             // primary file. Either copy can recover an interrupted/corrupt read.
             try data.write(to: cacheURL.appendingPathExtension("backup"), options: .atomic)
@@ -625,11 +637,13 @@ final class ManagedCatalogStore: ObservableObject {
     }
 
     private static func supportsManifest(_ manifest: ManagedCatalogManifest, profile: String) -> Bool {
-        guard ["legacy-v1", CourseDeliveryContracts.profile].contains(profile) else { return false }
+        guard profile == "legacy-v1" || CourseDeliveryContracts.modernProfiles.contains(profile) else { return false }
         if manifest.schemaVersion == 1 { return profile == "legacy-v1" && manifest.deliveryProfile == nil && manifest.items.allSatisfy { $0.deliveryProfile == nil && $0.requiredContracts == nil && $0.contentDigest == nil } }
-        return profile == CourseDeliveryContracts.profile && manifest.schemaVersion == 2 && manifest.deliveryProfile == profile && manifest.items.allSatisfy { item in
+        guard CourseDeliveryContracts.modernProfiles.contains(profile), manifest.schemaVersion == 2, manifest.deliveryProfile == profile else { return false }
+        return manifest.items.allSatisfy { item in
             if item.deliveryProfile == "legacy-v1" { return item.requiredContracts?.isEmpty == true && item.contentDigest == nil }
-            return item.deliveryProfile == profile && item.requiredContracts.map { CourseDeliveryContracts.supports($0) && Set(CourseDeliveryContracts.supported).isSubset(of: Set($0)) } == true && item.contentDigest?.count == 64
+            guard let selected = item.deliveryProfile, selected == profile || (profile == "practice-v2" && selected == "practice-v1") else { return false }
+            return item.requiredContracts.map { CourseDeliveryContracts.supports($0) && CourseDeliveryContracts.required(for: selected).isSubset(of: Set($0)) && Set($0).isSubset(of: CourseDeliveryContracts.required(for: profile)) } == true && item.contentDigest?.count == 64
         }
     }
     private static func decodeContents(_ manifest: ManagedCatalogManifest, documents: [String: Data], profile: String) throws -> [String: ManagedCatalogContent] {
@@ -644,7 +658,10 @@ final class ManagedCatalogStore: ObservableObject {
                   decoded.contentDigest == item.contentDigest,
                   Set(decoded.requiredContracts ?? []) == Set(item.requiredContracts ?? []) else { throw CocoaError(.coderReadCorrupt) }
             switch decoded.document {
-            case .course(let course): guard course.id == item.id else { throw CocoaError(.coderReadCorrupt) }
+            case .course(let course):
+                guard course.id == item.id else { throw CocoaError(.coderReadCorrupt) }
+                if item.deliveryProfile == "practice-v2", !CourseDeliveryContracts.validatesV2(course) { throw CocoaError(.coderReadCorrupt) }
+                if item.deliveryProfile == "practice-v1", course.learning?.dialogues != nil || course.units.flatMap(\.lessons).flatMap(\.cards).contains(where: { $0.activity?.exercise?.format == "textMatching" || $0.activity?.exercise?.context != nil || $0.activity?.exercise?.models != nil || $0.activity?.exercise?.showsMeaningLabels != nil }) { throw CocoaError(.coderReadCorrupt) }
             case .exam(let deck): guard deck.id == item.id else { throw CocoaError(.coderReadCorrupt) }
             }
             contents[item.id] = decoded.document
@@ -686,16 +703,28 @@ extension ManagedCatalogStore {
               let unit = component["unit"] as? [String: Any], let learning = component["learning"] as? [String: Any],
               var document = try JSONSerialization.jsonObject(with: JSONEncoder().encode(baseCourse)) as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
         var units = document["units"] as? [[String: Any]] ?? []
-        guard !units.contains(where: { $0["id"] as? String == unit["id"] as? String }) else { throw CocoaError(.coderReadCorrupt) }
-        units.append(unit); document["units"] = units
+        if let index = units.firstIndex(where: { $0["id"] as? String == unit["id"] as? String }) { units[index] = unit }
+        else { units.append(unit) }
+        document["units"] = units
         var guides = document["guides"] as? [String: Any] ?? [:]
-        if let id = unit["id"] as? String { guides[id] = [Any]() }; document["guides"] = guides
+        if let id = unit["id"] as? String { guides[id] = (unit["lessons"] as? [[String: Any]] ?? []).compactMap { lesson -> [String: Any]? in guard let note = lesson["tipNote"] as? String, !note.isEmpty else { return nil }; return ["title": lesson["title"] as? String ?? "Guide", "rule": note, "examples": [String]()] } }; document["guides"] = guides
         var graph = document["learning"] as? [String: Any] ?? [:]
-        for field in ["vocabulary", "concepts"] {
+        for field in ["vocabulary", "concepts", "dialogues"] {
+            if field == "dialogues", learning[field] as? [String: Any] == nil { continue }
             var entries = graph[field] as? [String: Any] ?? [:]
             entries.merge(learning[field] as? [String: Any] ?? [:]) { _, pilot in pilot }; graph[field] = entries
         }
         graph["starter"] = learning["starter"]; document["learning"] = graph
+        if profile == "practice-v2" {
+            let payload = try JSONSerialization.data(withJSONObject: document)
+            let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+            let contracts = CourseDeliveryContracts.supported.sorted()
+            let envelope: [String: Any] = ["schemaVersion": 2, "id": baseCourse.id, "kind": "course", "revision": 2, "deliveryProfile": "practice-v2", "requiredContracts": contracts, "contentDigest": digest, "payload": payload.base64EncodedString()]
+            var item = ManagedCatalogItem(id: baseCourse.id, kind: "course", title: baseCourse.title, revision: 2, updatedAt: 0, contentURL: "development-preview:spanish-course")
+            item.deliveryProfile = "practice-v2"; item.requiredContracts = contracts; item.contentDigest = digest
+            try install(.init(schemaVersion: 2, revision: "development-preview-cafe-2", initialized: true, items: [item], deliveryProfile: "practice-v2"), documents: [baseCourse.id: JSONSerialization.data(withJSONObject: envelope)])
+            return
+        }
         let envelope: [String: Any] = ["id": baseCourse.id, "kind": "course", "revision": 1, "document": document]
         let data = try JSONSerialization.data(withJSONObject: envelope)
         let item = ManagedCatalogItem(id: baseCourse.id, kind: "course", title: baseCourse.title, revision: 1, updatedAt: 0, contentURL: "development-preview:spanish-course")

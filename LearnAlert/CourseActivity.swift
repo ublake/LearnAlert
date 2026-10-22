@@ -141,6 +141,7 @@ public struct CourseLearningGraph: Codable, Hashable {
     public var vocabulary: [String: CourseLexicalSense]
     public var concepts: [String: CourseConcept]
     public var starter: CourseStarterDefinition? = nil
+    public var dialogues: [String: CourseDialogueDefinition]? = nil
 }
 public struct CourseLexicalSense: Codable, Hashable {
     public var lemma: String
@@ -178,7 +179,77 @@ public struct CourseExercise: Codable, Hashable {
     public var prerequisiteIDs: [String]? = nil
     public var stimulusText: String? = nil
     public var stimulusCount: Int? = nil
-    public var usesPracticeRenderer: Bool { ["pictureChoice", "choice", "matching", "wordBank", "exposure"].contains(format) }
+    public var context: CourseExerciseContext? = nil
+    public var models: [CourseRevealModel]? = nil
+    public var showsMeaningLabels: Bool? = nil
+    public var isMatching: Bool { ["matching", "textMatching"].contains(format) }
+    public var isAppOnlyDialogue: Bool { context?.dialogueID != nil }
+    public var usesPracticeRenderer: Bool { ["pictureChoice", "choice", "matching", "textMatching", "wordBank", "exposure"].contains(format) }
+}
+
+public struct CourseRevealModel: Codable, Hashable { public var spanish: String; public var meaning: String }
+public struct CourseExerciseContext: Codable, Hashable {
+    public var cashierText: String? = nil
+    public var goalText: String? = nil
+    public var goalFeedback: String? = nil
+    public var goalMismatchChoiceIDs: [String]? = nil
+    public var goalMismatchOrders: [[String]]? = nil
+    public var dialogueID: String? = nil
+    public var dialogueStepID: String? = nil
+    public var audioReference: String? = nil
+}
+struct CourseExerciseResponse: Codable, Equatable {
+    var outcome: String
+    var choiceID: String?
+    var selectedIDs: [String]
+}
+public struct CourseDialogueDefinition: Codable, Hashable {
+    public var id: String
+    public var revision: String
+    public var lessonID: String
+    public var title: String
+    public var goal: String
+    public var briefing: String
+    public var steps: [CourseDialogueStep]
+    func isSupported(cards: [CourseLessonCard]) -> Bool {
+        let updates = [["product":"coffee", "quantity":"1"],["milk":"with_milk"],["service":"here"],["extras":"none"],["amount":"2"],["payment":"handed_over"],["farewell":"done"]]
+        guard !id.isEmpty, !revision.isEmpty, !goal.isEmpty, !briefing.isEmpty, steps.count == 7,
+              Set(steps.map(\.id)).count == 7, Array(cards.prefix(7).map(\.id)) == steps.map(\.cardID) else { return false }
+        return steps.enumerated().allSatisfy { index, step in
+            let context = cards[index].activity?.exercise?.context
+            return !step.id.isEmpty && step.turn == [1,2,3,4,5,5,6][index] && step.substep == ["reply","reply","reply","reply","amount","handover","reply"][index] && step.updates == updates[index] && context?.dialogueID == id && context?.dialogueStepID == step.id && context?.cashierText?.isEmpty == false && ["choice", "wordBank"].contains(cards[index].activity?.exercise?.format ?? "")
+        }
+    }
+}
+public struct CourseDialogueStep: Codable, Hashable, Identifiable {
+    public var id: String
+    public var cardID: String
+    public var turn: Int
+    public var substep: String
+    public var updates: [String: String]
+}
+struct CourseDialogueAttempt: Codable, Identifiable {
+    var id = UUID().uuidString
+    var courseID: String
+    var sessionID: String
+    var definition: CourseDialogueDefinition
+    var cards: [CourseLessonCard]
+    var stepIndex = 0
+    var order: [String: String] = [:]
+    var committed: [String: String] = [:]
+    var completedAt: Date? = nil
+    var currentStep: CourseDialogueStep? { definition.steps.indices.contains(stepIndex) ? definition.steps[stepIndex] : nil }
+    func canCommit(cardID: String) -> Bool {
+        guard let step = currentStep, step.cardID == cardID else { return false }
+        return step.substep != "handover" || (order["amount"] == "2" && step.updates == ["payment": "handed_over"])
+    }
+    @discardableResult mutating func commit(cardID: String, attemptID: String) -> Bool {
+        if committed[cardID] == attemptID { return true }
+        guard canCommit(cardID: cardID), let step = currentStep else { return false }
+        order.merge(step.updates) { _, value in value }; committed[cardID] = attemptID; stepIndex += 1
+        if stepIndex == definition.steps.count { completedAt = completedAt ?? Date() }
+        return true
+    }
 }
 
 struct CoursePairDecision: Codable, Equatable {
@@ -195,12 +266,21 @@ struct CourseExerciseState: Codable, Equatable {
     var choiceID: String?
     var result: Bool?
     var usedHelp = false
+    var firstResponse: CourseExerciseResponse? = nil
+    var outcome: String? = nil
+    var assistanceKinds: [String]? = nil
     var revision: Int = 0
     var activePairID: String? = nil
     var pairChoices: [String: String]? = nil
     var pairOrder: [String]? = nil
     // Missing on pre-v5 drafts means unknown history: never infer independence.
     var pairDecisions: [String: CoursePairDecision]? = [:]
+
+    mutating func markHelp(_ kind: String) {
+        usedHelp = true
+        assistanceKinds = Array(Set(assistanceKinds ?? []).union([kind])).sorted()
+        revision += 1
+    }
 
     /// Stable within an attempt (including relaunch), varied across new attempts.
     func orderedIDs(_ ids: [String]) -> [String] {
@@ -215,22 +295,22 @@ struct CourseExerciseState: Codable, Equatable {
     mutating func append(_ id: String, exercise: CourseExercise) {
         guard result == nil, exercise.tiles?.contains(where: { $0.id == id }) == true,
               !selectedIDs.contains(id) else { return }
-        selectedIDs.append(id); revision += 1
+        selectedIDs.append(id); outcome = nil; revision += 1
     }
     mutating func remove(_ id: String) {
         guard result == nil, selectedIDs.contains(id) else { return }
-        selectedIDs.removeAll { $0 == id }; revision += 1
+        selectedIDs.removeAll { $0 == id }; outcome = nil; revision += 1
     }
     mutating func move(_ id: String, before target: String, exercise: CourseExercise) {
         guard result == nil, id != target, selectedIDs.contains(target),
               exercise.tiles?.contains(where: { $0.id == id }) == true else { return }
         selectedIDs.removeAll { $0 == id }
         guard let index = selectedIDs.firstIndex(of: target) else { return }
-        selectedIDs.insert(id, at: index); revision += 1
+        selectedIDs.insert(id, at: index); outcome = nil; revision += 1
     }
     mutating func select(_ id: String, exercise: CourseExercise) {
         guard result == nil, (exercise.pictures?.contains(where: { $0.id == id }) == true || exercise.choices?.contains(where: { $0.id == id }) == true) else { return }
-        choiceID = id; revision += 1
+        choiceID = id; outcome = nil; revision += 1
     }
     mutating func selectPair(_ id: String, exercise: CourseExercise) {
         guard result == nil, exercise.pairs?.contains(where: { $0.id == id }) == true, pairChoices?[id] == nil else { return }
@@ -259,8 +339,12 @@ struct CourseExerciseState: Codable, Equatable {
     }
     /// Every host must carry forward first-response and assistance history.
     func preservesEvidence(from old: CourseExerciseState, exercise: CourseExercise) -> Bool {
-        guard !old.usedHelp || usedHelp else { return false }
-        guard exercise.format == "matching" else { return true }
+        guard !old.usedHelp || usedHelp, Set(old.assistanceKinds ?? []).isSubset(of: Set(assistanceKinds ?? [])) else { return false }
+        if let first = old.firstResponse { guard firstResponse == first else { return false } }
+        else if let first = firstResponse {
+            guard old.canSubmit(exercise), first == old.response(exercise), choiceID == old.choiceID, selectedIDs == old.selectedIDs else { return false }
+        }
+        guard exercise.isMatching else { return true }
         guard let previous = old.pairDecisions else { return pairDecisions == nil }
         guard let decisions = pairDecisions else { return false }
         for (id, prior) in previous {
@@ -285,28 +369,40 @@ struct CourseExerciseState: Codable, Equatable {
         case "exposure": return true
         case "pictureChoice": return choiceID != nil && exercise.pictures?.contains(where: { $0.id == choiceID }) == true
         case "choice": return choiceID != nil && exercise.choices?.contains(where: { $0.id == choiceID }) == true
-        case "matching": return !(exercise.pairs ?? []).isEmpty && exercise.pairs?.allSatisfy { pairChoices?[$0.id] != nil } == true
+        case "matching", "textMatching": return !(exercise.pairs ?? []).isEmpty && exercise.pairs?.allSatisfy { pairChoices?[$0.id] != nil } == true
         case "wordBank": return !selectedIDs.isEmpty
         default: return false
         }
     }
+    func response(_ exercise: CourseExercise) -> CourseExerciseResponse {
+        let words = selectedIDs.compactMap { id in exercise.tiles?.first { $0.id == id }?.text }
+        let correct: Bool
+        switch exercise.format {
+        case "exposure": correct = true
+        case "pictureChoice", "choice": correct = choiceID == exercise.correctChoiceID
+        case "matching", "textMatching": correct = exercise.pairs?.allSatisfy { pairChoices?[$0.id] == $0.id } == true
+        case "wordBank": correct = exercise.acceptedOrders?.contains(words) == true
+        default: correct = false
+        }
+        let mismatch = !correct && ((choiceID.map { exercise.context?.goalMismatchChoiceIDs?.contains($0) == true } ?? false) || exercise.context?.goalMismatchOrders?.contains(words) == true)
+        return .init(outcome: correct ? "correct" : mismatch ? "goalMismatch" : "incorrect", choiceID: choiceID, selectedIDs: selectedIDs)
+    }
     @discardableResult mutating func submit(_ exercise: CourseExercise) -> Bool? {
         guard result == nil, canSubmit(exercise) else { return nil }
-        switch exercise.format {
-        case "exposure": result = true
-        case "pictureChoice", "choice": result = choiceID == exercise.correctChoiceID
-        case "matching": result = exercise.pairs?.allSatisfy { pairChoices?[$0.id] == $0.id } == true
-        case "wordBank":
+        if exercise.format == "wordBank" {
             let tiles = exercise.tiles ?? []
-            guard Set(tiles.map(\.id)).count == tiles.count,
-                  selectedIDs.allSatisfy({ id in tiles.contains { $0.id == id } }) else { return nil }
-            let words = selectedIDs.compactMap { id in tiles.first { $0.id == id }?.text }
-            result = exercise.acceptedOrders?.contains(words) == true
-        default: return nil
+            guard Set(tiles.map(\.id)).count == tiles.count, selectedIDs.allSatisfy({ id in tiles.contains { $0.id == id } }) else { return nil }
         }
-        revision += 1
-        return result
+        let submitted = response(exercise)
+        firstResponse = firstResponse ?? submitted; outcome = submitted.outcome
+        if submitted.outcome == "goalMismatch" || (exercise.isAppOnlyDialogue && submitted.outcome != "correct") {
+            // Keep the fixed-goal turn open. A coherent alternative is not a
+            // language error; retry/help never overwrites first-response evidence.
+            usedHelp = true; assistanceKinds = Array(Set(assistanceKinds ?? []).union([submitted.outcome == "goalMismatch" ? "goalRetry" : "retry"])).sorted(); result = nil
+        } else { result = submitted.outcome == "correct" }
+        revision += 1; return result
     }
+
 }
 
 struct CourseExerciseEvidence: Codable {
@@ -320,6 +416,9 @@ struct CourseExerciseEvidence: Codable {
     var assisted: Bool
     var timestamp: Date
     var pairEvidence: [CoursePairEvidence]? = nil
+    var firstResponse: CourseExerciseResponse? = nil
+    var assistanceKinds: [String]? = nil
+    var modality: String? = nil
 }
 
 
@@ -392,16 +491,51 @@ struct CourseAssessmentAttempt: Codable, Identifiable {
 /// Shared by app, extension and delivery validation. Capabilities are behavior,
 /// not a user-agent guess. Unsupported notifications can only hand off.
 enum CourseDeliveryContracts {
-    static let profile = "practice-v1"
-    static let supported: Set<String> = ["exercise-v1", "matching-evidence-v1", "finite-bank-v1", "route-v1", "assessment-v1"]
+    static let profile = "practice-v2"
+    static let v1: Set<String> = ["exercise-v1", "matching-evidence-v1", "finite-bank-v1", "route-v1", "assessment-v1"]
+    static let supported = v1.union(["text-matching-v1", "finite-dialogue-v1"])
+    static let modernProfiles: Set<String> = ["practice-v1", "practice-v2"]
+    static func required(for profile: String) -> Set<String> { profile == "practice-v1" ? v1 : profile == Self.profile ? supported : [] }
     static func supports(_ required: [String]) -> Bool { Set(required).isSubset(of: supported) }
+    static func validatesV2(_ course: CourseDefinition) -> Bool {
+        let lessons = course.units.flatMap(\.lessons), definitions = course.learning?.dialogues ?? [:]
+        for (id, definition) in definitions {
+            guard definition.id == id, let lesson = lessons.first(where: { $0.id == definition.lessonID }), definition.isSupported(cards: lesson.cards) else { return false }
+        }
+        if let assessment = course.learning?.starter?.assessment {
+            for item in assessment.forms.values.flatMap({ $0 }) {
+                guard let exercise = item.card.activity?.exercise, ["pictureChoice", "choice", "wordBank"].contains(exercise.format), exercise.context == nil, exercise.models == nil else { return false }
+            }
+        }
+        for card in lessons.flatMap(\.cards) {
+            guard let exercise = card.activity?.exercise else { continue }
+            if exercise.format == "textMatching" {
+                guard let pairs = exercise.pairs, pairs.count == 2, Set(pairs.map(\.id)).count == 2,
+                      pairs.allSatisfy({ !$0.id.isEmpty && !$0.label.isEmpty && !$0.description.isEmpty && $0.image.isEmpty && !$0.vocabularyIDs.isEmpty && !$0.conceptIDs.isEmpty && Set($0.vocabularyIDs).isSubset(of: Set(exercise.vocabularyIDs)) && Set($0.conceptIDs).isSubset(of: Set(exercise.conceptIDs)) }) else { return false }
+            }
+            if exercise.models?.contains(where: { $0.spanish.isEmpty || $0.meaning.isEmpty }) == true { return false }
+            guard let context = exercise.context else { continue }
+            if (context.dialogueID == nil) != (context.dialogueStepID == nil) { return false }
+            if let id = context.dialogueID {
+                guard let definition = definitions[id], definition.steps.contains(where: { $0.id == context.dialogueStepID && $0.cardID == card.id }) else { return false }
+            }
+            if context.goalMismatchChoiceIDs?.contains(where: { id in id == exercise.correctChoiceID || exercise.choices?.contains(where: { $0.id == id }) != true }) == true { return false }
+            for order in context.goalMismatchOrders ?? [] {
+                var inventory = (exercise.tiles ?? []).map(\.text)
+                guard !order.isEmpty, exercise.acceptedOrders?.contains(order) != true else { return false }
+                for word in order { guard let index = inventory.firstIndex(of: word) else { return false }; inventory.remove(at: index) }
+            }
+        }
+        return true
+    }
+
     static func notificationCanRender(profile: String?, contracts: [String]?, course: CourseDefinition?) -> Bool {
         guard notificationIsCompatible(profile: profile, contracts: contracts), let course else { return false }
-        return profile != self.profile || course.learning?.starter != nil
+        return profile == nil || profile == "legacy-v1" || course.learning?.starter != nil
     }
     static func notificationIsCompatible(profile: String?, contracts: [String]?) -> Bool {
         guard let profile else { return contracts == nil || contracts?.isEmpty == true }
         if profile == "legacy-v1" { return contracts == nil || contracts?.isEmpty == true }
-        return profile == self.profile && contracts.map { supports($0) && Set(supported).isSubset(of: Set($0)) } == true
+        return modernProfiles.contains(profile) && contracts.map { supports($0) && required(for: profile).isSubset(of: Set($0)) } == true
     }
 }

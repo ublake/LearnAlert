@@ -90,7 +90,7 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     static func stopActive() { active?.stop() }
 
-    func toggle(name: String) {
+    func toggle(name: String, localURL: URL? = nil) {
         if isPlaying { stop(); return }
         Self.active?.stop()
         Self.active = self
@@ -98,7 +98,9 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
-            let player = try AVAudioPlayer(contentsOf: CardAudioStore.url(named: name))
+            let source = localURL ?? CardAudioStore.url(named: name)
+            guard source.isFileURL else { throw CardAudioError(message: "A stored recording is required.") }
+            let player = try AVAudioPlayer(contentsOf: source)
             player.delegate = self
             player.prepareToPlay()
             self.player = player
@@ -138,10 +140,11 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 struct CardAudioPlaybackButton: View {
     let name: String
     var compact = false
+    var localURL: URL? = nil
     @StateObject private var player = CardAudioPlayer()
 
     var body: some View {
-        Button { player.toggle(name: name) } label: {
+        Button { player.toggle(name: name, localURL: localURL) } label: {
             HStack(spacing: 5) {
                 Image(systemName: player.isPlaying ? "stop.fill" : "play.fill")
                 if !compact { Text(player.isPlaying ? "Stop audio" : "Play audio") }
@@ -155,6 +158,7 @@ struct CardAudioPlaybackButton: View {
         .tint(Color.accentColor)
         .onDisappear { player.stop() }
         .onChange(of: name) { _, _ in player.stop() }
+        .onChange(of: localURL) { _, _ in player.stop() }
         .alert("Audio Unavailable", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
             Button("OK", role: .cancel) { }
         } message: { Text(player.errorMessage ?? "") }
