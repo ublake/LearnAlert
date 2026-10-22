@@ -1990,28 +1990,32 @@ private struct HomeCourseCard: View {
     private var trail: CourseTrailProjection { CourseTrailProjection(course: course, snapshot: progressManager.learningSnapshot) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 10) {
             Button(action: onOpenOverview) {
                 HStack(spacing: 12) {
-                    Text(course.flagEmoji).font(.largeTitle)
+                    Text(course.flagEmoji).font(.system(size: 30)).frame(width: 40)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(course.language).font(.title3.weight(.semibold)).foregroundStyle(.primary)
+                        Text(course.language).font(.headline).foregroundStyle(.primary)
                         Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    if isPinned { Image(systemName: "pin.fill").font(.caption).foregroundStyle(.secondary) }
+                    Spacer(minLength: 0)
+                    if isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
-            HStack {
-                Button("Open decks", action: onContinue).buttonStyle(.borderedProminent)
-                Spacer()
-                Menu {
-                    Button(isPinned ? "Unpin" : "Pin", action: togglePin)
-                    Button("Remove from library", role: .destructive, action: unenroll)
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-            }
-        }.padding(16).background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
+            Button(action: onContinue) {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                    .frame(width: 42, height: 42)
+                    .background(LearnAlertStyle.appAccent.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+            }.buttonStyle(.plain).accessibilityLabel("Open \(course.language) decks")
+            Menu {
+                Button(isPinned ? "Unpin" : "Pin", action: togglePin)
+                Button("Remove from library", role: .destructive, action: unenroll)
+            } label: { Image(systemName: "ellipsis").frame(width: 30, height: 44) }
+        }.padding(.horizontal, 14).padding(.vertical, 12)
+            .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
     }
 }
 

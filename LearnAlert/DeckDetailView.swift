@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 /// Values reused by the header, filters, and folder rows during one render.
 /// The caller supplies study order once; grouping and statistics share one pass.
@@ -44,7 +45,17 @@ struct DeckDetailSnapshot {
         }
     }
 
-    private static func matches(_ card: Flashcard, query: String) -> Bool {
+    init(summary: DeckPreviewSummary, visibleCards: [Flashcard]) {
+        cardCount = summary.cardCount; dueCount = summary.dueCount; masteredCount = summary.masteredCount
+        sectionCounts = summary.sectionCounts; uncategorizedCount = summary.uncategorizedCount
+        filteredCards = visibleCards
+        for card in visibleCards {
+            if let id = card.section?.id { groupedCards[id, default: []].append(card) }
+            else { uncategorizedCards.append(card) }
+        }
+    }
+
+    nonisolated static func matches(_ card: Flashcard, query: String) -> Bool {
         if card.question.lowercased().contains(query) || card.correctAnswer.lowercased().contains(query) || card.hint.lowercased().contains(query) { return true }
         if card.options.contains(where: { $0.lowercased().contains(query) }) { return true }
         return card.matchingPairs.contains { $0.leftItem.lowercased().contains(query) || $0.rightItem.lowercased().contains(query) }
@@ -74,11 +85,22 @@ struct DeckDetailView: View {
     @State private var folderBeingEdited: DeckSection?
     @State private var editingFolderName: String = ""
     @State private var showingRenameFolderAlert = false
+    @State private var snapshot = DeckDetailSnapshot(cards: [], searchText: "", selectedSectionFilter: "ALL")
+    @State private var previewSummary = DeckPreviewSummary()
+    @State private var isLoadingPreview = true
+    @State private var previewError: String?
+    @State private var previewRevision = 0
+    @State private var previewOffset = 0
+
+    private struct PreviewRequest: Equatable {
+        let deckID: UUID
+        let search: String
+        let section: String
+        let revision: Int
+    }
 
     var body: some View {
-        let cards = deck.cards
         let orderedSections = deck.sections
-        let snapshot = DeckDetailSnapshot(cards: cards, searchText: searchText, selectedSectionFilter: selectedSectionFilter)
         ZStack {
             LearnAlertStyle.courseCanvas
                 .ignoresSafeArea()
@@ -176,7 +198,15 @@ struct DeckDetailView: View {
                 }
 
                 // Cards List
-                if snapshot.filteredCards.isEmpty {
+                if isLoadingPreview && snapshot.cardCount == 0 {
+                    ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let previewError {
+                    ContentUnavailableView {
+                        Label("Couldn’t load this deck", systemImage: "rectangle.stack")
+                    } description: { Text(previewError) } actions: {
+                        Button("Try again") { previewRevision += 1 }
+                    }
+                } else if snapshot.filteredCards.isEmpty {
                     VStack(spacing: 12) {
                         Spacer()
                         Image(systemName: "rectangle.stack.badge.plus")
@@ -211,7 +241,7 @@ struct DeckDetailView: View {
                                             }
                                         }
                                     } header: {
-                                        folderSectionHeader(section: section, count: sectionCards.count)
+                                        folderSectionHeader(section: section, count: snapshot.sectionCounts[section.id, default: 0])
                                     }
                                 }
                             }
@@ -241,6 +271,10 @@ struct DeckDetailView: View {
                                 delete(offsets, from: snapshot.filteredCards)
                             }
                         }
+                        if previewOffset < previewSummary.cardIDs.count {
+                            ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
+                                .onAppear { loadNextPreviewPage() }
+                        }
                     }
                     .listStyle(.insetGrouped)
                     .scrollContentBackground(.hidden)
@@ -253,6 +287,10 @@ struct DeckDetailView: View {
         }
         .navigationTitle(deck.name)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: PreviewRequest(deckID: deck.id, search: searchText, section: selectedSectionFilter, revision: previewRevision)) {
+            await loadPreview()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in previewRevision += 1 }
         .toolbar {
             if homeTutorialStep == 0 {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -338,7 +376,7 @@ struct DeckDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Reset Progress", role: .destructive) {
-                cards.forEach { $0.resetProgress() }
+                deck.cards.forEach { $0.resetProgress() }
                 try? context.save()
             }
             Button("Cancel", role: .cancel) { }
@@ -366,6 +404,39 @@ struct DeckDetailView: View {
     }
 
     // MARK: - Folder Header View
+    private func loadPreview() async {
+        isLoadingPreview = true; previewError = nil
+        let container = context.container, deckID = deck.id, search = searchText, section = selectedSectionFilter
+        let worker = Task.detached(priority: .userInitiated) {
+            let reader = LibraryDataWorker(modelContainer: container)
+            return try await reader.preview(deckID: deckID, search: search, section: section)
+        }
+        do {
+            let summary = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+            try Task.checkCancellation()
+            previewSummary = summary; previewOffset = 0
+            snapshot = DeckDetailSnapshot(summary: summary, visibleCards: [])
+            loadNextPreviewPage()
+            isLoadingPreview = false
+        } catch is CancellationError { }
+        catch {
+            guard !Task.isCancelled else { return }
+            previewError = "Please try opening it again."; isLoadingPreview = false
+        }
+    }
+
+    private func loadNextPreviewPage() {
+        let start = previewOffset
+        let ids = Array(previewSummary.cardIDs.dropFirst(start).prefix(60))
+        guard !ids.isEmpty else { return }
+        do {
+            let cards = try context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { ids.contains($0.id) }))
+            let byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            previewOffset += ids.count
+            snapshot = DeckDetailSnapshot(summary: previewSummary, visibleCards: snapshot.filteredCards + ids.compactMap { byID[$0] })
+        } catch { previewError = "The next cards couldn’t load. Please try again." }
+    }
+
     private func folderSectionHeader(section: DeckSection, count: Int) -> some View {
         HStack(spacing: 8) {
             Circle()

@@ -538,7 +538,9 @@ struct ManageMyDataView: View {
     @State private var exportedDataURL: URL?
 
     @State private var isDeletingDecks = false
-    @State private var deletedCardsCount = 0
+    @State private var deletionProgress = 0.0
+    @State private var deletionStatus = "Preparing your library"
+    @State private var deletionError: String?
     @State private var totalCardsToDelete = 0
     @State private var showingDeleteCompleteAlert = false
     @State private var completedSummaryMessage = ""
@@ -609,6 +611,13 @@ struct ManageMyDataView: View {
         } message: {
             Text(completedSummaryMessage)
         }
+        .alert("Couldn’t delete all decks", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+            Button("OK", role: .cancel) { deletionError = nil }
+        } message: {
+            Text(deletionError ?? "Please try again.")
+        }
+        .interactiveDismissDisabled(isDeletingDecks)
+        .navigationBarBackButtonHidden(isDeletingDecks)
         .sheet(isPresented: $showingDataShare) {
             if let exportedDataURL {
                 ActivityShareSheet(items: [exportedDataURL])
@@ -618,143 +627,59 @@ struct ManageMyDataView: View {
 
     private var deletionProgressOverlay: some View {
         ZStack {
-            Color.black.opacity(0.65)
-                .ignoresSafeArea()
-                .transition(.opacity)
-
-            VStack(spacing: 20) {
-                ZStack {
-                    Circle()
-                        .fill(Color.red.opacity(0.18))
-                        .frame(width: 64, height: 64)
-
-                    Image(systemName: "trash.fill")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(Color.red)
+            Color.black.opacity(0.65).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 28)).foregroundStyle(.red)
+                Text("Deleting decks & cards").font(.headline)
+                Text(deletionStatus).font(.subheadline).foregroundStyle(.white.opacity(0.7))
+                ProgressView(value: deletionProgress).tint(.red)
+                if totalCardsToDelete > 0 {
+                    Text("\(totalCardsToDelete.formatted()) cards")
+                        .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.65))
                 }
-
-                VStack(spacing: 6) {
-                    Text("Deleting Decks & Cards")
-                        .font(.custom("Poppins-SemiBold", size: 17))
-                        .foregroundStyle(Color.white)
-
-                    Text("Permanently removing local cards and decks...")
-                        .font(.custom("Poppins-Regular", size: 12))
-                        .foregroundStyle(Color.white.opacity(0.7))
-                }
-
-                VStack(spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Deleting cards:")
-                            .font(.custom("Poppins-Medium", size: 13))
-                            .foregroundStyle(Color.white.opacity(0.8))
-
-                        Spacer()
-
-                        HStack(spacing: 2) {
-                            Text("\(deletedCardsCount)")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.red)
-                            Text(" / \(totalCardsToDelete)")
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.7))
-                        }
-                        .contentTransition(.numericText())
-                    }
-
-                    GeometryReader { geo in
-                        let progress = totalCardsToDelete > 0
-                            ? min(1.0, Double(deletedCardsCount) / Double(totalCardsToDelete))
-                            : 1.0
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.12))
-                                .frame(height: 10)
-
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color.red, Color.orange],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(10, geo.size.width * CGFloat(progress)), height: 10)
-                                .animation(.easeOut(duration: 0.12), value: progress)
-                        }
-                    }
-                    .frame(height: 10)
-
-                    HStack {
-                        let pct = totalCardsToDelete > 0
-                            ? Int((Double(deletedCardsCount) / Double(totalCardsToDelete)) * 100)
-                            : 100
-                        Text("\(pct)% completed")
-                            .font(.custom("Poppins-Medium", size: 11))
-                            .foregroundStyle(Color.white.opacity(0.55))
-
-                        Spacer()
-                    }
-                }
-                .padding(.horizontal, 4)
             }
-            .padding(24)
-            .background(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(Color(red: 0.12, green: 0.12, blue: 0.14))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.5), radius: 30, y: 10)
-            .padding(.horizontal, 32)
-            .transition(.scale(scale: 0.9).combined(with: .opacity))
+            .foregroundStyle(.white).padding(24).frame(maxWidth: 360)
+            .background(Color(red: 0.12, green: 0.12, blue: 0.14), in: RoundedRectangle(cornerRadius: 24))
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(.white.opacity(0.15), lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 24, y: 10).padding(32)
         }
     }
 
     private func executeDeleteAllDecks() {
-        let decksToDelete = Array(decks)
-        let totalDecks = decksToDelete.count
-        let totalCards = decksToDelete.reduce(0) { $0 + $1.cards.count }
-
-        totalCardsToDelete = totalCards
-        deletedCardsCount = 0
-
-        guard totalCards > 0 || totalDecks > 0 else {
-            completedSummaryMessage = "No decks or cards found to delete."
-            showingDeleteCompleteAlert = true
-            return
-        }
-
+        guard !isDeletingDecks else { return }
         isDeletingDecks = true
+        deletionProgress = 0; totalCardsToDelete = 0
+        deletionStatus = "Preparing your library"
         HapticFeedback.impact(.medium)
         InteractionSoundPlayer.shared.play(.deleteDeck)
-
         Task { @MainActor in
-            let targetDurationMs = 1200
-            let perCardSleepMs = totalCards > 0 ? max(8, min(40, targetDurationMs / totalCards)) : 20
-
-            for deck in decksToDelete {
-                let cards = Array(deck.cards)
-                for card in cards {
-                    context.delete(card)
-                    deletedCardsCount += 1
-                    HapticFeedback.impact(.light)
-                    try? await Task.sleep(for: .milliseconds(perCardSleepMs))
-                }
-                context.delete(deck)
+            defer { isDeletingDecks = false }
+            do {
+                // Flush outstanding edits before another context changes the store.
+                try context.save()
+                let container = context.container
+                let result = try await Task.detached(priority: .userInitiated) {
+                    let worker = LibraryDataWorker(modelContainer: container)
+                    return try await worker.deleteAll { update in
+                        await MainActor.run {
+                            deletionProgress = update.fraction
+                            deletionStatus = update.message
+                            totalCardsToDelete = update.cards
+                        }
+                    }
+                }.value
+                context.processPendingChanges()
+                StudyEngine.shared.stopAlerts()
+                HapticFeedback.success()
+                InteractionSoundPlayer.shared.play(.correct)
+                completedSummaryMessage = result.decks == 0 && result.cards == 0
+                    ? "No decks or cards found to delete."
+                    : "Successfully removed \(result.decks) \(result.decks == 1 ? "deck" : "decks") and \(result.cards) \(result.cards == 1 ? "card" : "cards")."
+                showingDeleteCompleteAlert = true
+            } catch {
+                deletionError = "Deletion could not finish. Your library will show what remains. Please try again."
             }
-
-            try? context.save()
-            UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-
-            try? await Task.sleep(for: .milliseconds(300))
-            isDeletingDecks = false
-            HapticFeedback.success()
-            InteractionSoundPlayer.shared.play(.correct)
-            completedSummaryMessage = "Successfully removed \(totalDecks) \(totalDecks == 1 ? "deck" : "decks") and \(totalCards) \(totalCards == 1 ? "card" : "cards")."
-            showingDeleteCompleteAlert = true
         }
     }
 

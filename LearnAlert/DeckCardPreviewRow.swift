@@ -6,6 +6,7 @@ struct DeckCardPreviewRow: View {
     let card: Flashcard
     let edit: () -> Void
     @State private var expandedAnki = false
+    @State private var preparedAnki: PreparedAnkiLibraryPreview?
     private var fields: [String: CardFieldMedia] { card.fieldMedia }
 
     var body: some View {
@@ -22,8 +23,8 @@ struct DeckCardPreviewRow: View {
                     .buttonStyle(.plain).accessibilityLabel("Edit card")
             }.font(.caption2.weight(.medium)).foregroundStyle(LearnAlertStyle.textSecondary)
 
-            if card.cardType == .anki, let content = card.ankiContent {
-                ankiPreview(content)
+            if card.cardType == .anki {
+                ankiPreview(preparedAnki?.content)
             } else if card.cardType == .images {
                 HStack(alignment: .top, spacing: 14) {
                     field("prompt", title: fields["answer"] == nil ? "Image" : "Front", text: "")
@@ -73,6 +74,13 @@ struct DeckCardPreviewRow: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 15))
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(LearnAlertStyle.cardBorder, lineWidth: 0.8))
+        .task(id: card.cardType == .anki ? card.ankiContentData : nil) {
+            guard card.cardType == .anki else { return }
+            let data = card.ankiContentData, id = card.id
+            let worker = Task.detached(priority: .userInitiated) { AnkiLibraryPreview.prepare(cardID: id, data: data) }
+            let result = await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
+            if !Task.isCancelled { preparedAnki = result }
+        }
     }
 
     private func field(_ key: String, title: String?, text: String, emphasized: Bool = false) -> some View {
@@ -97,10 +105,10 @@ struct DeckCardPreviewRow: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func ankiPreview(_ content: AnkiCardContent) -> some View {
+    private func ankiPreview(_ content: AnkiCardContent?) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .top, spacing: 9) {
-                if let image = ankiThumbnail(content) {
+                if let image = preparedAnki?.thumbnail {
                     Image(uiImage: image).resizable().scaledToFit().frame(width: 68, height: 52)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
@@ -110,24 +118,66 @@ struct DeckCardPreviewRow: View {
                 }
             }
             DisclosureGroup(isExpanded: $expandedAnki) {
-                // Complex imported layouts keep their full HTML/CSS/media renderer on demand.
+                // DisclosureGroup may evaluate its content while collapsed. Keep
+                // WebKit creation behind an explicit condition as well.
+                if expandedAnki, let content {
                 Text("Front").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
                 AnkiCardView(content: content, showingBack: false, compact: true).frame(height: 190)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 Text("Back").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
                 AnkiCardView(content: content, showingBack: true, compact: true).frame(height: 190)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else if expandedAnki { ProgressView("Loading card…") }
             } label: { Text("Formatted card").font(.caption2) }.tint(LearnAlertStyle.appAccentForeground)
         }
     }
 
-    private func ankiThumbnail(_ content: AnkiCardContent) -> UIImage? {
+}
+
+nonisolated struct PreparedAnkiLibraryPreview: @unchecked Sendable {
+    let content: AnkiCardContent?
+    let thumbnail: UIImage?
+}
+
+nonisolated enum AnkiLibraryPreview {
+    private final class Cached: @unchecked Sendable {
+        let data: Data
+        let value: PreparedAnkiLibraryPreview
+        init(_ data: Data, _ value: PreparedAnkiLibraryPreview) { self.data = data; self.value = value }
+    }
+    private final class Index: @unchecked Sendable {
+        let values: [String: String]
+        init(_ values: [String: String]) { self.values = values }
+    }
+    private static let previews: NSCache<NSUUID, Cached> = {
+        let cache = NSCache<NSUUID, Cached>(); cache.totalCostLimit = 12 * 1_024 * 1_024; return cache
+    }()
+    private static let indexes: NSCache<NSURL, Index> = {
+        let cache = NSCache<NSURL, Index>(); cache.countLimit = 4; return cache
+    }()
+    private static let imagePattern = try? NSRegularExpression(pattern: #"<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']"#, options: .caseInsensitive)
+
+    static func prepare(cardID: UUID, data: Data?) -> PreparedAnkiLibraryPreview {
+        guard let data else { return .init(content: nil, thumbnail: nil) }
+        if let saved = previews.object(forKey: cardID as NSUUID), saved.data == data { return saved.value }
+        let content = try? JSONDecoder().decode(AnkiCardContent.self, from: data)
+        let value = PreparedAnkiLibraryPreview(content: content, thumbnail: content.flatMap(thumbnail))
+        if !Task.isCancelled { previews.setObject(Cached(data, value), forKey: cardID as NSUUID, cost: data.count + 192 * 192 * 4) }
+        return value
+    }
+
+    private static func thumbnail(_ content: AnkiCardContent) -> UIImage? {
         let html = String(content.frontHTML.prefix(32_768)) + String(content.backHTML.prefix(32_768))
-        guard let regex = try? NSRegularExpression(pattern: #"<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']"#, options: .caseInsensitive),
+        guard !Task.isCancelled, let regex = imagePattern,
               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
               let range = Range(match.range(at: 1), in: html) else { return nil }
         let name = String(html[range]).replacingOccurrences(of: "&amp;", with: "&").removingPercentEncoding ?? String(html[range])
-        guard let directory = content.mediaURL, let url = AnkiCardContent.safeMediaURL(name: name, directory: directory),
+        guard let directory = content.mediaURL else { return nil }
+        let key = directory as NSURL
+        let index: Index
+        if let saved = indexes.object(forKey: key) { index = saved }
+        else { index = Index(AnkiCardContent.mediaIndex(in: directory)); indexes.setObject(index, forKey: key) }
+        guard let url = AnkiCardContent.safeMediaURL(name: name, directory: directory, index: index.values),
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 192] as CFDictionary) else { return nil }
         return UIImage(cgImage: thumbnail)
