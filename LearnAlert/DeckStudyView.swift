@@ -97,7 +97,7 @@ struct DeckStudyView: View {
             } else if let card = currentCard {
                 QuizSessionView(
                     deckName: deck.name,
-                    question: card.question,
+                    question: card.studyQuestion,
                     cardType: card.cardType,
                     options: card.options,
                     matchingLeftItems: card.matchingLeftItems,

@@ -31,7 +31,7 @@ struct DeckCardPreviewRow: View {
                     if fields["answer"] != nil { field("answer", title: "Back", text: "") }
                 }
             } else {
-                field("prompt", title: nil, text: card.question, emphasized: true)
+                field("prompt", title: nil, text: card.studyQuestion, emphasized: true)
                 switch card.cardType {
                 case .multipleChoice:
                     VStack(spacing: 5) {
@@ -113,7 +113,7 @@ struct DeckCardPreviewRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    if !card.question.isEmpty { Text(card.question).font(.subheadline.weight(.semibold)).lineLimit(3) }
+                    if !card.studyQuestion.isEmpty { Text(card.studyQuestion).font(.subheadline.weight(.semibold)).lineLimit(3) }
                     if !card.correctAnswer.isEmpty { Text(card.correctAnswer).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(3) }
                 }
             }

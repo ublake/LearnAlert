@@ -866,7 +866,7 @@ struct FlashcardNotificationView: View {
                 deckName: deck.name,
                 deckType: deck.deckType,
                 cardType: cardToStudy.cardType.rawValue,
-                question: cardToStudy.question,
+                question: cardToStudy.studyQuestion,
                 options: cardToStudy.options,
                 correctAnswer: cardToStudy.correctAnswer,
                 hint: cardToStudy.hint,
@@ -1321,7 +1321,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 if let card = deck.cards.min(by: { $0.nextReviewDate < $1.nextReviewDate }) {
                     userInfo["deckId"] = deck.id.uuidString; userInfo["cardId"] = card.id.uuidString
                     userInfo["deckName"] = deck.name; userInfo["cardType"] = card.cardType.rawValue
-                    userInfo["question"] = card.question; userInfo["options"] = card.options
+                    userInfo["question"] = card.studyQuestion; userInfo["options"] = card.options
                     userInfo["correctAnswer"] = card.correctAnswer
                 }
             } catch {
@@ -1374,7 +1374,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                 snapshot = NotificationSessionCard(
                     id: card.id.uuidString, deckId: deck.id.uuidString,
                     deckName: deck.name, deckType: card.cardType.title,
-                    cardType: card.cardType.rawValue, question: card.question,
+                    cardType: card.cardType.rawValue, question: card.studyQuestion,
                     options: card.options, correctAnswer: card.correctAnswer, hint: card.hint,
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                     promptImageName: card.promptImageName, answerImageName: card.answerImageName,

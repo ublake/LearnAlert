@@ -76,7 +76,7 @@ enum DailyDeckAlertScheduler {
             content.sound = sound == "Default" ? .default : UNNotificationSound(named: UNNotificationSoundName(sound))
             content.userInfo = ["deckId": deck.id.uuidString, "cardId": card.id.uuidString,
                 "deckName": deck.name, "deckType": card.cardType.title, "cardType": card.cardType.rawValue,
-                "question": card.question, "options": card.options, "correctAnswer": card.correctAnswer,
+                "question": card.studyQuestion, "options": card.options, "correctAnswer": card.correctAnswer,
                 "hint": card.hint, "matchingLeftItems": card.matchingLeftItems,
                 "matchingRightItems": card.matchingRightItems, "promptImageName": card.promptImageName ?? "",
                 "answerImageName": card.answerImageName ?? "",

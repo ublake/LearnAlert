@@ -243,6 +243,12 @@ class Flashcard {
     var sourceAnkiCardID: String?
     var sourceCourseCardID: String?
 
+    /// Also covers topic decks saved before the course copy was simplified.
+    var studyQuestion: String {
+        guard sourceCourseCardID != nil else { return question }
+        return LanguageQuestionText.concise(question, hasPromptImage: promptImageName?.isEmpty == false)
+    }
+
     var ankiContent: AnkiCardContent? {
         get { ankiContentData.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) } }
         set { ankiContentData = newValue.flatMap { try? JSONEncoder().encode($0) } }

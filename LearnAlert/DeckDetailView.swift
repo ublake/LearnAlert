@@ -702,7 +702,7 @@ struct CardInteractivePreviewSheet: View {
                                 .frame(maxWidth: .infinity).frame(height: 340)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             } else {
-                                CardFieldContent(text: card.question, media: card.fieldMedia["prompt"] ?? .init())
+                                CardFieldContent(text: card.studyQuestion, media: card.fieldMedia["prompt"] ?? .init())
                                     .font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
                             }
 

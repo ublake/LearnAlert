@@ -923,7 +923,7 @@ struct HomeLibraryView: View {
         liveTutorialStartTime = Date().timeIntervalSince1970
         NotificationManager.shared.scheduleTutorialAlert(
             deckTitle: deck.name,
-            question: card.question,
+            question: card.studyQuestion,
             options: card.options,
             correctAnswer: card.correctAnswer,
             hint: card.hint,

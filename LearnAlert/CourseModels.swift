@@ -395,7 +395,7 @@ enum CourseAudioPolicy {
 
 public struct CourseLessonCard: Identifiable, Codable, Hashable {
     public let id: String
-    public let question: String
+    public var question: String
     public let options: [String]
     public let correctAnswer: String
     public let hint: String
@@ -818,6 +818,61 @@ extension CourseLessonCard {
     }
 }
 
+/// Presentation-only copy cleanup for first-party language practice. Keep the
+/// authored document and stable card IDs intact; never rewrite answer choices.
+enum LanguageQuestionText {
+    private struct Rule: Sendable {
+        let expression: NSRegularExpression
+        let replacement: String
+        nonisolated init(_ pattern: String, _ replacement: String) {
+            expression = try! NSRegularExpression(pattern: pattern)
+            self.replacement = replacement
+        }
+    }
+
+    nonisolated private static let rules: [Rule] = [
+        Rule(#"^Someone arrives\. Choose [“‘\"](.+)[”’\"]\.$"#, "$1"),
+        Rule(#"^Someone says [“‘\"](.+?)[”’\"]\. Choose [“‘\"](?:You are welcome|Likewise)[”’\"]\.$"#, "$1"),
+        Rule(#"^You want to say [“‘\"](.+?)[”’\"]\. Choose the phrase\.$"#, "$1"),
+        Rule(#"^Choose the respectful question that asks one listener’s name\.$"#, "Ask their name (formal)."),
+        Rule(#"^You want one person’s name with respectful address\. Choose the question\.$"#, "Ask their name (formal)."),
+        Rule(#"^Choose the verb for [“‘\"](.+?)[”’\"]: (.+)$"#, "$1\n$2"),
+        Rule(#"^(?:What does|What is the meaning of|Choose the meaning of) [“‘\"](.+)[”’\"](?: mean)?[?.]$"#, "$1"),
+        Rule(#"^(?:Choose|Select|Pick) (?:the )?(?:(?:Spanish|Korean) )?(?:plural )?(?:phrase|sentence|word|noun phrase) (?:meaning|for) [“‘\"](.+)[”’\"]\.?$"#, "$1"),
+        Rule(#"^(?:Choose the (?:Korean|Spanish) for|Write in (?:Korean|Spanish)):\s*(.+)$"#, "$1"),
+        Rule(#"^(?:How do you say|What is the (?:polite )?way to say) [“‘\"'](.+)[”’\"'] in (?:Spanish|Korean)\?$"#, "$1"),
+        Rule(#"^(?:Make the phrase meaning|Choose|Say|Find) [“‘\"](.+)[”’\"]\.?$"#, "$1"),
+        Rule(#"^(.+) translates to:$"#, "$1"),
+        Rule(#"^(?:Someone asks|Someone says|One friend asks|Someone addresses you respectfully:) [“‘\"](.+?)[”’\"]"#, "$1"),
+        Rule(#"^Choose the Spanish label(?: for [^\n]+)?\.\s*\n"#, ""),
+        Rule(#"^(?:Choose|Select|Pick) (?:the )?(?:(?:Spanish|Korean) )?(?:plural )?(?:phrase|sentence|word|noun phrase) (?:meaning|for) (.+?)\.?$"#, "$1"),
+        Rule(#"^Which (?:Spanish |Korean )?(?:phrase|sentence|question) means [“‘\"](.+?)[”’\"](?: \(shown\))?\?$"#, "$1"),
+        Rule(#"^Say ([“‘\"].+?[”’\"])([.,]? (?:Begin with|to |using |in |with |referring to).+)$"#, "$1$2"),
+        Rule(#"^Read(?: the (?:practice (?:price|total)|fictional shop reply|timetable|note))?:\s*"#, ""),
+        Rule(#"^Read the (?:practice (?:price|total)|fictional shop reply)\s+"#, ""),
+        Rule(#"(?:\.\s*|\s+)(?:Choose your affirmative (?:reply|answer)|Reply affirmatively about yourself)\.$"#, "\nAnswer yes."),
+        Rule(#"(?:\.\s*|\s+)(?:Choose a clear negative answer|Give your negative preference)\.$"#, "\nAnswer no."),
+        Rule(#"\.?\s+(?:Choose|Select|Pick) (?:the|a) (?:(?:relevant|matching|correct|natural|appropriate|destination|location) )?(?:reply|answer|response|sentence|phrase|option)\.$"#, ""),
+        Rule(#"\.?\s+(?:Which (?:sentence|phrase|reply|statement|question|interpretation|comparison) fits\?|Choose it\.)$"#, ""),
+        Rule(#"^(?:Choose the (?:missing (?:form|word)|verb|location verb|correct form)|Complete(?: the (?:description|sentence|phrase))?):\s*"#, ""),
+        Rule(#"\s*Write the possessive determiner before the supplied noun [^.]+\."#, ""),
+        Rule(#"\s*Type only the missing (?:(?:connecting|number) )?(?:word|verb|adjective)\.$"#, ""),
+        Rule(#"\.?\s+Begin with (.+)\.$"#, "\nStart: $1"),
+        Rule(#"^Match (?:the |these |each )?(.+?) (?:to|with) (?:their |its |the )?(?:natural )?(?:English )?meanings?\.$"#, "$1"),
+        Rule(#"^[“‘\"](.+)[”’\"]\.?$"#, "$1")
+    ]
+
+    nonisolated static func concise(_ text: String, hasPromptImage: Bool = false) -> String {
+        if hasPromptImage && text == "What is this?" { return "" }
+        var result = text
+        for rule in rules {
+            result = rule.expression.stringByReplacingMatches(in: result,
+                range: NSRange(result.startIndex..., in: result), withTemplate: rule.replacement)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 /// A read-only adapter for old and managed course documents. The user-facing
 /// model is now a collection of ordinary topic decks, without gates or lectures.
 @MainActor
@@ -833,7 +888,7 @@ enum LanguageDeckProjection {
     static func topics(_ course: CourseDefinition) -> [Topic] {
         if let value = cached[course.id], value.source == course { return value.topics }
         if course.presentation == "deck_collection" {
-            let topics = course.units.flatMap(\.lessons).filter { !$0.cards.isEmpty }.map { Topic(id: $0.id, title: $0.title, cards: $0.cards) }
+            let topics = course.units.flatMap(\.lessons).filter { !$0.cards.isEmpty }.map { Topic(id: $0.id, title: $0.title, cards: $0.cards.map(conciseCard)) }
             cached[course.id] = (course, topics)
             return topics
         }
@@ -910,7 +965,7 @@ enum LanguageDeckProjection {
                 options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice"
             } else { options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice" }
             guard type == "matching" ? !left.isEmpty && left.count == right.count : index != nil else { return nil }
-            return CourseLessonCard(id: card.id, question: question, options: options, correctAnswer: answer,
+            return CourseLessonCard(id: card.id, question: LanguageQuestionText.concise(question, hasPromptImage: media["prompt"]?.image != nil), options: options, correctAnswer: answer,
                 cardType: type, matchingLeftItems: left, matchingRightItems: right,
                 fieldMedia: media, correctOptionIndex: index)
         }
@@ -953,6 +1008,12 @@ enum LanguageDeckProjection {
         }
         if cached.count > 12 { cached.removeAll() }
         cached[course.id] = (course, result)
+        return result
+    }
+
+    private static func conciseCard(_ card: CourseLessonCard) -> CourseLessonCard {
+        var result = card
+        result.question = LanguageQuestionText.concise(card.question, hasPromptImage: card.resolvedFieldMedia["prompt"]?.image != nil)
         return result
     }
 }
