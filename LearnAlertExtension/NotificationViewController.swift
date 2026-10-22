@@ -1286,7 +1286,26 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let content = notification.request.content
         let userInfo = content.userInfo
 
-        if let courseId = userInfo["courseId"] as? String, let course = CourseCurriculumCatalog.course(for: courseId) {
+        if let courseId = userInfo["courseId"] as? String {
+            let profile = userInfo["courseDeliveryProfile"] as? String
+            let required = userInfo["courseRequiredContracts"] as? [String]
+            let catalog = profile == nil || profile == "legacy-v1" ? ManagedCatalogStore.legacyShared : ManagedCatalogStore.shared
+            guard let course = catalog.course(for: courseId), CourseDeliveryContracts.notificationCanRender(profile: profile, contracts: required, course: course) else {
+                isCourseContent = true
+                fitContent(240)
+                show(AnyView(VStack(alignment: .leading, spacing: 16) {
+                    Text("Continue in LearnAlert").font(.title2.bold())
+                    Text("Open the app to load the compatible course and keep your place.").foregroundStyle(.secondary)
+                    Button("Open LearnAlert") { [weak self] in
+                        let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
+                        defaults?.set(courseId, forKey: "handoffCourseId")
+                        defaults?.set(true, forKey: "handoffCourseOpenPath")
+                        defaults?.synchronize()
+                        self?.extensionContext?.performNotificationDefaultAction()
+                    }.buttonStyle(.borderedProminent).frame(minHeight: 44)
+                }.padding(24)))
+                return
+            }
             isCourseContent = true
             fitContent(540)
             let courseView = CourseNotificationSessionView(course: course, requestId: notification.request.identifier, reviewOnly: userInfo["courseReviewOnly"] as? Bool ?? false, openApp: { [weak self] sectionId in

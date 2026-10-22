@@ -368,6 +368,8 @@ struct CourseRouteAssignment: Codable {
     var originalContinueLessonID: String?
     var starterSelected: Bool
     var returningLearner: Bool
+    var starterLessonIDs: [String]? = nil
+    var expansionContinueLessonID: String? = nil
 }
 struct CourseAssessmentAttempt: Codable, Identifiable {
     var id: String
@@ -376,6 +378,7 @@ struct CourseAssessmentAttempt: Codable, Identifiable {
     var formID: String
     var items: [CourseAssessmentItem]
     var states: [String: CourseExerciseState]
+    var prerequisiteCards: [CourseLessonCard]? = nil
     var skippedIDs: [String] = []
     var index = 0
     var finalizedAt: Date? = nil
@@ -384,4 +387,21 @@ struct CourseAssessmentAttempt: Codable, Identifiable {
     var score: Int { items.filter { !skippedIDs.contains($0.id) && states[$0.id]?.result == true }.count }
     func score(objectiveID: String) -> Int { items.filter { $0.objectiveID == objectiveID && !skippedIDs.contains($0.id) && states[$0.id]?.result == true }.count }
     var remediationLessonIDs: [String] { Array(Set(items.filter { skippedIDs.contains($0.id) || states[$0.id]?.result != true }.flatMap(\.remediationLessonIDs))).sorted() }
+}
+
+/// Shared by app, extension and delivery validation. Capabilities are behavior,
+/// not a user-agent guess. Unsupported notifications can only hand off.
+enum CourseDeliveryContracts {
+    static let profile = "practice-v1"
+    static let supported: Set<String> = ["exercise-v1", "matching-evidence-v1", "finite-bank-v1", "route-v1", "assessment-v1"]
+    static func supports(_ required: [String]) -> Bool { Set(required).isSubset(of: supported) }
+    static func notificationCanRender(profile: String?, contracts: [String]?, course: CourseDefinition?) -> Bool {
+        guard notificationIsCompatible(profile: profile, contracts: contracts), let course else { return false }
+        return profile != self.profile || course.learning?.starter != nil
+    }
+    static func notificationIsCompatible(profile: String?, contracts: [String]?) -> Bool {
+        guard let profile else { return contracts == nil || contracts?.isEmpty == true }
+        if profile == "legacy-v1" { return contracts == nil || contracts?.isEmpty == true }
+        return profile == self.profile && contracts.map { supports($0) && Set(supported).isSubset(of: Set($0)) } == true
+    }
 }

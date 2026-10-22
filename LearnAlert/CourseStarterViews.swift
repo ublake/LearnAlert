@@ -55,7 +55,7 @@ struct CourseStarterHomeView: View {
     @State private var assessment = false
     @State private var failure: String?
     private var starterLessons: [CourseLesson] {
-        (course.learning?.starter?.lessonIDs ?? []).compactMap { id in course.units.flatMap(\.lessons).first { $0.id == id } }
+        manager.learningSnapshot.assignedStarterLessonIDs(course: course).compactMap { id in course.units.flatMap(\.lessons).first { $0.id == id } }
     }
     var body: some View {
         ScrollView {
@@ -68,8 +68,15 @@ struct CourseStarterHomeView: View {
                 Text("Four everyday objects. Then one or two. No typing or sound needed.").font(.body).foregroundStyle(.secondary)
                 Button(manager.learningSnapshot.activeAssessment(courseID: course.id)?.finalizedAt == nil && manager.learningSnapshot.activeAssessment(courseID: course.id) != nil ? "Resume starter check" : "Check what I know") { assessment = true }
                     .buttonStyle(.bordered).controlSize(.large)
-                Text("Optional · 12 questions · only these two starter lessons").font(.caption).foregroundStyle(.secondary)
+                Text("Optional · 12 questions · covers starter lessons 1–2").font(.caption).foregroundStyle(.secondary)
                 Text("Unlock with 10/12 overall and at least 2/3 in each area.").font(.caption).foregroundStyle(.secondary)
+                if let revision = course.learning?.starter?.revision, let assigned = manager.learningSnapshot.routes[course.id], assigned.revision != revision {
+                    Button("Use the updated starter route") {
+                        _ = manager.learningStore.transaction { $0.adoptStarterRevision(course: course) }
+                        manager.reloadFromSharedDefaults()
+                    }.buttonStyle(.bordered).controlSize(.large)
+                    Text("Your current lesson and previous progress stay in place.").font(.caption).foregroundStyle(.secondary)
+                }
                 ForEach(starterLessons) { item in
                     let status = manager.learningSnapshot.status(course: course, lessonId: item.id)
                     let credit = manager.learningSnapshot.assessmentAccess[course.id]?.contains(item.id) == true
@@ -177,7 +184,7 @@ struct CourseStarterAssessmentView: View {
     private func remediationLesson(_ id: String) -> CourseLesson? {
         let lessons = course.units.flatMap(\.lessons)
         if manager.learningSnapshot.status(course: course, lessonId: id) != .locked { return lessons.first { $0.id == id } }
-        return (course.learning?.starter?.lessonIDs ?? []).compactMap { target in lessons.first { $0.id == target } }.first { manager.learningSnapshot.status(course: course, lessonId: $0.id) != .locked }
+        return manager.learningSnapshot.assignedStarterLessonIDs(course: course).compactMap { target in lessons.first { $0.id == target } }.first { manager.learningSnapshot.status(course: course, lessonId: $0.id) != .locked }
     }
     private func objectiveTitle(_ id: String) -> String {
         switch id.suffix(3) { case "o01": "Spanish labels to meanings"; case "o02": "Meanings to Spanish labels"; case "o03": "One or two"; default: "Build a quantity phrase" }

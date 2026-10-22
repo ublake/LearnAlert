@@ -219,7 +219,7 @@ struct CourseStarterTests {
         #expect(CourseHandoff.destination(course: course, snapshot: snapshot).assessmentID == attempt.id)
         #expect(CourseHandoff.destination(course: course, snapshot: snapshot, openPath: true).assessmentID == nil)
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as! [String: Any]
-        #expect(encoded["schemaVersion"] as? Int == 5)
+        #expect(encoded["schemaVersion"] as? Int == 6)
     }
     @Test("New choice, matching and assessment layouts support dark/light and accessibility text")
     func starterLayouts() throws {
@@ -315,6 +315,20 @@ struct CourseStarterTests {
         #expect(try encoder.encode(manager.learningSnapshot) == encoder.encode(store.snapshot()))
     }
 
+    private func studyMatchingPrerequisites(_ card: CourseLessonCard, course: CourseDefinition, snapshot: inout CourseLearningSnapshot) throws {
+        for id in card.activity?.exercise?.prerequisiteIDs ?? [] {
+            let lesson = try #require(course.units.flatMap(\.lessons).first { $0.cards.contains { $0.id == id } })
+            let reveal = try #require(lesson.cards.first { $0.id == id })
+            #expect(reveal.isExposure)
+            let exercise = try #require(reveal.activity?.exercise)
+            for state in correctSteps(exercise) {
+                let saved = snapshot.saveExercise(courseID: course.id, cardID: id, exercise: exercise, state: state); #expect(saved)
+            }
+            let recorded = snapshot.answer(course: course, lessonId: lesson.id, cardId: id, correct: true, token: "matching-prerequisite-" + id); #expect(recorded)
+            #expect(snapshot.srsRecord(courseId: course.id, cardId: id) == nil)
+        }
+    }
+
     @Test("Pair edits cannot promote elimination or replace the first decision")
     func monotonicPairEvidence() throws {
         let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
@@ -325,6 +339,7 @@ struct CourseStarterTests {
         for reversed in [false, true] { for edit in ["none", "first", "second", "both", "clear-before-second", "wrong-then-correct"] { for help in [false, true] {
             let first = pairs[reversed ? 1 : 0], second = pairs[reversed ? 0 : 1]
             var snapshot = CourseLearningSnapshot(), state = CourseExerciseState()
+            try studyMatchingPrerequisites(card, course: course, snapshot: &snapshot)
             func write(_ action: (inout CourseExerciseState) -> Void) {
                 action(&state)
                 let saved = snapshot.saveExercise(courseID: course.id, cardID: card.id, exercise: exercise, state: state); #expect(saved)
@@ -387,6 +402,7 @@ struct CourseStarterTests {
         let card = try #require(course.units.last?.lessons.first?.cards.first { $0.id == "pf-sp-l01-e09" })
         let exercise = try #require(card.activity?.exercise), pairs = try #require(exercise.pairs)
         var snapshot = CourseLearningSnapshot(), state = CourseExerciseState()
+        try studyMatchingPrerequisites(card, course: course, snapshot: &snapshot)
         func write(_ action: (inout CourseExerciseState) -> Void) { action(&state); let ok = snapshot.saveExercise(courseID: course.id, cardID: card.id, exercise: exercise, state: state); #expect(ok) }
         write { $0.selectPair(pairs[0].id, exercise: exercise) }; write { $0.matchPair(pairs[0].id, exercise: exercise) }
         var stale = state
@@ -423,7 +439,135 @@ struct CourseStarterTests {
         legacy.clearPair(pairs[0].id); legacy.selectPair(pairs[0].id, exercise: exercise); legacy.matchPair(pairs[0].id, exercise: exercise)
         #expect(legacy.pairDecisions == nil)
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as! [String: Any]
-        #expect(encoded["schemaVersion"] as? Int == 5)
+        #expect(encoded["schemaVersion"] as? Int == 6)
+    }
+
+    private func expandedTestRoute(_ course: CourseDefinition) throws -> CourseDefinition {
+        var root = try JSONSerialization.jsonObject(with: JSONEncoder().encode(course)) as! [String: Any]
+        var units = root["units"] as! [[String: Any]], unit = units.removeLast(), lessons = unit["lessons"] as! [[String: Any]]
+        let reveal = (lessons[0]["cards"] as! [[String: Any]]).first { (($0["activity"] as? [String: Any])?["exercise"] as? [String: Any])?["format"] as? String == "exposure" }!
+        var card = (lessons[0]["cards"] as! [[String: Any]]).first { (($0["activity"] as? [String: Any])?["exercise"] as? [String: Any])?["format"] as? String == "pictureChoice" }!
+        card["id"] = "test-only-l03-practice"
+        var activity = card["activity"] as! [String: Any], exercise = activity["exercise"] as! [String: Any]
+        let quantityReveal = (lessons[1]["cards"] as! [[String: Any]]).first { (($0["activity"] as? [String: Any])?["exercise"] as? [String: Any])?["format"] as? String == "exposure" }!
+        exercise["prerequisiteIDs"] = [reveal["id"] as! String, quantityReveal["id"] as! String]; activity["exercise"] = exercise; card["activity"] = activity
+        var next = lessons[0]; next["id"] = "pf-sp-l03"; next["title"] = "Synthetic next-lesson contract fixture"; next["lessonNumber"] = 3; next["cards"] = [card]; lessons.append(next)
+        unit["lessons"] = lessons; units.append(unit); root["units"] = units
+        var graph = root["learning"] as! [String: Any], starter = graph["starter"] as! [String: Any]
+        starter["revision"] = "test-route-2"; starter["lessonIDs"] = ["pf-sp-l01", "pf-sp-l02", "pf-sp-l03"]; graph["starter"] = starter; root["learning"] = graph
+        return try JSONDecoder().decode(CourseDefinition.self, from: JSONSerialization.data(withJSONObject: root))
+    }
+    @Test("Pinned route expansion preserves pending Continue, access and original accounting")
+    func deliberateRouteRevision() throws {
+        let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
+        let (_, oldCourse) = try installed(directory), expanded = try expandedTestRoute(oldCourse)
+        var snapshot = CourseLearningSnapshot(); snapshot.assignRoute(course: oldCourse, returningLearner: true)
+        let opened = snapshot.resumePractice(course: oldCourse, lessonId: "legacy-one", checkpointUnitId: nil)
+        let session = try #require(opened)
+        let fraction = snapshot.completionFraction(course: oldCourse), ids = snapshot.routes[oldCourse.id]?.lessonIDs
+        #expect(snapshot.assignedStarterLessonIDs(course: expanded) == ["pf-sp-l01", "pf-sp-l02"])
+        #expect(snapshot.currentLesson(course: expanded)?.id == "legacy-one")
+        #expect(snapshot.status(course: expanded, lessonId: "pf-sp-l03") == .locked)
+        let adopted = snapshot.adoptStarterRevision(course: expanded); #expect(adopted)
+        #expect(snapshot.currentLesson(course: expanded)?.id == "legacy-one")
+        #expect(snapshot.routes[oldCourse.id]?.lessonIDs == ids && snapshot.completionFraction(course: expanded) == fraction)
+        #expect(snapshot.practiceSessions["spanish-course:lesson:legacy-one"]?.id == session.id)
+        snapshot = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(snapshot))
+        #expect(snapshot.assignedStarterLessonIDs(course: expanded).count == 3)
+        let repeated = snapshot.adoptStarterRevision(course: expanded); #expect(!repeated)
+    }
+    @Test("L01-L02 test-out unlocks eligible L03 without inventing study/SRS or bypassing unrelated prerequisites")
+    func scopedAssessmentPrerequisites() throws {
+        let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
+        let (_, oldCourse) = try installed(directory), course = try expandedTestRoute(oldCourse)
+        var snapshot = CourseLearningSnapshot(); snapshot.assignRoute(course: course, returningLearner: false)
+        let opened = snapshot.startAssessment(course: course)
+        let attempt = try #require(opened)
+        for item in attempt.items {
+            let initial = try #require(snapshot.assessmentAttempts[attempt.id]?.states[item.id])
+            for state in correctSteps(try #require(item.card.activity?.exercise), initial: initial) {
+                let saved = snapshot.saveAssessmentState(courseID: course.id, assessmentID: attempt.id, itemID: item.id, state: state); #expect(saved)
+            }
+            let advanced = snapshot.advanceAssessment(courseID: course.id, assessmentID: attempt.id, itemID: item.id); #expect(advanced)
+        }
+        snapshot = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(snapshot))
+        #expect(snapshot.assessmentAttempts[attempt.id]?.passed == true)
+        #expect(Set(snapshot.assessmentAccess[course.id] ?? []) == Set(["pf-sp-l01", "pf-sp-l02"]))
+        #expect(snapshot.progress.isEmpty && snapshot.courseSRS.isEmpty && snapshot.exerciseEvidence.isEmpty)
+        #expect(!snapshot.isFullyMastered(course: course))
+        #expect(snapshot.currentLesson(course: course)?.id == "pf-sp-l03")
+        let card = try #require(course.units.last?.lessons.last?.cards.first)
+        #expect(snapshot.satisfiesPrerequisites(card: card, course: course))
+        #expect(snapshot.batch(course: course, count: 20).contains { $0.id == card.id })
+        #expect(CourseNotificationProgress.nextLearningCard(course: course, snapshot: snapshot, excluding: [])?.id == card.id)
+        let exercise = try #require(card.activity?.exercise)
+        let operationResult1 = snapshot.resumePractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil)
+        let appSession = try #require(operationResult1)
+        #expect(snapshot.canPresentPracticeCard(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: appSession.id, cardId: card.id))
+        for state in correctSteps(exercise) { let saved = snapshot.saveExercise(courseID: course.id, cardID: card.id, exercise: exercise, state: state); #expect(saved) }
+        let identity = try #require(snapshot.exerciseDrafts[CourseLearningSnapshot.exerciseKey(courseID: course.id, cardID: card.id)]?.state.attemptID)
+        let graded = snapshot.answerPractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: appSession.id, cardId: card.id, correct: true, exerciseAttemptID: identity); #expect(graded)
+        #expect(CourseNotificationProgress.practiceCards(course: course, snapshot: snapshot).contains { $0.id == card.id })
+        #expect(snapshot.progress[course.id]?["pf-sp-l01"] == nil && snapshot.courseSRS[course.id]?["pf-sp-l01-e01"] == nil)
+        var changed = try JSONSerialization.jsonObject(with: JSONEncoder().encode(course)) as! [String: Any]
+        var units = changed["units"] as! [[String: Any]], unit = units.removeLast(), lessons = unit["lessons"] as! [[String: Any]], first = lessons[0], cards = first["cards"] as! [[String: Any]]
+        let reference = exercise.prerequisiteIDs!.first!, index = cards.firstIndex { $0["id"] as? String == reference }!
+        cards[index]["question"] = "Changed teaching definition"; first["cards"] = cards; lessons[0] = first; unit["lessons"] = lessons; units.append(unit); changed["units"] = units
+        let cosmeticCourse = try JSONDecoder().decode(CourseDefinition.self, from: JSONSerialization.data(withJSONObject: changed))
+        #expect(snapshot.satisfiesPrerequisites(card: card, course: cosmeticCourse))
+        var changedActivity = cards[index]["activity"] as! [String: Any], changedExercise = changedActivity["exercise"] as! [String: Any]
+        changedExercise["conceptIDs"] = ["test-only-new-objective"]; changedActivity["exercise"] = changedExercise; cards[index]["activity"] = changedActivity
+        first["cards"] = cards; lessons[0] = first; unit["lessons"] = lessons; units[units.count - 1] = unit; changed["units"] = units
+        let changedCourse = try JSONDecoder().decode(CourseDefinition.self, from: JSONSerialization.data(withJSONObject: changed))
+        #expect(!snapshot.satisfiesPrerequisites(card: card, course: changedCourse))
+        var outsideJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(card)) as! [String: Any]
+        var outsideActivity = outsideJSON["activity"] as! [String: Any], outsideExercise = outsideActivity["exercise"] as! [String: Any]
+        outsideExercise["prerequisiteIDs"] = [baseCourse().units[0].lessons[0].cards[0].id]; outsideActivity["exercise"] = outsideExercise; outsideJSON["activity"] = outsideActivity
+        let outside = try JSONDecoder().decode(CourseLessonCard.self, from: JSONSerialization.data(withJSONObject: outsideJSON))
+        #expect(!snapshot.satisfiesPrerequisites(card: outside, course: course))
+        #expect(CourseDeliveryContracts.notificationIsCompatible(profile: "practice-v1", contracts: Array(CourseDeliveryContracts.supported)))
+        #expect(!CourseDeliveryContracts.notificationIsCompatible(profile: "practice-v1", contracts: ["exercise-v1"]))
+        #expect(!CourseDeliveryContracts.notificationIsCompatible(profile: "future", contracts: []))
+    }
+
+    @Test("App sessions retain blocked work without presenting or crediting it, then resume after the real prerequisite")
+    func appPrerequisiteParity() throws {
+        let directory = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: directory) }
+        let (_, oldCourse) = try installed(directory), expanded = try expandedTestRoute(oldCourse)
+        var root = try JSONSerialization.jsonObject(with: JSONEncoder().encode(expanded)) as! [String: Any]
+        var units = root["units"] as! [[String: Any]], unit = units.removeLast(), lessons = unit["lessons"] as! [[String: Any]], lesson = lessons.removeLast(), cards = lesson["cards"] as! [[String: Any]]
+        var cardJSON = cards[0], activity = cardJSON["activity"] as! [String: Any], exerciseJSON = activity["exercise"] as! [String: Any]
+        exerciseJSON["prerequisiteIDs"] = ["old-one"]; activity["exercise"] = exerciseJSON; cardJSON["activity"] = activity; cards[0] = cardJSON
+        lesson["cards"] = cards; lessons.append(lesson); unit["lessons"] = lessons; units.append(unit); root["units"] = units
+        let course = try JSONDecoder().decode(CourseDefinition.self, from: JSONSerialization.data(withJSONObject: root))
+        var snapshot = CourseLearningSnapshot(); snapshot.assignRoute(course: course, returningLearner: false)
+        let operationResult2 = snapshot.startAssessment(course: course)
+        let attempt = try #require(operationResult2)
+        for item in attempt.items {
+            let initial = try #require(snapshot.assessmentAttempts[attempt.id]?.states[item.id])
+            for state in correctSteps(try #require(item.card.activity?.exercise), initial: initial) { let operationResult3 = snapshot.saveAssessmentState(courseID: course.id, assessmentID: attempt.id, itemID: item.id, state: state); #expect(operationResult3) }
+            let operationResult4 = snapshot.advanceAssessment(courseID: course.id, assessmentID: attempt.id, itemID: item.id); #expect(operationResult4)
+        }
+        let card = try #require(course.units.last?.lessons.last?.cards.first), exercise = try #require(card.activity?.exercise)
+        let operationResult5 = snapshot.resumePractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil)
+        let session = try #require(operationResult5)
+        #expect(session.cardIds.contains(card.id)) // keep the full plan; blocked is never completed
+        #expect(!snapshot.canPresentPracticeCard(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: session.id, cardId: card.id))
+        #expect(!snapshot.batch(course: course, count: 20).contains { $0.id == card.id })
+        for state in correctSteps(exercise) { let operationResult6 = snapshot.saveExercise(courseID: course.id, cardID: card.id, exercise: exercise, state: state); #expect(operationResult6) }
+        let identity = try #require(snapshot.exerciseDrafts[CourseLearningSnapshot.exerciseKey(courseID: course.id, cardID: card.id)]?.state.attemptID)
+        let operationResult7 = !snapshot.answerPractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: session.id, cardId: card.id, correct: true, exerciseAttemptID: identity); #expect(operationResult7)
+        let operationResult8 = !snapshot.answer(course: course, lessonId: "pf-sp-l03", cardId: card.id, correct: true, token: "stale", exerciseAttemptID: identity); #expect(operationResult8)
+        #expect(snapshot.courseSRS[course.id]?[card.id] == nil && snapshot.exerciseEvidence[identity] == nil)
+        let operationResult9 = snapshot.finishPractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: session.id) == nil; #expect(operationResult9)
+        snapshot = try JSONDecoder().decode(CourseLearningSnapshot.self, from: JSONEncoder().encode(snapshot))
+        let operationResult10 = snapshot.resumePractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil)
+        let resumed = try #require(operationResult10); #expect(resumed.id == session.id && resumed.answers.isEmpty)
+        // The unrelated earlier lesson is genuinely studied, not assessment-fabricated.
+        let operationResult11 = snapshot.answer(course: course, lessonId: "legacy-one", cardId: "old-one", correct: true, token: "actual-earlier-study"); #expect(operationResult11)
+        #expect(snapshot.canPresentPracticeCard(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: session.id, cardId: card.id))
+        let operationResult12 = snapshot.answerPractice(course: course, lessonId: "pf-sp-l03", checkpointUnitId: nil, sessionId: session.id, cardId: card.id, correct: true, exerciseAttemptID: identity); #expect(operationResult12)
+        #expect(snapshot.courseSRS[course.id]?[card.id] != nil)
     }
 
 }

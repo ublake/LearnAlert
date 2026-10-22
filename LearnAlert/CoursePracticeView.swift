@@ -75,6 +75,13 @@ struct CoursePracticeView: View {
             prefersReading: prefersReading)
     }
 
+    private var prerequisitesBlocked: Bool {
+        guard !answered, practiceCards.indices.contains(index) else { return false }
+        if !savesSession { return !manager.learningSnapshot.satisfiesPrerequisites(card: practiceCards[index], course: course) }
+        return !manager.learningSnapshot.canPresentPracticeCard(course: course, lessonId: lessonId,
+            checkpointUnitId: checkpointUnit?.id, sessionId: session, cardId: practiceCards[index].id)
+    }
+
     private var isCheckpoint: Bool { checkpointUnit != nil }
     private var missedCards: [CourseLessonCard] { practiceCards.filter { missed.contains($0.id) } }
     private var completedActivityCount: Int {
@@ -96,6 +103,13 @@ struct CoursePracticeView: View {
                     }.padding(24)
                 } else if finished {
                     completion
+                } else if prerequisitesBlocked {
+                    VStack(spacing: 16) {
+                        Text("A little preparation first").font(.title2.weight(.semibold))
+                        Text("This activity needs earlier practice. Your place is saved; return to the path to finish it.").multilineTextAlignment(.center)
+                        Button("Return to path", action: onDismiss).buttonStyle(.borderedProminent)
+                        Button("Check again", action: restoreSession)
+                    }.padding(24)
                 } else if practiceCards.indices.contains(index) {
                     ScrollView {
                         VStack(spacing: 16) {
@@ -122,7 +136,7 @@ struct CoursePracticeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { sessionHeader }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if loaded && !finished && practiceCards.indices.contains(index),
+                if loaded && !finished && !prerequisitesBlocked && practiceCards.indices.contains(index),
                    answered || practiceCards[index].activity?.exercise == nil || saveError != nil { answerFooter }
             }
             .onAppear {
@@ -246,7 +260,7 @@ struct CoursePracticeView: View {
         return "Practice complete"
     }
     private func speakCurrent() {
-        guard autoPronounce, !prefersReading, !isCheckpoint, allowKoreanSpeech, practiceCards.indices.contains(index),
+        guard autoPronounce, !prerequisitesBlocked, !prefersReading, !isCheckpoint, allowKoreanSpeech, practiceCards.indices.contains(index),
               // Don't speak the answer to a production exercise before it is graded.
               !practiceCards[index].usesTypedAnswer, !practiceCards[index].isListeningQuestion, let text = practiceCards[index].primaryKoreanText else { return }
         // Uploaded recordings are always played deliberately. Do not replace

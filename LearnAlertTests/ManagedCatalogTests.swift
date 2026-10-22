@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CryptoKit
 import Testing
 @testable import LearnAlert
 
@@ -298,4 +299,117 @@ struct ManagedCatalogTests {
         #expect(updated.sections.count == 1)
         #expect(updated.sections.first?.name == "New unit")
     }
+    private func deliveryCourses() throws -> (CourseDefinition, CourseDefinition) {
+        struct Component: Decodable { var unit: CourseUnit; var learning: CourseLearningGraph }
+        let url = try #require(Bundle.main.url(forResource: "visual-starter-pilot", withExtension: "json")), component = try JSONDecoder().decode(Component.self, from: Data(contentsOf: url))
+        let legacy = CourseUnit(id: "legacy", unitNumber: 1, title: "Legacy", subtitle: "", colorHex: "#123456", badgeIcon: "book", lessons: [.init(id: "old", lessonNumber: 1, title: "Old", subtitle: "", cards: [.init(id: "old-card", question: "Q", correctAnswer: "A", cardType: "vocabulary")])])
+        func make(_ units: [CourseUnit], _ graph: CourseLearningGraph?) -> CourseDefinition { .init(id: "spanish-course", title: "Spanish (SP)", language: "Spanish", flagEmoji: "🇪🇸", levelTag: "Starter", colorHex: "#123456", summary: "", estimatedHours: 1, outcomes: [], units: units, learning: graph) }
+        return (make([legacy], nil), make([legacy, component.unit], component.learning))
+    }
+    private func delivery(_ course: CourseDefinition, revision: Int = 11) throws -> (ManagedCatalogManifest, Data) {
+        let payload = try JSONEncoder().encode(course), digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(), contracts = CourseDeliveryContracts.supported.sorted()
+        let document = try JSONSerialization.data(withJSONObject: ["schemaVersion":2,"id":course.id,"kind":"course","revision":revision,"deliveryProfile":"practice-v1","requiredContracts":contracts,"contentDigest":digest,"payload":payload.base64EncodedString()])
+        var record = ManagedCatalogItem(id: course.id, kind: "course", title: course.title, revision: revision, updatedAt: 0, contentURL: "https://api.learnalertapp.com/v1/catalog/" + course.id + "?profile=practice-v1&revision=" + String(revision)); record.deliveryProfile = "practice-v1"; record.requiredContracts = contracts; record.contentDigest = digest
+        return (.init(schemaVersion: 2, revision: "practice:" + digest, initialized: true, items: [record], deliveryProfile: "practice-v1"), document)
+    }
+    @Test("Modern caches are isolated, digest checked, offline safe and never replaced by a legacy rollback")
+    func profileCacheAndRollback() throws {
+        let (url, defaults, suite) = try fixture(); defer { try? FileManager.default.removeItem(at: url); defaults.removePersistentDomain(forName: suite) }
+        let (old, modern) = try deliveryCourses(), legacy = ManagedCatalogStore(directory: url, defaults: defaults)
+        try legacy.install(manifest([item(old.id, revision: 9)]), documents: [old.id: data(old, revision: 9)])
+        let legacyURL = url.appendingPathComponent("managed-catalog-v1.json"), legacyBytes = try Data(contentsOf: legacyURL)
+        let blocked = ManagedCatalogStore(directory: url, defaults: defaults, profile: "practice-v1", replacementAllowed: { _, _ in false })
+        #expect(blocked.courses.isEmpty && blocked.lastError != nil)
+        let store = ManagedCatalogStore(directory: url, defaults: defaults, profile: "practice-v1")
+        #expect(store.courses.first == old)
+        let (release, bytes) = try delivery(modern)
+        try store.install(release, documents: [modern.id: bytes])
+        let unchangedLegacy = try Data(contentsOf: legacyURL)
+        #expect(store.courses.first == modern && unchangedLegacy == legacyBytes)
+        let offline = ManagedCatalogStore(directory: url, defaults: defaults, profile: "practice-v1")
+        #expect(offline.courses.first == modern)
+        #expect(ManagedCatalogStore(directory: url, defaults: defaults).courses.first == old)
+        #expect(throws: (any Error).self) { try store.install(manifest([item(old.id, revision: 9)], revision: "older-server"), documents: [old.id: data(old, revision: 9)]) }
+        var corrupt = try JSONSerialization.jsonObject(with: bytes) as! [String: Any]; corrupt["payload"] = Data("{}".utf8).base64EncodedString()
+        #expect(throws: (any Error).self) { try store.install(release, documents: [modern.id: JSONSerialization.data(withJSONObject: corrupt)]) }
+        var incompatible = release; var records = release.items; records[0].requiredContracts = ["unknown-contract"]
+        incompatible = .init(schemaVersion: 2, revision: "incompatible", initialized: true, items: records, deliveryProfile: "practice-v1")
+        #expect(throws: (any Error).self) { try store.install(incompatible, documents: [modern.id: bytes]) }
+        #expect(throws: (any Error).self) { try legacy.install(release, documents: [modern.id: bytes]) }
+        var changedJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(modern)) as! [String: Any]
+        var changedUnits = changedJSON["units"] as! [[String: Any]], changedUnit = changedUnits.removeLast(), changedLessons = changedUnit["lessons"] as! [[String: Any]], changedLesson = changedLessons[0], changedCards = changedLesson["cards"] as! [[String: Any]], extra = changedCards[0]
+        extra["id"] = "test-new-variant-in-old-lesson"; changedCards.append(extra); changedLesson["cards"] = changedCards; changedLessons[0] = changedLesson; changedUnit["lessons"] = changedLessons; changedUnits.append(changedUnit); changedJSON["units"] = changedUnits
+        let changedCourse = try JSONDecoder().decode(CourseDefinition.self, from: JSONSerialization.data(withJSONObject: changedJSON)), changedRelease = try delivery(changedCourse, revision: 12)
+        #expect(throws: (any Error).self) { try store.install(changedRelease.0, documents: [modern.id: changedRelease.1]) }
+        let futureManifest = ManagedCatalogManifest(schemaVersion: 3, revision: "future", initialized: true, items: release.items, deliveryProfile: "practice-v1")
+        #expect(throws: (any Error).self) { try store.install(futureManifest, documents: [modern.id: bytes]) }
+        #expect(store.courses.first == modern && store.revision == release.revision)
+        #expect(ManagedCatalogStore(directory: url, defaults: defaults, profile: "practice-v1").courses.first == modern)
+    }
+
+    @Test("Modern refresh bootstraps old-client cache and retains last-good content after incompatible, missing-media and network responses")
+    func deliveryRefreshFailureMatrix() async throws {
+        let (url, defaults, suite) = try fixture(); defer { try? FileManager.default.removeItem(at: url); defaults.removePersistentDomain(forName: suite) }
+        let (old, course) = try deliveryCourses(), (modernManifest, modernData) = try delivery(course)
+        let oldManifest = manifest([item(old.id, revision: 9)]), oldData = try data(old, revision: 9)
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [DeliveryTestProtocol.self]
+        let session = URLSession(configuration: config); defer { session.invalidateAndCancel(); DeliveryTestProtocol.response = nil }
+        let legacyManifestData = try JSONEncoder().encode(oldManifest)
+        let later = try delivery(course, revision: 12)
+        var badRecords = later.0.items; badRecords[0].requiredContracts = ["unsupported"]
+        let badData = try JSONEncoder().encode(ManagedCatalogManifest(schemaVersion: 2, revision: "bad-contract", initialized: true, items: badRecords, deliveryProfile: "practice-v1"))
+        var mediaRecords = later.0.items; let missingID = "00000000-0000-4000-8000-000000009999"
+        mediaRecords[0].assets = [.init(id: missingID, reference: "catalog:" + missingID, contentType: "image/png", url: "https://api.learnalertapp.com/v1/catalog/media/" + missingID)]
+        let missingMediaData = try JSONEncoder().encode(ManagedCatalogManifest(schemaVersion: 2, revision: "missing-media", initialized: true, items: mediaRecords, deliveryProfile: "practice-v1"))
+        let modernManifestData = try JSONEncoder().encode(modernManifest), laterManifestData = try JSONEncoder().encode(later.0)
+        var phase = 0
+        DeliveryTestProtocol.response = { request in
+            let requestURL = request.url!, modern = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "profile" && $0.value == "practice-v1" } == true
+            if phase == 5 { throw URLError(.notConnectedToInternet) }
+            if phase == 6 { return (304, Data()) }
+            if phase == 7 { return (200, Data("malformed manifest".utf8)) }
+            if requestURL.path == "/v1/catalog" {
+                if !modern { #expect(request.value(forHTTPHeaderField: "X-LearnAlert-Contracts") == nil); return (200, legacyManifestData) }
+                #expect(Set((request.value(forHTTPHeaderField: "X-LearnAlert-Contracts") ?? "").split(separator: ",").map(String.init)) == CourseDeliveryContracts.supported)
+                if phase == 3 { return (200, legacyManifestData) }
+                if phase == 1 { return (200, badData) }
+                if phase == 4 { return (200, missingMediaData) }
+                return (200, phase == 0 ? modernManifestData : laterManifestData)
+            }
+            if requestURL.path.contains("/media/") || (modern && phase == 2) { return (404, Data("missing".utf8)) }
+            if modern { return (200, phase == 0 ? modernData : later.1) }
+            return (200, oldData)
+        }
+        let store = ManagedCatalogStore(directory: url, defaults: defaults, session: session, profile: "practice-v1")
+        await store.refresh(force: true)
+        #expect(store.lastError == nil && store.courses.first == course)
+        #expect(ManagedCatalogStore(directory: url, defaults: defaults).courses.first == old)
+        let cacheURL = url.appendingPathComponent("managed-catalog-v2-practice-v1.json"), saved = try Data(contentsOf: cacheURL)
+        for failure in 1...7 {
+            phase = failure; await store.refresh(force: true)
+            #expect(store.lastError != nil && store.courses.first == course)
+            #expect(try Data(contentsOf: cacheURL) == saved)
+        }
+        #expect(ManagedCatalogStore(directory: url, defaults: defaults, profile: "practice-v1").courses.first == course)
+        #expect(!CourseDeliveryContracts.notificationCanRender(profile: "practice-v1", contracts: Array(CourseDeliveryContracts.supported), course: old))
+        #expect(CourseDeliveryContracts.notificationCanRender(profile: "practice-v1", contracts: Array(CourseDeliveryContracts.supported), course: course))
+        #expect(!CourseDeliveryContracts.notificationCanRender(profile: "future", contracts: [], course: course))
+    }
+
+}
+
+private final class DeliveryTestProtocol: URLProtocol, @unchecked Sendable {
+    static var response: ((URLRequest) throws -> (Int, Data))?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            guard let handler = Self.response else { throw URLError(.badServerResponse) }
+            let (status, data) = try handler(request)
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+    override func stopLoading() { }
 }

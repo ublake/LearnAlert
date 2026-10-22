@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import CryptoKit
+import Darwin
 
 struct PremadeCard: Identifiable, Codable {
     let id: String
@@ -300,6 +302,7 @@ struct ManagedCatalogManifest: Codable {
     let revision: String
     let initialized: Bool
     let items: [ManagedCatalogItem]
+    var deliveryProfile: String? = nil
 }
 
 struct ManagedCatalogItem: Codable {
@@ -310,6 +313,9 @@ struct ManagedCatalogItem: Codable {
     let updatedAt: Double
     let contentURL: String
     var assets: [ManagedCatalogAsset]? = nil
+    var deliveryProfile: String? = nil
+    var requiredContracts: [String]? = nil
+    var contentDigest: String? = nil
 }
 
 struct ManagedCatalogAsset: Codable {
@@ -324,13 +330,33 @@ private struct ManagedCatalogDocument: Decodable {
     let kind: String
     let revision: Int
     let document: ManagedCatalogContent
+    var deliveryProfile: String? = nil
+    var requiredContracts: [String]? = nil
+    var contentDigest: String? = nil
 
-    enum CodingKeys: String, CodingKey { case id, kind, revision, document }
+    enum CodingKeys: String, CodingKey { case id, kind, revision, document, schemaVersion, deliveryProfile, requiredContracts, contentDigest, payload }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(String.self, forKey: .id)
         kind = try values.decode(String.self, forKey: .kind)
         revision = try values.decode(Int.self, forKey: .revision)
+        deliveryProfile = try values.decodeIfPresent(String.self, forKey: .deliveryProfile)
+        requiredContracts = try values.decodeIfPresent([String].self, forKey: .requiredContracts)
+        contentDigest = try values.decodeIfPresent(String.self, forKey: .contentDigest)
+        if let profile = deliveryProfile {
+            guard profile == CourseDeliveryContracts.profile, try values.decode(Int.self, forKey: .schemaVersion) == 2,
+                  let requiredContracts, CourseDeliveryContracts.supports(requiredContracts),
+                  Set(CourseDeliveryContracts.supported).isSubset(of: Set(requiredContracts)), let contentDigest else { throw CocoaError(.coderReadCorrupt) }
+            let bytes = try values.decode(Data.self, forKey: .payload)
+            guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == contentDigest else { throw CocoaError(.coderReadCorrupt) }
+            switch kind {
+            case "course": document = .course(try JSONDecoder().decode(CourseDefinition.self, from: bytes))
+            case "exam": document = .exam(try JSONDecoder().decode(PremadeDeck.self, from: bytes))
+            default: throw CocoaError(.coderReadCorrupt)
+            }
+            return
+        }
+        guard !values.contains(.payload), !values.contains(.schemaVersion), requiredContracts == nil, contentDigest == nil else { throw CocoaError(.coderReadCorrupt) }
         switch kind {
         case "course": document = .course(try values.decode(CourseDefinition.self, forKey: .document))
         case "exam": document = .exam(try values.decode(PremadeDeck.self, forKey: .document))
@@ -351,25 +377,42 @@ private struct ManagedCatalogCache: Codable {
 /// required to study; a failed refresh never mixes old lessons with new checkpoint data.
 @MainActor
 final class ManagedCatalogStore: ObservableObject {
-    static let shared = ManagedCatalogStore()
+    static let shared = ManagedCatalogStore(profile: CourseDeliveryContracts.profile, replacementAllowed: { previous, candidate in
+        let snapshot = CourseLearningStore.shared.snapshot()
+        guard CourseLearningStore.shared.lastError == nil else { return false }
+        return snapshot.permitsCourseReplacement(previous: previous, candidate: candidate)
+    })
+    static let legacyShared = ManagedCatalogStore()
     @Published private(set) var revision: String?
     @Published private(set) var lastError: String?
     private var cache: ManagedCatalogCache?
     private var decodedContents: [String: ManagedCatalogContent] = [:]
     private var fileDate: Date?
+    private var fileSource: URL?
     private var lastAttempt: Date?
     private var refreshing = false
     private let cacheURL: URL
     private let defaults: UserDefaults?
     private let session: URLSession
     private let developmentPreview: Bool
+    private let profile: String
+    private let replacementAllowed: ((CourseDefinition, CourseDefinition) -> Bool)?
 
-    init(directory: URL? = nil, defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"), session: URLSession = .shared, developmentPreview: Bool = false) {
+    init(directory: URL? = nil, defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"), session: URLSession = .shared, developmentPreview: Bool = false, profile: String = "legacy-v1", replacementAllowed: ((CourseDefinition, CourseDefinition) -> Bool)? = nil) {
         self.defaults = defaults
         self.session = session
         self.developmentPreview = developmentPreview
+        self.profile = profile
+        self.replacementAllowed = replacementAllowed
         let base = directory ?? ManagedCatalogMedia.directory.deletingLastPathComponent()
-        cacheURL = base.appendingPathComponent("managed-catalog-v1.json")
+        cacheURL = base.appendingPathComponent(profile == "legacy-v1" ? "managed-catalog-v1.json" : profile == CourseDeliveryContracts.profile ? "managed-catalog-v2-practice-v1.json" : "managed-catalog-unsupported.json")
+        if profile == CourseDeliveryContracts.profile, !FileManager.default.fileExists(atPath: cacheURL.path), !FileManager.default.fileExists(atPath: cacheURL.appendingPathExtension("backup").path),
+           let data = try? Data(contentsOf: base.appendingPathComponent("managed-catalog-v1.json")),
+           let old = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
+           let decoded = try? Self.decodeContents(old.manifest, documents: old.documents, profile: "legacy-v1") {
+            if permitsSnapshot(decoded) { cache = old; decodedContents = decoded; revision = old.manifest.revision }
+            else { lastError = "A compatible saved course is needed to resume your assigned route." }
+        }
         reloadFromDisk()
     }
 
@@ -412,16 +455,18 @@ final class ManagedCatalogStore: ObservableObject {
     private func document(_ id: String) -> ManagedCatalogContent? { decodedContents[id] }
 
     func reloadFromDisk() {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: cacheURL.path),
-              let modified = attributes[.modificationDate] as? Date, modified != fileDate,
-              let data = try? Data(contentsOf: cacheURL),
-              let loaded = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
-              let decoded = try? Self.decodeContents(loaded.manifest, documents: loaded.documents) else { return }
-        cache = loaded
-        decodedContents = decoded
-        if loaded.manifest.initialized { defaults?.set(true, forKey: "managed_catalog_initialized") }
-        fileDate = modified
-        revision = loaded.manifest.revision
+        let paths = profile == CourseDeliveryContracts.profile ? [cacheURL, cacheURL.appendingPathExtension("backup")] : [cacheURL]
+        for path in paths {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path.path), let modified = attributes[.modificationDate] as? Date else { continue }
+            if path == fileSource && modified == fileDate { return }
+            guard let data = try? Data(contentsOf: path), let loaded = try? JSONDecoder().decode(ManagedCatalogCache.self, from: data),
+                  let decoded = try? Self.decodeContents(loaded.manifest, documents: loaded.documents, profile: profile) else { continue }
+            guard permitsSnapshot(decoded) else { continue }
+            cache = loaded; decodedContents = decoded
+            if loaded.manifest.initialized { defaults?.set(true, forKey: "managed_catalog_initialized") }
+            fileDate = modified; fileSource = path; revision = loaded.manifest.revision
+            return
+        }
     }
 
     func refresh(force: Bool = false) async {
@@ -430,23 +475,38 @@ final class ManagedCatalogStore: ObservableObject {
         lastAttempt = Date()
         defer { refreshing = false }
         do {
-            let manifestData = try await fetch("https://api.learnalertapp.com/v1/catalog", maximumBytes: 4 * 1024 * 1024)
+            if profile == CourseDeliveryContracts.profile,
+               !FileManager.default.fileExists(atPath: cacheURL.deletingLastPathComponent().appendingPathComponent("managed-catalog-v1.json").path) {
+                let compatible = ManagedCatalogStore(directory: cacheURL.deletingLastPathComponent(), defaults: defaults, session: session)
+                await compatible.refresh(force: true)
+                guard compatible.lastError == nil, compatible.cache != nil else { throw CocoaError(.fileReadUnknown) }
+                if cache == nil && permitsSnapshot(compatible.decodedContents) { cache = compatible.cache; decodedContents = compatible.decodedContents; revision = compatible.revision }
+            }
+            let manifestData = try await fetch(profile == "legacy-v1" ? "https://api.learnalertapp.com/v1/catalog" : "https://api.learnalertapp.com/v1/catalog?profile=practice-v1", maximumBytes: 4 * 1024 * 1024)
             let manifest = try JSONDecoder().decode(ManagedCatalogManifest.self, from: manifestData)
-            guard manifest.schemaVersion == 1 else { throw CocoaError(.coderReadCorrupt) }
+            if profile == CourseDeliveryContracts.profile && manifest.schemaVersion == 1 {
+                guard cache?.manifest.schemaVersion != 2 else { throw CocoaError(.coderReadCorrupt) }
+                let compatible = ManagedCatalogStore(directory: cacheURL.deletingLastPathComponent(), defaults: defaults, session: session)
+                await compatible.refresh(force: true)
+                guard compatible.lastError == nil, permitsSnapshot(compatible.decodedContents) else { throw CocoaError(.fileReadUnknown) }
+                cache = compatible.cache; decodedContents = compatible.decodedContents; revision = compatible.revision; lastError = nil
+                return
+            }
+            guard Self.supportsManifest(manifest, profile: profile) else { throw CocoaError(.coderReadCorrupt) }
             // The server has not been initialized yet. Leave the bundled catalog intact.
             guard manifest.initialized else { lastError = nil; return }
-            if cache?.manifest.revision == manifest.revision { lastError = nil; return }
+            if cache?.manifest.revision == manifest.revision && cache?.manifest.schemaVersion == manifest.schemaVersion && cache?.manifest.deliveryProfile == manifest.deliveryProfile { lastError = nil; return }
             var documents: [String: Data] = [:]
             var requestedDocuments: [(String, String, Int)] = []
             for item in manifest.items {
-                if let previous = cache?.manifest.items.first(where: { $0.id == item.id && $0.revision == item.revision && $0.kind == item.kind }),
+                if let previous = cache?.manifest.items.first(where: { $0.id == item.id && $0.revision == item.revision && $0.kind == item.kind && $0.deliveryProfile == item.deliveryProfile && $0.contentDigest == item.contentDigest }),
                    let data = cache?.documents[previous.id] { documents[item.id] = data }
                 else { requestedDocuments.append((item.id, item.contentURL, 32 * 1024 * 1024)) }
             }
             documents.merge(try await fetchMany(requestedDocuments)) { _, newest in newest }
             // Decode and validate each document once. The same prepared values
             // are installed after media arrives instead of parsing all cards again.
-            let decoded = try Self.decodeContents(manifest, documents: documents)
+            let decoded = try Self.decodeContents(manifest, documents: documents, profile: profile)
             // Download immutable assets before publishing a snapshot to the UI/extension.
             var assets: [String: ManagedCatalogAsset] = [:]
             for asset in manifest.items.flatMap({ $0.assets ?? [] }) {
@@ -488,6 +548,7 @@ final class ManagedCatalogStore: ObservableObject {
         guard let url = URL(string: rawURL), url.scheme == "https", url.host == "api.learnalertapp.com" else { throw URLError(.badURL) }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 45)
         request.setValue("application/json, image/*, audio/*", forHTTPHeaderField: "Accept")
+        if profile == CourseDeliveryContracts.profile { request.setValue(CourseDeliveryContracts.supported.sorted().joined(separator: ","), forHTTPHeaderField: "X-LearnAlert-Contracts") }
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200,
               response.url?.scheme == "https", response.url?.host == "api.learnalertapp.com",
@@ -497,12 +558,48 @@ final class ManagedCatalogStore: ObservableObject {
 
     /// Separate from transport so replacement/deletion and offline behavior can be tested.
     func install(_ manifest: ManagedCatalogManifest, documents: [String: Data]) throws {
-        let decoded = try Self.decodeContents(manifest, documents: documents)
+        let decoded = try Self.decodeContents(manifest, documents: documents, profile: profile)
         try install(manifest, documents: documents, decoded: decoded)
     }
 
+    private func permitsSnapshot(_ decoded: [String: ManagedCatalogContent]) -> Bool {
+        guard profile == CourseDeliveryContracts.profile else { return true }
+        for content in decoded.values {
+            if case .course(let candidate) = content, replacementAllowed?(candidate, candidate) == false { return false }
+        }
+        for (id, previousContent) in decodedContents {
+            guard case .course(let previous) = previousContent, case .course(let candidate)? = decoded[id] else { continue }
+            if previous.learning?.starter != nil {
+                let oldIDs = Set(previous.units.flatMap(\.lessons).map(\.id)), newIDs = Set(candidate.units.flatMap(\.lessons).map(\.id))
+                guard candidate.learning?.starter != nil, oldIDs.isSubset(of: newIDs) else { return false }
+                guard newIDs.subtracting(oldIDs).isSubset(of: Set(candidate.learning?.starter?.lessonIDs ?? [])) else { return false }
+                for unit in previous.units {
+                    guard let next = candidate.units.first(where: { $0.id == unit.id }), unit.checkpointQuiz == next.checkpointQuiz else { return false }
+                    if unit.checkpointQuiz != nil, Set(unit.lessons.map(\.id)) != Set(next.lessons.map(\.id)) { return false }
+                    for lesson in unit.lessons {
+                        guard let nextLesson = candidate.units.flatMap(\.lessons).first(where: { $0.id == lesson.id }), Set(lesson.cards.map(\.id)) == Set(nextLesson.cards.map(\.id)) else { return false }
+                        for card in lesson.cards {
+                            guard let nextCard = nextLesson.cards.first(where: { $0.id == card.id }), Set(card.activity?.exercise?.prerequisiteIDs ?? []) == Set(nextCard.activity?.exercise?.prerequisiteIDs ?? []) else { return false }
+                        }
+                    }
+                }
+            }
+            guard replacementAllowed?(previous, candidate) ?? true else { return false }
+        }
+        return true
+    }
     private func install(_ manifest: ManagedCatalogManifest, documents: [String: Data], decoded: [String: ManagedCatalogContent]) throws {
+        try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let descriptor = open(cacheURL.appendingPathExtension("lock").path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else { throw CocoaError(.fileWriteUnknown) }
+        defer { flock(descriptor, LOCK_UN) }
+        // Re-read inside the cross-process lock before deciding whether an app
+        // or extension response can replace the installed snapshot.
+        fileDate = nil; reloadFromDisk()
         guard manifest.initialized else { return }
+        guard permitsSnapshot(decoded) else { throw CocoaError(.coderReadCorrupt) }
         var retained = cache?.retainedCourses ?? [:]
         for course in courses where enrolledIDs.contains(course.id) { retained[course.id] = course }
         for content in decoded.values {
@@ -512,23 +609,40 @@ final class ManagedCatalogStore: ObservableObject {
         let replacement = ManagedCatalogCache(manifest: manifest, documents: documents, retainedCourses: retained)
         let data = try JSONEncoder().encode(replacement)
         try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if profile == CourseDeliveryContracts.profile {
+            // A complete, validated ready snapshot exists before replacing the
+            // primary file. Either copy can recover an interrupted/corrupt read.
+            try data.write(to: cacheURL.appendingPathExtension("backup"), options: .atomic)
+        }
         try data.write(to: cacheURL, options: .atomic)
         cache = replacement
         decodedContents = decoded
         fileDate = (try? FileManager.default.attributesOfItem(atPath: cacheURL.path)[.modificationDate]) as? Date
+        fileSource = cacheURL
         defaults?.set(true, forKey: "managed_catalog_initialized")
         defaults?.synchronize()
         revision = manifest.revision
     }
 
-    private static func decodeContents(_ manifest: ManagedCatalogManifest, documents: [String: Data]) throws -> [String: ManagedCatalogContent] {
-        guard manifest.schemaVersion == 1, !manifest.revision.isEmpty,
+    private static func supportsManifest(_ manifest: ManagedCatalogManifest, profile: String) -> Bool {
+        guard ["legacy-v1", CourseDeliveryContracts.profile].contains(profile) else { return false }
+        if manifest.schemaVersion == 1 { return profile == "legacy-v1" && manifest.deliveryProfile == nil && manifest.items.allSatisfy { $0.deliveryProfile == nil && $0.requiredContracts == nil && $0.contentDigest == nil } }
+        return profile == CourseDeliveryContracts.profile && manifest.schemaVersion == 2 && manifest.deliveryProfile == profile && manifest.items.allSatisfy { item in
+            if item.deliveryProfile == "legacy-v1" { return item.requiredContracts?.isEmpty == true && item.contentDigest == nil }
+            return item.deliveryProfile == profile && item.requiredContracts.map { CourseDeliveryContracts.supports($0) && Set(CourseDeliveryContracts.supported).isSubset(of: Set($0)) } == true && item.contentDigest?.count == 64
+        }
+    }
+    private static func decodeContents(_ manifest: ManagedCatalogManifest, documents: [String: Data], profile: String) throws -> [String: ManagedCatalogContent] {
+        guard supportsManifest(manifest, profile: profile), !manifest.revision.isEmpty,
               Set(manifest.items.map(\.id)).count == manifest.items.count else { throw CocoaError(.coderReadCorrupt) }
         var contents: [String: ManagedCatalogContent] = [:]
         for item in manifest.items {
             guard let data = documents[item.id] else { throw CocoaError(.coderReadCorrupt) }
             let decoded = try JSONDecoder().decode(ManagedCatalogDocument.self, from: data)
-            guard decoded.id == item.id, decoded.kind == item.kind, decoded.revision == item.revision else { throw CocoaError(.coderReadCorrupt) }
+            guard decoded.id == item.id, decoded.kind == item.kind, decoded.revision == item.revision,
+                  decoded.deliveryProfile == (item.deliveryProfile == "legacy-v1" ? nil : item.deliveryProfile),
+                  decoded.contentDigest == item.contentDigest,
+                  Set(decoded.requiredContracts ?? []) == Set(item.requiredContracts ?? []) else { throw CocoaError(.coderReadCorrupt) }
             switch decoded.document {
             case .course(let course): guard course.id == item.id else { throw CocoaError(.coderReadCorrupt) }
             case .exam(let deck): guard deck.id == item.id else { throw CocoaError(.coderReadCorrupt) }

@@ -45,7 +45,7 @@ struct CourseLearningSnapshot: Codable {
     var traceAttempts: [String: Int] = [:]
     var notificationExerciseCardIDs: [String: String] = [:]
     var notificationExerciseAttempts: [String: CourseExerciseAcknowledgement] = [:]
-    var schemaVersion = 5
+    var schemaVersion = 6
     var routes: [String: CourseRouteAssignment] = [:]
     var assessmentAttempts: [String: CourseAssessmentAttempt] = [:]
     var activeAssessmentIDs: [String: String] = [:]
@@ -69,8 +69,8 @@ struct CourseLearningSnapshot: Codable {
         practiceSessions = try values.decodeIfPresent([String: CoursePracticeSession].self, forKey: .practiceSessions) ?? [:]
         traceAttempts = try values.decodeIfPresent([String: Int].self, forKey: .traceAttempts) ?? [:]
         let version = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        guard version <= 5 else { throw CocoaError(.coderReadCorrupt) }
-        schemaVersion = 5
+        guard version <= 6 else { throw CocoaError(.coderReadCorrupt) }
+        schemaVersion = 6
         routes = try values.decodeIfPresent([String: CourseRouteAssignment].self, forKey: .routes) ?? [:]
         assessmentAttempts = try values.decodeIfPresent([String: CourseAssessmentAttempt].self, forKey: .assessmentAttempts) ?? [:]
         activeAssessmentIDs = try values.decodeIfPresent([String: String].self, forKey: .activeAssessmentIDs) ?? [:]
@@ -129,6 +129,17 @@ struct CourseLearningSnapshot: Codable {
             return unit.checkpointQuiz?.questions
         }
         return nil
+    }
+
+    /// Keep the entire durable session, including temporarily blocked work.
+    /// Presentation and new grading share the same prerequisite admission rule.
+    /// Already-graded feedback may still be acknowledged without new credit.
+    func canPresentPracticeCard(course: CourseDefinition, lessonId: String?, checkpointUnitId: String?, sessionId: String, cardId: String) -> Bool {
+        guard let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: checkpointUnitId),
+              let session = practiceSessions[key], session.id == sessionId,
+              let card = practiceCards(course: course, lessonId: lessonId, checkpointUnitId: checkpointUnitId)?.first(where: { $0.id == cardId }) else { return false }
+        if session.pendingContinueCardID == cardId, session.answers[cardId] != nil { return true }
+        return session.nextIndex.map { session.cardIds[$0] == cardId } == true && satisfiesPrerequisites(card: card, course: course)
     }
 
     static func orderedLearningCards(_ cards: [CourseLessonCard], randomized: Bool = true) -> [CourseLessonCard] {
@@ -228,7 +239,8 @@ struct CourseLearningSnapshot: Codable {
                 session.invalidatedExerciseCardIDs?.contains(cardId) != true &&
                 (currentDraft == nil || currentDraft?.state.attemptID == exerciseAttemptID)
         }
-        guard let next = session.nextIndex, session.cardIds[next] == cardId else { return false }
+        guard let next = session.nextIndex, session.cardIds[next] == cardId,
+              satisfiesPrerequisites(card: card, course: course) else { return false }
         if let exerciseAttemptID, exerciseDrafts[Self.exerciseKey(courseID: course.id, cardID: cardId)]?.state.attemptID != exerciseAttemptID { return false }
         let attempt = session.attemptCounts?[cardId] ?? 0
         if let lessonId, !answer(course: course, lessonId: lessonId, cardId: cardId, correct: correct, token: "\(session.id)-\(cardId)-attempt-\(attempt)", exerciseAttemptID: exerciseAttemptID) { return false }
@@ -270,7 +282,7 @@ struct CourseLearningSnapshot: Codable {
             let mastered = Set(record?.masteredCardIds ?? []).intersection(Set(lesson.cards.map(\.id))).count
             return total + Double(mastered) / Double(max(1, lesson.cards.count))
         }
-        let quizzes = course.units.filter { $0.checkpointQuiz != nil }
+        let quizzes = course.units.filter { $0.checkpointQuiz != nil && $0.lessons.contains { lesson in routes[course.id]?.lessonIDs.contains(lesson.id) ?? true } }
         let passed = quizzes.filter { checkpoints[course.id]?[$0.id]?.passed == true }.count
         return min(1, (lessonProgress + Double(passed)) / Double(max(1, scoped.count + quizzes.count)))
     }
@@ -280,14 +292,16 @@ struct CourseLearningSnapshot: Codable {
             let lesson = unit.lessons.first { $0.id == lessonId }!
             if hasCompleted(lesson, in: unit, course: course) { return .completed }
             if course.learning?.starter?.lessonIDs.contains(lessonId) == true {
+                let assigned = assignedStarterLessonIDs(course: course)
+                guard assigned.contains(lessonId) else { return .locked }
                 if assessmentAccess[course.id]?.contains(lessonId) == true { return .available }
-                return unit.lessons.prefix(while: { $0.id != lessonId }).allSatisfy { hasCompleted($0, in: unit, course: course) || assessmentAccess[course.id]?.contains($0.id) == true } ? .current : .locked
+                return assigned.prefix(while: { $0 != lessonId }).allSatisfy { id in assessmentAccess[course.id]?.contains(id) == true || course.units.contains { unit in unit.lessons.contains { $0.id == id && hasCompleted($0, in: unit, course: course) } } } ? .current : .locked
             }
             // Existing learning/Continue position predates any newly authored gate.
             let key = Self.practiceKey(courseId: course.id, lessonId: lessonId, checkpointUnitId: nil)!
             if (progress[course.id]?[lessonId]?.totalAttemptsCount ?? 0) > 0 || practiceSessions[key]?.cardIds.isEmpty == false { return .current }
             if course.units.prefix(index).contains(where: { previous in
-                previous.checkpointQuiz != nil && checkpoints[course.id]?[previous.id]?.passed != true
+                previous.checkpointQuiz != nil && previous.lessons.contains { activeRouteLessonIDs(course: course).contains($0.id) } && checkpoints[course.id]?[previous.id]?.passed != true
             }) { return .locked }
             guard let lessonIndex = unit.lessons.firstIndex(where: { $0.id == lessonId }) else { return .locked }
             if unit.lessons.prefix(lessonIndex).contains(where: { !hasCompleted($0, in: unit, course: course) }) { return .locked }
@@ -303,18 +317,22 @@ struct CourseLearningSnapshot: Codable {
     }
 
     func pendingCheckpoint(course: CourseDefinition) -> CourseUnit? {
-        if routes[course.id]?.starterSelected == true, let ids = course.learning?.starter?.lessonIDs,
+        if routes[course.id]?.starterSelected == true, let ids = Optional(assignedStarterLessonIDs(course: course)),
            ids.contains(where: { status(course: course, lessonId: $0) != .completed && assessmentAccess[course.id]?.contains($0) != true }) { return nil }
         return course.units.first { unit in
-            unit.checkpointQuiz != nil && checkpoints[course.id]?[unit.id]?.passed != true &&
+            unit.checkpointQuiz != nil && unit.lessons.contains { activeRouteLessonIDs(course: course).contains($0.id) } && checkpoints[course.id]?[unit.id]?.passed != true &&
             unit.lessons.allSatisfy { status(course: course, lessonId: $0.id) == .completed }
         }
     }
 
     func currentLesson(course: CourseDefinition) -> CourseLesson? {
         let lessons = course.units.flatMap(\.lessons)
-        let starterIDs = course.learning?.starter?.lessonIDs ?? []
+        let starterIDs = assignedStarterLessonIDs(course: course)
         if let route = routes[course.id] {
+            if let anchor = route.expansionContinueLessonID, let lesson = lessons.first(where: { $0.id == anchor }) {
+                let key = Self.practiceKey(courseId: course.id, lessonId: anchor, checkpointUnitId: nil)!
+                if practiceSessions[key]?.nextIndex != nil || status(course: course, lessonId: anchor) == .current { return lesson }
+            }
             if route.starterSelected, let pending = starterIDs.compactMap({ id in lessons.first { $0.id == id } }).first(where: { lesson in
                 let key = Self.practiceKey(courseId: course.id, lessonId: lesson.id, checkpointUnitId: nil)!
                 return practiceSessions[key]?.pendingContinueCardID != nil
@@ -341,17 +359,17 @@ struct CourseLearningSnapshot: Codable {
                 let learned = Set(progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
                 return lesson.cards.filter { card in
                     // Replacing a passed unit never turns unseen workshop material into due reviews.
-                    !card.isExposure && (card.activity == nil || srsRecord(courseId: course.id, cardId: card.id) != nil || learned.contains(card.id)) &&
+                    !card.isExposure && satisfiesPrerequisites(card: card, course: course) && (card.activity == nil || srsRecord(courseId: course.id, cardId: card.id) != nil || learned.contains(card.id)) &&
                     (srsRecord(courseId: course.id, cardId: card.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true)
                 }
             }
             .sorted { (srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         let lesson = reviewOnly ? nil : currentLesson(course: course)
         let mastered = Set(progress[course.id]?[lesson?.id ?? ""]?.masteredCardIds ?? [])
-        var fresh = lesson?.cards.filter { !mastered.contains($0.id) && (srsRecord(courseId: course.id, cardId: $0.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
+        var fresh = lesson?.cards.filter { satisfiesPrerequisites(card: $0, course: course) && !mastered.contains($0.id) && (srsRecord(courseId: course.id, cardId: $0.id).map { ($0.nextReviewDate ?? .distantPast) <= now } ?? true) } ?? []
         if let lesson, let focused = focusedLearningCards(lesson: lesson, mastered: mastered) {
             // Missed tasks return within this letter's group; future letters stay gated.
-            fresh = focused.sorted {
+            fresh = focused.filter { satisfiesPrerequisites(card: $0, course: course) }.sorted {
                 let lhs = srsRecord(courseId: course.id, cardId: $0.id)?.lastReviewedDate ?? .distantPast
                 let rhs = srsRecord(courseId: course.id, cardId: $1.id)?.lastReviewedDate ?? .distantPast
                 return lhs == rhs ? $0.learningStage < $1.learningStage : lhs < rhs
@@ -374,7 +392,7 @@ struct CourseLearningSnapshot: Codable {
 
     func isFullyMastered(course: CourseDefinition) -> Bool {
         let scope: Set<String>? = routes[course.id].map { route in
-            Set(route.lessonIDs + (route.starterSelected ? (course.learning?.starter?.lessonIDs ?? []) : []))
+            Set(route.lessonIDs + (route.starterSelected ? assignedStarterLessonIDs(course: course) : []))
         }
         return course.units.allSatisfy { unit in
             let lessons = unit.lessons.filter { scope?.contains($0.id) ?? true }
@@ -409,6 +427,7 @@ struct CourseLearningSnapshot: Codable {
            progress[course.id]?[lessonId]?.masteredCardIds.contains(cardId) != true,
            let focused = focusedLearningCards(lesson: lesson, mastered: Set(progress[course.id]?[lessonId]?.masteredCardIds ?? [])),
            !focused.contains(where: { $0.id == cardId }) { return false }
+        guard satisfiesPrerequisites(card: card, course: course) else { return false }
         eventTokens.append(eventIdentity)
         let exercise = card.activity?.exercise
         captureExerciseEvidence(courseID: course.id, card: card)
@@ -861,7 +880,7 @@ extension CourseLearningSnapshot {
         routes[course.id] = .init(revision: starter.revision,
             lessonIDs: returningLearner ? legacy.map(\.id) : starter.lessonIDs + legacy.map(\.id),
             originalContinueLessonID: returningLearner ? anchor?.id : nil,
-            starterSelected: !returningLearner, returningLearner: returningLearner)
+            starterSelected: !returningLearner, returningLearner: returningLearner, starterLessonIDs: starter.lessonIDs)
     }
     mutating func selectStarter(course: CourseDefinition, selected: Bool) {
         assignRoute(course: course, returningLearner: true)
@@ -874,7 +893,7 @@ extension CourseLearningSnapshot {
         if let active = activeAssessment(courseID: course.id), active.finalizedAt == nil || !retake { return active }
         guard let starter = course.learning?.starter else { return nil }
         let blueprint = starter.assessment
-        guard blueprint.lessonIDs == starter.lessonIDs, blueprint.lessonIDs.count == 2,
+        guard blueprint.id == "pf-sp-a01", blueprint.lessonIDs == ["pf-sp-l01", "pf-sp-l02"], Set(blueprint.lessonIDs).isSubset(of: Set(starter.lessonIDs)),
               blueprint.forms.count == 2, blueprint.forms.values.allSatisfy({ $0.count == 12 }),
               blueprint.objectiveIDs.count == 4, blueprint.passingTotal == 10, blueprint.passingPerObjective == 2 else { return nil }
         let previous = activeAssessment(courseID: course.id)?.formID
@@ -883,8 +902,16 @@ extension CourseLearningSnapshot {
               blueprint.objectiveIDs.allSatisfy({ objective in items.filter { $0.objectiveID == objective }.count == 3 }) else { return nil }
         let attempt = CourseAssessmentAttempt(id: UUID().uuidString, courseID: course.id, blueprint: blueprint, formID: form,
             items: items, states: Dictionary(uniqueKeysWithValues: items.map { ($0.id, CourseExerciseState()) }))
-        assessmentAttempts[attempt.id] = attempt; activeAssessmentIDs[course.id] = attempt.id
-        return attempt
+        var prepared = attempt
+        // Access/prerequisite credit is scoped to assessed concepts. Supporting
+        // words are not converted into independent lexical evidence or SRS.
+        let concepts = Set(items.flatMap { $0.card.activity?.exercise?.conceptIDs ?? [] })
+        prepared.prerequisiteCards = course.units.flatMap(\.lessons).filter { blueprint.lessonIDs.contains($0.id) }.flatMap(\.cards).filter { card in
+            guard let exercise = card.activity?.exercise, !exercise.conceptIDs.isEmpty else { return false }
+            return Set(exercise.conceptIDs).isSubset(of: concepts)
+        }
+        assessmentAttempts[attempt.id] = prepared; activeAssessmentIDs[course.id] = attempt.id
+        return prepared
     }
     mutating func saveAssessmentState(courseID: String, assessmentID: String, itemID: String, state: CourseExerciseState) -> Bool {
         guard activeAssessmentIDs[courseID] == assessmentID, var attempt = assessmentAttempts[assessmentID],
@@ -915,5 +942,62 @@ extension CourseLearningSnapshot {
             }
         }
         assessmentAttempts[assessmentID] = attempt; return true
+    }
+}
+
+extension CourseLearningSnapshot {
+    func assignedStarterLessonIDs(course: CourseDefinition) -> [String] {
+        guard let route = routes[course.id] else { return course.learning?.starter?.lessonIDs ?? [] }
+        if let ids = route.starterLessonIDs { return ids }
+        // v5 only supported a two-lesson starter. Never infer newly added lessons.
+        let available = Set(course.learning?.starter?.lessonIDs ?? [])
+        let pinned = route.lessonIDs.filter { available.contains($0) }
+        return pinned.isEmpty ? (course.learning?.starter?.assessment.lessonIDs ?? []).filter { available.contains($0) } : pinned
+    }
+    func activeRouteLessonIDs(course: CourseDefinition) -> Set<String> {
+        guard let route = routes[course.id] else { return Set(course.units.flatMap(\.lessons).map(\.id)) }
+        return Set(route.lessonIDs + (route.starterSelected ? assignedStarterLessonIDs(course: course) : []))
+    }
+    mutating func adoptStarterRevision(course: CourseDefinition) -> Bool {
+        guard let starter = course.learning?.starter, var route = routes[course.id], route.revision != starter.revision,
+              Set(assignedStarterLessonIDs(course: course)).isSubset(of: Set(starter.lessonIDs)) else { return false }
+        let lessons = Set(course.units.flatMap(\.lessons).map(\.id))
+        guard Set(starter.lessonIDs).isSubset(of: lessons) else { return false }
+        route.expansionContinueLessonID = currentLesson(course: course)?.id
+        route.starterLessonIDs = starter.lessonIDs; route.revision = starter.revision
+        routes[course.id] = route; return true
+    }
+    func satisfiesPrerequisites(card: CourseLessonCard, course: CourseDefinition) -> Bool {
+        let studied = Set((progress[course.id] ?? [:]).values.flatMap(\.masteredCardIds))
+        let revealed = Set(exerciseEvidence.values.filter { $0.courseID == course.id && $0.mode == "exposure" }.map(\.cardID))
+        return (card.activity?.exercise?.prerequisiteIDs ?? []).allSatisfy { id in
+            if studied.contains(id) || revealed.contains(id) { return true }
+            guard let lesson = course.units.flatMap(\.lessons).first(where: { $0.cards.contains { $0.id == id } }),
+                  let current = lesson.cards.first(where: { $0.id == id }), assessmentAccess[course.id]?.contains(lesson.id) == true else { return false }
+            return assessmentAttempts.values.contains { attempt in
+                guard attempt.courseID == course.id, attempt.passed == true, attempt.blueprint.lessonIDs.contains(lesson.id),
+                      let frozen = attempt.prerequisiteCards, let target = current.activity?.exercise, !target.conceptIDs.isEmpty, !target.vocabularyIDs.isEmpty else { return false }
+                // This is scoped access, not a claim that a new variant was answered.
+                // Cosmetic/presentation changes and new variants of known targets
+                // do not revoke test-out; new meanings/objectives still need study.
+                let concepts = Set(frozen.flatMap { $0.activity?.exercise?.conceptIDs ?? [] })
+                let vocabulary = Set(frozen.flatMap { $0.activity?.exercise?.vocabularyIDs ?? [] })
+                return Set(target.conceptIDs).isSubset(of: concepts) && Set(target.vocabularyIDs).isSubset(of: vocabulary)
+            }
+        }
+    }
+    func permitsCourseReplacement(previous: CourseDefinition, candidate: CourseDefinition) -> Bool {
+        guard previous.id == candidate.id else { return false }
+        let lessons = candidate.units.flatMap(\.lessons), ids = Set(lessons.map(\.id))
+        if let route = routes[previous.id], !Set(route.lessonIDs + assignedStarterLessonIDs(course: previous)).isSubset(of: ids) { return false }
+        for (key, session) in practiceSessions where key.hasPrefix(previous.id + ":") {
+            guard let index = session.nextIndex else { continue }
+            let id = session.cardIds[index]
+            let old = previous.units.flatMap(\.lessons).flatMap(\.cards).first { $0.id == id }
+            guard let new = lessons.flatMap(\.cards).first(where: { $0.id == id }) else { return false }
+            if let definition = session.exerciseDefinitionsByCard?[id], definition != new.activity?.exercise { return false }
+            if old != new { return false }
+        }
+        return true
     }
 }

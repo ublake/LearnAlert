@@ -40,11 +40,8 @@ struct CourseNotificationProgress: Equatable {
     }
 
     static func nextLearningCard(course: CourseDefinition, snapshot: CourseLearningSnapshot, excluding: Set<String>) -> CourseLessonCard? {
-        let taught = Set(snapshot.exerciseEvidence.values.filter { $0.courseID == course.id && $0.mode == "exposure" }.map(\.cardID))
-            .union(snapshot.progress[course.id]?.values.flatMap(\.masteredCardIds) ?? [])
         let batch = snapshot.batch(course: course, count: 60, randomized: true).filter { card in
-            guard let prerequisites = card.activity?.exercise?.prerequisiteIDs else { return true }
-            return !card.isExposure && prerequisites.allSatisfy { taught.contains($0) }
+            !card.isExposure && snapshot.satisfiesPrerequisites(card: card, course: course)
         }
         return batch.first { !excluding.contains($0.id) }
             ?? batch.first { $0.activity?.practiceGroup != nil }
@@ -57,7 +54,7 @@ struct CourseNotificationProgress: Equatable {
             .filter { snapshot.status(course: course, lessonId: $0.id) == .completed }
             .flatMap { lesson in
                 let known = Set(snapshot.progress[course.id]?[lesson.id]?.masteredCardIds ?? [])
-                return lesson.cards.filter { !$0.isExposure && ($0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id)) }
+                return lesson.cards.filter { !$0.isExposure && snapshot.satisfiesPrerequisites(card: $0, course: course) && ($0.activity == nil || snapshot.srsRecord(courseId: course.id, cardId: $0.id) != nil || known.contains($0.id)) }
             }
             .sorted { (snapshot.srsRecord(courseId: course.id, cardId: $0.id)?.nextReviewDate ?? .distantPast) < (snapshot.srsRecord(courseId: course.id, cardId: $1.id)?.nextReviewDate ?? .distantPast) }
         var seen = excluding
@@ -165,7 +162,7 @@ enum CourseNotificationScheduler {
             content.categoryIdentifier = "FLASHCARD_REVEAL"
             let sound = plan.sound ?? "Default"
             content.sound = sound == "Default" ? .default : UNNotificationSound(named: UNNotificationSoundName(sound))
-            content.userInfo = ["courseId": course.id, "deckId": plan.deckId, "courseReviewOnly": plan.reviewOnly == true]
+            content.userInfo = ["courseDeliveryProfile": course.learning?.starter == nil ? "legacy-v1" : CourseDeliveryContracts.profile, "courseRequiredContracts": course.learning?.starter == nil ? [] : Array(CourseDeliveryContracts.supported).sorted(), "courseId": course.id, "deckId": plan.deckId, "courseReviewOnly": plan.reviewOnly == true]
             if let unitId = progress.checkpointUnitId { content.userInfo["courseCheckpointSectionId"] = unitId }
             if existing[id]?.content.title == content.title && existing[id]?.content.body == content.body && existing[id]?.content.subtitle == content.subtitle { continue }
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: date), repeats: false)

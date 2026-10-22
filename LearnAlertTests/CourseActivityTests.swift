@@ -680,7 +680,7 @@ struct CourseReviewRepairTests {
             #expect(second.transaction { $0.traceAttempts["interleaved-new"] = value; return true } == true)
         }
         #expect(first.snapshot().migration?.divergences.count == 2)
-        #expect(first.snapshot().schemaVersion == 5)
+        #expect(first.snapshot().schemaVersion == 6)
         let export = try JSONDecoder().decode(CourseProgressRecoveryExport.self, from: second.recoveryExportData())
         #expect(export.olderHistory == branches.last)
         #expect(export.archives.values.contains(imported))
@@ -767,7 +767,7 @@ struct CourseReviewRepairTests {
         let export = try JSONDecoder().decode(CourseProgressRecoveryExport.self, from: store.recoveryExportData())
         #expect(export.olderHistory == corrupt)
         #expect(export.archives.values.contains(corrupt))
-        let future = Data("{\"schemaVersion\":6}".utf8), v2 = directory.appendingPathComponent("course-learning-v2.json")
+        let future = Data("{\"schemaVersion\":7}".utf8), v2 = directory.appendingPathComponent("course-learning-v2.json")
         try future.write(to: v2)
         #expect(store.transaction { $0.traceAttempts.removeAll(); return true } == nil)
         #expect(try Data(contentsOf: v2) == future)
