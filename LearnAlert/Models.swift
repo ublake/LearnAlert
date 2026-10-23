@@ -689,6 +689,11 @@ public enum CardImageStore {
 
     public static func loadImage(named filename: String?) -> UIImage? {
         guard let filename, !filename.isEmpty else { return nil }
+        // These immutable book attachments were accidentally published as the
+        // complete 4x4 atlas. Resolve the intended tile even from an old cache.
+        if legacyBookAttachments.contains(filename.lowercased()) {
+            return vocabularyImages["course-vocab-book"]
+        }
         if let image = vocabularyImages[filename] { return image }
         if let url = ManagedCatalogMedia.url(reference: filename) { return UIImage(contentsOfFile: url.path) }
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)
@@ -700,6 +705,11 @@ public enum CardImageStore {
         }
         return nil
     }
+
+    private static let legacyBookAttachments: Set<String> = [
+        "catalog:a5d45561-825b-440d-a9aa-98f4be7b5b8f", // Spanish
+        "catalog:44b87db9-c0a5-4e3e-a58c-55a3aec07388"  // Korean
+    ]
 
     public static func deleteImage(named filename: String?) {
         guard let filename, !filename.isEmpty, !filename.hasPrefix("catalog:") else { return }

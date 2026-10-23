@@ -17,7 +17,7 @@ struct PremadeDecksView: View {
     @State private var showingCourses = false
     @State private var showingAllCommunity = false
     @StateObject private var communityFeed = CommunityFeedStore()
-    @State private var showingExamPrep = false
+    @State private var showingMinigames = false
     @State private var showingShareSheet = false
     @State private var searchedCourse: CourseDefinition?
 
@@ -51,7 +51,7 @@ struct PremadeDecksView: View {
                 if showingSearch {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(StudyStudioStyle.secondary)
-                        TextField("Search decks & courses", text: $discoverSearch)
+                        TextField("Search decks & bundles", text: $discoverSearch)
                             .font(.subheadline).textInputAutocapitalization(.never)
                             .autocorrectionDisabled().submitLabel(.search)
                             .focused($searchFocused)
@@ -106,8 +106,8 @@ struct PremadeDecksView: View {
                 onOpenShareModal: { showingShareSheet = true }
             )
         }
-        .navigationDestination(isPresented: $showingExamPrep) {
-            ExamPrepHubView(libraryDecks: libraryDecks, onAddDeck: add)
+        .navigationDestination(isPresented: $showingMinigames) {
+            MinigamesView()
         }
         .navigationDestination(item: $searchedCourse) { course in
             CoursePathView(course: course)
@@ -131,7 +131,7 @@ struct PremadeDecksView: View {
             spacing: 12
         ) {
             DiscoverCategoryTile(
-                title: "Language courses",
+                title: "Language learning bundles",
                 subtitle: "Quiz and flashcard collections.",
                 badge: "\(CourseCurriculumCatalog.courses.count) available",
                 symbol: "character.bubble.fill",
@@ -140,12 +140,12 @@ struct PremadeDecksView: View {
             )
 
             DiscoverCategoryTile(
-                title: "Exam & cert prep",
-                subtitle: "MCAT, AWS, SAT & study skills.",
-                badge: "Prep",
+                title: "Minigames",
+                subtitle: "Play, practise, repeat.",
+                badge: "Play",
                 symbol: "target",
                 color: StudyStudioStyle.violet,
-                action: { showingExamPrep = true }
+                action: { showingMinigames = true }
             )
         }
     }
@@ -156,14 +156,14 @@ struct PremadeDecksView: View {
             $0.title.localizedCaseInsensitiveContains(query) || $0.language.localizedCaseInsensitiveContains(query)
         }
         let decks = PremadeDeckCatalog.decks.filter {
-            $0.name.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
-                || $0.subcategory.localizedCaseInsensitiveContains(query)
+            $0.category != "Exam Prep" && ($0.name.localizedCaseInsensitiveContains(query)
+                || $0.category.localizedCaseInsensitiveContains(query) || $0.subcategory.localizedCaseInsensitiveContains(query))
         }
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Courses & exam decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
+            Text("Learning bundles & decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
-                    searchRow(title: course.title, subtitle: "Language topic decks", symbol: "character.book.closed", action: "Open")
+                    searchRow(title: course.title, subtitle: "Language learning bundle", symbol: "character.book.closed", action: "Open")
                 }.buttonStyle(.plain)
             }
             ForEach(decks) { deck in
@@ -173,7 +173,7 @@ struct PremadeDecksView: View {
                 }.buttonStyle(.plain).disabled(added)
             }
             if courses.isEmpty && decks.isEmpty {
-                Text("No matching courses or exam decks.")
+                Text("No matching bundles or decks.")
                     .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
             Button { showingAllCommunity = true } label: {
@@ -245,7 +245,7 @@ private struct CoursesCatalogListView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Language Courses")
+                    Text("Language Learning Bundles")
                         .font(.custom("Poppins-Bold", size: 24))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                     Text("Small topic decks. Pick one and start practising.")
@@ -270,7 +270,7 @@ private struct CoursesCatalogListView: View {
             }
         }
         .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .navigationTitle("Courses")
+        .navigationTitle("Language Learning Bundles")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $selectedCourse) { course in
             CoursePathView(course: course)
@@ -323,7 +323,7 @@ private struct LanguageCourseHeroCard: View {
 
                         Spacer()
 
-                        Text(isEnrolled ? "Continue" : "View Course")
+                        Text(isEnrolled ? "Continue" : "View Bundle")
                             .font(.custom("Poppins-SemiBold", size: 11))
                             .foregroundStyle(Color(hex: course.colorHex))
                     }
@@ -342,260 +342,13 @@ private struct LanguageCourseHeroCard: View {
     }
 }
 
-// MARK: - Dedicated Exam Prep Hub View (Placeholder / High-Yield Prep)
+// MARK: - Minigames
 
-private struct ExamPrepHubView: View {
-    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
-    let libraryDecks: [Deck]
-    let onAddDeck: (PremadeDeck) -> Void
-
-    @State private var searchText = ""
-    @State private var selectedFilter = "All"
-
-    private var examDecks: [PremadeDeck] { managedCatalog.examDecks }
-    private var examFilters: [String] { ["All"] + Set(examDecks.map(\.subcategory).filter { !$0.isEmpty }).sorted() }
-
-    private var filteredDecks: [PremadeDeck] {
-        examDecks.filter { deck in
-            let matchesFilter = selectedFilter == "All" || deck.subcategory == selectedFilter
-
-            let matchesSearch = searchText.isEmpty
-                || deck.name.localizedCaseInsensitiveContains(searchText)
-                || deck.description.localizedCaseInsensitiveContains(searchText)
-                || deck.subcategory.localizedCaseInsensitiveContains(searchText)
-
-            return matchesFilter && matchesSearch
-        }
-    }
-
+struct MinigamesView: View {
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                DiscoverSearchField(searchText: $searchText, placeholder: "Search MCAT, SAT, AWS, USMLE, Law...")
-                DiscoverFilterRow(categories: examFilters, selection: $selectedFilter, compact: true)
-
-                if filteredDecks.isEmpty {
-                    ContentUnavailableView("No Exam Decks Found", systemImage: "target", description: Text("Try adjusting your filter or search query."))
-                        .padding(.vertical, 40)
-                } else {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredDecks) { deck in
-                            CleanDiscoverDeckCard(
-                                title: deck.name,
-                                subtitle: "\(deck.cards.count) cards • \(deck.subcategory)",
-                                colorHex: deck.colorHex,
-                                iconName: "graduationcap.fill",
-                                isAdded: deck.isInLibrary(libraryDecks),
-                                onAdd: { onAddDeck(deck) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-
-                Spacer().frame(height: 60)
-            }
-            .padding(.top, 14)
-        }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .navigationTitle("Exam & Cert Drills")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-// MARK: - Dedicated "See All Premade Decks" View
-
-private struct AllPremadeDecksView: View {
-    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
-    let libraryDecks: [Deck]
-    let onAddDeck: (PremadeDeck) -> Void
-
-    @State private var searchText = ""
-    @State private var selectedCategory = "All"
-    @State private var selectedSubcategory = "All"
-
-    private var availableSubcategories: [String] {
-        PremadeDeckCatalog.subcategoriesByCategory[selectedCategory] ?? []
-    }
-
-    private var filteredDecks: [PremadeDeck] {
-        PremadeDeckCatalog.decks.filter { deck in
-            let matchesCategory = selectedCategory == "All" || deck.category == selectedCategory
-            let matchesSubcategory = selectedSubcategory == "All" || deck.subcategory == selectedSubcategory
-            let matchesSearch = searchText.isEmpty
-                || deck.name.localizedCaseInsensitiveContains(searchText)
-                || deck.description.localizedCaseInsensitiveContains(searchText)
-                || deck.category.localizedCaseInsensitiveContains(searchText)
-                || deck.subcategory.localizedCaseInsensitiveContains(searchText)
-            return matchesCategory && matchesSubcategory && matchesSearch
-        }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                DiscoverSearchField(searchText: $searchText, placeholder: "Search all curated decks...")
-                DiscoverFilterRow(categories: PremadeDeckCatalog.mainCategories, selection: $selectedCategory)
-
-                if !availableSubcategories.isEmpty {
-                    DiscoverFilterRow(categories: availableSubcategories, selection: $selectedSubcategory, compact: true)
-                }
-
-                if filteredDecks.isEmpty {
-                    ContentUnavailableView("No Decks Found", systemImage: "magnifyingglass", description: Text("Try another search or category."))
-                        .padding(.vertical, 40)
-                } else {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredDecks) { deck in
-                            CleanDiscoverDeckCard(
-                                title: deck.name,
-                                subtitle: "\(deck.cards.count) cards • \(deck.subcategory)",
-                                colorHex: deck.colorHex,
-                                iconName: "book.closed.fill",
-                                isAdded: deck.isInLibrary(libraryDecks),
-                                onAdd: { onAddDeck(deck) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-
-                Spacer().frame(height: 60)
-            }
-            .padding(.top, 14)
-        }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .navigationTitle("Curated Subjects")
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: selectedCategory) { _, _ in selectedSubcategory = "All" }
-    }
-}
-
-// MARK: - Clean Discover Deck Card (Title + Small Plus Button)
-
-private struct CleanDiscoverDeckCard: View {
-    let title: String
-    let subtitle: String
-    let colorHex: String
-    let iconName: String
-    let isAdded: Bool
-    let onAdd: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(hex: colorHex).opacity(0.18))
-                    .frame(width: 38, height: 38)
-                Image(systemName: iconName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(hex: colorHex))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.custom("Poppins-SemiBold", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .lineLimit(1)
-
-                Text(subtitle)
-                    .font(.custom("Poppins-Regular", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            Button {
-                onAdd()
-            } label: {
-                Image(systemName: isAdded ? "checkmark" : "plus")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(isAdded ? LearnAlertStyle.textSecondary : Color.white)
-                    .frame(width: 28, height: 28)
-                    .background(isAdded ? Color.gray.opacity(0.15) : LearnAlertStyle.indigo)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isAdded)
-            .accessibilityLabel(isAdded ? "\(title) already added" : "Add \(title)")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-    }
-}
-
-// MARK: - Search Field Component
-
-private struct DiscoverSearchField: View {
-    @Binding var searchText: String
-    var placeholder: String = "Search decks..."
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(LearnAlertStyle.textSecondary)
-            TextField(placeholder, text: $searchText)
-                .font(.custom("Poppins-Medium", size: 13))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(LearnAlertStyle.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-        )
-        .padding(.horizontal, 20)
-    }
-}
-
-// MARK: - Filter Row Component
-
-private struct DiscoverFilterRow: View {
-    let categories: [String]
-    @Binding var selection: String
-    var compact: Bool = false
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(categories, id: \.self) { category in
-                    let isSelected = selection == category
-                    Button {
-                        withAnimation(.snappy) { selection = category }
-                    } label: {
-                        Text(category)
-                            .font(.custom(isSelected ? "Poppins-SemiBold" : "Poppins-Medium", size: compact ? 11 : 12))
-                            .padding(.horizontal, compact ? 10 : 14)
-                            .padding(.vertical, compact ? 5 : 7)
-                            .background(isSelected ? LearnAlertStyle.indigo : LearnAlertStyle.surface)
-                            .foregroundStyle(isSelected ? Color.white : LearnAlertStyle.textPrimary)
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule()
-                                    .stroke(isSelected ? Color.clear : LearnAlertStyle.hairline, lineWidth: 1)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20)
-        }
+        LearnAlertStyle.courseCanvas
+            .ignoresSafeArea()
+            .navigationTitle("Minigames")
+            .navigationBarTitleDisplayMode(.inline)
     }
 }

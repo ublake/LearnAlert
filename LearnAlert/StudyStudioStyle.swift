@@ -57,7 +57,7 @@ struct DiscoverCategoryTile: View {
                     Text(title)
                         .font(StudyStudioStyle.heading(15))
                         .foregroundStyle(.white)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .minimumScaleFactor(0.85)
 
                     Text(subtitle)
