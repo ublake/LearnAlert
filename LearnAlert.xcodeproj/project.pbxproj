@@ -13,9 +13,9 @@
 		2575FFEC2F49A248001DE8B2 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 2575FFEB2F49A248001DE8B2 /* Launch Screen.storyboard */; };
 		57FF6B1FC43F82619BEBF39B /* Pods_LearnAlert.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */; };
 		7D62B53640D93AFA5F77B9ED /* Pods_LearnAlertTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */; };
+		A17A00000000000000000004 /* Resources/AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* Resources/AnkiWebAssets */; };
+		A17A00000000000000000005 /* Resources/AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* Resources/AnkiWebAssets */; };
 		C3C2972945E15562A609E5B0 /* Pods_LearnAlertExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */; };
-		A17A00000000000000000004 /* AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* AnkiWebAssets */; };
-		A17A00000000000000000005 /* AnkiWebAssets in Resources */ = {isa = PBXBuildFile; fileRef = A17A00000000000000000006 /* AnkiWebAssets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,10 +85,10 @@
 		593B7C8F53A35714F0AD5746 /* Pods_LearnAlertTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlertTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		6CC1E61BF847CC432C296195 /* Pods-LearnAlert.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlert.debug.xcconfig"; path = "Target Support Files/Pods-LearnAlert/Pods-LearnAlert.debug.xcconfig"; sourceTree = "<group>"; };
 		80A55E5E67506831E0962FCD /* Pods-LearnAlertTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertTests.debug.xcconfig"; path = "Target Support Files/Pods-LearnAlertTests/Pods-LearnAlertTests.debug.xcconfig"; sourceTree = "<group>"; };
+		A17A00000000000000000006 /* Resources/AnkiWebAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/AnkiWebAssets; sourceTree = SOURCE_ROOT; };
 		A8FB50E2532AFD7416646394 /* Pods_LearnAlertExtension.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlertExtension.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE50B81E34710BB68C51000F /* Pods-LearnAlertExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-LearnAlertExtension.release.xcconfig"; path = "Target Support Files/Pods-LearnAlertExtension/Pods-LearnAlertExtension.release.xcconfig"; sourceTree = "<group>"; };
 		DB853B223FFD7D8129BE8BC7 /* Pods_LearnAlert.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_LearnAlert.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		A17A00000000000000000006 /* AnkiWebAssets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/AnkiWebAssets; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -96,7 +96,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				"koreanimages/README.md",
+				koreanimages/README.md,
 			);
 			target = 25FF1AF02F477005006D435B /* LearnAlert */;
 		};
@@ -110,90 +110,90 @@
 		254C85372F4971E60026450E /* Exceptions for "LearnAlert" folder in "LearnAlertExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				CourseCurriculum.swift,
-				"CourseCurriculum+ExpandedKorean.swift",
-				"CourseCurriculum+Korean.swift",
-				"CourseCurriculum+Practice.swift",
-				CourseLearningStore.swift,
-				CourseModels.swift,
-				CourseNotificationScheduler.swift,
-				CourseNotificationSessionView.swift,
-				CourseQuestionPanel.swift,
-				CourseMatchingPanel.swift,
 				AlertTimelineStore.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
 				AnkiReviewAlerts.swift,
 				AnkiReviewScheduling.swift,
-				CardFieldMedia.swift,
 				CardAudioStore.swift,
+				CardFieldMedia.swift,
 				CourseActivity.swift,
 				CourseActivityPanel.swift,
+				CourseAnswerMatching.swift,
+				CourseCurriculum.swift,
+				"CourseCurriculum+ExpandedKorean.swift",
 				"CourseCurriculum+FoundationWorkshop.swift",
-				CourseVocabularyImages.swift,
-				"koreanimages/child.png",
-				"koreanimages/tree.png",
-				"koreanimages/sea.png",
-				"koreanimages/milk.png",
-				"koreanimages/water.png",
-				"koreanimages/door.png",
-				"koreanimages/mountain.png",
-				"koreanimages/house.png",
-				"koreanimages/person.png",
-				"koreanimages/hat.png",
-				"koreanimages/flower.png",
+				"CourseCurriculum+Korean.swift",
+				"CourseCurriculum+Practice.swift",
+				CourseLearningStore.swift,
+				CourseMatchingPanel.swift,
+				CourseModels.swift,
+				CourseNotificationScheduler.swift,
+				CourseNotificationSessionView.swift,
+				CourseQuestionPanel.swift,
 				CourseSectionGuide.swift,
 				CourseVocabularyAtlas.png,
-				CourseAnswerMatching.swift,
-				KoreanSpeechManager.swift,
-				"HangulAudio.swift",
-				"hangulaudio/consonant_01.mp3",
-				"hangulaudio/consonant_02.mp3",
-				"hangulaudio/consonant_03.mp3",
-				"hangulaudio/consonant_04.mp3",
-				"hangulaudio/consonant_05.mp3",
-				"hangulaudio/consonant_06.mp3",
-				"hangulaudio/consonant_07.mp3",
-				"hangulaudio/consonant_08.mp3",
-				"hangulaudio/consonant_09.mp3",
-				"hangulaudio/consonant_10.mp3",
-				"hangulaudio/consonant_11.mp3",
-				"hangulaudio/consonant_12.mp3",
-				"hangulaudio/consonant_13.mp3",
-				"hangulaudio/consonant_14.mp3",
-				"hangulaudio/consonant_15.mp3",
-				"hangulaudio/consonant_16.mp3",
-				"hangulaudio/consonant_17.mp3",
-				"hangulaudio/consonant_18.mp3",
-				"hangulaudio/consonant_19.mp3",
-				"hangulaudio/vowel_01.mp3",
-				"hangulaudio/vowel_02.mp3",
-				"hangulaudio/vowel_03.mp3",
-				"hangulaudio/vowel_04.mp3",
-				"hangulaudio/vowel_05.mp3",
-				"hangulaudio/vowel_06.mp3",
-				"hangulaudio/vowel_07.mp3",
-				"hangulaudio/vowel_08.mp3",
-				"hangulaudio/vowel_09.mp3",
-				"hangulaudio/vowel_10.mp3",
-				"hangulaudio/vowel_11.mp3",
-				"hangulaudio/vowel_12.mp3",
-				"hangulaudio/vowel_13.mp3",
-				"hangulaudio/vowel_14.mp3",
-				"hangulaudio/vowel_15.mp3",
-				"hangulaudio/vowel_16.mp3",
-				"hangulaudio/vowel_17.mp3",
-				"hangulaudio/vowel_18.mp3",
-				"hangulaudio/vowel_19.mp3",
-				"hangulaudio/vowel_20.mp3",
-				"hangulaudio/vowel_21.mp3",
-				KoreanLexicon.swift,
+				CourseVocabularyImages.swift,
+				DailyDeckAlertScheduler.swift,
+				DeckAlertSettings.swift,
+				HangulAudio.swift,
+				hangulaudio/consonant_01.mp3,
+				hangulaudio/consonant_02.mp3,
+				hangulaudio/consonant_03.mp3,
+				hangulaudio/consonant_04.mp3,
+				hangulaudio/consonant_05.mp3,
+				hangulaudio/consonant_06.mp3,
+				hangulaudio/consonant_07.mp3,
+				hangulaudio/consonant_08.mp3,
+				hangulaudio/consonant_09.mp3,
+				hangulaudio/consonant_10.mp3,
+				hangulaudio/consonant_11.mp3,
+				hangulaudio/consonant_12.mp3,
+				hangulaudio/consonant_13.mp3,
+				hangulaudio/consonant_14.mp3,
+				hangulaudio/consonant_15.mp3,
+				hangulaudio/consonant_16.mp3,
+				hangulaudio/consonant_17.mp3,
+				hangulaudio/consonant_18.mp3,
+				hangulaudio/consonant_19.mp3,
+				hangulaudio/vowel_01.mp3,
+				hangulaudio/vowel_02.mp3,
+				hangulaudio/vowel_03.mp3,
+				hangulaudio/vowel_04.mp3,
+				hangulaudio/vowel_05.mp3,
+				hangulaudio/vowel_06.mp3,
+				hangulaudio/vowel_07.mp3,
+				hangulaudio/vowel_08.mp3,
+				hangulaudio/vowel_09.mp3,
+				hangulaudio/vowel_10.mp3,
+				hangulaudio/vowel_11.mp3,
+				hangulaudio/vowel_12.mp3,
+				hangulaudio/vowel_13.mp3,
+				hangulaudio/vowel_14.mp3,
+				hangulaudio/vowel_15.mp3,
+				hangulaudio/vowel_16.mp3,
+				hangulaudio/vowel_17.mp3,
+				hangulaudio/vowel_18.mp3,
+				hangulaudio/vowel_19.mp3,
+				hangulaudio/vowel_20.mp3,
+				hangulaudio/vowel_21.mp3,
 				ImageCardFlipView.swift,
-				NotificationViewportGeometry.swift,
+				koreanimages/child.png,
+				koreanimages/door.png,
+				koreanimages/flower.png,
+				koreanimages/hat.png,
+				koreanimages/house.png,
+				koreanimages/milk.png,
+				koreanimages/mountain.png,
+				koreanimages/person.png,
+				koreanimages/sea.png,
+				koreanimages/tree.png,
+				koreanimages/water.png,
+				KoreanLexicon.swift,
+				KoreanSpeechManager.swift,
 				ManagedCatalog.swift,
 				Models.swift,
-				DeckAlertSettings.swift,
-				DailyDeckAlertScheduler.swift,
+				NotificationViewportGeometry.swift,
 				SharedDatabase.swift,
 			);
 			target = 254C85122F47BFAF0026450E /* LearnAlertExtension */;
@@ -271,6 +271,7 @@
 			isa = PBXGroup;
 			children = (
 				254C85132F47BFAF0026450E /* LearnAlertExtension.appex */,
+				A17A00000000000000000006 /* Resources/AnkiWebAssets */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -278,7 +279,6 @@
 		25FF1AE82F477005006D435B = {
 			isa = PBXGroup;
 			children = (
-				A17A00000000000000000006 /* AnkiWebAssets */,
 				2599B0012F477006006D435B /* Config.xcconfig */,
 				2575FFEB2F49A248001DE8B2 /* Launch Screen.storyboard */,
 				25FF1AF32F477005006D435B /* LearnAlert */,
@@ -455,7 +455,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A17A00000000000000000005 /* AnkiWebAssets in Resources */,
+				A17A00000000000000000005 /* Resources/AnkiWebAssets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -463,7 +463,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A17A00000000000000000004 /* AnkiWebAssets in Resources */,
+				A17A00000000000000000004 /* Resources/AnkiWebAssets in Resources */,
 				2575FFEC2F49A248001DE8B2 /* Launch Screen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -479,9 +479,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-LearnAlert/Pods-LearnAlert-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-LearnAlert/Pods-LearnAlert-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -870,6 +874,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = LearnAlert;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LearnAlert uses your selected photos to generate study flashcard decks from notes, diagrams, or study materials.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -929,6 +934,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = LearnAlert;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.education";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LearnAlert uses your selected photos to generate study flashcard decks from notes, diagrams, or study materials.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
