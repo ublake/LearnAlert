@@ -81,6 +81,18 @@ struct LearnAlertApp: App {
     @MainActor private func syncManagedCourseDecks() async {
         let manager = CourseProgressManager.shared
         manager.reloadFromSharedDefaults()
+        // Upgrade already-scheduled whole bundles after Home has rendered, and
+        // refresh their media when the managed catalog publishes a new revision.
+        let context = sharedDatabase.container.mainContext
+        let existing = (try? context.fetch(FetchDescriptor<Deck>(predicate: #Predicate { $0.sourceKind == "languageTopic" }))) ?? []
+        for deck in existing where LanguageBundleStudy.isBundle(deck) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            if let id = deck.sourceId, let course = CourseCurriculumCatalog.course(for: id) {
+                do { _ = try LanguageTopicStore.collection(course: course, context: context) }
+                catch { print("Bundle levels could not be refreshed: \(error.localizedDescription)") }
+            }
+        }
         for course in manager.allEnrolledCourses {
             await Task.yield()
             guard !Task.isCancelled else { return }

@@ -25,6 +25,9 @@ struct DeckScheduleSettingsView: View {
                     Text("Remembers this deck’s pace and times. Alerts start when you schedule the deck.")
                 }
                 if useDeckSettings {
+                    if LanguageBundleStudy.isBundle(deck) {
+                        Section { BundleLevelPicker(deck: deck, settings: $draft) }
+                    }
                     Section {
                         AlertPaceControls(settings: $draft,
                             automaticCount: DeckAlertSettings.automaticDailyCount(cardCount: deck.cards.count))
@@ -71,6 +74,28 @@ struct DeckScheduleSettingsView: View {
                 try await engine.startAlerts(for: deck, section: section)
                 dismiss()
             } catch { engine.stopAlerts(); errorMessage = error.localizedDescription }
+        }
+    }
+}
+
+struct BundleLevelPicker: View {
+    let deck: Deck
+    @Binding var settings: DeckAlertSettings
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Bundle level", selection: Binding(get: { settings.bundleLevelID ?? "" }, set: { settings.bundleLevelID = $0.isEmpty ? nil : $0 })) {
+                Text("Automatic progression").tag("")
+                ForEach(LanguageBundleStudy.levels(deck)) { level in
+                    Text("Start at \(level.title)").tag(level.sourceCourseUnitID ?? "")
+                }
+            }
+            if let level = LanguageBundleStudy.activeLevel(deck, settings: settings) {
+                Text(level.title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+            Text(settings.bundleLevelID == nil
+                 ? "Moves on when every card is mastered. Earlier cards return for review."
+                 : "Skips ahead to this level, then advances as you master the cards. Earlier material you’ve studied returns for review.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

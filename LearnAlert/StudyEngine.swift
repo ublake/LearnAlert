@@ -57,6 +57,9 @@ class StudyEngine: ObservableObject {
                 .first { $0.linkedDeckId == deck.id.uuidString }?.dailyCardsTarget ?? 5
             return DeckAlertSettings.automaticDailyCount(cardCount: nil, courseTarget: target)
         }
+        if let deck = settingsDeck, LanguageBundleStudy.isBundle(deck) {
+            return DeckAlertSettings.automaticDailyCount(cardCount: LanguageBundleStudy.cards(deck, settings: settings).count)
+        }
         return DeckAlertSettings.automaticDailyCount(cardCount: settingsDeck?.cards.count)
     }
     var globalSettings: DeckAlertSettings { defaultSettings }
@@ -248,6 +251,10 @@ class StudyEngine: ObservableObject {
 
     @discardableResult
     func startAlerts(for deck: Deck, section: DeckSection? = nil, courseReviewOnly: Bool = false) async throws -> Int {
+        if LanguageBundleStudy.isBundle(deck), let id = deck.sourceId,
+           let course = CourseCurriculumCatalog.course(for: id) {
+            _ = try LanguageTopicStore.collection(course: course, context: deck.modelContext ?? context)
+        }
         selectSettings(for: deck)
         CourseNotificationScheduler.clear()
         DailyDeckAlertScheduler.clear()
@@ -288,7 +295,7 @@ class StudyEngine: ObservableObject {
         
         var newScheduledDates: [Date] = []
         if activeVolume == 1 {
-            let base = section?.cards ?? deck.cards
+            let base = section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)
             let ordered = smartSRS ? base.sorted { $0.studyPriority > $1.studyPriority } : orderedCards(deck: deck, section: section)
             // Start with the next selected card, then rotate through the remaining material.
             let first = cards[0]
@@ -326,7 +333,7 @@ class StudyEngine: ObservableObject {
         self.activeDeckId = deck.id
         self.activeDeckName = deck.name
         self.activeSectionId = section?.id
-        self.activeSectionName = section?.name ?? "All Categories"
+        self.activeSectionName = section?.name ?? LanguageBundleStudy.activeLevel(deck, settings: settings)?.title ?? "All Categories"
         self.scheduledDates = newScheduledDates
         withAnimation(.spring) { self.isActive = true }
         
@@ -452,7 +459,7 @@ class StudyEngine: ObservableObject {
     }
 
     private func orderedCards(deck: Deck, section: DeckSection?) -> [Flashcard] {
-        (section?.cards ?? deck.cards).sorted {
+        (section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)).sorted {
             if $0.orderIndex != $1.orderIndex { return $0.orderIndex < $1.orderIndex }
             return $0.id.uuidString < $1.id.uuidString
         }
@@ -460,7 +467,7 @@ class StudyEngine: ObservableObject {
 
     /// Smart Spaced Repetition card selection prioritizing due & new cards
     private func fetchCardsToStudy(from deck: Deck, section: DeckSection?) -> [Flashcard] {
-        let baseCards = section?.cards ?? deck.cards
+        let baseCards = section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)
         guard !baseCards.isEmpty else { return [] }
         
         let now = Date()

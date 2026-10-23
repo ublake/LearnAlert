@@ -882,6 +882,37 @@ enum LanguageDeckProjection {
         let title: String
         let cards: [CourseLessonCard]
     }
+    struct Level: Identifiable {
+        let id: String
+        let title: String
+        let topics: [Topic]
+        var cards: [CourseLessonCard] { topics.flatMap(\.cards) }
+    }
+
+    static func levels(_ course: CourseDefinition) -> [Level] {
+        let topics = topics(course)
+        let byID = Dictionary(topics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [Level] = []
+        var assigned = Set<String>()
+        func append(_ id: String, _ title: String, _ members: [Topic]) {
+            let members = members.filter { !assigned.contains($0.id) && !$0.cards.isEmpty }
+            guard !members.isEmpty else { return }
+            assigned.formUnion(members.map(\.id))
+            result.append(Level(id: id, title: title, topics: members))
+        }
+        // Split the original Korean foundation unit before it introduces phrases.
+        // Stable lesson IDs keep saved cards and progress attached to their source.
+        if CourseAudioPolicy.allowsKoreanSpeech(for: course.language) {
+            append("hangul-alphabet", "Hangul alphabet", ["kr-1-1", "kr-1-2"].compactMap { byID[$0] })
+            append("hangul-blocks", "Building syllables & words", ["kr-1-3", "kr-1-4"].compactMap { byID[$0] })
+        }
+        for unit in course.units {
+            let title = unit.title.replacingOccurrences(of: #"^Unit\s+\d+\s*:\s*"#, with: "", options: .regularExpression)
+            append(unit.id, title, unit.lessons.compactMap { byID[$0.id] })
+        }
+        for topic in topics where !assigned.contains(topic.id) { append(topic.id, topic.title, [topic]) }
+        return result
+    }
     private struct Word { let text: String; let image: String }
     private static var cached: [String: (source: CourseDefinition, topics: [Topic])] = [:]
 
@@ -924,11 +955,15 @@ enum LanguageDeckProjection {
         }
         func regular(_ card: CourseLessonCard) -> CourseLessonCard? {
             if card.activity?.kind == .trace { return nil }
-            var question = card.isListeningQuestion ? CourseAudioPolicy.readingQuestion(for: card) : card.question
+            let recordedListening = card.isListeningQuestion && card.resolvedFieldMedia["prompt"]?.audio != nil
+            var question = card.isListeningQuestion && !recordedListening ? CourseAudioPolicy.readingQuestion(for: card) : card.question
             var options = card.options, answer = card.correctAnswer, type = card.cardType
             var media = card.resolvedFieldMedia.filter { $0.key != "hint" }
             var index = card.correctOptionIndex
             var left = card.matchingLeftItems, right = card.matchingRightItems
+            if card.activity?.kind == .buildBlock, let slots = card.activity?.slots, !slots.isEmpty {
+                question = slots.joined(separator: " + ") + " → ___"
+            }
             if let exercise = card.activity?.exercise {
                 switch exercise.format {
                 case "exposure": return nil
@@ -967,7 +1002,8 @@ enum LanguageDeckProjection {
             guard type == "matching" ? !left.isEmpty && left.count == right.count : index != nil else { return nil }
             return CourseLessonCard(id: card.id, question: LanguageQuestionText.concise(question, hasPromptImage: media["prompt"]?.image != nil), options: options, correctAnswer: answer,
                 cardType: type, matchingLeftItems: left, matchingRightItems: right,
-                fieldMedia: media, correctOptionIndex: index)
+                fieldMedia: media, correctOptionIndex: index,
+                readingPrompt: recordedListening ? CourseAudioPolicy.readingQuestion(for: card) : nil)
         }
         let result: [Topic] = course.units.flatMap { unit in
             unit.lessons.compactMap { lesson in

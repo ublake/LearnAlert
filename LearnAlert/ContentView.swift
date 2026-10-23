@@ -1429,12 +1429,15 @@ private struct HomeAlertSetupCard: View {
                         .background(LearnAlertStyle.aqua)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(engine.activeSectionName == "Learning Path" ? "Bundle Scheduled" : "Deck Scheduled")
+                        Text(engine.activeSectionName == "Learning Path" || engine.settingsDeck.map(LanguageBundleStudy.isBundle) == true ? "Bundle Scheduled" : "Deck Scheduled")
                             .font(.headline)
                         Text(engine.activeDeckName)
                             .font(.subheadline)
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .lineLimit(2)
+                        if engine.settingsDeck.map(LanguageBundleStudy.isBundle) == true {
+                            Text(engine.activeSectionName).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                        }
                     }
                 }
                 Spacer(minLength: 28)
@@ -2395,21 +2398,31 @@ struct SetupAlertsView: View {
     @Query private var decks: [Deck]
     @ObservedObject var engine: StudyEngine
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    @AppStorage("languageCollections") private var languageCollections = ""
     @State private var draft = AlertScheduleEdit()
     @State private var original: AlertScheduleEdit?
     @State private var editingActiveSchedule = false
     @State private var saving = false
     @State private var errorMessage: String?
 
-    private var courses: [CourseDefinition] { CourseProgressManager.shared.allEnrolledCourses }
+    private var courses: [CourseDefinition] {
+        let saved = Set(languageCollections.split(separator: "|").map(String.init))
+        return CourseCurriculumCatalog.courses.filter { saved.contains($0.id) || CourseProgressManager.shared.isEnrolled(in: $0.id) }
+    }
     private var selectedCourse: CourseDefinition? {
         courses.first { "course:\($0.id)" == draft.targetId }
     }
     private var selectedDeck: Deck? {
+        if let course = selectedCourse,
+           let bundle = decks.first(where: { $0.sourcePremadeID == "language:\(course.id):all" }) { return bundle }
         let id = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId } ?? draft.targetId
         return decks.first { $0.id.uuidString == id }
     }
     private var automaticCount: Int {
+        if let deck = selectedDeck, LanguageBundleStudy.isBundle(deck) {
+            return DeckAlertSettings.automaticDailyCount(cardCount: LanguageBundleStudy.cards(deck, settings: draft.settings).count)
+        }
         let target = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.dailyCardsTarget }
         return DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cardCount, courseTarget: target)
     }
@@ -2456,6 +2469,11 @@ struct SetupAlertsView: View {
                 }
             }
             .padding(.horizontal)
+
+            if let deck = selectedDeck, LanguageBundleStudy.isBundle(deck) {
+                BundleLevelPicker(deck: deck, settings: $draft.settings)
+                    .padding(16).cleanSettingsCard().padding(.horizontal)
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("DAILY SCHEDULE")
@@ -2550,6 +2568,7 @@ struct SetupAlertsView: View {
         .disabled(saving)
         .onAppear(perform: load)
         .onChange(of: draft.targetId) { _, _ in
+            prepareBundle()
             draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
         }
         .onDisappear { InteractionSoundPlayer.shared.stopPreview() }
@@ -2565,7 +2584,8 @@ struct SetupAlertsView: View {
     }
 
     private func course(for deckId: UUID?) -> CourseDefinition? {
-        courses.first { CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == deckId?.uuidString }
+        let bundleCourseID = decks.first(where: { $0.id == deckId && LanguageBundleStudy.isBundle($0) })?.sourceId
+        return courses.first { $0.id == bundleCourseID || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == deckId?.uuidString }
     }
 
     private func load() {
@@ -2573,13 +2593,21 @@ struct SetupAlertsView: View {
         editingActiveSchedule = engine.isActive
         let storedTarget = UserDefaults.standard.string(forKey: "targetDeckId") ?? "ALL"
         let target = editingActiveSchedule ? engine.activeDeckId?.uuidString ?? storedTarget : storedTarget
+        let bundleCourseID = decks.first(where: { $0.id.uuidString == target && LanguageBundleStudy.isBundle($0) })?.sourceId
         let linkedCourse = courses.first {
-            "course:\($0.id)" == target || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == target
+            $0.id == bundleCourseID || "course:\($0.id)" == target || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == target
         }
         draft.targetId = linkedCourse.map { "course:\($0.id)" } ?? target
+        prepareBundle()
         draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
         draft.sound = UserDefaults.standard.string(forKey: "alertSound") ?? "alert3.wav"
         original = draft
+    }
+
+    private func prepareBundle() {
+        guard let course = selectedCourse else { return }
+        do { _ = try LanguageTopicStore.collection(course: course, context: context) }
+        catch { errorMessage = "This bundle couldn’t be loaded. Please try again." }
     }
 
     private func save() {

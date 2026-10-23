@@ -108,6 +108,7 @@ struct DeckStudyView: View {
                     answerImageName: card.answerImageName,
                     optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName,
+                    readingPrompt: card.readingPrompt,
                     ankiContent: card.ankiContent,
                     ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
                     ankiReviewOptions: card.cardType == .anki ? card.ankiReviewOptions(at: Date()) : [],
@@ -156,7 +157,7 @@ struct DeckStudyView: View {
     }
 
     private func setupStudyQueue() {
-        allCards = deck.cards
+        allCards = LanguageBundleStudy.cards(deck)
         studyQueue = buildSmartStudyQueue()
         let queuedIDs = Set(studyQueue.map(\.id))
         for card in allCards where card.cardType == .anki && !queuedIDs.contains(card.id) {
@@ -314,6 +315,7 @@ struct DeckStudyView: View {
             waitingForReview = false
             ratingCounts = [:]
             reviewedAnkiIDs = []
+            allCards = LanguageBundleStudy.cards(deck)
             studyQueue = buildSmartStudyQueue()
             cardIndex = 0
             selectedAnswer = nil
@@ -349,6 +351,9 @@ struct DeckStudyView: View {
                 cardIndex = initialIndex
             }
         }
+        // A queued notification can belong to a level that is no longer active.
+        // Its answer/grade must never be applied to the replacement current card.
+        if let initialCardId, currentCard?.id != initialCardId { return }
         selectedAnswer = initialSelectedAnswer
         isGraded = initialWasGraded
         isRevealed = currentCard?.cardType == .images
@@ -452,6 +457,7 @@ private struct QuizSessionView: View {
     var answerImageName: String? = nil
     var optionImageNames: [String] = []
     var promptAudioName: String? = nil
+    var readingPrompt: String? = nil
     var ankiContent: AnkiCardContent? = nil
     var ankiRenderer: AnkiCardRenderer? = nil
     var ankiReviewOptions: [AnkiReviewOption] = []
@@ -549,13 +555,13 @@ private struct QuizSessionView: View {
                         }
 
                         if cardType != .images && cardType != .anki && !(cardType == .fillBlank && !options.isEmpty) && !question.isEmpty {
-                            Text(question)
+                            CardQuestionContent(question: question, readingPrompt: readingPrompt, media: .init(audio: promptAudioName))
                                 .font(.custom("Poppins-SemiBold", size: 22, relativeTo: .title2))
                                 .foregroundStyle(QuizTheme.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        if cardType != .images, let promptAudioName {
+                        if let promptAudioName, cardType == .images || question.isEmpty || (cardType == .fillBlank && !options.isEmpty) {
                             CardAudioPlaybackButton(name: promptAudioName)
                         }
 

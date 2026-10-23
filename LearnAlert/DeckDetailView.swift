@@ -377,6 +377,7 @@ struct DeckDetailView: View {
         ) {
             Button("Reset Progress", role: .destructive) {
                 deck.cards.forEach { $0.resetProgress() }
+                if LanguageBundleStudy.isBundle(deck) { deck.bundleUnlockedLevelID = nil }
                 try? context.save()
             }
             Button("Cancel", role: .cancel) { }

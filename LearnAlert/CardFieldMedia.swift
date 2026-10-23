@@ -48,6 +48,34 @@ struct CardFieldContent: View {
     }
 }
 
+/// Recorded listening and its complete reading alternative share one question.
+/// Playback is always explicit; changing mode removes only this clip's player.
+struct CardQuestionContent: View {
+    let question: String
+    var readingPrompt: String? = nil
+    var media = CardFieldMedia()
+    var imageHeight: CGFloat = 150
+    @State private var reading = false
+    private var recordingAvailable: Bool { media.audio.map { CardAudioStore.isAvailable(named: $0) } ?? false }
+    private var isListeningCard: Bool { readingPrompt?.isEmpty == false }
+    private var listening: Bool { isListeningCard && recordingAvailable && !reading }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if isListeningCard {
+                Text(listening ? "LISTENING" : "READING").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+            }
+            CardFieldContent(text: isListeningCard && !listening ? readingPrompt ?? question : question,
+                             media: .init(image: media.image), imageHeight: imageHeight)
+            if !isListeningCard || listening, let audio = media.audio { CardAudioPlaybackButton(name: audio) }
+            if isListeningCard && recordingAvailable {
+                Button(listening ? "I can’t listen right now" : "Back to listening") {
+                    withAnimation(.snappy) { reading.toggle() }
+                }.font(.caption.weight(.semibold)).buttonStyle(.plain)
+            }
+        }.onChange(of: question) { _, _ in reading = false }
+    }
+}
+
 struct CardMediaChoiceList: View {
     let options: [String]
     let fields: [String: CardFieldMedia]

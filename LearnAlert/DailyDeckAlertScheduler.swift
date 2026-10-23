@@ -36,7 +36,10 @@ enum DailyDeckAlertScheduler {
         // A daily plan only needs the next 60 slots. Faulting deck.cards also
         // sorts the entire imported deck and used to block startup for large decks.
         let sectionId = plan.sectionId.flatMap { id in deck.sections.first { $0.id == id }?.id }
-        let candidateSlots = plan.slots()
+        let pool = LanguageBundleStudy.isBundle(deck) && sectionId == nil ? LanguageBundleStudy.cards(deck) : []
+        let candidateSlots = plan.slots().enumerated().map { index, slot in
+            pool.isEmpty ? slot : (date: slot.date, cardId: pool[index % pool.count].id)
+        }
         let cards = try scheduledCards(cardIDs: candidateSlots.map(\.cardId), deckID: deckId,
             sectionID: sectionId, in: context)
         let lookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
@@ -57,7 +60,11 @@ enum DailyDeckAlertScheduler {
             guard let card = lookup[slot.cardId] else { return false }
             return card.cardType != .anki || card.isNew || card.nextReviewDate <= slot.date
         }
-        let desired = Set(slots.map { "daily-deck-\(plan.id)-\(Int($0.date.timeIntervalSince1970))" })
+        func identifier(_ slot: (date: Date, cardId: UUID)) -> String {
+            let base = "daily-deck-\(plan.id)-\(Int(slot.date.timeIntervalSince1970))"
+            return LanguageBundleStudy.isBundle(deck) ? base + "-" + slot.cardId.uuidString : base
+        }
+        let desired = Set(slots.map(identifier))
         let pending = await center.pendingNotificationRequests()
         guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
         center.removePendingNotificationRequests(withIdentifiers: pending.filter {
@@ -65,7 +72,7 @@ enum DailyDeckAlertScheduler {
         }.map(\.identifier))
         let existing = Set(pending.map(\.identifier))
         for slot in slots {
-            let id = "daily-deck-\(plan.id)-\(Int(slot.date.timeIntervalSince1970))"
+            let id = identifier(slot)
             guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
             guard !existing.contains(id), let card = lookup[slot.cardId] else { continue }
             let content = UNMutableNotificationContent()

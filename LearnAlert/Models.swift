@@ -80,6 +80,7 @@ class Deck {
     var communityCategory: String?
     var communityDescription: String?
     var alertSettingsData: Data?
+    var bundleUnlockedLevelID: String?
 
     var alertSettings: DeckAlertSettings? {
         get { alertSettingsData.flatMap { try? JSONDecoder().decode(DeckAlertSettings.self, from: $0) } }
@@ -235,6 +236,7 @@ class Flashcard {
     var promptImageName: String?
     var answerImageName: String?
     var promptAudioName: String?
+    var readingPrompt: String?
     var fieldMediaData: Data?
     var correctOptionIndex: Int?
     @Attribute(.externalStorage) var ankiContentData: Data?
@@ -456,7 +458,9 @@ class Flashcard {
                 sibling.reviewCount = reviewCount; sibling.correctCount = correctCount
                 sibling.masteryScore = masteryScore; sibling.lastReviewedDate = lastReviewedDate
                 sibling.streak = streak; sibling.longestStreak = longestStreak
+                if let siblingDeck = sibling.deck { LanguageBundleStudy.advance(siblingDeck) }
             }
+            if let deck { LanguageBundleStudy.advance(deck) }
         }
     }
 
@@ -857,15 +861,29 @@ enum LanguageTopicStore {
         }
     }
     static func collection(course: CourseDefinition, context: ModelContext) throws -> Deck {
-        let cards = LanguageDeckProjection.topics(course).flatMap(\.cards)
-        return try open(course: course, topic: .init(id: "all", title: course.language, cards: cards), context: context)
+        let levels = LanguageDeckProjection.levels(course)
+        let deck = try open(course: course, topic: .init(id: "all", title: course.language, cards: levels.flatMap(\.cards)), context: context)
+        let existing = Dictionary(deck.sections.compactMap { section in section.sourceCourseUnitID.map { ($0, section) } }, uniquingKeysWith: { first, _ in first })
+        let cards = Dictionary(deck.cards.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { first, _ in first })
+        deck.sections = levels.enumerated().map { index, level in
+            let section = existing[level.id] ?? DeckSection(deck: deck)
+            section.title = "Level \(index + 1) · \(level.title)"
+            section.orderIndex = index; section.sourceCourseUnitID = level.id; section.colorHex = course.colorHex
+            section.cards = level.cards.compactMap { cards[$0.id] }
+            for card in section.cards { card.section = section }
+            return section
+        }
+        for section in existing.values where !deck.sections.contains(where: { $0.id == section.id }) { context.delete(section) }
+        LanguageBundleStudy.advance(deck)
+        try context.save()
+        return deck
     }
     static func open(course: CourseDefinition, topic: LanguageDeckProjection.Topic, context: ModelContext, learningSnapshot: CourseLearningSnapshot? = nil) throws -> Deck {
         let source = "language:\(course.id):\(topic.id)"
         let existing = try context.fetch(FetchDescriptor<Deck>())
         let found = existing.first(where: { $0.sourcePremadeID == source })
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        let fingerprint = "language-v1:" + SHA256.hash(data: try encoder.encode(topic.cards)).map { String(format: "%02x", $0) }.joined()
+        let fingerprint = "language-v2:" + SHA256.hash(data: try encoder.encode(topic.cards)).map { String(format: "%02x", $0) }.joined()
         if let found, found.sourceText == fingerprint { return found }
         let deck = found ?? Deck(name: topic.title, colorHex: course.colorHex, deckType: "Quiz")
         let savedCards = Dictionary(deck.cards.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { a, _ in a })
@@ -882,6 +900,7 @@ enum LanguageTopicStore {
             card.cardType = type(for: definition.cardType)
             card.matchingLeftItems = definition.matchingLeftItems; card.matchingRightItems = definition.matchingRightItems
             card.sourceCourseCardID = definition.id; card.orderIndex = index; card.fieldMedia = definition.resolvedFieldMedia; card.correctOptionIndex = definition.correctOptionIndex
+            card.readingPrompt = definition.readingPrompt
             if savedCards[definition.id] == nil, let previous = progress[definition.id] {
                 card.reviewCount = previous.reviewCount; card.correctCount = previous.correctCount; card.masteryScore = previous.masteryScore
                 card.lastReviewedDate = previous.lastReviewedDate; card.streak = previous.streak; card.longestStreak = previous.longestStreak
@@ -896,5 +915,41 @@ enum LanguageTopicStore {
         if found == nil { context.insert(deck) }
         do { try context.save() } catch { if found == nil { context.delete(deck) }; throw error }
         return deck
+    }
+}
+
+/// Language bundles use ordinary deck sections, with an ordered learning scope.
+/// Ordinary decks and individually opened topic decks keep their usual behavior.
+nonisolated enum LanguageBundleStudy {
+    static func isBundle(_ deck: Deck) -> Bool {
+        guard deck.sourceKind == "languageTopic", let id = deck.sourceId else { return false }
+        return deck.sourcePremadeID == "language:\(id):all"
+    }
+    static func levels(_ deck: Deck) -> [DeckSection] {
+        guard isBundle(deck) else { return [] }
+        return deck.sections.filter { $0.sourceCourseUnitID != nil && !$0.cards.isEmpty }
+    }
+    static func automaticLevel(_ deck: Deck, settings: DeckAlertSettings? = nil) -> DeckSection? {
+        let levels = levels(deck)
+        guard !levels.isEmpty else { return nil }
+        var index = levels.firstIndex { $0.sourceCourseUnitID == deck.bundleUnlockedLevelID } ?? 0
+        if let start = (settings ?? deck.alertSettings)?.bundleLevelID,
+           let minimum = levels.firstIndex(where: { $0.sourceCourseUnitID == start }) { index = max(index, minimum) }
+        while index < levels.count - 1 && levels[index].cards.allSatisfy({ $0.masteryScore >= 3 }) { index += 1 }
+        return levels[index]
+    }
+    static func advance(_ deck: Deck) {
+        guard let next = automaticLevel(deck)?.sourceCourseUnitID, deck.bundleUnlockedLevelID != next else { return }
+        deck.bundleUnlockedLevelID = next
+    }
+    static func activeLevel(_ deck: Deck, settings: DeckAlertSettings? = nil) -> DeckSection? {
+        automaticLevel(deck, settings: settings)
+    }
+    static func cards(_ deck: Deck, settings: DeckAlertSettings? = nil, now: Date = Date()) -> [Flashcard] {
+        let levels = levels(deck)
+        guard let active = activeLevel(deck, settings: settings), let index = levels.firstIndex(where: { $0.id == active.id }) else { return deck.cards }
+        // Earlier material returns only for review. Skipping ahead never pulls
+        // unseen alphabet cards back into an experienced learner's first batch.
+        return levels.prefix(index).flatMap(\.cards).filter { !$0.isNew && $0.nextReviewDate <= now } + active.cards
     }
 }

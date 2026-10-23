@@ -30,6 +30,7 @@ private struct NotificationSessionCard {
     var fieldMedia: [String: CardFieldMedia] = [:]
     var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
+    var readingPrompt: String? = nil
 }
 
 private struct NotificationDeckChoice: Identifiable {
@@ -93,6 +94,7 @@ struct FlashcardNotificationView: View {
     var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
     var notificationRequestID: String? = nil
+    var readingPrompt: String? = nil
     var previewMode = false
     var isTutorial = false
     var isCustomizationTest = false
@@ -345,7 +347,8 @@ struct FlashcardNotificationView: View {
                 // Question Box & Prompt Image
                 if activeCardType != "images" && activeCardType != "anki" && !(activeCardType == "fill_blank" && !activeOptions.isEmpty) {
                     VStack(spacing: 12) {
-                        CardFieldContent(text: activeQuestion, media: activeMedia["prompt"] ?? .init(), imageHeight: 160)
+                        CardQuestionContent(question: activeQuestion, readingPrompt: sessionCard?.readingPrompt ?? readingPrompt,
+                                            media: activeMedia["prompt"] ?? .init(), imageHeight: 160)
                             .font(.system(size: isCompactLayout ? 16 : 18, weight: .bold))
                             .foregroundStyle(textColorPrimary).frame(maxWidth: .infinity)
 
@@ -838,7 +841,7 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
-        let cards = deck.cards
+        let cards = LanguageBundleStudy.cards(deck)
         let now = Date()
         let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
@@ -876,7 +879,7 @@ struct FlashcardNotificationView: View {
                 answerImageName: cardToStudy.answerImageName,
                 ankiContentData: cardToStudy.ankiContentData,
                 fieldMedia: cardToStudy.fieldMedia, correctOptionIndex: cardToStudy.resolvedCorrectOptionIndex,
-                optionImageNames: cardToStudy.optionImageNames
+                optionImageNames: cardToStudy.optionImageNames, readingPrompt: cardToStudy.readingPrompt
             )
             selectedAnswer = nil
             lastAnswerWasCorrect = nil
@@ -1318,7 +1321,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             do {
                 let context = ModelContext(SharedDatabase.shared.container)
                 let deck = try LanguageTopicStore.collection(course: course, context: context)
-                if let card = deck.cards.min(by: { $0.nextReviewDate < $1.nextReviewDate }) {
+                if let card = LanguageBundleStudy.cards(deck).min(by: { $0.nextReviewDate < $1.nextReviewDate }) {
                     userInfo["deckId"] = deck.id.uuidString; userInfo["cardId"] = card.id.uuidString
                     userInfo["deckName"] = deck.name; userInfo["cardType"] = card.cardType.rawValue
                     userInfo["question"] = card.studyQuestion; userInfo["options"] = card.options
@@ -1369,8 +1372,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             // back in from the old notification payload.
             let context = ModelContext(SharedDatabase.shared.container)
             let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == cardId })
-            if let card = try? context.fetch(descriptor).first,
-               let deck = card.deck, deck.id == deckId {
+            let scheduledCard = try? context.fetch(descriptor).first
+            let deckDescriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
+            let resolvedDeck = scheduledCard?.deck?.id == deckId ? scheduledCard?.deck : try? context.fetch(deckDescriptor).first
+            if let deck = resolvedDeck {
+                let pool = LanguageBundleStudy.cards(deck)
+                if let card = LanguageBundleStudy.isBundle(deck)
+                    ? (pool.first(where: { $0.id == scheduledCard?.id }) ?? pool.first) : scheduledCard {
                 snapshot = NotificationSessionCard(
                     id: card.id.uuidString, deckId: deck.id.uuidString,
                     deckName: deck.name, deckType: card.cardType.title,
@@ -1380,8 +1388,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
                     promptImageName: card.promptImageName, answerImageName: card.answerImageName,
                     ankiContentData: card.ankiContentData,
                     fieldMedia: card.fieldMedia, correctOptionIndex: card.resolvedCorrectOptionIndex,
-                    optionImageNames: card.optionImageNames
+                    optionImageNames: card.optionImageNames, readingPrompt: card.readingPrompt
                 )
+                }
             }
         }
 
@@ -1405,6 +1414,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             fieldMedia: snapshot.fieldMedia, correctOptionIndex: snapshot.correctOptionIndex,
             optionImageNames: snapshot.optionImageNames,
             notificationRequestID: isSynthetic ? nil : notification.request.identifier,
+            readingPrompt: snapshot.readingPrompt,
             isTutorial: isTutorial,
             isCustomizationTest: isCustomizationTest,
             appearance: .resolve(userInfo: userInfo),

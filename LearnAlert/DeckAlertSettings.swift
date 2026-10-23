@@ -19,6 +19,8 @@ nonisolated struct DeckAlertSettings: Codable, Equatable {
     var specificMinute = 0
     var stopCondition = "Until I say so"
     var smartSRS = true
+    /// An optional starting level skips basics while retaining automatic progression.
+    var bundleLevelID: String? = nil
 
     static func defaults(in defaults: UserDefaults = .standard) -> Self {
         if let data = defaults.data(forKey: "defaultDeckAlertSettings"),
@@ -68,6 +70,7 @@ extension DeckAlertSettings {
         specificMinute = try values.decodeIfPresent(Int.self, forKey: .specificMinute) ?? 0
         stopCondition = try values.decodeIfPresent(String.self, forKey: .stopCondition) ?? "Until I say so"
         smartSRS = try values.decodeIfPresent(Bool.self, forKey: .smartSRS) ?? true
+        bundleLevelID = try values.decodeIfPresent(String.self, forKey: .bundleLevelID)
     }
 }
 
