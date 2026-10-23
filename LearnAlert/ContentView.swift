@@ -1357,9 +1357,9 @@ private struct HomeAlertSetupCard: View {
                                 Button(deck.name) { targetDeckId = deck.id.uuidString }
                             }
                         }
-                        Section("Courses") {
+                        Section("Bundles") {
                             if courses.isEmpty {
-                                Button("No courses started") {}.disabled(true)
+                                Button("No bundles added") {}.disabled(true)
                             }
                             ForEach(courses) { course in
                                 Button("\(course.flagEmoji) \(course.title)") {
@@ -1429,7 +1429,7 @@ private struct HomeAlertSetupCard: View {
                         .background(LearnAlertStyle.aqua)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(engine.activeSectionName == "Learning Path" ? "Course Scheduled" : "Deck Scheduled")
+                        Text(engine.activeSectionName == "Learning Path" ? "Bundle Scheduled" : "Deck Scheduled")
                             .font(.headline)
                         Text(engine.activeDeckName)
                             .font(.subheadline)
@@ -1480,7 +1480,7 @@ private struct AlertTargetPickerLabel: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedTarget?.name ?? "Choose a deck or course")
+                Text(selectedTarget?.name ?? "Choose a deck or bundle")
                     .font(.subheadline.weight(.medium))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
@@ -2421,20 +2421,20 @@ struct SetupAlertsView: View {
     var body: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("SELECT DECK OR COURSE")
+                Text("SELECT DECK OR BUNDLE")
                     .font(.caption.bold())
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Menu {
-                    Picker("Deck or Course", selection: $draft.targetId) {
+                    Picker("Deck or Bundle", selection: $draft.targetId) {
                         Section("Decks") {
                             if !editingActiveSchedule { Text("All Active Decks").tag("ALL") }
                             ForEach(decks.filter { $0.deckType != "Course" }) { deck in
                                 Text(deck.name).tag(deck.id.uuidString)
                             }
                         }
-                        Section("Courses") {
+                        Section("Bundles") {
                             ForEach(courses) { course in
                                 Text("\(course.flagEmoji) \(course.title)").tag("course:\(course.id)")
                             }
