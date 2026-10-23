@@ -80,7 +80,7 @@ struct CommunityPublicProfileView: View {
                     if isOwner {
                         Menu {
                             Button("Edit profile", systemImage: "pencil") { showingEditor = true }
-                            Button("My community decks", systemImage: "rectangle.stack") { showingMyDecks = true }
+                            Button("My shared decks", systemImage: "rectangle.stack") { showingMyDecks = true }
                             Button("Blocked authors", systemImage: "person.slash") { showingBlockedAuthors = true }
                             Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut(); dismiss() }
                         } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
@@ -109,7 +109,7 @@ struct CommunityPublicProfileView: View {
             .sheet(item: $selectedDeck, onDismiss: { Task { await load() } }) { CommunityProfileDeckPreview(deck: $0) }
             .confirmationDialog("Block \(profile?.handle ?? "this author")?", isPresented: $confirmingBlock, titleVisibility: .visible) {
                 Button("Block author", role: .destructive) { Task { await block() } }
-            } message: { Text("Hides their profile and community decks. Copies in your library stay.") }
+            } message: { Text("Hides their profile and shared decks. Copies in your library stay.") }
             .interactiveDismissDisabled(blocking || savingPrivacy)
         }
         .tint(LearnAlertStyle.appAccentForeground)
@@ -254,7 +254,7 @@ struct CommunityProfileDeckPreview: View {
     var body: some View {
         CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded, isDownloading: downloading,
                                   progress: progress, download: { Task { await download() } })
-            .alert("Community deck", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            .alert("Shared deck", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) { }
             } message: { Text(error ?? "") }
     }

@@ -765,7 +765,7 @@ struct WhatsNewView: View {
                         badgeColor: LearnAlertStyle.appAccentForeground,
                         isCurrent: true,
                         highlights: [
-                            .init(title: "Community decks & profiles", detail: "Discover and share decks, create a character avatar, and show creators some love."),
+                            .init(title: "Shared decks & profiles", detail: "Discover and share decks, create a character avatar, and show creators some love."),
                             .init(title: "Guided language courses", detail: "Learn through structured lessons, audio questions, varied activities, and helpful lesson guides."),
                             .init(title: "Import from Anki", detail: "Bring your .apkg decks into LearnAlert with images, audio, and custom card layouts."),
                             .init(title: "More ways to make flashcards", detail: "Create image-only cards, animated front-and-back cards, and audio or image answer choices."),

@@ -1835,7 +1835,9 @@ private struct HomeStudyCard: View {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                        .padding(10)
+                        .padding(.top, 7)
+                        .padding(.trailing, 7)
+                        .allowsHitTesting(false)
                         .accessibilityLabel("Pinned")
                 }
             }
@@ -1939,7 +1941,6 @@ private struct HomeCourseCard: View {
                         Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    if isPinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
             Button(action: onContinue) {
@@ -1952,6 +1953,15 @@ private struct HomeCourseCard: View {
         }.padding(.horizontal, 14).padding(.vertical, 12)
             .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
+            .overlay(alignment: .topTrailing) {
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                        .padding(.top, 7).padding(.trailing, 7)
+                        .allowsHitTesting(false).accessibilityLabel("Pinned")
+                }
+            }
             .contextMenu {
                 Button(action: togglePin) { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
                 Button("Remove from library", systemImage: "xmark.circle", role: .destructive, action: unenroll)

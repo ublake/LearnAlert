@@ -55,6 +55,9 @@ struct CommunityDeckPayload: Codable, Identifiable {
     var likeCount: Int? = nil
     var viewerHasLiked: Bool? = nil
     var ankiMedia: [String: [String: String]]? = nil
+    // Optional for cached payloads and servers predating shared-deck media totals.
+    var imageCount: Int? = nil
+    var audioCount: Int? = nil
 
     var isRemoved: Bool { status == "deleted" }
 }
@@ -88,8 +91,8 @@ extension Deck {
         if !allowAnkiUploads && (sourceKind == "anki" || sourceAnkiDeckID != nil) {
             return "Uploading decks imported from Anki are not supported yet"
         }
-        if sourceCommunityID != nil { return "Downloaded community decks can’t be republished. Share a deck you created." }
-        if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and courses can’t be published to the community." }
+        if sourceCommunityID != nil { return "Downloaded shared decks can’t be republished. Share a deck you created." }
+        if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and bundles can’t be published as shared decks." }
         return nil
     }
 
@@ -108,7 +111,7 @@ extension Deck {
         // by sourcePremadeID above; this synchronous fallback uses bundled content.
         if PremadeDeckCatalog.bundledDecks.contains(where: { premade in
             !premade.cards.isEmpty && Set(premade.cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) }).isSubset(of: local)
-        }) { return "Built-in decks can’t be published to the community." }
+        }) { return "Built-in decks can’t be published as shared decks." }
         return nil
     }
 
@@ -348,7 +351,7 @@ struct CommunityAPI {
             struct Envelope: Decodable { struct Failure: Decodable { let message: String; let code: String? }; let error: Failure }
             let failure = try? JSONDecoder().decode(Envelope.self, from: data)
             let message = failure?.error.message
-                ?? "The community library is unavailable. Please try again."
+                ?? "Shared decks are unavailable. Please try again."
             throw CommunityAPIError(status: http.statusCode, message: message, code: failure?.error.code)
         }
     }

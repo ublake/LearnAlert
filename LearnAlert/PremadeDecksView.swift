@@ -29,7 +29,7 @@ struct PremadeDecksView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center) {
-                    Text("Community decks").font(StudyStudioStyle.title(24))
+                    Text("Shared decks").font(StudyStudioStyle.title(24))
                     Spacer()
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
@@ -177,7 +177,7 @@ struct PremadeDecksView: View {
                     .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
             Button { showingAllCommunity = true } label: {
-                Label("Search community decks", systemImage: "person.2")
+                Label("Search shared decks", systemImage: "person.2")
                     .font(StudyStudioStyle.heading(14)).frame(maxWidth: .infinity, minHeight: 52)
                     .foregroundStyle(.white).background(StudyStudioStyle.violet, in: RoundedRectangle(cornerRadius: 16))
             }.buttonStyle(.plain)
@@ -284,61 +284,79 @@ private struct LanguageCourseHeroCard: View {
     let course: CourseDefinition
     let isEnrolled: Bool
     let onSelect: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    private var tint: Color { Color(hex: course.colorHex) }
 
     var body: some View {
         Button {
             onSelect()
         } label: {
-            HStack(alignment: .top, spacing: 14) {
-                Text(course.flagEmoji)
-                    .font(.system(size: 34))
-                    .padding(8)
-                    .background(Color(hex: course.colorHex).opacity(0.14), in: Circle())
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(course.title)
-                            .font(.custom("Poppins-Bold", size: 15))
-                            .foregroundStyle(LearnAlertStyle.textPrimary)
-
-                        Spacer()
-
-                        Text(course.levelTag)
-                            .font(.custom("Poppins-SemiBold", size: 10))
-                            .foregroundStyle(Color(hex: course.colorHex))
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Color(hex: course.colorHex).opacity(0.12), in: Capsule())
-                    }
-
-                    Text(course.summary)
-                        .font(.custom("Poppins-Regular", size: 11))
+            HStack(spacing: 16) {
+                LanguageBundleArtwork(flag: course.flagEmoji, language: course.language, tint: tint)
+                    .frame(width: 66, height: 66)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(course.language)
+                        .font(.custom("Poppins-Bold", size: 18))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .lineLimit(1)
+                    Text("\(LanguageDeckProjection.levels(course).count) levels · \(LanguageDeckProjection.topics(course).count) decks")
+                        .font(.custom("Poppins-Medium", size: 11))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
-                        .lineLimit(2)
-
-                    HStack(spacing: 8) {
-                        Text("\(LanguageDeckProjection.topics(course).count) topic decks")
-                            .font(.custom("Poppins-Medium", size: 10))
-                            .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                        Spacer()
-
-                        Text(isEnrolled ? "Continue" : "View Bundle")
-                            .font(.custom("Poppins-SemiBold", size: 11))
-                            .foregroundStyle(Color(hex: course.colorHex))
-                    }
-                    .padding(.top, 4)
                 }
+                Spacer(minLength: 0)
+                Image(systemName: isEnrolled ? "arrow.right" : "chevron.right")
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(tint)
+                    .frame(width: 32, height: 32)
+                    .background(tint.opacity(colorScheme == .dark ? 0.17 : 0.09), in: Circle())
             }
-            .padding(14)
-            .background(LearnAlertStyle.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(LearnAlertStyle.hairline, lineWidth: 1)
-            )
+            .padding(.horizontal, 16).padding(.vertical, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LearnAlertStyle.surface)
+                    .overlay(alignment: .trailing) {
+                        Circle().fill(tint.opacity(colorScheme == .dark ? 0.09 : 0.055))
+                            .frame(width: 150, height: 150).offset(x: 36, y: 35)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            }
+            .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(tint.opacity(colorScheme == .dark ? 0.24 : 0.22), lineWidth: 1) }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(course.language), \(LanguageDeckProjection.levels(course).count) levels, \(LanguageDeckProjection.topics(course).count) decks")
+        .accessibilityHint(isEnrolled ? "Continue your language bundle" : "Open language bundle")
+    }
+}
+
+private struct LanguageBundleArtwork: View {
+    let flag: String
+    let language: String
+    let tint: Color
+    private var letter: String {
+        switch language.lowercased() {
+        case "korean": "한"
+        case "spanish": "ñ"
+        case "japanese": "あ"
+        case "chinese", "mandarin": "文"
+        case "arabic": "ع"
+        default: String(language.prefix(1))
+        }
+    }
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.13))
+                .frame(width: 47, height: 55).rotationEffect(.degrees(-15)).offset(x: -5, y: 1)
+            RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.2))
+                .frame(width: 47, height: 55).rotationEffect(.degrees(9)).offset(x: 5, y: -1)
+            RoundedRectangle(cornerRadius: 12).fill(LearnAlertStyle.surface)
+                .overlay { RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.08)) }
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(tint.opacity(0.35), lineWidth: 1) }
+                .frame(width: 47, height: 55)
+                .overlay(alignment: .topLeading) { Text(flag).font(.system(size: 25)).padding(.leading, 5).padding(.top, 3) }
+                .overlay(alignment: .bottomTrailing) { Text(letter).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(tint).padding(.trailing, 7).padding(.bottom, 3) }
+            Image(systemName: "sparkle").font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint.opacity(0.7)).offset(x: 30, y: -25)
+        }.accessibilityHidden(true)
     }
 }
 

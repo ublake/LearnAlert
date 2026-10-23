@@ -155,7 +155,7 @@ struct ProgressDashboardView: View {
                     .font(.subheadline.weight(.medium)).foregroundStyle(Color(hex: deck.colorHex))
                     .frame(width: 32, height: 32)
                     .background(Color(hex: deck.colorHex).opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityLabel(deck.isCommunity ? "Community deck" : "Deck")
+                    .accessibilityLabel(deck.isCommunity ? "Shared deck" : "Deck")
                 VStack(alignment: .leading, spacing: 3) {
                     Text(deck.name).font(.subheadline.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary).lineLimit(2)
                     Text("\(deck.reviewedCardCount) of \(deck.cardCount) cards reviewed").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)

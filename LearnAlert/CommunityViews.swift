@@ -160,7 +160,7 @@ struct CommunityFeedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                if showsTitle { Text("Community decks").font(.title3.weight(.semibold)) }
+                if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }
                 else { sortSelector }
                 Spacer(minLength: 4)
                 categoryFilter
@@ -186,7 +186,7 @@ struct CommunityFeedView: View {
                 }.frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if store.hasLoaded && store.decks.isEmpty {
                 VStack(spacing: 8) {
-                    Text(store.search.isEmpty && store.category == "All" ? "No community decks yet" : "No matching decks").font(.headline)
+                    Text(store.search.isEmpty && store.category == "All" ? "No shared decks yet" : "No matching decks").font(.headline)
                     if !store.search.isEmpty || store.category != "All" {
                         Button("Clear filters") { store.search = ""; store.category = "All" }.frame(minHeight: 44)
                     }
@@ -224,7 +224,7 @@ struct CommunityFeedView: View {
             CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
                 progress: downloadProgress, download: { Task { await download(deck) } })
         }
-        .alert("Community decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+        .alert("Shared decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
         } message: { Text(message ?? "") }
     }
@@ -275,7 +275,7 @@ struct CommunityFeedView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(sort.title) community decks")
+                .accessibilityLabel("\(sort.title) shared decks")
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -296,7 +296,7 @@ struct CommunityFeedView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Filter community decks").accessibilityValue(store.category)
+        .accessibilityLabel("Filter shared decks").accessibilityValue(store.category)
     }
 
     private func isAdded(_ deck: CommunityDeckPayload) -> Bool { libraryDecks.contains { $0.sourceCommunityID == deck.id } }
@@ -321,27 +321,66 @@ struct CommunityFeedView: View {
 struct CommunityDeckCard: View {
     let deck: CommunityDeckPayload
     let open: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: open) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(deck.name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("\(deck.cardCount) cards")
-                    .font(.caption).monospacedDigit()
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-                    .fixedSize()
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 7) {
+                        deckTitle
+                        mediaCounts.frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                } else {
+                    HStack(alignment: .center, spacing: 12) {
+                        deckTitle
+                        mediaCounts
+                    }
+                }
             }
             .frame(minHeight: 44)
             .padding(.vertical, 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Preview this deck")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(deck.name)
+        .accessibilityValue("\(deck.cardCount) cards, \(max(0, deck.imageCount ?? 0)) images, \(max(0, deck.audioCount ?? 0)) audio files")
+        .accessibilityHint("Preview this shared deck")
+    }
+
+    private var deckTitle: some View {
+        Text(deck.name)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(LearnAlertStyle.textPrimary)
+            .multilineTextAlignment(.leading)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var mediaCounts: some View {
+        HStack(spacing: 9) {
+            count(deck.cardCount, symbol: "rectangle.on.rectangle", tint: colorScheme == .dark
+                ? Color(red: 0.57, green: 0.72, blue: 0.86)
+                : Color(red: 0.22, green: 0.42, blue: 0.63))
+            count(deck.imageCount ?? 0, symbol: "photo", tint: colorScheme == .dark
+                ? Color(red: 0.74, green: 0.66, blue: 0.82)
+                : Color(red: 0.46, green: 0.36, blue: 0.59))
+            count(deck.audioCount ?? 0, symbol: "mic", tint: colorScheme == .dark
+                ? Color(red: 0.55, green: 0.74, blue: 0.69)
+                : Color(red: 0.23, green: 0.46, blue: 0.42))
+        }
+        .font(.caption.weight(.medium))
+        .fixedSize()
+    }
+
+    private func count(_ value: Int, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).imageScale(.small)
+            Text(max(0, value).formatted(.number.notation(.compactName))).monospacedDigit()
+        }
+        .foregroundStyle(tint)
     }
 }
 
@@ -353,7 +392,7 @@ struct AllCommunityDecksView: View {
     @StateObject private var store = CommunityFeedStore()
     var body: some View {
         ScrollView { CommunityFeedView(store: store, libraryDecks: libraryDecks, onAddDeck: onAddDeck, onShare: onOpenShareModal).padding(20).padding(.bottom, 100) }
-            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).navigationTitle("Community decks")
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).navigationTitle("Shared decks")
             .navigationBarTitleDisplayMode(.inline).onAppear { store.search = initialSearch }
             .refreshable { await store.load() }
     }
@@ -431,7 +470,7 @@ struct CommunityDeckPreviewSheet: View {
                         .accessibilityLabel("Deck options")
                 }
             }
-            .alert("Community decks", isPresented: Binding(get: { actionMessage != nil }, set: { if !$0 { actionMessage = nil } })) {
+            .alert("Shared decks", isPresented: Binding(get: { actionMessage != nil }, set: { if !$0 { actionMessage = nil } })) {
                 Button("OK", role: .cancel) { actionMessage = nil }
             } message: { Text(actionMessage ?? "") }
             .sheet(item: $authorProfile) { author in CommunityPublicProfileView(authorID: author.id) }
@@ -468,7 +507,7 @@ struct CommunityDeckPreviewSheet: View {
         .disabled(!session.isSignedIn || !hasLoaded || isSavingLike)
         .accessibilityLabel(viewerHasLiked ? "Unlike deck" : "Like deck")
         .accessibilityValue("\(likeCount) likes")
-        .accessibilityHint(session.isSignedIn ? "" : "Sign in with Apple in Settings to like community decks")
+        .accessibilityHint(session.isSignedIn ? "" : "Sign in with Apple in Settings to like shared decks")
     }
 
     @MainActor private func load() async {
@@ -684,7 +723,7 @@ struct ShareDeckToCommunitySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if availableDecks.isEmpty {
-                        ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck you created. Built-in and downloaded community decks can’t be republished."))
+                        ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck you created. Built-in and downloaded shared decks can’t be republished."))
                     } else {
                         Menu {
                             ForEach(availableDecks) { deck in Button(deck.name) { selectedDeckID = deck.id } }
@@ -729,7 +768,7 @@ struct ShareDeckToCommunitySheet: View {
                     VStack(spacing: 10) {
                         if isPublishing { ProgressView(progress).font(.caption) }
                         if selectedDeck?.publishedCommunityID != nil && !isSubmitted {
-                            Text("Updates make the community copy private until approved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
+                            Text("Updates make the shared copy private until approved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         }
                         Text("Review can take up to 3 days. Cards and media stay private until approved. Study history stays private.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         Button { beginPublish() } label: {
@@ -769,7 +808,7 @@ struct ShareDeckToCommunitySheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }
-                Text(session.isDeveloper && !publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? publisherHandle : session.isSignedIn ? session.handle : "Your community preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                Text(session.isDeveloper && !publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? publisherHandle : session.isSignedIn ? session.handle : "Your shared deck preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             Text(deck.name).font(.title3.weight(.semibold))
             if !deckDescription.isEmpty { Text(deckDescription).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
@@ -883,7 +922,7 @@ struct MySharedDecksSheet: View {
                     if let error = message ?? store.errorMessage { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed); Button("Try again") { Task { await load() } }.frame(minHeight: 44) }
                 }.padding(20)
             }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-                .navigationTitle("My community decks").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("My shared decks").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isRemoving) } }
                 .task(id: refreshID) {
                     guard session.token != nil else { store.clear(); return }
@@ -896,14 +935,14 @@ struct MySharedDecksSheet: View {
                 }.refreshable { await load() }
                 .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
                 .sheet(item: $editingDeck) { ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: $0.id) }
-                .confirmationDialog("Remove this community deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
-                    Button("Remove community deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
+                .confirmationDialog("Remove this shared deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
+                    Button("Remove shared deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
                 } message: { Text("Your personal deck and copies already downloaded by other learners remain in their libraries.") }
                 .interactiveDismissDisabled(isRemoving)
         }
     }
     @MainActor private func load() async {
-        guard let token = session.token else { store.clear(); message = "Sign in with Apple to see your community decks."; return }
+        guard let token = session.token else { store.clear(); message = "Sign in with Apple to see your shared decks."; return }
         message = nil
         await store.load(token: token) { error in
             if session.token == token { session.handle(error) }

@@ -449,7 +449,7 @@ struct CommunityProfileSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if session.isSignedIn {
                         Menu {
-                            Button("My community decks", systemImage: "rectangle.stack") { showingMyDecks = true }
+                            Button("My shared decks", systemImage: "rectangle.stack") { showingMyDecks = true }
                             Button("Blocked authors", systemImage: "person.slash") { showingBlockedUsers = true }
                             Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut(); dismiss() }
                             Button("Delete community account", role: .destructive) { confirmingDelete = true }
