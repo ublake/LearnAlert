@@ -11,14 +11,15 @@ struct LanguageCollectionView: View {
     let originalCourse: CourseDefinition
     @ObservedObject private var catalog = ManagedCatalogStore.shared
     @Environment(\.modelContext) private var context
-    @Query private var decks: [Deck]
     @AppStorage("languageCollections") private var savedCollections = ""
     @State private var selected: Deck?
     @State private var failure: String?
     @State private var bundle: Deck?
+    @State private var levelExpansion: [String: Bool] = [:]
     private var course: CourseDefinition { catalog.course(for: originalCourse.id) ?? originalCourse }
     private var topics: [LanguageDeckProjection.Topic] { LanguageDeckProjection.topics(course) }
     private var levels: [LanguageDeckProjection.Level] { LanguageDeckProjection.levels(course) }
+    private var currentLevelID: String? { bundle.flatMap { LanguageBundleStudy.activeLevel($0)?.sourceCourseUnitID } ?? levels.first?.id }
     private var saved: Bool { savedCollections.split(separator: "|").contains(Substring(course.id)) || CourseProgressManager.shared.isEnrolled(in: course.id) }
     var body: some View {
         ScrollView {
@@ -32,15 +33,15 @@ struct LanguageCollectionView: View {
                     Spacer()
                     if !saved { Button("Add") { addCollection() }.buttonStyle(.bordered) }
                 }.padding(.bottom, 24)
-                if let bundle {
-                    BundleLevelPicker(deck: bundle, settings: Binding(get: { bundle.alertSettings ?? StudyEngine.shared.globalSettings }, set: { setLevel($0, for: bundle) }))
-                        .padding(.bottom, 20)
-                }
                 ForEach(Array(levels.enumerated()), id: \.element.id) { index, level in
                     LanguageBundleLevelCard(
                         level: level,
                         number: index + 1,
-                        isCurrent: bundle.map({ LanguageBundleStudy.activeLevel($0)?.sourceCourseUnitID == level.id }) == true
+                        isCurrent: currentLevelID == level.id,
+                        isExpanded: Binding(
+                            get: { levelExpansion[level.id] ?? (currentLevelID == level.id) },
+                            set: { levelExpansion[level.id] = $0 }
+                        )
                     ) { topic in
                         do { selected = try LanguageTopicStore.open(course: course, topic: topic, context: context); addCollection() }
                         catch { failure = "This topic couldn’t be saved. Please try again." }
@@ -60,26 +61,16 @@ struct LanguageCollectionView: View {
     private func addCollection() {
         if !saved { savedCollections = (savedCollections.split(separator: "|").map(String.init) + [course.id]).joined(separator: "|") }
     }
-    private func setLevel(_ settings: DeckAlertSettings, for deck: Deck) {
-        let previous = deck.alertSettings
-        deck.alertSettings = settings
-        do { try context.save() }
-        catch { deck.alertSettings = previous; failure = error.localizedDescription; return }
-        let engine = StudyEngine.shared
-        guard engine.isActive, engine.activeDeckId == deck.id else { return }
-        Task { @MainActor in
-            do { _ = try await engine.startAlerts(for: deck) }
-            catch { failure = "The level was saved, but alerts couldn’t be updated. Please schedule the bundle again." }
-        }
-    }
 }
 
 private struct LanguageBundleLevelCard: View {
     let level: LanguageDeckProjection.Level
     let number: Int
     let isCurrent: Bool
+    @Binding var isExpanded: Bool
     let openTopic: (LanguageDeckProjection.Topic) -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var accent: Color {
         let light = ["#427DA5", "#377F76", "#7A68AB", "#A46C47"]
@@ -92,8 +83,31 @@ private struct LanguageBundleLevelCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            VStack(spacing: 0) {
+            Button { isExpanded.toggle() } label: { header }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Level \(number), \(level.title), \(level.topics.count) decks\(isCurrent ? ", current level" : "")")
+                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                .accessibilityHint(isExpanded ? "Hides topic decks" : "Shows topic decks")
+                .accessibilityAddTraits(.isHeader)
+            if isExpanded {
+                topicRows
+                    .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(LearnAlertStyle.courseSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(isCurrent ? accent.opacity(0.65) : LearnAlertStyle.cardBorder, lineWidth: isCurrent ? 1.25 : 1)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: LearnAlertStyle.cardShadow, radius: 6, x: 0, y: 3)
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.9), value: isExpanded)
+    }
+
+    private var topicRows: some View {
+        VStack(spacing: 0) {
                 ForEach(Array(level.topics.enumerated()), id: \.element.id) { index, topic in
                     if index > 0 {
                         Rectangle()
@@ -130,31 +144,17 @@ private struct LanguageBundleLevelCard: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityHint("Opens topic deck")
                 }
-            }
-            .padding(.vertical, 3)
         }
-        .background(LearnAlertStyle.courseSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(isCurrent ? accent.opacity(0.65) : LearnAlertStyle.cardBorder, lineWidth: isCurrent ? 1.25 : 1)
-                .allowsHitTesting(false)
-        }
-        .shadow(color: LearnAlertStyle.cardShadow, radius: 6, x: 0, y: 3)
+        .padding(.vertical, 3)
     }
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 1) {
-                Text("LEVEL")
-                    .font(.system(size: 8, weight: .heavy, design: .rounded))
-                    .tracking(1.1)
-                Text(String(format: "%02d", number))
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-            }
+            Text(String(format: "%02d", number))
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .monospacedDigit()
             .foregroundStyle(accent)
-            .frame(width: 50, height: 54)
+            .frame(width: 50, height: 50)
             .background(LearnAlertStyle.courseSurface.opacity(0.88), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -198,13 +198,18 @@ private struct LanguageBundleLevelCard: View {
             }
             .frame(width: 40, height: 48)
             .accessibilityHidden(true)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(accent)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .accessibilityHidden(true)
         }
         .padding(16)
         .background {
             LinearGradient(colors: [accent.opacity(colorScheme == .dark ? 0.16 : 0.14), accent.opacity(0.035)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         .overlay(alignment: .bottom) {
-            Rectangle().fill(accent.opacity(0.2)).frame(height: 1)
+            if isExpanded { Rectangle().fill(accent.opacity(0.2)).frame(height: 1) }
         }
     }
 }

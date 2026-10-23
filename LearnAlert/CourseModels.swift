@@ -898,7 +898,8 @@ enum LanguageDeckProjection {
             let members = members.filter { !assigned.contains($0.id) && !$0.cards.isEmpty }
             guard !members.isEmpty else { return }
             assigned.formUnion(members.map(\.id))
-            result.append(Level(id: id, title: title, topics: members))
+            let levelTitle = result.isEmpty && course.language == "Spanish" ? "Introduction & basics" : title
+            result.append(Level(id: id, title: levelTitle, topics: members))
         }
         // Split the original Korean foundation unit before it introduces phrases.
         // Stable lesson IDs keep saved cards and progress attached to their source.
