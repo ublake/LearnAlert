@@ -5,6 +5,7 @@ import UserNotifications
 @MainActor
 enum DailyDeckAlertScheduler {
     private static let planKey = "dailyDeckAlertPlan"
+    private static var inFlight: (id: UUID, data: Data, task: Task<[Date], Error>)?
     private static var defaults: UserDefaults? { UserDefaults(suiteName: "group.com.learnalert.shared") }
     private static var storedPlan: (plan: DailyDeckAlertPlan, data: Data)? {
         defaults?.synchronize()
@@ -14,18 +15,41 @@ enum DailyDeckAlertScheduler {
     }
     static var activePlan: DailyDeckAlertPlan? { storedPlan?.plan }
     static func clear() {
+        inFlight?.task.cancel()
+        inFlight = nil
         defaults?.removeObject(forKey: planKey)
         defaults?.synchronize()
     }
     static func activate(_ plan: DailyDeckAlertPlan) async throws -> [Date] {
-        defaults?.set(try JSONEncoder().encode(plan), forKey: planKey)
+        let data = try JSONEncoder().encode(plan)
+        defaults?.set(data, forKey: planKey)
         defaults?.synchronize()
         do { return try await replenish() }
-        catch { clear(); throw error }
+        catch {
+            // A superseded activation must not clear the replacement plan.
+            if defaults?.data(forKey: planKey) == data { clear() }
+            throw error
+        }
     }
     @discardableResult
     static func replenish() async throws -> [Date] {
         guard let stored = storedPlan, isCurrent(planData: stored.data, defaults: defaults) else { return [] }
+        if let current = inFlight, current.data == stored.data { return try await current.task.value }
+        inFlight?.task.cancel()
+        let token = UUID()
+        let task = Task { try await replenishPlan(stored) }
+        inFlight = (token, stored.data, task)
+        do {
+            let result = try await task.value
+            if inFlight?.id == token { inFlight = nil }
+            return result
+        } catch {
+            if inFlight?.id == token { inFlight = nil }
+            throw error
+        }
+    }
+    private static func replenishPlan(_ stored: (plan: DailyDeckAlertPlan, data: Data)) async throws -> [Date] {
+        guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
         let plan = stored.plan
         let context = ModelContext(SharedDatabase.shared.container)
         let deckId = plan.deckId
@@ -33,23 +57,70 @@ enum DailyDeckAlertScheduler {
             clear()
             return []
         }
+        if LanguageBundleStudy.isBundle(deck), let courseID = deck.sourceId,
+           let course = CourseCurriculumCatalog.course(for: courseID) {
+            _ = try LanguageTopicStore.collection(course: course, context: context)
+        }
         // A daily plan only needs the next 60 slots. Faulting deck.cards also
         // sorts the entire imported deck and used to block startup for large decks.
         let sectionId = plan.sectionId.flatMap { id in deck.sections.first { $0.id == id }?.id }
-        let pool = LanguageBundleStudy.isBundle(deck) && sectionId == nil ? LanguageBundleStudy.cards(deck) : []
-        let candidateSlots = plan.slots().enumerated().map { index, slot in
-            pool.isEmpty ? slot : (date: slot.date, cardId: pool[index % pool.count].id)
+        let isBundlePlan = LanguageBundleStudy.isBundle(deck) && sectionId == nil
+        let smartBundle = isBundlePlan && LanguageBundleStudy.smartReviewEnabled(deck)
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
+        let pool = isBundlePlan ? LanguageBundleStudy.cards(deck) : []
+        let bundleLevel = isBundlePlan ? LanguageBundleStudy.activeLevel(deck)?.sourceCourseUnitID : nil
+        let bundleFingerprint = isBundlePlan ? LanguageBundleStudy.mixFingerprint(deck) : nil
+        let staleBundleIDs = Set(pending.filter {
+            isBundlePlan && $0.identifier.hasPrefix("daily-deck-\(plan.id)-") &&
+                (($0.content.userInfo["bundleMixFingerprint"] as? String) != bundleFingerprint ||
+                 ($0.content.userInfo["bundleMixLevel"] as? String) != bundleLevel)
+        }.map(\.identifier))
+        var candidateSlots = plan.slots()
+        if isBundlePlan, !pool.isEmpty {
+            let allowed = Set(pool.map(\.id))
+            var retained: [Int: UUID] = [:]
+            for (index, slot) in candidateSlots.enumerated() {
+                let prefix = "daily-deck-\(plan.id)-\(Int(slot.date.timeIntervalSince1970))-"
+                if let request = pending.first(where: { $0.identifier.hasPrefix(prefix) }),
+                   !staleBundleIDs.contains(request.identifier),
+                   let raw = request.content.userInfo["cardId"] as? String,
+                   let cardID = UUID(uuidString: raw), allowed.contains(cardID) {
+                    retained[index] = cardID
+                }
+            }
+            // Keep already queued valid choices stable. Only newly opened slots
+            // consume weighted opportunities; repeated replenishment is a read.
+            let additions = smartBundle ? LanguageBundleStudy.selection(deck,
+                count: candidateSlots.count - retained.count,
+                excluding: Set(retained.values), repeatsAfterExhaustion: true) : []
+            var nextAddition = 0
+            let lookup = Dictionary(uniqueKeysWithValues: pool.map { ($0.id, $0) })
+            let retainedOrder = plan.cardIds.compactMap { lookup[$0] }
+            let originalIDs = Set(retainedOrder.map(\.id))
+            let ordered = retainedOrder + pool.filter { !originalIDs.contains($0.id) }.sorted { $0.orderIndex < $1.orderIndex }
+            let origin = Calendar.current.startOfDay(for: plan.anchor)
+            candidateSlots = candidateSlots.enumerated().compactMap { index, slot in
+                if let cardID = retained[index] { return (date: slot.date, cardId: cardID) }
+                if smartBundle {
+                    guard additions.indices.contains(nextAddition) else { return nil }
+                    defer { nextAddition += 1 }
+                    return (date: slot.date, cardId: additions[nextAddition].id)
+                }
+                let ordinal = max(0, Calendar.current.dateComponents([.day], from: origin,
+                    to: Calendar.current.startOfDay(for: slot.date)).day ?? 0)
+                return (date: slot.date, cardId: ordered[ordinal % ordered.count].id)
+            }
         }
         let cards = try scheduledCards(cardIDs: candidateSlots.map(\.cardId), deckID: deckId,
             sectionID: sectionId, in: context)
         let lookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
-        let center = UNUserNotificationCenter.current()
         var shouldStop = false
         if plan.stopWhenMastered {
             shouldStop = try allCardsMastered(deckID: deckId, sectionID: sectionId, in: context)
         }
         if shouldStop {
-            let pending = await center.pendingNotificationRequests()
             guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
             clear()
             center.removePendingNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix("daily-deck-") }.map(\.identifier))
@@ -65,12 +136,12 @@ enum DailyDeckAlertScheduler {
             return LanguageBundleStudy.isBundle(deck) ? base + "-" + slot.cardId.uuidString : base
         }
         let desired = Set(slots.map(identifier))
-        let pending = await center.pendingNotificationRequests()
         guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
         center.removePendingNotificationRequests(withIdentifiers: pending.filter {
-            $0.identifier.hasPrefix("daily-deck-") && !desired.contains($0.identifier)
+            $0.identifier.hasPrefix("daily-deck-") &&
+                (!desired.contains($0.identifier) || staleBundleIDs.contains($0.identifier))
         }.map(\.identifier))
-        let existing = Set(pending.map(\.identifier))
+        let existing = Set(pending.map(\.identifier)).subtracting(staleBundleIDs)
         for slot in slots {
             let id = identifier(slot)
             guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
@@ -88,6 +159,10 @@ enum DailyDeckAlertScheduler {
                 "matchingRightItems": card.matchingRightItems, "promptImageName": card.promptImageName ?? "",
                 "answerImageName": card.answerImageName ?? "",
                 "optionImageNames": card.optionImageNames, "isRandom": false, "progress": "Daily card"]
+            if isBundlePlan {
+                content.userInfo["bundleMixFingerprint"] = bundleFingerprint ?? ""
+                content.userInfo["bundleMixLevel"] = bundleLevel ?? ""
+            }
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)
             let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
@@ -97,6 +172,7 @@ enum DailyDeckAlertScheduler {
                 center.removePendingNotificationRequests(withIdentifiers: [id])
                 return []
             }
+            if smartBundle { LanguageBundleStudy.recordOpportunities([card], deck: deck) }
         }
         return slots.map(\.date)
     }
@@ -104,7 +180,7 @@ enum DailyDeckAlertScheduler {
     /// Check cancellation after each suspension without decoding a potentially
     /// huge card-ID plan and forcing a preferences flush for every alert.
     static func isCurrent(planData: Data, defaults: UserDefaults?) -> Bool {
-        defaults?.bool(forKey: "extensionDidStopAlerts") != true && defaults?.data(forKey: planKey) == planData
+        !Task.isCancelled && defaults?.bool(forKey: "extensionDidStopAlerts") != true && defaults?.data(forKey: planKey) == planData
     }
 
     static func scheduledCards(cardIDs: [UUID], deckID: UUID, sectionID: UUID?, in context: ModelContext) throws -> [Flashcard] {

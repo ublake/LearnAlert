@@ -35,6 +35,7 @@ struct LanguageCollectionView: View {
                 }.padding(.bottom, 24)
                 ForEach(Array(levels.enumerated()), id: \.element.id) { index, level in
                     LanguageBundleLevelCard(
+                        courseID: course.id,
                         level: level,
                         number: index + 1,
                         isCurrent: currentLevelID == level.id,
@@ -64,6 +65,7 @@ struct LanguageCollectionView: View {
 }
 
 private struct LanguageBundleLevelCard: View {
+    let courseID: String
     let level: LanguageDeckProjection.Level
     let number: Int
     let isCurrent: Bool
@@ -115,34 +117,38 @@ private struct LanguageBundleLevelCard: View {
                             .frame(height: 0.5)
                             .padding(.leading, 58)
                     }
-                    Button { openTopic(topic) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "rectangle.stack.fill")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundStyle(accent)
-                                .frame(width: 32, height: 36)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(topic.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    .multilineTextAlignment(.leading)
-                                Text("\(topic.cards.count) cards")
-                                    .font(.caption)
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    HStack(spacing: 6) {
+                        Button { openTopic(topic) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "rectangle.stack.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(accent)
+                                    .frame(width: 32, height: 36)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(topic.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                                        .multilineTextAlignment(.leading)
+                                    Text("\(topic.cards.count) cards")
+                                        .font(.caption)
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
+                                Spacer(minLength: 6)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(accent.opacity(0.8))
                             }
-                            Spacer(minLength: 6)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(accent.opacity(0.8))
+                            .padding(.leading, 15)
+                            .padding(.vertical, 13)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 13)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityHint("Opens topic deck")
+                        LanguageTopicImportanceMenu(courseID: courseID, topic: topic, accent: accent)
+                            .padding(.trailing, 8)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityHint("Opens topic deck")
                 }
         }
         .padding(.vertical, 3)
@@ -211,6 +217,56 @@ private struct LanguageBundleLevelCard: View {
         .overlay(alignment: .bottom) {
             if isExpanded { Rectangle().fill(accent.opacity(0.2)).frame(height: 1) }
         }
+    }
+}
+
+private struct LanguageTopicImportanceMenu: View {
+    let courseID: String
+    let topic: LanguageDeckProjection.Topic
+    let accent: Color
+    @State private var selectedImportance: Int?
+
+    private var importance: Int {
+        selectedImportance ?? LanguageBundleStudy.importance(courseID: courseID, topicID: topic.id, authored: topic.importance)
+    }
+
+    var body: some View {
+        Menu {
+            Section("Importance · higher repeats more") {
+                ForEach(1...10, id: \.self) { value in
+                    Button { setImportance(value) } label: {
+                        if value == importance {
+                            Label("\(value)", systemImage: "checkmark")
+                        } else {
+                            Text("\(value)")
+                        }
+                    }
+                }
+            }
+            Button("Reset to default (\(topic.importance))", systemImage: "arrow.counterclockwise") {
+                setImportance(nil)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 10, weight: .semibold))
+                Text("\(importance)").font(.system(size: 11, weight: .semibold)).monospacedDigit()
+            }
+            .foregroundStyle(accent)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(accent.opacity(0.08), in: Capsule())
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Importance for \(topic.title)")
+        .accessibilityValue("\(importance) of 10")
+        .accessibilityHint("Higher importance repeats this topic more often in bundle practice")
+    }
+
+    private func setImportance(_ value: Int?) {
+        LanguageBundleStudy.setImportance(value, courseID: courseID, topicID: topic.id)
+        selectedImportance = LanguageBundleStudy.importance(courseID: courseID, topicID: topic.id, authored: topic.importance)
     }
 }
 

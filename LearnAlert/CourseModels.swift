@@ -325,6 +325,8 @@ public struct CourseLesson: Identifiable, Codable, Hashable {
     public let estimatedMinutes: Int
     public let tipNote: String?
     public let cards: [CourseLessonCard]
+    /// Relative practice frequency within a level; older documents use 5.
+    public let importance: Int?
 
     public init(
         id: String,
@@ -334,7 +336,8 @@ public struct CourseLesson: Identifiable, Codable, Hashable {
         nodeType: LessonNodeType = .lesson,
         estimatedMinutes: Int = 5,
         tipNote: String? = nil,
-        cards: [CourseLessonCard]
+        cards: [CourseLessonCard],
+        importance: Int? = nil
     ) {
         self.id = id
         self.lessonNumber = lessonNumber
@@ -344,6 +347,7 @@ public struct CourseLesson: Identifiable, Codable, Hashable {
         self.estimatedMinutes = estimatedMinutes
         self.tipNote = tipNote
         self.cards = cards
+        self.importance = importance
     }
 }
 
@@ -881,6 +885,14 @@ enum LanguageDeckProjection {
         let id: String
         let title: String
         let cards: [CourseLessonCard]
+        let importance: Int
+
+        init(id: String, title: String, cards: [CourseLessonCard], importance: Int = 5) {
+            self.id = id
+            self.title = title
+            self.cards = cards
+            self.importance = min(10, max(1, importance))
+        }
     }
     struct Level: Identifiable {
         let id: String
@@ -920,7 +932,7 @@ enum LanguageDeckProjection {
     static func topics(_ course: CourseDefinition) -> [Topic] {
         if let value = cached[course.id], value.source == course { return value.topics }
         if course.presentation == "deck_collection" {
-            let topics = course.units.flatMap(\.lessons).filter { !$0.cards.isEmpty }.map { Topic(id: $0.id, title: $0.title, cards: $0.cards.map(conciseCard)) }
+            let topics = course.units.flatMap(\.lessons).filter { !$0.cards.isEmpty }.map { Topic(id: $0.id, title: $0.title, cards: $0.cards.map(conciseCard), importance: $0.importance ?? 5) }
             cached[course.id] = (course, topics)
             return topics
         }
@@ -1040,7 +1052,7 @@ enum LanguageDeckProjection {
                     if !existingIDs.contains(lesson.id + "-visual-" + imageKey + "-word") { cards.append(.init(id: lesson.id + "-visual-" + imageKey + "-word", question: "", options: choices.map(\.text), correctAnswer: word.text, fieldMedia: ["prompt": .init(image: word.image)], correctOptionIndex: 0)) }
                 }
                 guard !cards.isEmpty else { return nil }
-                return Topic(id: lesson.id, title: lesson.nodeType == .checkpoint ? "Review" : lesson.title, cards: cards)
+                return Topic(id: lesson.id, title: lesson.nodeType == .checkpoint ? "Review" : lesson.title, cards: cards, importance: lesson.importance ?? 5)
             }
         }
         if cached.count > 12 { cached.removeAll() }

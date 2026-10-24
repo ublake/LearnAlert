@@ -1,5 +1,142 @@
 import SwiftUI
 
+/// Home follows the bundle's ordinary SwiftData cards, rather than the retired
+/// lesson/checkpoint route. Skipping a level never marks that level mastered.
+struct BundleLevelTrailProjection: Equatable {
+    struct Node: Identifiable, Equatable {
+        let id: String
+        let number: Int
+        let title: String
+        let learnedCount: Int
+        let cardCount: Int
+        let isCurrent: Bool
+
+        var isMastered: Bool { cardCount > 0 && learnedCount == cardCount }
+        var fraction: Double { Double(learnedCount) / Double(max(1, cardCount)) }
+    }
+
+    let nodes: [Node]
+    var current: Node? { nodes.first(where: \.isCurrent) }
+    private var windowStart: Int {
+        let currentIndex = nodes.firstIndex(where: \.isCurrent) ?? 0
+        return max(0, min(currentIndex - 2, nodes.count - 5))
+    }
+    var visibleNodes: [Node] { Array(nodes.dropFirst(windowStart).prefix(5)) }
+    var hasEarlierLevels: Bool { windowStart > 0 }
+    var hasLaterLevels: Bool { windowStart + visibleNodes.count < nodes.count }
+
+    @MainActor
+    init(course: CourseDefinition, bundle: Deck?) {
+        let definitions = LanguageDeckProjection.levels(course)
+        let sections = bundle.map(LanguageBundleStudy.levels) ?? []
+        let sectionsByID = Dictionary(sections.compactMap { section in
+            section.sourceCourseUnitID.map { ($0, section) }
+        }, uniquingKeysWith: { first, _ in first })
+        let savedCurrentID = bundle.flatMap { LanguageBundleStudy.activeLevel($0)?.sourceCourseUnitID }
+        let currentID = definitions.first(where: { $0.id == savedCurrentID })?.id ?? definitions.first?.id
+        nodes = definitions.enumerated().map { index, definition in
+            let cards = sectionsByID[definition.id]?.cards ?? []
+            return Node(id: definition.id, number: index + 1, title: definition.title,
+                learnedCount: cards.filter { $0.masteryScore >= 3 }.count,
+                cardCount: cards.isEmpty ? definition.cards.count : cards.count,
+                isCurrent: definition.id == currentID)
+        }
+    }
+}
+
+/// A compact, numbered window into the bundle. The whole strip opens its
+/// overview; individual dots do not alter the learner's scheduling level.
+struct BundleLevelMiniTrail: View {
+    let projection: BundleLevelTrailProjection
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var accent: Color { LearnAlertStyle.appAccentForeground }
+    private var masteredColor: Color { Color(hex: colorScheme == .dark ? "#89C7B6" : "#377F76") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 0) {
+                if projection.hasEarlierLevels { continuationMark }
+                ForEach(Array(projection.visibleNodes.enumerated()), id: \.element.id) { index, node in
+                    if index > 0 {
+                        Capsule()
+                            .fill(projection.visibleNodes[index - 1].isMastered && node.isMastered ? masteredColor.opacity(0.55) : LearnAlertStyle.hairline)
+                            .frame(height: 2)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 4)
+                    }
+                    levelNode(node)
+                }
+                if projection.hasLaterLevels { continuationMark }
+                if projection.visibleNodes.count == 1 { Spacer(minLength: 0) }
+            }
+            .frame(height: 34)
+
+            if let current = projection.current {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(current.number) · \(current.title)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(current.learnedCount)/\(current.cardCount)")
+                        .font(.caption2.weight(.medium))
+                        .monospacedDigit()
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                        .fixedSize()
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: projection)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Bundle level progress")
+        .accessibilityValue(accessibilityProgress)
+    }
+
+    private var continuationMark: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
+            .frame(width: 22)
+    }
+
+    private func levelNode(_ node: BundleLevelTrailProjection.Node) -> some View {
+        let tint = node.isMastered ? masteredColor : accent
+        return ZStack {
+            Circle().fill(LearnAlertStyle.surface)
+            Circle().fill(node.isCurrent ? tint.opacity(0.16) : node.isMastered ? tint.opacity(0.10) : LearnAlertStyle.textSecondary.opacity(0.045))
+            Circle().strokeBorder(node.isCurrent || node.isMastered ? tint.opacity(0.65) : LearnAlertStyle.hairline, lineWidth: node.isCurrent ? 1.5 : 1)
+            if node.isCurrent && node.fraction > 0 && !node.isMastered {
+                Circle().inset(by: 1).trim(from: 0, to: node.fraction)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            if node.isMastered {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(tint)
+            } else {
+                Text("\(node.number)")
+                    .font(.system(size: node.isCurrent ? 13 : 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(node.isCurrent ? accent : LearnAlertStyle.textSecondary.opacity(0.75))
+            }
+        }
+        .frame(width: node.isCurrent ? 32 : 26, height: node.isCurrent ? 32 : 26)
+        .frame(height: 34)
+        .accessibilityHidden(true)
+    }
+
+    private var accessibilityProgress: String {
+        guard let current = projection.current else { return "No levels yet" }
+        let mastered = projection.nodes.filter(\.isMastered).count
+        return "Level \(current.number) of \(projection.nodes.count), \(current.title). \(current.learnedCount) of \(current.cardCount) cards learned. \(mastered) levels learned."
+    }
+}
+
 struct CourseTrailMilestone: Identifiable, Equatable {
     let id: String
     let unitId: String

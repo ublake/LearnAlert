@@ -841,12 +841,28 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
+        if LanguageBundleStudy.isBundle(deck), let courseID = deck.sourceId,
+           let course = CourseCurriculumCatalog.course(for: courseID) {
+            _ = try? LanguageTopicStore.collection(course: course, context: context)
+        }
         let cards = LanguageBundleStudy.cards(deck)
         let now = Date()
         let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
         let nextCard: Flashcard?
-        if let card = unseenCards.first {
+        if LanguageBundleStudy.isBundle(deck), LanguageBundleStudy.smartReviewEnabled(deck) {
+            let seen = Set(seenCardIds.compactMap(UUID.init(uuidString:)))
+            if let card = LanguageBundleStudy.selection(deck, count: 1, now: now, excluding: seen).first {
+                nextCard = card
+            } else {
+                seenCardIds.removeAll()
+                // Completing a pass may repeat older material, but keep the last
+                // question out while any different eligible choice remains.
+                let last = UUID(uuidString: activeCardId).map { Set([$0]) } ?? []
+                nextCard = LanguageBundleStudy.selection(deck, count: 1, now: now, excluding: last).first
+                    ?? LanguageBundleStudy.selection(deck, count: 1, now: now).first
+            }
+        } else if let card = unseenCards.first {
             nextCard = card
         } else {
             seenCardIds.removeAll()
@@ -862,6 +878,9 @@ struct FlashcardNotificationView: View {
         }
 
         seenCardIds.insert(cardToStudy.id.uuidString)
+        if LanguageBundleStudy.smartReviewEnabled(deck) {
+            LanguageBundleStudy.recordOpportunities([cardToStudy], deck: deck)
+        }
         withAnimation(.snappy) {
             sessionCard = NotificationSessionCard(
                 id: cardToStudy.id.uuidString,
@@ -1321,7 +1340,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             do {
                 let context = ModelContext(SharedDatabase.shared.container)
                 let deck = try LanguageTopicStore.collection(course: course, context: context)
-                if let card = LanguageBundleStudy.cards(deck).min(by: { $0.nextReviewDate < $1.nextReviewDate }) {
+                if let card = LanguageBundleStudy.smartReviewEnabled(deck)
+                    ? LanguageBundleStudy.selection(deck, count: 1).first : LanguageBundleStudy.cards(deck).first {
                     userInfo["deckId"] = deck.id.uuidString; userInfo["cardId"] = card.id.uuidString
                     userInfo["deckName"] = deck.name; userInfo["cardType"] = card.cardType.rawValue
                     userInfo["question"] = card.studyQuestion; userInfo["options"] = card.options
@@ -1376,9 +1396,15 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             let deckDescriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
             let resolvedDeck = scheduledCard?.deck?.id == deckId ? scheduledCard?.deck : try? context.fetch(deckDescriptor).first
             if let deck = resolvedDeck {
+                if LanguageBundleStudy.isBundle(deck), let courseID = deck.sourceId,
+                   let course = CourseCurriculumCatalog.course(for: courseID) {
+                    _ = try? LanguageTopicStore.collection(course: course, context: context)
+                }
                 let pool = LanguageBundleStudy.cards(deck)
+                let fallback = LanguageBundleStudy.smartReviewEnabled(deck)
+                    ? LanguageBundleStudy.selection(deck, count: 1).first : pool.first
                 if let card = LanguageBundleStudy.isBundle(deck)
-                    ? (pool.first(where: { $0.id == scheduledCard?.id }) ?? pool.first) : scheduledCard {
+                    ? (pool.first(where: { $0.id == scheduledCard?.id }) ?? fallback) : scheduledCard {
                 snapshot = NotificationSessionCard(
                     id: card.id.uuidString, deckId: deck.id.uuidString,
                     deckName: deck.name, deckType: card.cardType.title,

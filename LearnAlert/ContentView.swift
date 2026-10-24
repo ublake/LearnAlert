@@ -548,7 +548,9 @@ struct HomeLibraryView: View {
             switch item {
             case .course(let course):
                 HomeCourseCard(
-                    course: course, isPinned: pinned,
+                    course: course,
+                    bundle: allDecks.first { $0.sourceKind == "languageTopic" && $0.sourcePremadeID == "language:\(course.id):all" },
+                    isPinned: pinned,
                     isTargeted: engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId,
                     onContinue: { resumeCourse(course) },
                     onOpenOverview: { selectedCourseForOverview = course },
@@ -1906,6 +1908,7 @@ private struct HomeCourseStudySelection: Identifiable {
 // MARK: - HomeCourseCard
 private struct HomeCourseCard: View {
     let course: CourseDefinition
+    let bundle: Deck?
     let isPinned: Bool
     let isTargeted: Bool
     let onContinue: () -> Void
@@ -1914,42 +1917,40 @@ private struct HomeCourseCard: View {
     let togglePin: () -> Void
     let unenroll: () -> Void
 
-    @ObservedObject private var progressManager = CourseProgressManager.shared
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private var enrollment: CourseEnrollment? {
-        progressManager.enrollment(for: course.id)
-    }
-
-    private var completionPercent: Double {
-        progressManager.completionPercentage(for: course)
-    }
-
-    private var currentLesson: CourseLesson? {
-        progressManager.currentLesson(for: course)
-    }
-
-    private var trail: CourseTrailProjection { CourseTrailProjection(course: course, snapshot: progressManager.learningSnapshot) }
+    private var trail: BundleLevelTrailProjection { BundleLevelTrailProjection(course: course, bundle: bundle) }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Button(action: onOpenOverview) {
-                HStack(spacing: 12) {
-                    Text(course.flagEmoji).font(.system(size: 30)).frame(width: 40)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(course.language).font(.headline).foregroundStyle(.primary)
-                        Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }.contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            Button(action: onContinue) {
-                Image(systemName: "rectangle.stack.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                    .frame(width: 42, height: 42)
-            }.buttonStyle(.plain).accessibilityLabel("Open \(course.language) decks")
-
+        let trail = trail
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button(action: onOpenOverview) {
+                    HStack(spacing: 12) {
+                        Text(course.flagEmoji).font(.system(size: 30)).frame(width: 40)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(course.language).font(.headline).foregroundStyle(.primary)
+                            Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Button(action: onContinue) {
+                    Image(systemName: "rectangle.stack.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                        .frame(width: 42, height: 42)
+                }.buttonStyle(.plain).accessibilityLabel("Open \(course.language) decks")
+            }
+            if !trail.nodes.isEmpty {
+                Button(action: onOpenOverview) {
+                    BundleLevelMiniTrail(projection: trail)
+                        .padding(.top, 10)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(LearnAlertStyle.hairline).frame(height: 0.5)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens bundle levels")
+            }
         }.padding(.horizontal, 14).padding(.vertical, 12)
             .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))

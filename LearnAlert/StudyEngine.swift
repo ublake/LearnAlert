@@ -294,6 +294,10 @@ class StudyEngine: ObservableObject {
         let interval = max(60.0, totalDuration / Double(max(1, cards.count)))
         
         var newScheduledDates: [Date] = []
+        if LanguageBundleStudy.isBundle(deck) {
+            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(smartSRS,
+                forKey: "bundle-scheduling-smart-\(deck.id.uuidString)")
+        }
         if activeVolume == 1 {
             let base = section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)
             let ordered = smartSRS ? base.sorted { $0.studyPriority > $1.studyPriority } : orderedCards(deck: deck, section: section)
@@ -318,6 +322,9 @@ class StudyEngine: ObservableObject {
                 let triggerDate = startTime.addingTimeInterval(interval * Double(index))
                 newScheduledDates.append(triggerDate)
                 try await NotificationManager.shared.scheduleRealCardAsync(card, at: triggerDate, progress: "\(index + 1)/\(cards.count)")
+                if smartSRS && section == nil {
+                    LanguageBundleStudy.recordOpportunities([card], deck: deck, settings: settings)
+                }
             }
         }
 
@@ -473,6 +480,10 @@ class StudyEngine: ObservableObject {
         let now = Date()
         
         if smartSRS {
+            if section == nil, LanguageBundleStudy.isBundle(deck) {
+                return LanguageBundleStudy.selection(deck, count: activeVolume, settings: settings,
+                    now: now, allowUpcoming: stopCondition != "Until Deck Learnt")
+            }
             // 1. Due Cards: cards that have been studied before and have nextReviewDate <= now
             let dueCards = baseCards.filter { !$0.isNew && $0.nextReviewDate <= now }.sorted {
                 if $0.studyPriority != $1.studyPriority {
