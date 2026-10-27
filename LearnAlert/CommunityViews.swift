@@ -714,7 +714,7 @@ struct ShareDeckToCommunitySheet: View {
     private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
     private var canPublishSelected: Bool {
         guard let deck = selectedDeck else { return false }
-        return deck.provenanceSharingRestriction(allowAnkiUploads: session.canUploadAnki) == nil
+        return deck.provenanceSharingRestriction(allowAnkiUploads: false) == nil
     }
     private var listingCategories: [String] { CommunityFeedView.categories.filter { $0 != "All" } }
 
@@ -736,7 +736,7 @@ struct ShareDeckToCommunitySheet: View {
                         }.disabled(isPublishing)
                         if let deck = selectedDeck {
                             listingPreview(deck)
-                            if let reason = deck.provenanceSharingRestriction(allowAnkiUploads: session.canUploadAnki) {
+                            if let reason = deck.provenanceSharingRestriction(allowAnkiUploads: false) {
                                 Text(reason).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             if session.isDeveloper {
@@ -911,7 +911,7 @@ struct MySharedDecksSheet: View {
                                 Label("Updated by admin", systemImage: "pencil").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             HStack {
-                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.provenanceSharingRestriction(allowAnkiUploads: session.canUploadAnki) == nil }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canPresentCommunitySharing }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
                                 Button(deck.isRemoved ? "Dismiss notice" : "Remove", systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
                                     if deck.isRemoved { Task { await remove(deck) } } else { removingDeck = deck }

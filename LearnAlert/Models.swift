@@ -62,6 +62,9 @@ struct DeckLibrarySummary: Equatable {
     let cardCount: Int
     let cycleStreak: Int
     let cycleProgress: Double
+    let masteredCount: Int
+    let learningCount: Int
+    let needToLearnCount: Int
 }
 
 @Model
@@ -81,6 +84,8 @@ class Deck {
     var communityDescription: String?
     var alertSettingsData: Data?
     var bundleUnlockedLevelID: String?
+    /// One-time archive import must never undo a later explicit progress reset.
+    var legacyLanguageHistoryImported: Bool?
 
     var alertSettings: DeckAlertSettings? {
         get { alertSettingsData.flatMap { try? JSONDecoder().decode(DeckAlertSettings.self, from: $0) } }
@@ -131,12 +136,18 @@ class Deck {
         let cards = storedCards ?? []
         var streak = 0
         var totalMastery = 0
+        var mastered = 0
+        var learning = 0
         for card in cards {
             streak = max(streak, card.streak)
             totalMastery += min(card.masteryScore, 3)
+            if card.masteryScore >= 3 { mastered += 1 }
+            else if card.reviewCount > 0 || card.masteryScore > 0 { learning += 1 }
         }
         return DeckLibrarySummary(cardCount: cards.count, cycleStreak: streak,
-            cycleProgress: cards.isEmpty ? 0 : Double(totalMastery) / (Double(cards.count) * 3))
+            cycleProgress: cards.isEmpty ? 0 : Double(totalMastery) / (Double(cards.count) * 3),
+            masteredCount: mastered, learningCount: learning,
+            needToLearnCount: cards.count - mastered - learning)
     }
 
     var cycleStreak: Int {
@@ -454,16 +465,14 @@ class Flashcard {
         recordAggregateReview(wasCorrect: wasCorrect, at: Date())
         // Whole-collection alerts and topic study share the same authored card.
         // Copy review state only; each deck keeps its own editable presentation.
-        if deck?.sourceKind == "languageTopic", let courseID = deck?.sourceId,
+        if deck?.sourceKind == "managedLanguage", let courseID = deck?.sourceId,
            let sourceID = sourceCourseCardID, let context = modelContext {
             let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.sourceCourseCardID == sourceID })
-            for sibling in (try? context.fetch(descriptor)) ?? [] where sibling.id != id && sibling.deck?.sourceKind == "languageTopic" && sibling.deck?.sourceId == courseID {
+            for sibling in (try? context.fetch(descriptor)) ?? [] where sibling.id != id && sibling.deck?.sourceKind == "managedLanguage" && sibling.deck?.sourceId == courseID {
                 sibling.reviewCount = reviewCount; sibling.correctCount = correctCount
                 sibling.masteryScore = masteryScore; sibling.lastReviewedDate = lastReviewedDate
                 sibling.streak = streak; sibling.longestStreak = longestStreak
-                if let siblingDeck = sibling.deck { LanguageBundleStudy.advance(siblingDeck) }
             }
-            if let deck { LanguageBundleStudy.advance(deck) }
         }
     }
 
@@ -863,45 +872,21 @@ enum LanguageTopicStore {
         default: return .multipleChoice
         }
     }
-    static func collection(course: CourseDefinition, context: ModelContext) throws -> Deck {
-        let levels = LanguageDeckProjection.levels(course)
-        let deck = try open(course: course, topic: .init(id: "all", title: course.language, cards: levels.flatMap(\.cards)), context: context)
-        let existing = Dictionary(deck.sections.compactMap { section in section.sourceCourseUnitID.map { ($0, section) } }, uniquingKeysWith: { first, _ in first })
-        let cards = Dictionary(deck.cards.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { first, _ in first })
-        deck.sections = levels.enumerated().map { index, level in
-            let section = existing[level.id] ?? DeckSection(deck: deck)
-            section.title = "Level \(index + 1) · \(level.title)"
-            section.orderIndex = index; section.sourceCourseUnitID = level.id; section.colorHex = course.colorHex
-            section.cards = level.cards.compactMap { cards[$0.id] }
-            for card in section.cards { card.section = section }
-            return section
-        }
-        for section in existing.values where !deck.sections.contains(where: { $0.id == section.id }) { context.delete(section) }
-        LanguageBundleStudy.advance(deck)
-        try context.save()
-        return deck
-    }
-    static func open(course: CourseDefinition, topic: LanguageDeckProjection.Topic, context: ModelContext, learningSnapshot: CourseLearningSnapshot? = nil) throws -> Deck {
+    static func open(course: CourseDefinition, topic: LanguageDeckProjection.Topic, context: ModelContext) throws -> Deck {
         let source = "language:\(course.id):\(topic.id)"
         let existing = try context.fetch(FetchDescriptor<Deck>())
         let found = existing.first(where: { $0.sourcePremadeID == source })
+        if let found { return found }
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        let authoredTopics = LanguageDeckProjection.topics(course)
-        let topicMetadata = Dictionary(authoredTopics.flatMap { topic in
-            topic.cards.map { ($0.id, (id: topic.id, importance: topic.importance)) }
-        }, uniquingKeysWith: { first, _ in first })
-        var fingerprintData = try encoder.encode(topic.cards)
-        fingerprintData.append(try encoder.encode(topicMetadata.mapValues {
-            ["topic": $0.id, "importance": String($0.importance)]
-        }))
-        let fingerprint = "language-v3:" + SHA256.hash(data: fingerprintData).map { String(format: "%02x", $0) }.joined()
+        let fingerprintData = try encoder.encode(topic.cards)
+        let fingerprint = "language-deck-v1:" + SHA256.hash(data: fingerprintData).map { String(format: "%02x", $0) }.joined()
         if let found, found.sourceText == fingerprint { return found }
         let deck = found ?? Deck(name: topic.title, colorHex: course.colorHex, deckType: "Quiz")
         let savedCards = Dictionary(deck.cards.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { a, _ in a })
         deck.name = topic.title; deck.colorHex = course.colorHex
-        deck.sourcePremadeID = source; deck.sourceKind = "languageTopic"; deck.sourceId = course.id
-        let old = existing.filter { $0.sourcePremadeID == "course:\(course.id)" || $0.sourceKind == "languageTopic" && $0.sourceId == course.id }.flatMap(\.cards)
-        let learning = learningSnapshot ?? CourseLearningStore.shared.snapshot()
+        deck.sourcePremadeID = source; deck.sourceKind = "managedLanguage"; deck.sourceId = course.id
+        let old = existing.filter { $0.sourcePremadeID == "course:\(course.id)" || ["languageTopic", "managedLanguage"].contains($0.sourceKind ?? "") && $0.sourceId == course.id }.flatMap(\.cards)
+        let learning = try? LegacyLanguageHistory.load()
         let progress = Dictionary(old.compactMap { card in card.sourceCourseCardID.map { ($0, card) } }, uniquingKeysWith: { a, b in a.reviewCount >= b.reviewCount ? a : b })
         deck.cards = topic.cards.enumerated().map { index, definition in
             let card = savedCards[definition.id] ?? Flashcard(question: definition.question, options: definition.options, correctAnswer: definition.correctAnswer,
@@ -910,271 +895,24 @@ enum LanguageTopicStore {
             card.question = definition.question; card.options = definition.options; card.correctAnswer = definition.correctAnswer; card.hint = ""
             card.cardType = type(for: definition.cardType)
             card.matchingLeftItems = definition.matchingLeftItems; card.matchingRightItems = definition.matchingRightItems
-            card.sourceCourseTopicID = topicMetadata[definition.id]?.id ?? topic.id
-            card.sourceCourseTopicImportance = min(10, max(1, topicMetadata[definition.id]?.importance ?? topic.importance))
+            card.sourceCourseTopicID = topic.id
+            card.sourceCourseTopicImportance = nil
             card.sourceCourseCardID = definition.id; card.orderIndex = index; card.fieldMedia = definition.resolvedFieldMedia; card.correctOptionIndex = definition.correctOptionIndex
             card.readingPrompt = definition.readingPrompt
             if savedCards[definition.id] == nil, let previous = progress[definition.id] {
                 card.reviewCount = previous.reviewCount; card.correctCount = previous.correctCount; card.masteryScore = previous.masteryScore
                 card.lastReviewedDate = previous.lastReviewedDate; card.streak = previous.streak; card.longestStreak = previous.longestStreak
             }
-            if savedCards[definition.id] == nil, let record = learning.srsRecord(courseId: course.id, cardId: definition.id), record.reviewCount > card.reviewCount {
+            if savedCards[definition.id] == nil, let record = learning?.record(courseID: course.id, cardID: definition.id), (record.reviewCount > card.reviewCount || card.reviewCount == 0 && record.masteryScore > card.masteryScore) {
                 card.reviewCount = record.reviewCount; card.correctCount = record.correctCount; card.masteryScore = record.masteryScore
                 card.lastReviewedDate = record.lastReviewedDate; card.streak = record.streak; card.longestStreak = max(card.longestStreak, record.streak)
             }
             return card
         }
         deck.sourceText = fingerprint
+        if learning != nil { deck.legacyLanguageHistoryImported = true }
         if found == nil { context.insert(deck) }
         do { try context.save() } catch { if found == nil { context.delete(deck) }; throw error }
         return deck
-    }
-}
-
-/// Language bundles use ordinary deck sections, with an ordered learning scope.
-/// Ordinary decks and individually opened topic decks keep their usual behavior.
-nonisolated enum LanguageBundleStudy {
-    static func isBundle(_ deck: Deck) -> Bool {
-        guard deck.sourceKind == "languageTopic", let id = deck.sourceId else { return false }
-        return deck.sourcePremadeID == "language:\(id):all"
-    }
-    static func levels(_ deck: Deck) -> [DeckSection] {
-        guard isBundle(deck) else { return [] }
-        return deck.sections.filter { $0.sourceCourseUnitID != nil && !$0.cards.isEmpty }
-    }
-    static func automaticLevel(_ deck: Deck, settings: DeckAlertSettings? = nil) -> DeckSection? {
-        let levels = levels(deck)
-        guard !levels.isEmpty else { return nil }
-        var index = levels.firstIndex { $0.sourceCourseUnitID == deck.bundleUnlockedLevelID } ?? 0
-        if let start = (settings ?? deck.alertSettings)?.bundleLevelID,
-           let minimum = levels.firstIndex(where: { $0.sourceCourseUnitID == start }) { index = max(index, minimum) }
-        while index < levels.count - 1 && levels[index].cards.allSatisfy({ $0.masteryScore >= 3 }) { index += 1 }
-        return levels[index]
-    }
-    static func advance(_ deck: Deck) {
-        guard let next = automaticLevel(deck)?.sourceCourseUnitID, deck.bundleUnlockedLevelID != next else { return }
-        deck.bundleUnlockedLevelID = next
-    }
-    static func activeLevel(_ deck: Deck, settings: DeckAlertSettings? = nil) -> DeckSection? {
-        automaticLevel(deck, settings: settings)
-    }
-    static func cards(_ deck: Deck, settings: DeckAlertSettings? = nil, now: Date = Date()) -> [Flashcard] {
-        let levels = levels(deck)
-        guard let active = activeLevel(deck, settings: settings), let index = levels.firstIndex(where: { $0.id == active.id }) else { return deck.cards }
-        // Earlier material returns only for review. Skipping ahead never pulls
-        // unseen alphabet cards back into an experienced learner's first batch.
-        let overrides = deck.sourceId.map { importanceOverrides(courseID: $0) } ?? [:]
-        return levels.prefix(index).flatMap(\.cards).filter {
-            !$0.isNew && reviewDate($0, importance: effectiveImportance($0, overrides: overrides)) <= now
-        } + active.cards
-    }
-
-
-    /// Local learning preferences override authored defaults without editing
-    /// catalog content, source identities, or a learner's review progress.
-    static func importance(courseID: String, topicID: String, authored: Int = 5) -> Int {
-        min(10, max(1, importanceOverrides(courseID: courseID)[topicID] ?? authored))
-    }
-    static func setImportance(_ value: Int?, courseID: String, topicID: String) {
-        var overrides = importanceOverrides(courseID: courseID)
-        if let value { overrides[topicID] = min(10, max(1, value)) }
-        else { overrides.removeValue(forKey: topicID) }
-        let key = importanceKey(courseID: courseID)
-        if overrides.isEmpty { opportunityDefaults.removeObject(forKey: key) }
-        else if let data = try? JSONEncoder().encode(overrides) { opportunityDefaults.set(data, forKey: key) }
-        opportunityDefaults.synchronize()
-    }
-    private static func importanceKey(courseID: String) -> String {
-        "bundle-topic-importance-v1-\(courseID)"
-    }
-    private static func importanceOverrides(courseID: String) -> [String: Int] {
-        guard let data = opportunityDefaults.data(forKey: importanceKey(courseID: courseID)),
-              let values = try? JSONDecoder().decode([String: Int].self, from: data) else { return [:] }
-        return values
-    }
-    private static func effectiveImportance(_ card: Flashcard, overrides: [String: Int]? = nil) -> Int {
-        let authored = min(10, max(1, card.sourceCourseTopicImportance ?? 5))
-        guard let courseID = card.deck?.sourceId, let topicID = card.sourceCourseTopicID else { return authored }
-        if let overrides { return min(10, max(1, overrides[topicID] ?? authored)) }
-        return importance(courseID: courseID, topicID: topicID, authored: authored)
-    }
-    /// Changing either authored importance or a local preference refreshes
-    /// weighted opportunities and queued daily choices exactly once.
-    static func mixFingerprint(_ deck: Deck) -> String {
-        var data = Data((deck.sourceText ?? "").utf8)
-        if let courseID = deck.sourceId {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .sortedKeys
-            if let overrides = try? encoder.encode(importanceOverrides(courseID: courseID)) { data.append(overrides) }
-        }
-        return "bundle-mix-v1:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Importance changes bundle revisit targets without changing ordinary-deck or
-    /// Anki review dates. The midpoint preserves the existing interval.
-    static func reviewDate(_ card: Flashcard) -> Date {
-        reviewDate(card, importance: effectiveImportance(card))
-    }
-    private static func reviewDate(_ card: Flashcard, importance: Int) -> Date {
-        guard let last = card.lastReviewedDate, card.cardType != .anki,
-              let deck = card.deck, isBundle(deck) else { return card.nextReviewDate }
-        let interval = card.nextReviewDate.timeIntervalSince(last)
-        return last.addingTimeInterval(interval * min(2, max(0.5, 5 / Double(importance))))
-    }
-
-    private struct OpportunityCursor: Codable {
-        var sourceFingerprint: String? = nil
-        var serial = 0
-        var topicFinish: [String: Double] = [:]
-        var cardLastServed: [String: Int] = [:]
-        var lastTopic: String?
-        var topicStreak = 0
-        var lastCard: String?
-    }
-    static func smartReviewEnabled(_ deck: Deck) -> Bool {
-        if let settings = deck.alertSettings { return settings.smartSRS }
-        return (opportunityDefaults.object(forKey: "bundle-scheduling-smart-\(deck.id.uuidString)") as? Bool) ?? true
-    }
-    private static var opportunityDefaults: UserDefaults {
-        UserDefaults(suiteName: "group.com.learnalert.shared") ?? .standard
-    }
-    private static func opportunityKey(_ deck: Deck, settings: DeckAlertSettings?) -> String {
-        "bundle-opportunities-v1-\(deck.id.uuidString)-\(activeLevel(deck, settings: settings)?.sourceCourseUnitID ?? "all")"
-    }
-    private static func cursor(_ deck: Deck, settings: DeckAlertSettings?) -> OpportunityCursor {
-        let fingerprint = mixFingerprint(deck)
-        guard let data = opportunityDefaults.data(forKey: opportunityKey(deck, settings: settings)),
-              let value = try? JSONDecoder().decode(OpportunityCursor.self, from: data),
-              value.sourceFingerprint == fingerprint else { return .init(sourceFingerprint: fingerprint) }
-        return value
-    }
-    private static func topicID(_ card: Flashcard) -> String {
-        card.sourceCourseTopicID ?? card.section?.sourceCourseUnitID ?? "unassigned"
-    }
-    private static func weight(_ card: Flashcard, now: Date, importance: Int? = nil, dueDate: Date? = nil) -> Double {
-        // A fourfold maximum share plus a two-card topic streak limit protects
-        // small, low-importance decks from being crowded out by important ones.
-        let importance = importance ?? effectiveImportance(card)
-        let authored = 1 + Double(importance - 1) / 3
-        let weak = !card.isNew && card.masteryScore < 3 && (dueDate ?? reviewDate(card, importance: importance)) <= now
-        return authored * (weak ? 1.35 : 1)
-    }
-    private static func applyOpportunity(_ card: Flashcard, to cursor: inout OpportunityCursor, now: Date, selectedWeight: Double? = nil) {
-        let topic = topicID(card)
-        let floor = cursor.topicFinish.values.min() ?? 0
-        cursor.topicFinish[topic] = (cursor.topicFinish[topic] ?? floor) + 1 / (selectedWeight ?? weight(card, now: now))
-        cursor.serial += 1
-        cursor.cardLastServed[card.id.uuidString] = cursor.serial
-        cursor.topicStreak = cursor.lastTopic == topic ? cursor.topicStreak + 1 : 1
-        cursor.lastTopic = topic
-        cursor.lastCard = card.id.uuidString
-    }
-    /// Call only after scheduling or presenting a real additional opportunity.
-    /// Rendering a preview, reading a pool, or rebuilding a plan never consumes it.
-    static func recordOpportunities(_ cards: [Flashcard], deck: Deck, settings: DeckAlertSettings? = nil, now: Date = Date()) {
-        guard isBundle(deck), !cards.isEmpty else { return }
-        var value = cursor(deck, settings: settings)
-        for card in cards { applyOpportunity(card, to: &value, now: now) }
-        if value.cardLastServed.count > 2048 {
-            value.cardLastServed = value.cardLastServed.filter { $0.value > value.serial - 2048 }
-        }
-        if let data = try? JSONEncoder().encode(value) {
-            opportunityDefaults.set(data, forKey: opportunityKey(deck, settings: settings))
-        }
-    }
-
-    /// Weighted fair topic mixing, shared by alerts and in-app bundle study.
-    /// Every active-level topic participates; future levels never enter the pool.
-    /// A previous-level due review gets at most every fifth opportunity, including
-    /// across one-card daily batches. Otherwise opportunities stay in this level.
-    static func selection(_ deck: Deck, count: Int, settings: DeckAlertSettings? = nil,
-        now: Date = Date(), excluding: Set<UUID> = [], allowUpcoming: Bool = true,
-        repeatsAfterExhaustion: Bool = false) -> [Flashcard] {
-        guard isBundle(deck), count > 0,
-              let active = activeLevel(deck, settings: settings) else { return [] }
-        // One preferences decode per selection; model review dates and effective
-        // weights are then snapshotted once per candidate for all 60 daily slots.
-        let overrides = deck.sourceId.map { importanceOverrides(courseID: $0) } ?? [:]
-        var pool: [Flashcard] = []
-        var dueDates: [UUID: Date] = [:]
-        var schedulingWeights: [UUID: Double] = [:]
-        for card in cards(deck, settings: settings, now: now) {
-            let importance = effectiveImportance(card, overrides: overrides)
-            let due = reviewDate(card, importance: importance)
-            guard allowUpcoming || card.isNew || due <= now else { continue }
-            pool.append(card)
-            dueDates[card.id] = due
-            schedulingWeights[card.id] = weight(card, now: now, importance: importance, dueDate: due)
-        }
-        let currentIDs = Set(active.cards.map(\.id))
-        let current = pool.filter { currentIDs.contains($0.id) }
-        let earlier = pool.filter { !currentIDs.contains($0.id) }
-        var value = cursor(deck, settings: settings)
-        let topicIDs = Set(pool.map(topicID))
-        value.topicFinish = value.topicFinish.filter { topicIDs.contains($0.key) }
-        let floor = value.topicFinish.values.min() ?? 0
-        for topic in topicIDs where value.topicFinish[topic] == nil { value.topicFinish[topic] = floor }
-        var used = excluding
-        var result: [Flashcard] = []
-
-        func urgency(_ card: Flashcard) -> Int {
-            if !card.isNew && (dueDates[card.id] ?? .distantPast) <= now {
-                if card.masteryScore < 3 { return card.streak == 0 ? 0 : 1 }
-                return 3
-            }
-            return card.isNew ? 2 : 4
-        }
-        func preferred(_ a: Flashcard, _ b: Flashcard) -> Bool {
-            let rankA = urgency(a), rankB = urgency(b)
-            if rankA != rankB { return rankA < rankB }
-            let servedA = value.cardLastServed[a.id.uuidString] ?? -1
-            let servedB = value.cardLastServed[b.id.uuidString] ?? -1
-            if servedA != servedB { return servedA < servedB }
-            if a.reviewCount != b.reviewCount { return a.reviewCount < b.reviewCount }
-            if !a.isNew && dueDates[a.id] != dueDates[b.id] {
-                return (dueDates[a.id] ?? .distantPast) < (dueDates[b.id] ?? .distantPast)
-            }
-            if a.orderIndex != b.orderIndex { return a.orderIndex < b.orderIndex }
-            return a.id.uuidString < b.id.uuidString
-        }
-        for _ in 0..<count {
-            let wantsReview = (value.serial + 1).isMultiple(of: 5)
-            var candidates = wantsReview ? earlier.filter { !used.contains($0.id) } : []
-            if candidates.isEmpty {
-                let unseen = current.filter { !used.contains($0.id) }
-                let ready = unseen.filter { $0.isNew || (dueDates[$0.id] ?? .distantPast) <= now }
-                candidates = ready.isEmpty ? unseen : ready
-            }
-            if candidates.isEmpty && repeatsAfterExhaustion {
-                used.removeAll()
-                if wantsReview && !earlier.isEmpty { candidates = earlier }
-                else {
-                    let ready = current.filter { $0.isNew || (dueDates[$0.id] ?? .distantPast) <= now }
-                    candidates = ready.isEmpty ? current : ready
-                }
-            }
-            guard !candidates.isEmpty else { break }
-            // A new or unseen choice always wins over immediately repeating the
-            // current card. A genuinely one-card scope can still be practiced.
-            if candidates.count > 1, let last = value.lastCard {
-                candidates.removeAll { $0.id.uuidString == last }
-            }
-            let groups = Dictionary(grouping: candidates, by: topicID)
-            var heads = groups.values.compactMap { $0.min(by: preferred) }
-            if heads.count > 1, value.topicStreak >= 2, let lastTopic = value.lastTopic {
-                heads.removeAll { topicID($0) == lastTopic }
-            }
-            let selected = heads.min { a, b in
-                let aFinish = (value.topicFinish[topicID(a)] ?? floor) + 1 / (schedulingWeights[a.id] ?? 1)
-                let bFinish = (value.topicFinish[topicID(b)] ?? floor) + 1 / (schedulingWeights[b.id] ?? 1)
-                if abs(aFinish - bFinish) > 0.000001 { return aFinish < bFinish }
-                return preferred(a, b)
-            }
-            guard let selected else { break }
-            result.append(selected)
-            used.insert(selected.id)
-            applyOpportunity(selected, to: &value, now: now, selectedWeight: schedulingWeights[selected.id])
-        }
-        return result
     }
 }

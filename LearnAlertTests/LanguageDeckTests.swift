@@ -53,7 +53,7 @@ struct LanguageDeckTests {
         #expect(LanguageDeckProjection.topics(decoded).flatMap(\.cards) == cards)
     }
 
-    @Test("Opening and refreshing a topic preserves deck, card and review identities")
+    @Test("Opening a topic again preserves deck, card and review identities")
     func stableTopicDecks() throws {
         let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -64,26 +64,15 @@ struct LanguageDeckTests {
         let oldCard = Flashcard(question: "Old wording"); oldCard.sourceCourseCardID = topic.cards[0].id
         oldCard.reviewCount = 7; oldCard.correctCount = 5; oldCard.masteryScore = 2
         previous.cards = [oldCard]; context.insert(previous); try context.save()
-        var snapshot = CourseLearningSnapshot()
-        snapshot.courseSRS[course.id] = [topic.cards[1].id: .init(cardId: topic.cards[1].id, masteryScore: 3, reviewCount: 9, correctCount: 8)]
-        let first = try LanguageTopicStore.open(course: course, topic: topic, context: context, learningSnapshot: snapshot)
-        #expect(first.cards[1].reviewCount == 9 && first.cards[1].masteryScore == 3)
+        let first = try LanguageTopicStore.open(course: course, topic: topic, context: context)
         let card = try #require(first.cards.first)
-        #expect(first.deckType == "Quiz" && first.sourceKind == "languageTopic")
+        #expect(first.deckType == "Quiz" && first.sourceKind == "managedLanguage")
         #expect(card.reviewCount == 7 && card.correctCount == 5 && card.masteryScore == 2)
         card.reviewCount = 8; card.question = "My local edit"; let cardID = card.id; try context.save()
         let again = try LanguageTopicStore.open(course: course, topic: topic, context: context)
         #expect(again.id == first.id && again.cards.first?.id == cardID && again.cards.first?.reviewCount == 8)
         #expect(previous.cards.first?.reviewCount == 7)
         #expect(again.cards.first?.question == "My local edit")
-        let all = try LanguageTopicStore.collection(course: course, context: context)
-        let alertCard = try #require(all.cards.first { $0.sourceCourseCardID == card.sourceCourseCardID })
-        #expect(alertCard.reviewCount == card.reviewCount)
-        card.processAnswer(isCorrect: true); try context.save()
-        #expect(alertCard.reviewCount == card.reviewCount && alertCard.masteryScore == card.masteryScore)
-        alertCard.processAnswer(isCorrect: false); try context.save()
-        #expect(card.reviewCount == alertCard.reviewCount && card.masteryScore == alertCard.masteryScore)
-        #expect(card.question == "My local edit")
         #expect(first.cards.allSatisfy { [.multipleChoice,.matching,.fillBlank].contains($0.cardType) })
     }
 

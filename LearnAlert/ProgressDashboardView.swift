@@ -3,7 +3,6 @@ import SwiftUI
 
 struct ProgressDashboardView: View {
     @Query(sort: \Deck.creationDate) private var decks: [Deck]
-    @ObservedObject private var courseProgress = CourseProgressManager.shared
     @ObservedObject private var session = CommunitySession.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var profileDestination: ProgressProfileDestination?
@@ -16,17 +15,10 @@ struct ProgressDashboardView: View {
     }
 
     var body: some View {
-        let summary = StudyProgressSummary(decks: decks, courses: courseProgress.allEnrolledCourses,
-                                           snapshot: courseProgress.learningSnapshot)
+        let summary = StudyProgressSummary(decks: decks)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
                 studyOverview(summary)
-                if !summary.courses.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionHeader("Courses", count: summary.courses.count)
-                        ForEach(summary.courses) { course in courseRow(course) }
-                    }
-                }
                 if !summary.decks.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         sectionHeader("Decks", count: summary.decks.count)
@@ -41,8 +33,8 @@ struct ProgressDashboardView: View {
                         .appCardSurface(cornerRadius: 20)
                     }
                 }
-                if summary.courses.isEmpty && summary.decks.isEmpty {
-                    ContentUnavailableView("No courses or decks yet", systemImage: "rectangle.stack",
+                if summary.decks.isEmpty {
+                    ContentUnavailableView("No decks yet", systemImage: "rectangle.stack",
                         description: Text("Add something to your library to start tracking progress."))
                         .frame(maxWidth: .infinity)
                 }
@@ -126,28 +118,6 @@ struct ProgressDashboardView: View {
         }
     }
 
-    private func courseRow(_ course: StudyProgressSummary.CourseProgress) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text(course.flagEmoji).font(.title2).accessibilityHidden(true)
-                Text(course.title).font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
-                Spacer(minLength: 8)
-                Text(course.fraction, format: .percent.precision(.fractionLength(0)))
-                    .font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(LearnAlertStyle.appAccentForeground)
-            }
-            ProgressView(value: course.fraction).tint(LearnAlertStyle.appAccentForeground).accessibilityLabel("Course completion")
-            Text(course.currentStep).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).lineLimit(2)
-            HStack(spacing: 14) {
-                Label("\(course.completedLessonCount)/\(course.lessonCount) lessons", systemImage: "book.closed")
-                if course.checkpointCount > 0 {
-                    Label("\(course.passedCheckpointCount)/\(course.checkpointCount) checkpoints", systemImage: "checkmark.seal")
-                }
-            }
-            .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-        }
-        .padding(16).appCardSurface(cornerRadius: 20)
-    }
-
     private func deckRow(_ deck: StudyProgressSummary.DeckProgress) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -212,7 +182,6 @@ struct ProgressDashboardView: View {
     }
 
     @MainActor private func refresh() async {
-        courseProgress.reloadFromSharedDefaults()
         let id = UUID()
         let token = session.token
         refreshID = id

@@ -438,7 +438,7 @@ struct AnkiReviewControls: View {
                 }
             } else {
                 Button(action: onReveal) {
-                    Label("Show answer", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity, minHeight: 42)
+                    Label("Flip/reveal", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity, minHeight: 42)
                 }.buttonStyle(.borderedProminent).font(.subheadline.weight(.semibold))
             }
         }

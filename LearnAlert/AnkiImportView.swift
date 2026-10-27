@@ -37,7 +37,7 @@ struct AnkiImportView: View {
                 .transition(session.phase == .saving ? .identity : .opacity.combined(with: .offset(y: reduceMotion ? 0 : 12)))
             }
             .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: session.phase)
-            .navigationTitle("Import Anki")
+            .navigationTitle(session.isBusy ? "" : "Import Anki")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -108,90 +108,24 @@ struct AnkiImportView: View {
     }
 
     private var converting: some View {
-        VStack(spacing: 28) {
-            Spacer()
-            AnkiConversionArtwork(progress: session.progress.fraction, active: true)
-                .frame(height: 250)
-            VStack(spacing: 10) {
-                Text(session.progress.title)
-                    .font(.title3.weight(.semibold))
-                    .contentTransition(.numericText())
-                Text(session.progress.detail.isEmpty ? session.filename : session.progress.detail)
-                    .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
-                    .lineLimit(2).multilineTextAlignment(.center)
-                    .contentTransition(.numericText())
+        VStack(spacing: 12) {
+            if let completed = session.completedFiles, let total = session.totalFiles {
+                Text("\(completed.formatted()) / \(total.formatted()) files")
+            } else {
+                Text("— / — files")
             }
-            ProgressView(value: session.progress.fraction)
-                .tint(LearnAlertStyle.appAccentForeground)
-                .animation(.easeInOut(duration: 0.35), value: session.progress.fraction)
-                .accessibilityLabel(session.progress.title)
-            TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
-                let metrics = AnkiImportTelemetry(progress: session.progress, startedAt: session.startedAt,
-                    stageStartedAt: session.stageStartedAt, now: timeline.date, samples: session.recentSamples)
-                VStack(spacing: 6) {
-                    HStack {
-                        Text("\(Int(session.progress.fraction * 100))%")
-                        Spacer()
-                        if let bytes = session.archiveBytes { Text(AnkiImportTelemetry.bytes(bytes)) }
-                        Text("· \(AnkiImportTelemetry.duration(metrics.elapsed)) elapsed")
-                    }
-                    HStack {
-                        if let completed = session.progress.completedItems, let total = session.progress.totalItems {
-                            Text("\(completed.formatted()) / \(total.formatted()) \(session.progress.unit)")
-                        }
-                        Spacer()
-                    }
-                    HStack {
-                        if let rate = metrics.currentBytesPerSecond {
-                            Text("Now \(AnkiImportTelemetry.bytes(Int(rate)))/s")
-                        } else if let rate = metrics.currentUnitsPerSecond {
-                            Text("Now \(Int(rate).formatted()) \(session.progress.unit)/s")
-                        }
-                        Spacer()
-                        if let rate = metrics.bytesPerSecond {
-                            Text("Avg \(AnkiImportTelemetry.bytes(Int(rate)))/s")
-                        } else if let rate = metrics.unitsPerSecond {
-                            Text("Avg \(Int(rate).formatted()) \(session.progress.unit)/s")
-                        }
-                    }
-                    if session.waitingForCommit {
-                        HStack(spacing: 7) {
-                            ProgressView().controlSize(.mini)
-                            Text(session.progress.title == "Updating your library" ? "Refreshing the library…" : "Saving safely…")
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if let remaining = metrics.remainingSeconds {
-                        Text("About \(AnkiImportTelemetry.duration(remaining)) left in this step")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                }
-                .font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
-            }
-            HStack(spacing: 0) {
-                if session.phase == .saving {
-                    stage("Media", complete: session.progress.fraction >= 0.4)
-                    stage("Cards", complete: session.progress.fraction >= 0.97)
-                    stage("Ready", complete: session.progress.fraction >= 1)
-                } else {
-                    stage("Read", complete: session.progress.fraction >= 0.12)
-                    stage("Convert", complete: session.progress.fraction >= 0.48)
-                    stage("Media", complete: session.progress.fraction >= 0.97)
-                }
-            }
-            Spacer(); Spacer().frame(height: 24)
+            Text(session.filePercentage.map { "\($0)%" } ?? "—%")
+                .font(.largeTitle.weight(.semibold))
+                .foregroundStyle(LearnAlertStyle.textPrimary)
         }
+        .font(.title3.monospacedDigit())
+        .foregroundStyle(LearnAlertStyle.textSecondary)
+        .multilineTextAlignment(.center)
+        .contentTransition(.numericText())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
+        .accessibilityElement(children: .combine)
         .onAppear { session.savingViewDidAppear() }
-    }
-
-    private func stage(_ title: String, complete: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: complete ? "checkmark.circle.fill" : "circle")
-            Text(title)
-        }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(complete ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-        .frame(maxWidth: .infinity)
     }
 
     private var review: some View {

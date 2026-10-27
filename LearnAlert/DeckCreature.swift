@@ -270,26 +270,6 @@ struct DeckCreatureView: View {
                     .offset(y: -1)
             }
 
-            if visibleLayers >= 4 {
-                Capsule()
-                    .fill(appearance.palette.accent.color)
-                    .frame(width: 17, height: 7)
-                    .offset(
-                        x: appearance.tabOnLeadingEdge ? -width * 0.31 : width * 0.31,
-                        y: -height * 0.46
-                    )
-            }
-
-            if visibleLayers >= 7 && !compactStack {
-                BookmarkShape()
-                    .fill(appearance.palette.accent.color)
-                    .frame(width: 9, height: 21)
-                    .offset(
-                        x: appearance.bookmarkOnLeadingEdge ? -width * 0.39 : width * 0.39,
-                        y: -height * 0.20
-                    )
-            }
-
             HStack(spacing: 4) {
                 ForEach(0..<detailLineCount, id: \.self) { _ in
                     Capsule()
@@ -411,19 +391,6 @@ private struct SmileShape: Shape {
             to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.25),
             control: CGPoint(x: rect.midX, y: rect.maxY)
         )
-        return path
-    }
-}
-
-private struct BookmarkShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: rect.origin)
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY - rect.width * 0.38))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.closeSubpath()
         return path
     }
 }

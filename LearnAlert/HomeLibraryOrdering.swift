@@ -1,21 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum HomeLibraryOrdering {
-    static func ordered(_ available: [String], saved: [String]) -> [String] {
-        let valid = Set(available)
-        var seen = Set<String>()
-        return (saved + available).filter { valid.contains($0) && seen.insert($0).inserted }
-    }
-
-    static func moving(_ source: String, over target: String, in ids: [String]) -> [String] {
-        guard source != target, let from = ids.firstIndex(of: source), let to = ids.firstIndex(of: target) else { return ids }
-        var result = ids
-        result.remove(at: from); result.insert(source, at: to)
-        return result
-    }
-}
-
 private struct HomeLibraryDropDelegate: DropDelegate {
     let id: String
     @Binding var dragging: String?

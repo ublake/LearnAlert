@@ -2,9 +2,7 @@ import SwiftData
 import SwiftUI
 import AuthenticationServices
 
-// MARK: - Models for Premade / Discover Decks
-
-// MARK: - Main Discover Hub View (2-Column Category Grid)
+// MARK: - Discover
 
 struct PremadeDecksView: View {
     @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
@@ -14,10 +12,8 @@ struct PremadeDecksView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var addedDeckName: String?
-    @State private var showingCourses = false
     @State private var showingAllCommunity = false
     @StateObject private var communityFeed = CommunityFeedStore()
-    @State private var showingMinigames = false
     @State private var showingShareSheet = false
     @State private var searchedCourse: CourseDefinition?
 
@@ -28,6 +24,8 @@ struct PremadeDecksView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                languageRail
+
                 HStack(alignment: .center) {
                     Text("Shared decks").font(StudyStudioStyle.title(24))
                     Spacer()
@@ -51,7 +49,7 @@ struct PremadeDecksView: View {
                 if showingSearch {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(StudyStudioStyle.secondary)
-                        TextField("Search decks & bundles", text: $discoverSearch)
+                        TextField("Search decks & languages", text: $discoverSearch)
                             .font(.subheadline).textInputAutocapitalization(.never)
                             .autocorrectionDisabled().submitLabel(.search)
                             .focused($searchFocused)
@@ -67,7 +65,6 @@ struct PremadeDecksView: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
 
-                destinationCards
 
                 if !discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     searchResults
@@ -95,9 +92,6 @@ struct PremadeDecksView: View {
         }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
         .tint(StudyStudioStyle.violet)
-        .navigationDestination(isPresented: $showingCourses) {
-            CoursesCatalogListView()
-        }
         .navigationDestination(isPresented: $showingAllCommunity) {
             AllCommunityDecksView(
                 libraryDecks: libraryDecks,
@@ -106,11 +100,8 @@ struct PremadeDecksView: View {
                 onOpenShareModal: { showingShareSheet = true }
             )
         }
-        .navigationDestination(isPresented: $showingMinigames) {
-            MinigamesView()
-        }
         .navigationDestination(item: $searchedCourse) { course in
-            CoursePathView(course: course)
+            LanguageDeckDiscoveryView(course: course)
         }
         .sheet(isPresented: $showingShareSheet) {
             ShareDeckToCommunitySheet(libraryDecks: libraryDecks)
@@ -122,48 +113,53 @@ struct PremadeDecksView: View {
         }
     }
 
-    private var destinationCards: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(), spacing: 12),
-                GridItem(.flexible(), spacing: 12)
-            ],
-            spacing: 12
-        ) {
-            DiscoverCategoryTile(
-                title: "Language learning bundles",
-                subtitle: "Quiz and flashcard collections.",
-                badge: "\(CourseCurriculumCatalog.courses.count) available",
-                symbol: "character.bubble.fill",
-                color: StudyStudioStyle.blue,
-                action: { showingCourses = true }
-            )
-
-            DiscoverCategoryTile(
-                title: "Minigames",
-                subtitle: "Play, practise, repeat.",
-                badge: "Play",
-                symbol: "target",
-                color: StudyStudioStyle.violet,
-                action: { showingMinigames = true }
-            )
+    private var languageRail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Languages")
+                .font(StudyStudioStyle.heading(21))
+                .foregroundStyle(StudyStudioStyle.ink)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(DiscoverLanguageChoice.choices) { choice in
+                        let course = CourseCurriculumCatalog.courses.first {
+                            $0.language.caseInsensitiveCompare(choice.name) == .orderedSame && !LanguageDeckProjection.topics($0).isEmpty
+                        }
+                        Button {
+                            guard let course else { return }
+                            HapticFeedback.impact(.light)
+                            searchedCourse = course
+                        } label: {
+                            DiscoverLanguageButton(choice: choice, available: course != nil)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(course == nil)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(choice.name)
+                        .accessibilityValue(course == nil ? "Coming soon" : "Available")
+                        .accessibilityHint(course == nil ? "" : "Opens \(choice.name) decks")
+                    }
+                }
+                .padding(.vertical, 3)
+            }
         }
+        .padding(.bottom, 6)
     }
 
     private var searchResults: some View {
         let query = discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         let courses = CourseCurriculumCatalog.courses.filter {
-            $0.title.localizedCaseInsensitiveContains(query) || $0.language.localizedCaseInsensitiveContains(query)
+            !LanguageDeckProjection.topics($0).isEmpty &&
+                ($0.title.localizedCaseInsensitiveContains(query) || $0.language.localizedCaseInsensitiveContains(query))
         }
         let decks = PremadeDeckCatalog.decks.filter {
             $0.category != "Exam Prep" && ($0.name.localizedCaseInsensitiveContains(query)
                 || $0.category.localizedCaseInsensitiveContains(query) || $0.subcategory.localizedCaseInsensitiveContains(query))
         }
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Learning bundles & decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
+            Text("Languages & decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
-                    searchRow(title: course.title, subtitle: "Language learning bundle", symbol: "character.book.closed", action: "Open")
+                    searchRow(title: course.title, subtitle: "Language decks", symbol: "character.book.closed", action: "Open")
                 }.buttonStyle(.plain)
             }
             ForEach(decks) { deck in
@@ -173,7 +169,7 @@ struct PremadeDecksView: View {
                 }.buttonStyle(.plain).disabled(added)
             }
             if courses.isEmpty && decks.isEmpty {
-                Text("No matching bundles or decks.")
+                Text("No matching languages or decks.")
                     .font(StudyStudioStyle.body()).foregroundStyle(StudyStudioStyle.secondary)
             }
             Button { showingAllCommunity = true } label: {
@@ -233,140 +229,51 @@ struct PremadeDecksView: View {
     }
 }
 
-// MARK: - Dedicated Courses Catalog List View
-
-private struct CoursesCatalogListView: View {
-    @ObservedObject private var managedCatalog = ManagedCatalogStore.shared
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ObservedObject private var progressManager = CourseProgressManager.shared
-    @State private var selectedCourse: CourseDefinition?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Language Learning Bundles")
-                        .font(.custom("Poppins-Bold", size: 24))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Small topic decks. Pick one and start practising.")
-                        .font(.custom("Poppins-Regular", size: 12))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-
-                VStack(spacing: 14) {
-                    ForEach(CourseCurriculumCatalog.courses) { course in
-                        LanguageCourseHeroCard(
-                            course: course,
-                            isEnrolled: progressManager.isEnrolled(in: course.id),
-                            onSelect: { selectedCourse = course }
-                        )
-                    }
-                }
-                .padding(.horizontal, 20)
-
-                Spacer().frame(height: 60)
-            }
-        }
-        .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-        .navigationTitle("Language Learning Bundles")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $selectedCourse) { course in
-            CoursePathView(course: course)
-        }
-    }
-}
-
-// MARK: - Language Course Hero Card
-
-private struct LanguageCourseHeroCard: View {
-    let course: CourseDefinition
-    let isEnrolled: Bool
-    let onSelect: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    private var tint: Color { Color(hex: course.colorHex) }
-
-    var body: some View {
-        Button {
-            onSelect()
-        } label: {
-            HStack(spacing: 16) {
-                LanguageBundleArtwork(flag: course.flagEmoji, language: course.language, tint: tint)
-                    .frame(width: 66, height: 66)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(course.language)
-                        .font(.custom("Poppins-Bold", size: 18))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                        .lineLimit(1)
-                    Text("\(LanguageDeckProjection.levels(course).count) levels · \(LanguageDeckProjection.topics(course).count) decks")
-                        .font(.custom("Poppins-Medium", size: 11))
-                        .foregroundStyle(LearnAlertStyle.textSecondary)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: isEnrolled ? "arrow.right" : "chevron.right")
-                    .font(.system(size: 13, weight: .bold)).foregroundStyle(tint)
-                    .frame(width: 32, height: 32)
-                    .background(tint.opacity(colorScheme == .dark ? 0.17 : 0.09), in: Circle())
-            }
-            .padding(.horizontal, 16).padding(.vertical, 13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 22, style: .continuous).fill(LearnAlertStyle.surface)
-                    .overlay(alignment: .trailing) {
-                        Circle().fill(tint.opacity(colorScheme == .dark ? 0.09 : 0.055))
-                            .frame(width: 150, height: 150).offset(x: 36, y: 35)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            }
-            .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(tint.opacity(colorScheme == .dark ? 0.24 : 0.22), lineWidth: 1) }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(course.language), \(LanguageDeckProjection.levels(course).count) levels, \(LanguageDeckProjection.topics(course).count) decks")
-        .accessibilityHint(isEnrolled ? "Continue your language bundle" : "Open language bundle")
-    }
-}
-
-private struct LanguageBundleArtwork: View {
+private struct DiscoverLanguageChoice: Identifiable {
+    let name: String
     let flag: String
-    let language: String
-    let tint: Color
-    private var letter: String {
-        switch language.lowercased() {
-        case "korean": "한"
-        case "spanish": "ñ"
-        case "japanese": "あ"
-        case "chinese", "mandarin": "文"
-        case "arabic": "ع"
-        default: String(language.prefix(1))
-        }
-    }
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.13))
-                .frame(width: 47, height: 55).rotationEffect(.degrees(-15)).offset(x: -5, y: 1)
-            RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.2))
-                .frame(width: 47, height: 55).rotationEffect(.degrees(9)).offset(x: 5, y: -1)
-            RoundedRectangle(cornerRadius: 12).fill(LearnAlertStyle.surface)
-                .overlay { RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.08)) }
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(tint.opacity(0.35), lineWidth: 1) }
-                .frame(width: 47, height: 55)
-                .overlay(alignment: .topLeading) { Text(flag).font(.system(size: 25)).padding(.leading, 5).padding(.top, 3) }
-                .overlay(alignment: .bottomTrailing) { Text(letter).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(tint).padding(.trailing, 7).padding(.bottom, 3) }
-            Image(systemName: "sparkle").font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint.opacity(0.7)).offset(x: 30, y: -25)
-        }.accessibilityHidden(true)
-    }
+    var id: String { name }
+
+    static let choices = [
+        Self(name: "Spanish", flag: "🇪🇸"),
+        Self(name: "Korean", flag: "🇰🇷"),
+        Self(name: "French", flag: "🇫🇷"),
+        Self(name: "Japanese", flag: "🇯🇵")
+    ]
 }
 
-// MARK: - Minigames
+private struct DiscoverLanguageButton: View {
+    let choice: DiscoverLanguageChoice
+    let available: Bool
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-struct MinigamesView: View {
     var body: some View {
-        LearnAlertStyle.courseCanvas
-            .ignoresSafeArea()
-            .navigationTitle("Minigames")
-            .navigationBarTitleDisplayMode(.inline)
+        VStack(spacing: 7) {
+            ZStack {
+                Circle().fill(LearnAlertStyle.surface)
+                Text(choice.flag)
+                    .font(.system(size: 51))
+                    .offset(y: 1)
+                    .saturation(available ? 1 : 0.12)
+                    .opacity(available ? 1 : 0.32)
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(Circle())
+            .overlay {
+                Circle().strokeBorder(available ? LearnAlertStyle.appAccentForeground.opacity(colorScheme == .dark ? 0.7 : 0.5) : StudyStudioStyle.hairline, lineWidth: available ? 2 : 1)
+            }
+            Text(choice.name)
+                .font(StudyStudioStyle.heading(13))
+                .foregroundStyle(available ? StudyStudioStyle.ink : StudyStudioStyle.secondary)
+            if !available {
+                Text("Coming soon")
+                    .font(StudyStudioStyle.body(10))
+                    .foregroundStyle(StudyStudioStyle.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? 112 : 84, alignment: .top)
+        .contentShape(Rectangle())
     }
 }

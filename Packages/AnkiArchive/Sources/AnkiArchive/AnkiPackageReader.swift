@@ -35,7 +35,13 @@ public enum AnkiPackageReader {
         let modern = version == 3
         let filename = modern ? "collection.anki21b" : version == 2 ? "collection.anki21" : "collection.anki2"
         guard let collection = entries[filename] else { throw AnkiImportError.invalid("The package is missing its Anki collection database.") }
-        progress(.init(0.07, "Reading cards", "Unpacking the collection"))
+        let mediaMap = try readMediaMap(entries: entries, archive: archive, modern: modern)
+        guard mediaMap.count <= 100_000 else { throw AnkiImportError.invalid("This package contains too many media files.") }
+        // Resolve noncanonical ZIP names once, then count real source files.
+        // The collection remains unfinished until the app's atomic library save.
+        try entries.include(Set(mediaMap.map { $0.0 }), from: archive)
+        let totalFiles = 1 + mediaMap.reduce(0) { $0 + (entries[$1.0] == nil ? 0 : 1) }
+        progress(.init(0.07, "Reading cards", "Unpacking the collection", completedFiles: 0, totalFiles: totalFiles))
         let databaseURL = workspace.appendingPathComponent("collection.sqlite")
         let databaseBytes = try extractToFile(collection, archive: archive, to: databaseURL, compressed: modern, limit: maximumDatabaseBytes) { bytes in
             progress(.init(0.07, "Reading cards", "Unpacking the collection", processedBytes: bytes))
@@ -47,24 +53,6 @@ public enum AnkiPackageReader {
         guard !cards.isEmpty else { throw AnkiImportError.invalid("No compatible cards were found in this package. It may be empty or use unsupported note types.") }
 
         progress(.init(0.48, "Gathering images & audio"))
-        var mediaMap: [(String, String)] = []
-        if let entry = entries["media"] {
-            let packedMap = try extract(entry, archive: archive, limit: 24 * 1_024 * 1_024)
-            let map = modern ? try decompress(packedMap, limit: 24 * 1_024 * 1_024) : packedMap
-            if modern {
-                for (index, bytes) in try AnkiProto(map).messages(1).enumerated() {
-                    let record = try AnkiProto(bytes)
-                    mediaMap.append((String(index), record.string(1)))
-                }
-            } else {
-                guard let map = try JSONSerialization.jsonObject(with: map) as? [String: String] else { throw AnkiImportError.invalid("The Anki package has an unreadable media index.") }
-                mediaMap = map.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }.map { ($0.key, $0.value) }
-            }
-        }
-        guard mediaMap.count <= 100_000 else { throw AnkiImportError.invalid("This package contains too many media files.") }
-        // Legacy maps may use noncanonical numeric paths such as long zero-padded
-        // keys. Resolve only those requested paths in one additional bounded pass.
-        try entries.include(Set(mediaMap.map { $0.0 }), from: archive)
         let mediaDirectory = workspace.appendingPathComponent("media", isDirectory: true)
         try FileManager.default.createDirectory(at: mediaDirectory, withIntermediateDirectories: true)
         var mediaBytes = 0, mediaCount = 0, missingMedia = 0
@@ -82,21 +70,24 @@ public enum AnkiPackageReader {
             let ext = originalExtension.count <= 16 && originalExtension.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) && $0.isASCII }) ? originalExtension : "bin"
             let storedName = "media-\(index).\(ext.isEmpty ? "bin" : ext)"
             let bytesBeforeFile = mediaBytes
+            let filesBeforeCurrent = mediaCount
             let extractedBytes = try extractToFile(entry, archive: archive, to: mediaDirectory.appendingPathComponent(storedName), compressed: modern, limit: available) { bytes in
                 progress(.init(0.48 + 0.49 * Double(index) / Double(max(1, mediaMap.count)), "Gathering images & audio",
-                    completedItems: index, totalItems: mediaMap.count, unit: "files", processedBytes: bytesBeforeFile + bytes))
+                    completedItems: index, totalItems: mediaMap.count, unit: "files", processedBytes: bytesBeforeFile + bytes,
+                    completedFiles: filesBeforeCurrent, totalFiles: totalFiles))
             }
             mediaBytes += extractedBytes
             mediaFiles[name] = storedName
             mediaCount += 1
             savedNames.insert(name.precomposedStringWithCanonicalMapping)
             if index % 20 == 0 || index + 1 == mediaMap.count {
-                progress(.init(0.48 + 0.49 * Double(index + 1) / Double(max(1, mediaMap.count)), "Gathering images & audio", "\(index + 1) of \(mediaMap.count) files", completedItems: index + 1, totalItems: mediaMap.count, unit: "files", processedBytes: mediaBytes))
+                progress(.init(0.48 + 0.49 * Double(index + 1) / Double(max(1, mediaMap.count)), "Gathering images & audio", "\(index + 1) of \(mediaMap.count) files", completedItems: index + 1, totalItems: mediaMap.count, unit: "files", processedBytes: mediaBytes,
+                    completedFiles: mediaCount, totalFiles: totalFiles))
             }
         }
         // Always report the completed file stage, including missing/empty media maps.
         progress(.init(0.97, "Gathering images & audio", completedItems: mediaMap.count, totalItems: mediaMap.count,
-            unit: "files", processedBytes: mediaBytes))
+            unit: "files", processedBytes: mediaBytes, completedFiles: mediaCount, totalFiles: totalFiles))
         try JSONEncoder().encode(mediaFiles).write(to: mediaDirectory.appendingPathComponent(".learnalert-media.json"))
         var warnings = cardWarnings
         let referenced = try referencedMedia(in: cards)
@@ -108,9 +99,25 @@ public enum AnkiPackageReader {
         for card in cards { deckCounts[card.deckID, default: 0] += 1 }
         let decks = deckCounts.map { AnkiImportedDeck(id: $0.key, name: deckNames[$0.key] ?? "Imported deck", cardCount: $0.value) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        progress(.init(1, "Ready to import", "\(cards.count) cards · \(mediaCount) media files"))
+        progress(.init(1, "Ready to import", "\(cards.count) cards · \(mediaCount) media files",
+            completedFiles: mediaCount, totalFiles: totalFiles))
         return AnkiImportPackage(cards: cards, decks: decks, mediaDirectory: mediaDirectory,
                                  mediaCount: mediaCount, mediaBytes: mediaBytes, mediaFiles: mediaFiles, warnings: warnings.sorted(), skippedCards: skipped)
+    }
+
+    private static func readMediaMap(entries: AnkiArchiveEntryIndex, archive: Archive, modern: Bool) throws -> [(String, String)] {
+        guard let entry = entries["media"] else { return [] }
+        let packedMap = try extract(entry, archive: archive, limit: 24 * 1_024 * 1_024)
+        let data = modern ? try decompress(packedMap, limit: 24 * 1_024 * 1_024) : packedMap
+        if modern {
+            return try AnkiProto(data).messages(1).enumerated().map { index, bytes in
+                (String(index), try AnkiProto(bytes).string(1))
+            }
+        }
+        guard let map = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            throw AnkiImportError.invalid("The Anki package has an unreadable media index.")
+        }
+        return map.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }.map { ($0.key, $0.value) }
     }
 
     public static func isSafeMediaName(_ name: String) -> Bool {

@@ -25,7 +25,6 @@ struct DeckStudyView: View {
     @State private var showingHint = false
     @State private var hasRecordedHint = false
     @State private var didApplyInitialState = false
-    @State private var scheduledBundleOpportunity: UUID?
     @State private var isComplete = false
 
     let initialCardId: UUID?
@@ -85,7 +84,7 @@ struct DeckStudyView: View {
                     deckName: deck.name,
                     score: correctCount * 30,
                     correctCount: correctCount,
-                    totalCount: LanguageBundleStudy.isBundle(deck) ? Set(studyQueue.map(\.id)).count : allCards.count,
+                    totalCount: allCards.count,
                     isReviewOnly: allCards.allSatisfy { $0.cardType.isReviewOnly },
                     onRestart: restartCycle,
                     onClose: dismiss.callAsFunction
@@ -158,7 +157,7 @@ struct DeckStudyView: View {
     }
 
     private func setupStudyQueue() {
-        allCards = LanguageBundleStudy.cards(deck)
+        allCards = deck.cards
         studyQueue = buildSmartStudyQueue()
         let queuedIDs = Set(studyQueue.map(\.id))
         for card in allCards where card.cardType == .anki && !queuedIDs.contains(card.id) {
@@ -175,12 +174,6 @@ struct DeckStudyView: View {
 
     private func buildSmartStudyQueue() -> [Flashcard] {
         let now = Date()
-        if LanguageBundleStudy.isBundle(deck) {
-            if LanguageBundleStudy.smartReviewEnabled(deck) {
-                return LanguageBundleStudy.selection(deck, count: allCards.count, now: now)
-            }
-            return allCards.sorted { $0.orderIndex < $1.orderIndex }
-        }
         return allCards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }.sorted {
             if $0.cardType == .anki && $1.cardType == .anki {
                 if $0.isNew != $1.isNew { return !$0.isNew }
@@ -217,7 +210,6 @@ struct DeckStudyView: View {
     private func skip(_ card: Flashcard) {
         InteractionSoundPlayer.shared.play(.skip)
         card.recordSkip()
-        recordBundleOpportunity(card)
         // Smart repetition: re-queue skipped card so user gets another chance to master it
         let reinsertIndex = min(cardIndex + 3, studyQueue.count)
         studyQueue.insert(card, at: reinsertIndex)
@@ -228,7 +220,6 @@ struct DeckStudyView: View {
     private func grade(_ card: Flashcard, isCorrect: Bool) {
         guard !isGraded else { return }
         InteractionSoundPlayer.shared.play(isCorrect ? .correct : .incorrect)
-        recordBundleOpportunity(card)
         card.processAnswer(isCorrect: isCorrect)
         if isCorrect {
             correctCount += 1
@@ -270,8 +261,7 @@ struct DeckStudyView: View {
         if card.cardType.isReviewOnly {
             // A notification may already have recorded this review before handing off.
             if !isGraded {
-                recordBundleOpportunity(card)
-                card.processAnswer(isCorrect: true)
+                        card.processAnswer(isCorrect: true)
                 correctCount += 1
                 if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
             }
@@ -282,19 +272,7 @@ struct DeckStudyView: View {
         advance()
     }
 
-    private func recordBundleOpportunity(_ card: Flashcard) {
-        if LanguageBundleStudy.smartReviewEnabled(deck) {
-            // Scheduling or alert continuation already counted the handoff card.
-            if scheduledBundleOpportunity == card.id {
-                scheduledBundleOpportunity = nil
-                return
-            }
-            LanguageBundleStudy.recordOpportunities([card], deck: deck)
-        }
-    }
-
     private func advance() {
-        scheduledBundleOpportunity = nil
         enqueueReadyReviews()
         guard cardIndex + 1 < studyQueue.count else {
             withAnimation(.snappy) {
@@ -333,12 +311,11 @@ struct DeckStudyView: View {
 
     private func restartCycle() {
         withAnimation(.snappy) {
-            scheduledBundleOpportunity = nil
-            shortReviews = AnkiSessionReviewQueue()
+                shortReviews = AnkiSessionReviewQueue()
             waitingForReview = false
             ratingCounts = [:]
             reviewedAnkiIDs = []
-            allCards = LanguageBundleStudy.cards(deck)
+            allCards = deck.cards
             studyQueue = buildSmartStudyQueue()
             cardIndex = 0
             selectedAnswer = nil
@@ -370,12 +347,6 @@ struct DeckStudyView: View {
                     let state = initialCard.ankiReviewState
                     shortReviews.schedule(initialCardId, due: state.dueDate, repeatsInSession: state.phase != .review)
                 }
-            } else if LanguageBundleStudy.isBundle(deck) {
-                // Keep a valid alert handoff first without dropping the mixed
-                // questions that happened to precede it in the new queue.
-                studyQueue.removeAll { $0.id == initialCardId }
-                studyQueue.insert(initialCard, at: 0)
-                cardIndex = 0
             } else if let initialIndex = studyQueue.firstIndex(where: { $0.id == initialCardId }) {
                 cardIndex = initialIndex
             }
@@ -383,7 +354,6 @@ struct DeckStudyView: View {
         // A queued notification can belong to a level that is no longer active.
         // Its answer/grade must never be applied to the replacement current card.
         if let initialCardId, currentCard?.id != initialCardId { return }
-        if LanguageBundleStudy.isBundle(deck) { scheduledBundleOpportunity = initialCardId }
         selectedAnswer = initialSelectedAnswer
         isGraded = initialWasGraded
         isRevealed = currentCard?.cardType == .images

@@ -22,6 +22,7 @@ struct LearnAlertApp: App {
     #endif
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @Environment(\.scenePhase) private var scenePhase
+    @State private var migrationNotice: String?
     
     // Initialize our custom shared database
     let sharedDatabase = SharedDatabase.shared
@@ -29,7 +30,9 @@ struct LearnAlertApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .safeAreaInset(edge: .top, spacing: 0) { CourseProgressRecoveryBanner() }
+                .alert("Saved learning data", isPresented: Binding(get: { migrationNotice != nil }, set: { if !$0 { migrationNotice = nil } })) {
+                    Button("OK") { migrationNotice = nil }
+                } message: { Text(migrationNotice ?? "") }
                 // Inject it into the SwiftUI environment
                 .modelContainer(sharedDatabase.container)
                 .task(id: hasCompletedOnboarding && scenePhase == .active) {
@@ -58,19 +61,16 @@ struct LearnAlertApp: App {
                 }
                 .task(id: scenePhase == .active) {
                     guard scenePhase == .active else { return }
-                    // Let Home render before maintaining enrolled course decks.
+                    // Let Home render before migrating preserved language library items.
                     do { try await Task.sleep(for: .milliseconds(250)) }
                     catch { return }
-                    // Assign stable source IDs before installing a remote rename.
-                    await syncManagedCourseDecks()
+                    // Convert saved identities without refreshing or replacing personal cards.
+                    await migrateSavedLanguageDecks()
                     while !Task.isCancelled {
                         await ManagedCatalogStore.shared.refresh()
                         do { try await Task.sleep(for: .seconds(60)) }
                         catch { return }
                     }
-                }
-                .onReceive(ManagedCatalogStore.shared.$revision.dropFirst()) { _ in
-                    Task { await syncManagedCourseDecks() }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
                     CommunitySession.shared.appleCredentialRevoked()
@@ -78,28 +78,11 @@ struct LearnAlertApp: App {
         }
     }
 
-    @MainActor private func syncManagedCourseDecks() async {
-        let manager = CourseProgressManager.shared
-        manager.reloadFromSharedDefaults()
-        // Upgrade already-scheduled whole bundles after Home has rendered, and
-        // refresh their media when the managed catalog publishes a new revision.
-        let context = sharedDatabase.container.mainContext
-        let existing = (try? context.fetch(FetchDescriptor<Deck>(predicate: #Predicate { $0.sourceKind == "languageTopic" }))) ?? []
-        for deck in existing where LanguageBundleStudy.isBundle(deck) {
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            if let id = deck.sourceId, let course = CourseCurriculumCatalog.course(for: id) {
-                do { _ = try LanguageTopicStore.collection(course: course, context: context) }
-                catch { print("Bundle levels could not be refreshed: \(error.localizedDescription)") }
-            }
-        }
-        for course in manager.allEnrolledCourses {
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            manager.syncManagedCourseDeckIfNeeded(for: course, in: sharedDatabase.container.mainContext)
-            manager.reconcilePendingNotifications(for: course)
-        }
+    @MainActor private func migrateSavedLanguageDecks() async {
+        do { migrationNotice = try LanguageDeckMigration.run(in: sharedDatabase.container.mainContext) }
+        catch { migrationNotice = "Saved language decks could not be fully updated. Your original cards and history have been kept. Please reopen the app to retry. " + error.localizedDescription }
     }
+
 }
 
 // Disabled by default. Re-enable with LEARNALERT_ENABLE_TIKTOK=1 pod install.

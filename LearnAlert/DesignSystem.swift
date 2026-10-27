@@ -38,7 +38,7 @@ enum LearnAlertStyle {
     static let textPrimary = Color.adaptive(light: UIColor(red: 0.15, green: 0.18, blue: 0.21, alpha: 1), dark: UIColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 1))
     static let textSecondary = Color.adaptive(light: UIColor(red: 0.39, green: 0.43, blue: 0.47, alpha: 1), dark: UIColor(red: 0.67, green: 0.69, blue: 0.74, alpha: 1))
     // Cool blue-gray outlines stay visible against white and pale blue surfaces.
-    static let lightBorderColor = CourseSurfaceStyle.lightBorderColor
+    static let lightBorderColor = UIColor(red: 0.65, green: 0.73, blue: 0.82, alpha: 1)
     static let hairline = Color.adaptive(light: lightBorderColor, dark: UIColor(red: 0.24, green: 0.25, blue: 0.29, alpha: 1))
     static let surface = Color.adaptive(light: UIColor(white: 1, alpha: 0.92), dark: UIColor(red: 0.14, green: 0.15, blue: 0.18, alpha: 1))
     static let solidPanel = Color(red: 0.055, green: 0.065, blue: 0.12)

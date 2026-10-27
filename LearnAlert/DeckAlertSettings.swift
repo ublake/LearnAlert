@@ -92,10 +92,36 @@ nonisolated struct DailyDeckAlertPlan: Codable, Equatable {
     let expiresAt: Date?
     var stopWhenMastered = false
     var sound = "Default"
+    /// Compatibility for saved recurring language alerts, now ordinary decks.
+    /// New deck schedules continue using the existing daily time behavior.
+    var compatibilityWindow: LegacyDeckScheduleWindow? = nil
+
+    var identifierPrefix: String { compatibilityWindow?.identifierPrefix ?? "daily-deck-\(id)" }
 
     /// Calendar days keep the selected local time across daylight-saving changes.
     func slots(now: Date = Date(), calendar: Calendar = .current) -> [(date: Date, cardId: UUID)] {
         guard !cardIds.isEmpty else { return [] }
+        if let window = compatibilityWindow {
+            var result: [(Date, UUID)] = []
+            for offset in -1...7 {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)),
+                      window.weekdays.contains(calendar.component(.weekday, from: day)),
+                      let start = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day),
+                      var end = calendar.date(bySettingHour: window.endHour, minute: window.endMinute, second: 0, of: day) else { continue }
+                if end <= start { end = calendar.date(byAdding: .day, value: 1, to: end) ?? end }
+                let count = min(50, max(1, window.dailyCount))
+                let dayOrdinal = calendar.dateComponents([.day], from: calendar.startOfDay(for: anchor), to: day).day ?? 0
+                for index in 0..<count {
+                    let date = start.addingTimeInterval(end.timeIntervalSince(start) * Double(index) / Double(count))
+                    if date > now.addingTimeInterval(1), expiresAt.map({ date < $0 }) ?? true {
+                        let ordinal = dayOrdinal * count + index
+                        let cardIndex = (ordinal % cardIds.count + cardIds.count) % cardIds.count
+                        result.append((date, cardIds[cardIndex]))
+                    }
+                }
+            }
+            return Array(result.sorted { $0.0 < $1.0 }.prefix(60))
+        }
         let origin = calendar.startOfDay(for: anchor)
         let today = calendar.startOfDay(for: now)
         var result: [(Date, UUID)] = []
@@ -108,4 +134,12 @@ nonisolated struct DailyDeckAlertPlan: Codable, Equatable {
         }
         return Array(result.prefix(60))
     }
+}
+
+nonisolated struct LegacyDeckScheduleWindow: Codable, Equatable {
+    let identifierPrefix: String
+    let weekdays: [Int]
+    let endHour: Int
+    let endMinute: Int
+    let dailyCount: Int
 }

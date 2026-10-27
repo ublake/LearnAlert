@@ -10,6 +10,7 @@ import Foundation
 import UserNotifications
 import Combine
 import SwiftUI
+import SwiftData
 
 struct StudyHandoff: Identifiable, Hashable {
     let deckId: UUID
@@ -25,24 +26,10 @@ struct StudyHandoff: Identifiable, Hashable {
     var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")-\(notificationRequestID ?? "session")" }
 }
 
-struct CourseHandoff: Identifiable, Hashable {
-    let id: String
-    var sectionId: String? = nil
-    var assessmentID: String? = nil
-
-    static func destination(course: CourseDefinition, snapshot: CourseLearningSnapshot, requestedSectionId: String? = nil, openPath: Bool = false) -> CourseHandoff {
-        if !openPath, let active = snapshot.activeAssessment(courseID: course.id), active.finalizedAt == nil { return CourseHandoff(id: course.id, assessmentID: active.id) }
-        guard !openPath, let pending = snapshot.pendingCheckpoint(course: course),
-              requestedSectionId == nil || requestedSectionId == pending.id else { return CourseHandoff(id: course.id) }
-        return CourseHandoff(id: course.id, sectionId: pending.id)
-    }
-}
-
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
     
     @Published var isAuthorized = false
-    @Published var pendingCourseHandoff: CourseHandoff?
     @Published var pendingStudyHandoff: StudyHandoff?
     @Published var shouldShowCustomizationTestGuide = false
     
@@ -284,7 +271,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 completionHandler()
                 return
             }
-            let userInfo = response.notification.request.content.userInfo
+            var userInfo = response.notification.request.content.userInfo
             if self.handleCustomizationTestResponse(content: response.notification.request.content,
                 actionIdentifier: response.actionIdentifier,
                 defaults: UserDefaults(suiteName: "group.com.learnalert.shared")) {
@@ -299,20 +286,13 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 return
             }
             AlertTimelineStore.shared.opened(requestID)
-            if let courseId = userInfo["courseId"] as? String,
-               response.actionIdentifier != UNNotificationDismissActionIdentifier {
-                CourseProgressManager.shared.reloadFromSharedDefaults()
-                let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-                let hasExplicitHandoff = defaults?.string(forKey: "handoffCourseId") == courseId
-                if let course = CourseCurriculumCatalog.course(for: courseId),
-                   hasExplicitHandoff || self.pendingCourseHandoff?.id != courseId {
-                    self.pendingCourseHandoff = CourseHandoff.destination(course: course, snapshot: CourseLearningStore.shared.snapshot(),
-                        requestedSectionId: hasExplicitHandoff ? defaults?.string(forKey: "handoffCourseSectionId") : userInfo["courseCheckpointSectionId"] as? String,
-                        openPath: hasExplicitHandoff && defaults?.bool(forKey: "handoffCourseOpenPath") == true)
+            if userInfo["cardId"] == nil, let courseID = userInfo["courseId"] as? String {
+                let context = ModelContext(SharedDatabase.shared.container)
+                if let card = LanguageDeckMigration.legacyCard(deckID: userInfo["deckId"] as? String,
+                    courseID: courseID, in: context), let deck = card.deck {
+                    userInfo["deckId"] = deck.id.uuidString
+                    userInfo["cardId"] = card.id.uuidString
                 }
-                ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults?.removeObject(forKey: $0) }
-                completionHandler()
-                return
             }
             let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
             let fromNotificationUI = defaults?.bool(forKey: "handoffFromNotificationUI") ?? false
@@ -395,17 +375,23 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     @MainActor
     func consumePendingStudyHandoff(
-        defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
-        reloadCourseProgress: @MainActor () -> Void = { CourseProgressManager.shared.reloadFromSharedDefaults() }
+        defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared")
     ) {
         guard let defaults else { return }
         // Most launches have no handoff. Loading every course's progress here
         // makes an ordinary launch pay for notification-only routing work.
         if let id = defaults.string(forKey: "handoffCourseId") {
-            if let course = CourseCurriculumCatalog.course(for: id) {
-                reloadCourseProgress()
-                pendingCourseHandoff = CourseHandoff.destination(course: course, snapshot: CourseLearningStore.shared.snapshot(),
-                    requestedSectionId: defaults.string(forKey: "handoffCourseSectionId"), openPath: defaults.bool(forKey: "handoffCourseOpenPath"))
+            let context = ModelContext(SharedDatabase.shared.container)
+            // This old route identified a collection, not a particular answer.
+            // Never transfer stale grading from another alert to its fallback.
+            ["handoffSelectedAnswer", "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible",
+             "handoffWasRevealed", "handoffImageBackViewed"].forEach { defaults.removeObject(forKey: $0) }
+            if let card = LanguageDeckMigration.legacyCard(deckID: defaults.string(forKey: "handoffDeckId"), courseID: id, in: context), let deck = card.deck {
+                defaults.set(deck.id.uuidString, forKey: "handoffDeckId")
+                defaults.set(card.id.uuidString, forKey: "handoffCardId")
+            } else {
+                defaults.removeObject(forKey: "handoffDeckId")
+                defaults.removeObject(forKey: "handoffCardId")
             }
             ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults.removeObject(forKey: $0) }
         }

@@ -377,7 +377,6 @@ struct DeckDetailView: View {
         ) {
             Button("Reset Progress", role: .destructive) {
                 deck.cards.forEach { $0.resetProgress() }
-                if LanguageBundleStudy.isBundle(deck) { deck.bundleUnlockedLevelID = nil }
                 try? context.save()
             }
             Button("Cancel", role: .cancel) { }
@@ -735,7 +734,7 @@ struct CardInteractivePreviewSheet: View {
                             CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
                                 fields: card.fieldMedia, isGraded: matchingGraded) { _ in matchingGraded = true }
                         } else if card.cardType == .anki {
-                            Button(isRevealed ? "Show front" : "Show answer") {
+                            Button(isRevealed ? "Show front" : "Flip/reveal") {
                                 withAnimation(.snappy) { isRevealed.toggle() }
                             }.buttonStyle(PrimaryActionButtonStyle())
                         } else if card.cardType != .images {

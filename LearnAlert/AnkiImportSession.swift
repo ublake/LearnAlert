@@ -12,6 +12,8 @@ final class AnkiImportSession: ObservableObject {
     @Published var stageStartedAt = Date()
     @Published var recentSamples: [AnkiImportRateSample] = []
     @Published var archiveBytes: Int?
+    @Published private(set) var completedFiles: Int?
+    @Published private(set) var totalFiles: Int?
     @Published var package: AnkiImportPackage?
     @Published var selectedDecks = Set<String>()
     @Published var updateExisting = false
@@ -35,6 +37,11 @@ final class AnkiImportSession: ObservableObject {
     var isBusy: Bool { phase == .converting || phase == .saving }
     var selectedCardCount: Int { package?.decks.filter { selectedDecks.contains($0.id) }.reduce(0) { $0 + $1.cardCount } ?? 0 }
     var waitingForCommit: Bool { phase == .saving && progress.completedItems == nil && progress.fraction >= 0.96 }
+    var filePercentage: Int? {
+        guard let completedFiles, let totalFiles, totalFiles > 0 else { return nil }
+        let percentage = Int(Double(min(totalFiles, max(0, completedFiles))) / Double(totalFiles) * 100)
+        return min(phase == .complete ? 100 : 99, percentage)
+    }
 
     func open(_ url: URL) {
         cancel()
@@ -43,6 +50,7 @@ final class AnkiImportSession: ObservableObject {
         self.workspace = workspace; filename = url.lastPathComponent
         package = nil; error = nil; result = nil; phase = .converting
         startedAt = Date(); stageStartedAt = startedAt; archiveBytes = nil; recentSamples = []
+        completedFiles = nil; totalFiles = nil
         progress = .init(0, "Opening your deck", filename)
         let scoped = url.startAccessingSecurityScopedResource()
         let relay = AnkiImportProgressRelay { [weak self] value in
@@ -59,6 +67,8 @@ final class AnkiImportSession: ObservableObject {
                 let package = try await worker.value
                 guard let self, self.runID == id, !Task.isCancelled else { Self.removeWorkspace(workspace); return }
                 self.package = package
+                self.completedFiles = package.mediaCount
+                self.totalFiles = package.mediaCount + 1
                 self.worker = nil
                 self.selectedDecks = Set(package.decks.map(\.id))
                 self.phase = .review
@@ -75,6 +85,9 @@ final class AnkiImportSession: ObservableObject {
         pendingSave = SaveRequest(package: package, container: container, selection: selectedDecks,
                                   update: updateExisting, filename: filename)
         phase = .saving; startedAt = Date(); stageStartedAt = startedAt; recentSamples = []
+        // Each extracted media file is prepared once. Keep the collection file
+        // outstanding throughout card conversion and the atomic library commit.
+        completedFiles = package.mediaCount; totalFiles = package.mediaCount + 1
         progress = .init(0.01, "Making room for your cards", "Preparing your library")
         // The view acknowledges appearance before any large SwiftData work starts.
     }
@@ -110,7 +123,8 @@ final class AnkiImportSession: ObservableObject {
                 self.workspace = nil; self.savingWorker = nil; self.result = result
                 self.releasePackage()
                 Self.removeWorkspace(workspace)
-                self.recordProgress(.init(1, "Your deck is ready"))
+                let total = request.package.mediaCount + 1
+                self.recordProgress(.init(1, "Your deck is ready", completedFiles: total, totalFiles: total))
                 self.phase = .complete
             } catch {
                 guard let self, self.runID == id, !Task.isCancelled else { return }
@@ -128,6 +142,10 @@ final class AnkiImportSession: ObservableObject {
             recentSamples = [.init(date: now, items: 0, bytes: 0)]
         }
         if let bytes = value.archiveBytes { archiveBytes = bytes }
+        if let total = value.totalFiles, total > 0 {
+            totalFiles = total
+            if let completed = value.completedFiles { completedFiles = min(total, max(0, completed)) }
+        }
         if value.completedItems != nil || value.processedBytes != nil {
             recentSamples.append(.init(date: now, items: value.completedItems, bytes: value.processedBytes))
             recentSamples = Array(recentSamples.filter { now.timeIntervalSince($0.date) <= 4 }.suffix(40))

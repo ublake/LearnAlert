@@ -150,24 +150,15 @@ struct ContentView: View {
             }
             .onReceive(enterForeground) { _ in
                 StudyEngine.shared.restoreSession()
-                CourseProgressManager.shared.reloadFromSharedDefaults()
+                LibraryPreferences.shared.reloadFromSharedDefaults()
                 notificationManager.consumePendingStudyHandoff()
             }
             .onChange(of: notificationManager.pendingStudyHandoff) { _, handoff in
                 guard handoff != nil else { return }
                 selectedTab = 0
             }
-            .onChange(of: notificationManager.pendingCourseHandoff) { _, handoff in
-                guard handoff != nil else { return }
-                selectedTab = 0
-            }
             .onChange(of: notificationManager.shouldShowCustomizationTestGuide, initial: true) { _, showing in
                 if showing { selectedTab = 2 }
-            }
-            .navigationDestination(item: $notificationManager.pendingCourseHandoff) { handoff in
-                if let course = CourseCurriculumCatalog.course(for: handoff.id) {
-                    CoursePathView(course: course)
-                }
             }
             .navigationDestination(item: $notificationManager.pendingStudyHandoff) { handoff in
                 if let deck = decks.first(where: { $0.id == handoff.deckId }) {
@@ -256,35 +247,10 @@ enum HomeScheduleDeckCounts {
 
 private enum HomeAlertTarget {
     case deck(Deck)
-    case course(CourseDefinition)
-
-    var selectionId: String {
-        switch self {
-        case .deck(let deck): deck.id.uuidString
-        case .course(let course): CourseProgressManager.shared.enrollment(for: course.id)?.linkedDeckId ?? "course:\(course.id)"
-        }
-    }
-
-    var name: String {
-        switch self {
-        case .deck(let deck): deck.name
-        case .course(let course): "\(course.flagEmoji) \(course.title)"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .deck(let deck): "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards"
-        case .course(let course): "\(LanguageDeckProjection.topics(course).count) topic decks"
-        }
-    }
-
-    var canSchedule: Bool {
-        switch self {
-        case .deck(let deck): ((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) >= 2
-        case .course(let course): course.totalLessonsCount > 0
-        }
-    }
+    var selectionId: String { switch self { case .deck(let deck): deck.id.uuidString } }
+    var name: String { switch self { case .deck(let deck): deck.name } }
+    var detail: String { switch self { case .deck(let deck): "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards" } }
+    var canSchedule: Bool { switch self { case .deck(let deck): ((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) >= 2 } }
 }
 
 struct HomeLibraryView: View {
@@ -292,7 +258,7 @@ struct HomeLibraryView: View {
     @Query(sort: \Deck.orderIndex) private var allDecks: [Deck]
     @Environment(\.modelContext) private var context
     @ObservedObject private var sharedDB = SharedDatabase.shared
-    @ObservedObject private var progressManager = CourseProgressManager.shared
+    @ObservedObject private var libraryPreferences = LibraryPreferences.shared
     @ObservedObject private var engine = StudyEngine.shared
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -311,9 +277,6 @@ struct HomeLibraryView: View {
     @State private var deckPendingDeletion: Deck?
     @State private var homeAlertMessage: String?
     @State private var showingQuickScheduleTipToast = false
-    @State private var selectedCourseStudy: HomeCourseStudySelection?
-    @State private var selectedCourseForOverview: CourseDefinition?
-    @State private var coursePendingUnenroll: CourseDefinition?
 
     @AppStorage("hasSeenQuickScheduleSwitchTip") private var hasSeenQuickScheduleSwitchTip = false
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
@@ -330,57 +293,24 @@ struct HomeLibraryView: View {
         let timestamp = Date()
     }
 
-    @AppStorage("languageCollections") private var languageCollections = ""
 
-    private var ordinaryDecks: [Deck] {
-        allDecks.filter { $0.deckType != "Course" && !($0.sourceKind?.hasPrefix("language") ?? false) }
-    }
-
-    private var enrolledCourses: [CourseDefinition] {
-        let ids = Set(languageCollections.split(separator: "|").map(String.init))
-        return CourseCurriculumCatalog.courses.filter { ids.contains($0.id) || progressManager.isEnrolled(in: $0.id) }
-    }
+    private var ordinaryDecks: [Deck] { allDecks }
 
     private enum HomeLibraryItem: Identifiable, Equatable {
-        case course(CourseDefinition)
         case deck(Deck)
-
-        var id: String {
-            switch self {
-            case .course(let course): return "course:\(course.id)"
-            case .deck(let deck): return "deck:\(deck.id.uuidString)"
-            }
-        }
+        var id: String { switch self { case .deck(let deck): "deck:\(deck.id.uuidString)" } }
     }
 
     private var pinnedItems: [HomeLibraryItem] {
-        progressManager.pinnedItemIds.compactMap { itemId -> HomeLibraryItem? in
-            if itemId.hasPrefix("course:") {
-                let courseId = String(itemId.dropFirst("course:".count))
-                if let course = enrolledCourses.first(where: { $0.id == courseId }) {
-                    return .course(course)
-                }
-            } else if itemId.hasPrefix("deck:") {
-                let deckId = String(itemId.dropFirst("deck:".count))
-                if let deck = ordinaryDecks.first(where: { $0.id.uuidString == deckId }) {
-                    return .deck(deck)
-                }
-            }
-            return nil
-        }
-    }
-
-    private var unpinnedCourses: [CourseDefinition] {
-        let list = enrolledCourses.filter { !progressManager.isCoursePinned(courseId: $0.id) }
-        if searchText.isEmpty { return list }
-        return list.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.language.localizedCaseInsensitiveContains(searchText)
+        libraryPreferences.pinnedItemIds.compactMap { itemId in
+            guard itemId.hasPrefix("deck:"),
+                  let deck = ordinaryDecks.first(where: { "deck:" + $0.id.uuidString == itemId }) else { return nil }
+            return .deck(deck)
         }
     }
 
     private var unpinnedDecks: [Deck] {
-        let list = ordinaryDecks.filter { !progressManager.isDeckPinned(deckId: $0.id) }
+        let list = ordinaryDecks.filter { !libraryPreferences.isDeckPinned(deckId: $0.id) }
         var result = searchText.isEmpty ? list : list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
 
         if homeTutorialStep > 0, let tutDeck = activeTutorialDeck {
@@ -505,7 +435,6 @@ struct HomeLibraryView: View {
     private var alertSetupSection: some View {
         HomeAlertSetupCard(
             decks: ordinaryDecks,
-            courses: enrolledCourses,
             engine: engine,
             targetDeckId: $targetDeckId,
             isScheduling: isSchedulingAlerts,
@@ -524,13 +453,13 @@ struct HomeLibraryView: View {
     }
 
     private var libraryIDs: [String] {
-        enrolledCourses.map { "course:" + $0.id } + ordinaryDecks.map { "deck:" + $0.id.uuidString }
+        ordinaryDecks.map { "deck:" + $0.id.uuidString }
     }
 
     private var unpinnedItems: [HomeLibraryItem] {
-        let items = unpinnedCourses.map(HomeLibraryItem.course) + unpinnedDecks.map(HomeLibraryItem.deck)
+        let items = unpinnedDecks.map(HomeLibraryItem.deck)
         let lookup = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let ordered = HomeLibraryOrdering.ordered(items.map(\.id), saved: progressManager.libraryItemIds).compactMap { lookup[$0] }
+        let ordered = HomeLibraryOrdering.ordered(items.map(\.id), saved: libraryPreferences.libraryItemIds).compactMap { lookup[$0] }
         if homeTutorialStep > 0, let tutorialID = activeTutorialDeck?.id {
             let id = "deck:" + tutorialID.uuidString
             return ordered.filter { $0.id == id } + ordered.filter { $0.id != id }
@@ -546,18 +475,6 @@ struct HomeLibraryView: View {
     private func libraryCard(_ item: HomeLibraryItem, pinned: Bool) -> some View {
         Group {
             switch item {
-            case .course(let course):
-                HomeCourseCard(
-                    course: course,
-                    bundle: allDecks.first { $0.sourceKind == "languageTopic" && $0.sourcePremadeID == "language:\(course.id):all" },
-                    isPinned: pinned,
-                    isTargeted: engine.isActive && engine.activeDeckId?.uuidString == progressManager.enrollment(for: course.id)?.linkedDeckId,
-                    onContinue: { resumeCourse(course) },
-                    onOpenOverview: { selectedCourseForOverview = course },
-                    schedule: { scheduleCourse(course) },
-                    togglePin: { progressManager.togglePin(id: item.id) },
-                    unenroll: { coursePendingUnenroll = course }
-                ).disabled(homeTutorialStep > 0).allowsHitTesting(homeTutorialStep == 0)
             case .deck(let deck):
                 let highlighted = !pinned && homeTutorialStep == 1 && deck.id == activeTutorialDeck?.id
                 let dimmed = !pinned && homeTutorialStep == 1 && !highlighted
@@ -567,7 +484,7 @@ struct HomeLibraryView: View {
                     isTutorialHighlighted: highlighted, isTutorialActive: homeTutorialStep > 0,
                     onTapped: { if highlighted { homeTutorialStep = 2 } },
                     schedule: { quickSchedule(deck, fromDeckCard: true) },
-                    togglePin: { progressManager.togglePin(id: item.id) },
+                    togglePin: { libraryPreferences.togglePin(id: item.id) },
                     shuffleAppearance: { shuffleAppearance(for: deck) },
                     delete: { deckPendingDeletion = deck }
                 )
@@ -577,8 +494,8 @@ struct HomeLibraryView: View {
             }
         }
         .modifier(HomeLibraryDragModifier(id: item.id, enabled: homeTutorialStep == 0, dragging: $draggedLibraryID,
-            accepts: { source in libraryIDs.contains(source) && progressManager.isPinned(id: source) == pinned },
-            move: { source, target in progressManager.moveLibraryItem(source, over: target, available: libraryIDs) }))
+            accepts: { source in libraryIDs.contains(source) && libraryPreferences.isPinned(id: source) == pinned },
+            move: { source, target in libraryPreferences.moveLibraryItem(source, over: target, available: libraryIDs) }))
     }
 
     @ViewBuilder
@@ -590,7 +507,7 @@ struct HomeLibraryView: View {
                         .font(.headline)
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                     Spacer()
-                    let totalCount = pinnedItems.count + unpinnedCourses.count + unpinnedDecks.count
+                    let totalCount = pinnedItems.count + unpinnedDecks.count
                     Text("\(totalCount) \(totalCount == 1 ? "item" : "items")")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
@@ -601,7 +518,7 @@ struct HomeLibraryView: View {
             }
             .padding(.horizontal, 20)
 
-            if unpinnedCourses.isEmpty && unpinnedDecks.isEmpty && pinnedItems.isEmpty {
+            if unpinnedDecks.isEmpty && pinnedItems.isEmpty {
                 EmptyLibraryCard(
                     isSearching: !searchText.isEmpty,
                     onCreateDeck: { showingCreateDeck = true },
@@ -726,7 +643,7 @@ struct HomeLibraryView: View {
 
         if showingNotificationPermissionPrompt {
             NotificationPermissionPromptModal(
-                targetDeckName: pendingTargetToSchedule?.name ?? "your deck or course",
+                targetDeckName: pendingTargetToSchedule?.name ?? "your deck",
                 onAllow: {
                     withAnimation(.snappy) {
                         showingNotificationPermissionPrompt = false
@@ -831,30 +748,6 @@ struct HomeLibraryView: View {
         .sheet(isPresented: $showingAIComposer) {
             GeneratedQuizImportView()
         }
-        .navigationDestination(item: $selectedCourseForOverview) { course in
-            CoursePathView(course: course)
-        }
-        .fullScreenCover(item: $selectedCourseStudy) { selection in
-            CourseLessonStudyView(course: selection.course, lesson: selection.lesson,
-                onDismiss: { selectedCourseStudy = nil })
-        }
-        .confirmationDialog(
-            "Remove \(coursePendingUnenroll?.language ?? "this collection") from your library?",
-            isPresented: Binding(
-                get: { coursePendingUnenroll != nil },
-                set: { if !$0 { coursePendingUnenroll = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                if let course = coursePendingUnenroll {
-                    progressManager.unenroll(courseId: course.id)
-                    languageCollections = languageCollections.split(separator: "|").filter { $0 != Substring(course.id) }.joined(separator: "|")
-                    coursePendingUnenroll = nil
-                }
-            }
-            Button("Cancel", role: .cancel) { coursePendingUnenroll = nil }
-        }
         .confirmationDialog(
             "Delete \(deckPendingDeletion?.name ?? "this deck")?",
             isPresented: Binding(
@@ -885,14 +778,6 @@ struct HomeLibraryView: View {
         } message: {
             Text(homeAlertMessage ?? "")
         }
-    }
-
-    private func resumeCourse(_ course: CourseDefinition) {
-        selectedCourseForOverview = course
-    }
-
-    private func scheduleCourse(_ course: CourseDefinition) {
-        quickSchedule(.course(course), fromDeckCard: true)
     }
 
     private func sendTutorialTestAlert() {
@@ -957,7 +842,6 @@ struct HomeLibraryView: View {
         do {
             switch target {
             case .deck(let deck): _ = try await engine.startAlerts(for: deck)
-            case .course(let course): _ = try await engine.startAlerts(for: course)
             }
             InteractionSoundPlayer.shared.play(.scheduledAlerts)
             HapticFeedback.success()
@@ -1244,7 +1128,6 @@ private enum AIConnectivityCheck {
 
 private struct HomeAlertSetupCard: View {
     let decks: [Deck]
-    let courses: [CourseDefinition]
     @ObservedObject var engine: StudyEngine
     @Binding var targetDeckId: String
     var isScheduling = false
@@ -1259,12 +1142,7 @@ private struct HomeAlertSetupCard: View {
         if let deck = schedulableDecks.first(where: { $0.id.uuidString == targetDeckId }) {
             return .deck(deck)
         }
-        if let course = courses.first(where: {
-            "course:\($0.id)" == targetDeckId || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == targetDeckId
-        }) {
-            return .course(course)
-        }
-        return schedulableDecks.first.map(HomeAlertTarget.deck) ?? courses.first.map(HomeAlertTarget.course)
+        return schedulableDecks.first.map(HomeAlertTarget.deck)
     }
 
     var body: some View {
@@ -1335,7 +1213,7 @@ private struct HomeAlertSetupCard: View {
         let _ = librarySaveRevision
         let schedulableDecks = decks.filter { ((try? HomeScheduleDeckCounts.count(for: $0)) ?? $0.cardCount) >= 2 }
         let selectedTarget = self.selectedTarget(from: schedulableDecks)
-        let hasStudyMaterial = !schedulableDecks.isEmpty || !courses.isEmpty
+        let hasStudyMaterial = !schedulableDecks.isEmpty
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Alert Schedule")
@@ -1357,16 +1235,6 @@ private struct HomeAlertSetupCard: View {
                             }
                             ForEach(schedulableDecks) { deck in
                                 Button(deck.name) { targetDeckId = deck.id.uuidString }
-                            }
-                        }
-                        Section("Bundles") {
-                            if courses.isEmpty {
-                                Button("No bundles added") {}.disabled(true)
-                            }
-                            ForEach(courses) { course in
-                                Button("\(course.flagEmoji) \(course.title)") {
-                                    targetDeckId = HomeAlertTarget.course(course).selectionId
-                                }
                             }
                         }
                     } label: {
@@ -1431,15 +1299,12 @@ private struct HomeAlertSetupCard: View {
                         .background(LearnAlertStyle.aqua)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(engine.activeSectionName == "Learning Path" || engine.settingsDeck.map(LanguageBundleStudy.isBundle) == true ? "Bundle Scheduled" : "Deck Scheduled")
+                        Text("Deck Scheduled")
                             .font(.headline)
                         Text(engine.activeDeckName)
                             .font(.subheadline)
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .lineLimit(2)
-                        if engine.settingsDeck.map(LanguageBundleStudy.isBundle) == true {
-                            Text(engine.activeSectionName).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-                        }
                     }
                 }
                 Spacer(minLength: 28)
@@ -1485,7 +1350,7 @@ private struct AlertTargetPickerLabel: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedTarget?.name ?? "Choose a deck or bundle")
+                Text(selectedTarget?.name ?? "Choose a deck")
                     .font(.subheadline.weight(.medium))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
@@ -1714,7 +1579,6 @@ private struct HomeStudyCard: View {
 
     var body: some View {
         let summary = deck.librarySummary
-        let progressColor = self.progressColor(for: summary)
         VStack(alignment: .leading, spacing: 8) {
             if isTutorialHighlighted {
                 HStack(spacing: 6) {
@@ -1759,49 +1623,7 @@ private struct HomeStudyCard: View {
 
                                 Spacer(minLength: 0)
 
-                                HStack(spacing: 6) {
-                                    if summary.cycleStreak > 0 {
-                                        HStack(spacing: 2) {
-                                            Text("🔥")
-                                                .font(.system(size: 11))
-                                            Text("\(summary.cycleStreak)")
-                                                .font(.caption.weight(.semibold))
-                                                .foregroundStyle(Color(red: 1.00, green: 0.45, blue: 0.12))
-                                                .monospacedDigit()
-                                        }
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.orange.opacity(0.14), in: Capsule())
-                                    } else {
-                                        Image(systemName: "chart.bar.fill")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(progressColor)
-                                    }
-
-                                    GeometryReader { geo in
-                                        ZStack(alignment: .leading) {
-                                            Capsule()
-                                                .fill(LearnAlertStyle.textSecondary.opacity(0.18))
-                                                .frame(height: 4)
-
-                                            Capsule()
-                                                .fill(progressColor)
-                                                .frame(
-                                                    width: max(geo.size.width * CGFloat(summary.cycleProgress), summary.cycleProgress > 0 ? 4 : 0),
-                                                    height: 4
-                                                )
-                                        }
-                                        .frame(maxHeight: .infinity, alignment: .center)
-                                    }
-                                    .frame(width: 44, height: 12)
-
-                                    Text(summary.cycleProgress, format: .percent.precision(.fractionLength(0)))
-                                        .monospacedDigit()
-                                        .foregroundStyle(progressColor)
-
-                                    Spacer()
-                                }
-                                .font(.caption.weight(.medium))
+                                HomeMasteryBars(summary: summary).padding(.trailing, 40)
                             }
                             .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
                         }
@@ -1813,7 +1635,7 @@ private struct HomeStudyCard: View {
                     .simultaneousGesture(TapGesture().onEnded {
                         onTapped?()
                     })
-                    .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards")
+                    .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards. \(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
 
                     Button(action: {
                         if !isTutorialActive {
@@ -1883,91 +1705,6 @@ private struct HomeStudyCard: View {
         }
     }
 
-    private func progressColor(for summary: DeckLibrarySummary) -> Color {
-        if summary.cycleStreak > 0 {
-            if summary.cycleProgress >= 0.70 {
-                return Color(red: 0.18, green: 0.80, blue: 0.44)
-            } else if summary.cycleProgress >= 0.40 {
-                return LearnAlertStyle.appAccent
-            } else {
-                return LearnAlertStyle.appAccent
-            }
-        } else {
-            return LearnAlertStyle.textSecondary
-        }
-    }
-}
-
-/// A presentation contains both values, so the first launch cannot capture a missing course.
-private struct HomeCourseStudySelection: Identifiable {
-    let course: CourseDefinition
-    let lesson: CourseLesson
-    var id: String { course.id + ":" + lesson.id }
-}
-
-// MARK: - HomeCourseCard
-private struct HomeCourseCard: View {
-    let course: CourseDefinition
-    let bundle: Deck?
-    let isPinned: Bool
-    let isTargeted: Bool
-    let onContinue: () -> Void
-    let onOpenOverview: () -> Void
-    let schedule: () -> Void
-    let togglePin: () -> Void
-    let unenroll: () -> Void
-
-    private var trail: BundleLevelTrailProjection { BundleLevelTrailProjection(course: course, bundle: bundle) }
-
-    var body: some View {
-        let trail = trail
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Button(action: onOpenOverview) {
-                    HStack(spacing: 12) {
-                        Text(course.flagEmoji).font(.system(size: 30)).frame(width: 40)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(course.language).font(.headline).foregroundStyle(.primary)
-                            Text("\(LanguageDeckProjection.topics(course).count) topic decks").font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                Button(action: onContinue) {
-                    Image(systemName: "rectangle.stack.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                        .frame(width: 42, height: 42)
-                }.buttonStyle(.plain).accessibilityLabel("Open \(course.language) decks")
-            }
-            if !trail.nodes.isEmpty {
-                Button(action: onOpenOverview) {
-                    BundleLevelMiniTrail(projection: trail)
-                        .padding(.top, 10)
-                        .overlay(alignment: .top) {
-                            Rectangle().fill(LearnAlertStyle.hairline).frame(height: 0.5)
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens bundle levels")
-            }
-        }.padding(.horizontal, 14).padding(.vertical, 12)
-            .background(LearnAlertStyle.surface, in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LearnAlertStyle.hairline, lineWidth: 1))
-            .overlay(alignment: .topTrailing) {
-                if isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                        .padding(.top, 7).padding(.trailing, 7)
-                        .allowsHitTesting(false).accessibilityLabel("Pinned")
-                }
-            }
-            .contextMenu {
-                Button(action: togglePin) { Label(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") }
-                Button("Remove from library", systemImage: "xmark.circle", role: .destructive, action: unenroll)
-            }
-    }
 }
 
 // MARK: - Guided Walkthrough Top & Floating Banners// MARK: - Guided Walkthrough Top & Floating Banners
@@ -2410,64 +2147,39 @@ struct SetupAlertsView: View {
     @ObservedObject var engine: StudyEngine
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @AppStorage("languageCollections") private var languageCollections = ""
     @State private var draft = AlertScheduleEdit()
     @State private var original: AlertScheduleEdit?
     @State private var editingActiveSchedule = false
     @State private var saving = false
     @State private var errorMessage: String?
 
-    private var courses: [CourseDefinition] {
-        let saved = Set(languageCollections.split(separator: "|").map(String.init))
-        return CourseCurriculumCatalog.courses.filter { saved.contains($0.id) || CourseProgressManager.shared.isEnrolled(in: $0.id) }
-    }
-    private var selectedCourse: CourseDefinition? {
-        courses.first { "course:\($0.id)" == draft.targetId }
-    }
-    private var selectedDeck: Deck? {
-        if let course = selectedCourse,
-           let bundle = decks.first(where: { $0.sourcePremadeID == "language:\(course.id):all" }) { return bundle }
-        let id = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId } ?? draft.targetId
-        return decks.first { $0.id.uuidString == id }
-    }
-    private var automaticCount: Int {
-        if let deck = selectedDeck, LanguageBundleStudy.isBundle(deck) {
-            return DeckAlertSettings.automaticDailyCount(cardCount: LanguageBundleStudy.cards(deck, settings: draft.settings).count)
-        }
-        let target = selectedCourse.flatMap { CourseProgressManager.shared.enrollment(for: $0.id)?.dailyCardsTarget }
-        return DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cardCount, courseTarget: target)
-    }
+    private var selectedDeck: Deck? { decks.first { $0.id.uuidString == draft.targetId } }
+    private var automaticCount: Int { DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cardCount) }
     private var hasChanges: Bool { original.map { $0 != draft } ?? false }
     private var canSave: Bool {
-        hasChanges && !saving && (!editingActiveSchedule || selectedDeck != nil || selectedCourse != nil)
+        hasChanges && !saving && (!editingActiveSchedule || selectedDeck != nil)
     }
 
     var body: some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("SELECT DECK OR BUNDLE")
+                Text("SELECT DECK")
                     .font(.caption.bold())
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Menu {
-                    Picker("Deck or Bundle", selection: $draft.targetId) {
+                    Picker("Deck", selection: $draft.targetId) {
                         Section("Decks") {
                             if !editingActiveSchedule { Text("All Active Decks").tag("ALL") }
-                            ForEach(decks.filter { $0.deckType != "Course" }) { deck in
+                            ForEach(decks) { deck in
                                 Text(deck.name).tag(deck.id.uuidString)
-                            }
-                        }
-                        Section("Bundles") {
-                            ForEach(courses) { course in
-                                Text("\(course.flagEmoji) \(course.title)").tag("course:\(course.id)")
                             }
                         }
                     }
                 } label: {
                     HStack {
-                        Text(selectedCourse.map { "\($0.flagEmoji) \($0.title)" }
-                            ?? selectedDeck?.name ?? "All Active Decks")
+                        Text(selectedDeck?.name ?? "All Active Decks")
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
@@ -2480,11 +2192,6 @@ struct SetupAlertsView: View {
                 }
             }
             .padding(.horizontal)
-
-            if let deck = selectedDeck, LanguageBundleStudy.isBundle(deck) {
-                BundleLevelPicker(deck: deck, settings: $draft.settings)
-                    .padding(16).cleanSettingsCard().padding(.horizontal)
-            }
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("DAILY SCHEDULE")
@@ -2579,7 +2286,6 @@ struct SetupAlertsView: View {
         .disabled(saving)
         .onAppear(perform: load)
         .onChange(of: draft.targetId) { _, _ in
-            prepareBundle()
             draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
         }
         .onDisappear { InteractionSoundPlayer.shared.stopPreview() }
@@ -2594,31 +2300,14 @@ struct SetupAlertsView: View {
         } message: { Text(errorMessage ?? "Please try again.") }
     }
 
-    private func course(for deckId: UUID?) -> CourseDefinition? {
-        let bundleCourseID = decks.first(where: { $0.id == deckId && LanguageBundleStudy.isBundle($0) })?.sourceId
-        return courses.first { $0.id == bundleCourseID || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == deckId?.uuidString }
-    }
-
     private func load() {
         guard original == nil else { return }
         editingActiveSchedule = engine.isActive
         let storedTarget = UserDefaults.standard.string(forKey: "targetDeckId") ?? "ALL"
-        let target = editingActiveSchedule ? engine.activeDeckId?.uuidString ?? storedTarget : storedTarget
-        let bundleCourseID = decks.first(where: { $0.id.uuidString == target && LanguageBundleStudy.isBundle($0) })?.sourceId
-        let linkedCourse = courses.first {
-            $0.id == bundleCourseID || "course:\($0.id)" == target || CourseProgressManager.shared.enrollment(for: $0.id)?.linkedDeckId == target
-        }
-        draft.targetId = linkedCourse.map { "course:\($0.id)" } ?? target
-        prepareBundle()
+        draft.targetId = editingActiveSchedule ? engine.activeDeckId?.uuidString ?? storedTarget : storedTarget
         draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
         draft.sound = UserDefaults.standard.string(forKey: "alertSound") ?? "alert3.wav"
         original = draft
-    }
-
-    private func prepareBundle() {
-        guard let course = selectedCourse else { return }
-        do { _ = try LanguageTopicStore.collection(course: course, context: context) }
-        catch { errorMessage = "This bundle couldn’t be loaded. Please try again." }
     }
 
     private func save() {
@@ -2627,19 +2316,15 @@ struct SetupAlertsView: View {
         InteractionSoundPlayer.shared.stopPreview()
         let edit = draft
         let deck = selectedDeck
-        let course = selectedCourse
         let oldDeck = decks.first { $0.id == engine.activeDeckId }
-        let oldCourse = self.course(for: engine.activeDeckId)
         let oldSection = oldDeck?.sections.first { $0.id == engine.activeSectionId }
-        let reviewOnly = CourseNotificationScheduler.activePlan?.reviewOnly ?? false
         let section = deck?.id == oldDeck?.id ? oldSection : nil
         Task { @MainActor in
             defer { saving = false }
             do {
                 try await engine.saveAlertSettings(edit.settings, sound: edit.sound, for: deck) {
                     guard editingActiveSchedule else { return }
-                    if let course { _ = try await engine.startAlerts(for: course, courseReviewOnly: reviewOnly && course.id == oldCourse?.id) }
-                    else if let deck { _ = try await engine.startAlerts(for: deck, section: section) }
+                    if let deck { _ = try await engine.startAlerts(for: deck, section: section) }
                 }
                 UserDefaults.standard.set(edit.targetId, forKey: "targetDeckId")
                 HapticFeedback.success()
@@ -2648,8 +2333,7 @@ struct SetupAlertsView: View {
                 let schedulingError = error.localizedDescription
                 if editingActiveSchedule {
                     do {
-                        if let oldCourse { _ = try await engine.startAlerts(for: oldCourse, courseReviewOnly: reviewOnly) }
-                        else if let oldDeck { _ = try await engine.startAlerts(for: oldDeck, section: oldSection) }
+                        if let oldDeck { _ = try await engine.startAlerts(for: oldDeck, section: oldSection) }
                     } catch {
                         engine.stopAlerts()
                         errorMessage = "\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again."
@@ -2883,7 +2567,6 @@ struct AppSettingsView: View {
                 )
 
                 SettingsSupportGroup()
-                if communitySession.isDeveloper { DeveloperOptionsGroup() }
 
                 Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }
@@ -3182,32 +2865,5 @@ private struct QuickScheduleTipPopup: View {
         )
         .shadow(color: LearnAlertStyle.indigoDeep.opacity(0.38), radius: 18, y: 8)
         .padding(.horizontal, 18)
-    }
-}
-
-private struct DeveloperOptionsGroup: View {
-    @ObservedObject private var session = CommunitySession.shared
-    @State private var isSaving = false
-    @State private var error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Developer options").font(.headline)
-            Toggle("Allow Anki community uploads", isOn: Binding(
-                get: { session.canUploadAnki },
-                set: { enabled in
-                    isSaving = true; error = nil
-                    Task { @MainActor in
-                        defer { isSaving = false }
-                        do { try await session.saveDeveloperOptions(allowAnkiUploads: enabled) }
-                        catch { self.error = error.localizedDescription }
-                    }
-                }
-            ))
-            .disabled(isSaving)
-            if isSaving { ProgressView().controlSize(.small) }
-            if let error { Text(error).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
-        }
-        .padding(16).appCardSurface(cornerRadius: 20).padding(.horizontal, 20)
     }
 }

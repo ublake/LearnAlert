@@ -766,10 +766,10 @@ struct WhatsNewView: View {
                         isCurrent: true,
                         highlights: [
                             .init(title: "Shared decks & profiles", detail: "Discover and share decks, create a character avatar, and show creators some love."),
-                            .init(title: "Guided language courses", detail: "Learn through structured lessons, audio questions, varied activities, and helpful lesson guides."),
+                            .init(title: "Language decks", detail: "Explore Spanish and Korean vocabulary, grammar, and everyday conversations. Add independent topic decks to your library."),
                             .init(title: "Import from Anki", detail: "Bring your .apkg decks into LearnAlert with images, audio, and custom card layouts."),
                             .init(title: "More ways to make flashcards", detail: "Create image-only cards, animated front-and-back cards, and audio or image answer choices."),
-                            .init(title: "Smarter study alerts", detail: "Schedule decks and courses with individual settings, specific daily times, and improved expandable notification cards.")
+                            .init(title: "Smarter study alerts", detail: "Schedule your decks with individual settings, specific daily times, and improved expandable notification cards.")
                         ]
                     )
 

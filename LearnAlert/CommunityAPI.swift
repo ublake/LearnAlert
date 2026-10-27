@@ -5,6 +5,7 @@ import Security
 import CryptoKit
 import UIKit
 import AuthenticationServices
+import SwiftData
 
 struct CommunityFieldMedia: Codable {
     var imageID: String? = nil
@@ -81,18 +82,32 @@ struct CommunityBlockedUser: Codable, Identifiable, Equatable {
 extension Deck {
     /// Provenance survives edits; content matching also catches built-in imports made before tracking existed.
     var isAnkiImport: Bool {
-        sourceKind == "anki" || sourceAnkiDeckID != nil || cards.contains { $0.sourceAnkiCardID != nil || $0.cardType == .anki }
+        if sourceKind == "anki" || sourceAnkiDeckID != nil { return true }
+        // A bounded lookup covers legacy imports and cards moved into another
+        // deck without sorting/faulting a large deck merely to build its menu.
+        if let context = modelContext {
+            let deckID = id
+            var descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate {
+                $0.deck?.id == deckID && ($0.sourceAnkiCardID != nil || $0.cardTypeRaw == "anki")
+            })
+            descriptor.fetchLimit = 1
+            descriptor.propertiesToFetch = [\.id]
+            if let found = try? context.fetch(descriptor) { return !found.isEmpty }
+        }
+        return cards.contains { $0.sourceAnkiCardID != nil || $0.cardType == .anki }
     }
     var communitySharingRestriction: String? { sharingRestriction(allowAnkiUploads: false) }
 
     /// Cheap menu/form gates use provenance only. Legacy content matching still
     /// runs in sharingRestriction immediately before an actual publish request.
     func provenanceSharingRestriction(allowAnkiUploads: Bool) -> String? {
-        if !allowAnkiUploads && (sourceKind == "anki" || sourceAnkiDeckID != nil) {
+        if !allowAnkiUploads && isAnkiImport {
             return "Uploading decks imported from Anki are not supported yet"
         }
         if sourceCommunityID != nil { return "Downloaded shared decks can’t be republished. Share a deck you created." }
-        if sourcePremadeID != nil || deckType == "Course" { return "Built-in decks and bundles can’t be published as shared decks." }
+        if sourcePremadeID != nil || deckType == "Course" || ["managedLanguage", "languageTopic"].contains(sourceKind ?? "") {
+            return "Built-in decks can’t be published as shared decks."
+        }
         return nil
     }
 
@@ -116,7 +131,7 @@ extension Deck {
     }
 
     var canShareToCommunity: Bool { communitySharingRestriction == nil }
-    var canPresentCommunitySharing: Bool { provenanceSharingRestriction(allowAnkiUploads: true) == nil }
+    var canPresentCommunitySharing: Bool { provenanceSharingRestriction(allowAnkiUploads: false) == nil }
 }
 
 struct CommunityAPIError: LocalizedError {
@@ -564,10 +579,10 @@ enum CommunityDeckTransfer {
                         api: CommunityAPI? = nil,
                         progress: @escaping (String) -> Void) async throws -> String {
         let api = api ?? CommunityAPI()
-        let profile = deck.isAnkiImport || publisherHandle?.isEmpty == false ? try await api.profile(token: token) : nil
-        if let reason = deck.sharingRestriction(allowAnkiUploads: profile?.isDeveloper == true && profile?.allowAnkiUploads == true) {
+        if let reason = deck.sharingRestriction(allowAnkiUploads: false) {
             throw CommunityAPIError(status: 403, message: reason)
         }
+        let profile = publisherHandle?.isEmpty == false ? try await api.profile(token: token) : nil
         if publisherHandle?.isEmpty == false && profile?.isDeveloper != true {
             throw CommunityAPIError(status: 403, message: "Custom publishing names require developer access.")
         }

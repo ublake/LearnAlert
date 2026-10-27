@@ -42,24 +42,10 @@ class StudyEngine: ObservableObject {
             }
         }
     }
-    @Published private var automaticCourseTarget: Int?
     func selectSettings(for deck: Deck?) {
         settingsDeck = deck
-        automaticCourseTarget = nil
     }
     var automaticDailyCount: Int {
-        if let target = automaticCourseTarget {
-            return DeckAlertSettings.automaticDailyCount(cardCount: nil, courseTarget: target)
-        }
-        if let deck = settingsDeck, deck.deckType == "Course" {
-            let manager = CourseProgressManager.shared
-            let target = manager.allEnrolledCourses.compactMap { manager.enrollment(for: $0.id) }
-                .first { $0.linkedDeckId == deck.id.uuidString }?.dailyCardsTarget ?? 5
-            return DeckAlertSettings.automaticDailyCount(cardCount: nil, courseTarget: target)
-        }
-        if let deck = settingsDeck, LanguageBundleStudy.isBundle(deck) {
-            return DeckAlertSettings.automaticDailyCount(cardCount: LanguageBundleStudy.cards(deck, settings: settings).count)
-        }
         return DeckAlertSettings.automaticDailyCount(cardCount: settingsDeck?.cards.count)
     }
     var globalSettings: DeckAlertSettings { defaultSettings }
@@ -72,7 +58,6 @@ class StudyEngine: ObservableObject {
         let previousDefaultsData = UserDefaults.standard.object(forKey: "defaultDeckAlertSettings")
         let previousSound = UserDefaults.standard.object(forKey: "alertSound")
         let previousSelection = settingsDeck
-        let previousCourseTarget = automaticCourseTarget
         do {
             selectSettings(for: deck)
             if let deck {
@@ -92,7 +77,6 @@ class StudyEngine: ObservableObject {
             if let previousSound { UserDefaults.standard.set(previousSound, forKey: "alertSound") }
             else { UserDefaults.standard.removeObject(forKey: "alertSound") }
             settingsDeck = previousSelection
-            automaticCourseTarget = previousCourseTarget
             throw error
         }
     }
@@ -124,42 +108,24 @@ class StudyEngine: ObservableObject {
         if restoreSavedSession { restoreSession() }
     }
     
-    private var restoringCourse = false
+    private var restoringSchedule = false
 
     func restoreSession() {
         if let plan = DailyDeckAlertScheduler.activePlan, savedIsActive {
-            guard !restoringCourse else { return }
-            restoringCourse = true
+            guard !restoringSchedule else { return }
+            restoringSchedule = true
             activeDeckId = plan.deckId
             activeDeckName = savedDeckName
             activeSectionId = plan.sectionId
             activeSectionName = savedSectionName
             isActive = true
             Task {
-                defer { restoringCourse = false }
+                defer { restoringSchedule = false }
                 do {
                     scheduledDates = try await DailyDeckAlertScheduler.replenish()
                     savedDatesData = try JSONEncoder().encode(scheduledDates)
                     if scheduledDates.isEmpty { stopAlerts() }
                 } catch { print("Daily alerts could not be restored: \(error.localizedDescription)") }
-            }
-            return
-        }
-        if let plan = CourseNotificationScheduler.activePlan, savedIsActive {
-            guard !restoringCourse else { return }
-            restoringCourse = true
-            activeDeckId = UUID(uuidString: plan.deckId)
-            activeDeckName = savedDeckName
-            activeSectionId = nil
-            activeSectionName = "Learning Path"
-            isActive = true
-            Task {
-                defer { restoringCourse = false }
-                do {
-                    if let course = CourseCurriculumCatalog.course(for: plan.courseId) {
-                        _ = try await startAlerts(for: course)
-                    } else { stopAlerts() }
-                } catch { print("Course alerts could not be restored: \(error.localizedDescription)") }
             }
             return
         }
@@ -204,59 +170,9 @@ class StudyEngine: ObservableObject {
         }
     }
     
-    /// Courses already have an enrollment and linked deck identity. Scheduling must
-    /// not rebuild their SwiftData cards on the main thread.
     @discardableResult
-    func startAlerts(for course: CourseDefinition, courseReviewOnly: Bool = false) async throws -> Int {
-        let deck = try LanguageTopicStore.collection(course: course, context: context)
-        return try await startAlerts(for: deck, courseReviewOnly: false)
-    }
-
-    private func startAlerts(for course: CourseDefinition, enrollment: CourseEnrollment, courseReviewOnly: Bool) async throws -> Int {
-        guard let linkedDeckId = enrollment.linkedDeckId, let deckId = UUID(uuidString: linkedDeckId) else {
-            throw NSError(domain: "LearnAlert.Course", code: 404, userInfo: [NSLocalizedDescriptionKey: "This course's linked deck is missing. Open the course to set it up again."])
-        }
-        guard !enrollment.selectedDays.isEmpty else {
-            throw NSError(domain: "LearnAlert.Course", code: 400, userInfo: [NSLocalizedDescriptionKey: "Choose at least one study day."])
-        }
-        let linkedDeck = settingsDeck?.id == deckId ? settingsDeck : try context.fetch(FetchDescriptor<Deck>(
-            predicate: #Predicate { $0.id == deckId })).first
-        selectSettings(for: linkedDeck)
-        automaticCourseTarget = enrollment.dailyCardsTarget
-        DailyDeckAlertScheduler.clear()
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        let expiry = stopCondition == "Until Day Ends" ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date())) : nil
-        let plan = CourseAlertPlan(courseId: course.id, deckId: linkedDeckId,
-            startHour: activeVolume == 1 ? settings.dailyHour : startHour, startMinute: activeVolume == 1 ? settings.dailyMinute : startMinute, endHour: endHour, endMinute: endMinute,
-            weekdays: enrollment.selectedDays, dailyCount: activeVolume, expiresAt: expiry, reviewOnly: courseReviewOnly, stopWhenMastered: stopCondition == "Until Deck Learnt",
-            sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
-        let dates = try await CourseNotificationScheduler.activate(plan)
-        guard !dates.isEmpty else {
-            CourseNotificationScheduler.clear()
-            throw NSError(domain: "LearnAlert.Course", code: 204, userInfo: [NSLocalizedDescriptionKey: "No alerts fit the selected days and study window."])
-        }
-        let name = "\(course.flagEmoji) \(course.title)"
-        activeDeckId = deckId; activeDeckName = name
-        activeSectionId = nil; activeSectionName = "Learning Path"
-        scheduledDates = dates; isActive = true
-        savedIsActive = true; savedDeckId = linkedDeckId; savedDeckName = name
-        savedSectionId = ""; savedSectionName = "Learning Path"
-        savedDatesData = try JSONEncoder().encode(dates)
-        let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-        defaults?.set(linkedDeckId, forKey: "extensionActiveDeckId")
-        defaults?.set(name, forKey: "extensionActiveDeckName")
-        defaults?.set(false, forKey: "extensionDidStopAlerts")
-        return dates.count
-    }
-
-    @discardableResult
-    func startAlerts(for deck: Deck, section: DeckSection? = nil, courseReviewOnly: Bool = false) async throws -> Int {
-        if LanguageBundleStudy.isBundle(deck), let id = deck.sourceId,
-           let course = CourseCurriculumCatalog.course(for: id) {
-            _ = try LanguageTopicStore.collection(course: course, context: deck.modelContext ?? context)
-        }
+    func startAlerts(for deck: Deck, section: DeckSection? = nil) async throws -> Int {
         selectSettings(for: deck)
-        CourseNotificationScheduler.clear()
         DailyDeckAlertScheduler.clear()
         let cards = fetchCardsToStudy(from: deck, section: section)
         
@@ -294,12 +210,8 @@ class StudyEngine: ObservableObject {
         let interval = max(60.0, totalDuration / Double(max(1, cards.count)))
         
         var newScheduledDates: [Date] = []
-        if LanguageBundleStudy.isBundle(deck) {
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(smartSRS,
-                forKey: "bundle-scheduling-smart-\(deck.id.uuidString)")
-        }
         if activeVolume == 1 {
-            let base = section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)
+            let base = section?.cards ?? deck.cards
             let ordered = smartSRS ? base.sorted { $0.studyPriority > $1.studyPriority } : orderedCards(deck: deck, section: section)
             // Start with the next selected card, then rotate through the remaining material.
             let first = cards[0]
@@ -322,9 +234,7 @@ class StudyEngine: ObservableObject {
                 let triggerDate = startTime.addingTimeInterval(interval * Double(index))
                 newScheduledDates.append(triggerDate)
                 try await NotificationManager.shared.scheduleRealCardAsync(card, at: triggerDate, progress: "\(index + 1)/\(cards.count)")
-                if smartSRS && section == nil {
-                    LanguageBundleStudy.recordOpportunities([card], deck: deck, settings: settings)
-                }
+
             }
         }
 
@@ -340,7 +250,7 @@ class StudyEngine: ObservableObject {
         self.activeDeckId = deck.id
         self.activeDeckName = deck.name
         self.activeSectionId = section?.id
-        self.activeSectionName = section?.name ?? LanguageBundleStudy.activeLevel(deck, settings: settings)?.title ?? "All Categories"
+        self.activeSectionName = section?.name ?? "All Categories"
         self.scheduledDates = newScheduledDates
         withAnimation(.spring) { self.isActive = true }
         
@@ -367,7 +277,6 @@ class StudyEngine: ObservableObject {
     func stopAlerts() {
         AlertTimelineStore.shared.cancelFuture()
         DailyDeckAlertScheduler.clear()
-        CourseNotificationScheduler.clear()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         withAnimation(.spring) {
             self.isActive = false
@@ -466,7 +375,7 @@ class StudyEngine: ObservableObject {
     }
 
     private func orderedCards(deck: Deck, section: DeckSection?) -> [Flashcard] {
-        (section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)).sorted {
+        (section?.cards ?? deck.cards).sorted {
             if $0.orderIndex != $1.orderIndex { return $0.orderIndex < $1.orderIndex }
             return $0.id.uuidString < $1.id.uuidString
         }
@@ -474,16 +383,12 @@ class StudyEngine: ObservableObject {
 
     /// Smart Spaced Repetition card selection prioritizing due & new cards
     private func fetchCardsToStudy(from deck: Deck, section: DeckSection?) -> [Flashcard] {
-        let baseCards = section?.cards ?? LanguageBundleStudy.cards(deck, settings: settings)
+        let baseCards = section?.cards ?? deck.cards
         guard !baseCards.isEmpty else { return [] }
         
         let now = Date()
         
         if smartSRS {
-            if section == nil, LanguageBundleStudy.isBundle(deck) {
-                return LanguageBundleStudy.selection(deck, count: activeVolume, settings: settings,
-                    now: now, allowUpcoming: stopCondition != "Until Deck Learnt")
-            }
             // 1. Due Cards: cards that have been studied before and have nextReviewDate <= now
             let dueCards = baseCards.filter { !$0.isNew && $0.nextReviewDate <= now }.sorted {
                 if $0.studyPriority != $1.studyPriority {

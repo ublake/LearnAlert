@@ -16,12 +16,18 @@ public struct AnkiImportProgress: Sendable {
     public let unit: String
     public let processedBytes: Int?
     public let archiveBytes: Int?
+    /// Source files prepared for import. The collection is completed only after
+    /// the app has committed it to the library; card rows are not separate files.
+    public let completedFiles: Int?
+    public let totalFiles: Int?
     public init(_ fraction: Double, _ title: String, _ detail: String = "",
                 completedItems: Int? = nil, totalItems: Int? = nil, unit: String = "",
-                processedBytes: Int? = nil, archiveBytes: Int? = nil) {
+                processedBytes: Int? = nil, archiveBytes: Int? = nil,
+                completedFiles: Int? = nil, totalFiles: Int? = nil) {
         self.fraction = fraction; self.title = title; self.detail = detail
         self.completedItems = completedItems; self.totalItems = totalItems; self.unit = unit
         self.processedBytes = processedBytes; self.archiveBytes = archiveBytes
+        self.completedFiles = completedFiles; self.totalFiles = totalFiles
     }
 }
 

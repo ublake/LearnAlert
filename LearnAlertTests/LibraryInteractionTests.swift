@@ -22,28 +22,23 @@ struct LibraryInteractionTests {
         #expect(HomeLibraryOrdering.moving(ids[0], over: "missing", in: ids) == ids)
     }
 
-    private func withManager(_ body: (CourseProgressManager, UserDefaults, CourseLearningStore) throws -> Void) throws {
+    private func withManager(_ body: (LibraryPreferences, UserDefaults) throws -> Void) throws {
         let suite = "LibraryInteractionTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
-        defer {
-            defaults.removePersistentDomain(forName: suite)
-            try? FileManager.default.removeItem(at: directory)
-        }
-        let store = CourseLearningStore(directory: directory, defaults: defaults)
-        try body(CourseProgressManager(defaults: defaults, learningStore: store, isPreview: true), defaults, store)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try body(LibraryPreferences(defaults: defaults), defaults)
     }
 
     @Test("Mixed library order survives reload while pinning remains an explicit action")
     func persistentOrderAndPins() throws {
-        try withManager { manager, defaults, store in
+        try withManager { manager, defaults in
             let ids = ["course:korean", "deck:a", "deck:b", "deck:c"]
             manager.moveLibraryItem(ids[2], over: ids[0], available: ids)
             let expected = [ids[2], ids[0], ids[1], ids[3]]
             #expect(manager.libraryItemIds == expected && manager.pinnedItemIds.isEmpty)
-            let reloaded = CourseProgressManager(defaults: defaults, learningStore: store, isPreview: true)
+            let reloaded = LibraryPreferences(defaults: defaults)
             #expect(reloaded.libraryItemIds == expected)
-            reloaded.pin(id: ids[0]); reloaded.pin(id: ids[1])
+            reloaded.togglePin(id: ids[0]); reloaded.togglePin(id: ids[1])
             #expect(reloaded.pinnedItemIds == [ids[1], ids[0]])
             reloaded.moveLibraryItem(ids[0], over: ids[1], available: ids)
             #expect(reloaded.pinnedItemIds == [ids[0], ids[1]])
@@ -54,41 +49,6 @@ struct LibraryInteractionTests {
             #expect(reloaded.pinnedItemIds == [ids[0], ids[1]])
             reloaded.togglePin(id: ids[0]); reloaded.reloadFromSharedDefaults()
             #expect(!reloaded.isPinned(id: ids[0]) && reloaded.isPinned(id: ids[1]))
-        }
-    }
-
-    @Test("Enrolling never auto-pins, and reenrollment preserves a manual pin or unpin")
-    func enrollmentDoesNotPin() throws {
-        try withManager { manager, _, _ in
-            let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
-                configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
-            let course = CourseDefinition(id: "pin-fixture", title: "Fixture", language: "Spanish", flagEmoji: "🇪🇸",
-                levelTag: "", colorHex: "#123456", summary: "", estimatedHours: 0, outcomes: [], units: [
-                    .init(id: "unit", unitNumber: 1, title: "Unit", subtitle: "", colorHex: "#123456", badgeIcon: "book", lessons: [
-                        .init(id: "lesson", lessonNumber: 1, title: "Lesson", subtitle: "", cards: [
-                            .init(id: "card", question: "Hola", options: ["Hello", "Water"], correctAnswer: "Hello")
-                        ])
-                    ])
-                ])
-            let engine = StudyEngine.shared, previous = engine.settings
-            let oldCustom = UserDefaults.standard.object(forKey: "customVolume")
-            let oldDefaults = UserDefaults.standard.object(forKey: "defaultDeckAlertSettings")
-            defer {
-                engine.settings = previous
-                UserDefaults.standard.set(oldCustom, forKey: "customVolume")
-                UserDefaults.standard.set(oldDefaults, forKey: "defaultDeckAlertSettings")
-            }
-            @MainActor func enroll() {
-                _ = manager.enroll(course: course, goal: .conversation, experienceLevel: .absoluteBeginner,
-                    studyMode: .inAppAndNotifications, selectedDays: [2, 3], startHour: 9, startMinute: 0,
-                    endHour: 17, endMinute: 0, dailyCardsTarget: 5, context: container.mainContext)
-            }
-            enroll()
-            #expect(manager.isEnrolled(in: course.id) && !manager.isCoursePinned(courseId: course.id))
-            manager.pin(id: "course:" + course.id); enroll()
-            #expect(manager.isCoursePinned(courseId: course.id))
-            manager.unpin(id: "course:" + course.id); enroll(); manager.reloadFromSharedDefaults()
-            #expect(!manager.isCoursePinned(courseId: course.id))
         }
     }
 

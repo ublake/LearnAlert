@@ -841,28 +841,12 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
-        if LanguageBundleStudy.isBundle(deck), let courseID = deck.sourceId,
-           let course = CourseCurriculumCatalog.course(for: courseID) {
-            _ = try? LanguageTopicStore.collection(course: course, context: context)
-        }
-        let cards = LanguageBundleStudy.cards(deck)
+        let cards = deck.cards
         let now = Date()
         let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
         let nextCard: Flashcard?
-        if LanguageBundleStudy.isBundle(deck), LanguageBundleStudy.smartReviewEnabled(deck) {
-            let seen = Set(seenCardIds.compactMap(UUID.init(uuidString:)))
-            if let card = LanguageBundleStudy.selection(deck, count: 1, now: now, excluding: seen).first {
-                nextCard = card
-            } else {
-                seenCardIds.removeAll()
-                // Completing a pass may repeat older material, but keep the last
-                // question out while any different eligible choice remains.
-                let last = UUID(uuidString: activeCardId).map { Set([$0]) } ?? []
-                nextCard = LanguageBundleStudy.selection(deck, count: 1, now: now, excluding: last).first
-                    ?? LanguageBundleStudy.selection(deck, count: 1, now: now).first
-            }
-        } else if let card = unseenCards.first {
+        if let card = unseenCards.first {
             nextCard = card
         } else {
             seenCardIds.removeAll()
@@ -878,9 +862,6 @@ struct FlashcardNotificationView: View {
         }
 
         seenCardIds.insert(cardToStudy.id.uuidString)
-        if LanguageBundleStudy.smartReviewEnabled(deck) {
-            LanguageBundleStudy.recordOpportunities([cardToStudy], deck: deck)
-        }
         withAnimation(.snappy) {
             sessionCard = NotificationSessionCard(
                 id: cardToStudy.id.uuidString,
@@ -1252,21 +1233,18 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     private var hostingController: UIHostingController<AnyView>?
     private var measuredContentHeight: CGFloat = 540
-    private var isCourseContent = false
     private var isAnkiContent = false
-    private var coursePreservesDrawingHeight = false
 
-    private func fitContent(_ height: CGFloat, preserveDrawingHeight: Bool = false) {
+    private func fitContent(_ height: CGFloat) {
         measuredContentHeight = height
-        coursePreservesDrawingHeight = preserveDrawingHeight
         // Use the active scene's display, never UIScreen.main or the bubble's own height.
         let scene = view.window?.windowScene
         let containerHeight = NotificationViewportGeometry.containerHeight(
             sceneHeight: scene?.effectiveGeometry.coordinateSpace.bounds.height,
             displayHeight: scene?.screen.coordinateSpace.bounds.height ?? 760)
-        let requested = preserveDrawingHeight ? CGFloat(540) : height
+        let requested = height
         let targetHeight = NotificationViewportGeometry.preferredHeight(contentHeight: requested,
-            containerHeight: containerHeight, baseline: isCourseContent ? 540 : isAnkiContent ? 500 : 300)
+            containerHeight: containerHeight, baseline: isAnkiContent ? 500 : 300)
         let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
         if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
             preferredContentSize = targetSize
@@ -1275,7 +1253,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        fitContent(measuredContentHeight, preserveDrawingHeight: coursePreservesDrawingHeight)
+        fitContent(measuredContentHeight)
     }
 
     override func viewSafeAreaInsetsDidChange() {
@@ -1295,67 +1273,36 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        KoreanSpeechManager.shared.stop()
-        if isCourseContent { CardAudioPlayer.stopActive() }
+        CardAudioPlayer.stopActive()
         extensionContext?.mediaPlayingPaused()
     }
 
     func mediaPause() {
-        KoreanSpeechManager.shared.stop()
-        if isCourseContent { CardAudioPlayer.stopActive() }
+        CardAudioPlayer.stopActive()
         extensionContext?.mediaPlayingPaused()
     }
 
     func didReceive(_ notification: UNNotification) {
-        if isCourseContent {
-            KoreanSpeechManager.shared.stop()
-            CardAudioPlayer.stopActive()
-        }
+        CardAudioPlayer.stopActive()
         AlertTimelineStore.shared.delivered(notification)
         Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
         var userInfo = content.userInfo
 
-        if let courseId = userInfo["courseId"] as? String {
-            let profile = userInfo["courseDeliveryProfile"] as? String
-            let required = userInfo["courseRequiredContracts"] as? [String]
-            let catalog = profile == nil || profile == "legacy-v1" ? ManagedCatalogStore.legacyShared : profile == "practice-v1" ? ManagedCatalogStore.practiceV1Shared : ManagedCatalogStore.shared
-            guard let course = catalog.course(for: courseId), CourseDeliveryContracts.notificationCanRender(profile: profile, contracts: required, course: course) else {
-                isCourseContent = true
-                fitContent(240)
-                show(AnyView(VStack(alignment: .leading, spacing: 16) {
-                    Text("Continue in LearnAlert").font(.title2.bold())
-                    Text("Open the app to load the compatible course and keep your place.").foregroundStyle(.secondary)
-                    Button("Open LearnAlert") { [weak self] in
-                        let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-                        defaults?.set(courseId, forKey: "handoffCourseId")
-                        defaults?.set(true, forKey: "handoffCourseOpenPath")
-                        defaults?.synchronize()
-                        self?.extensionContext?.performNotificationDefaultAction()
-                    }.buttonStyle(.borderedProminent).frame(minHeight: 44)
-                }.padding(24)))
+        if userInfo["cardId"] == nil, let courseID = userInfo["courseId"] as? String {
+            let context = ModelContext(SharedDatabase.shared.container)
+            guard let card = LanguageDeckMigration.legacyCard(deckID: userInfo["deckId"] as? String,
+                courseID: courseID, in: context), let deck = card.deck else {
+                show(AnyView(Text("Open LearnAlert to restore your saved deck.").padding(24)))
                 return
             }
-            // Old course alerts are rendered and graded by the same deck UI.
-            do {
-                let context = ModelContext(SharedDatabase.shared.container)
-                let deck = try LanguageTopicStore.collection(course: course, context: context)
-                if let card = LanguageBundleStudy.smartReviewEnabled(deck)
-                    ? LanguageBundleStudy.selection(deck, count: 1).first : LanguageBundleStudy.cards(deck).first {
-                    userInfo["deckId"] = deck.id.uuidString; userInfo["cardId"] = card.id.uuidString
-                    userInfo["deckName"] = deck.name; userInfo["cardType"] = card.cardType.rawValue
-                    userInfo["question"] = card.studyQuestion; userInfo["options"] = card.options
-                    userInfo["correctAnswer"] = card.correctAnswer
-                }
-            } catch {
-                show(AnyView(Text("Open LearnAlert to load your language decks.").padding(24)))
-                return
-            }
+            userInfo["deckId"] = deck.id.uuidString
+            userInfo["cardId"] = card.id.uuidString
+            userInfo["deckName"] = deck.name
+            userInfo["cardType"] = card.cardType.rawValue
         }
 
-        isCourseContent = false
         isAnkiContent = (userInfo["cardType"] as? String) == "anki"
-        coursePreservesDrawingHeight = false
         fitContent(540)
 
         let isRandom = userInfo["isRandom"] as? Bool ?? false
@@ -1396,15 +1343,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             let deckDescriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
             let resolvedDeck = scheduledCard?.deck?.id == deckId ? scheduledCard?.deck : try? context.fetch(deckDescriptor).first
             if let deck = resolvedDeck {
-                if LanguageBundleStudy.isBundle(deck), let courseID = deck.sourceId,
-                   let course = CourseCurriculumCatalog.course(for: courseID) {
-                    _ = try? LanguageTopicStore.collection(course: course, context: context)
-                }
-                let pool = LanguageBundleStudy.cards(deck)
-                let fallback = LanguageBundleStudy.smartReviewEnabled(deck)
-                    ? LanguageBundleStudy.selection(deck, count: 1).first : pool.first
-                if let card = LanguageBundleStudy.isBundle(deck)
-                    ? (pool.first(where: { $0.id == scheduledCard?.id }) ?? fallback) : scheduledCard {
+                if let card = scheduledCard {
                 snapshot = NotificationSessionCard(
                     id: card.id.uuidString, deckId: deck.id.uuidString,
                     deckName: deck.name, deckType: card.cardType.title,

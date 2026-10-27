@@ -363,32 +363,6 @@ enum CourseAudioPolicy {
         ["korean", "ko", "ko-kr"].contains(language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
-    static func source(for card: CourseLessonCard, allowRecordedAudio: Bool, allowKoreanSpeech: Bool,
-                       recordingAvailable: (String) -> Bool, canSpeak: (String) -> Bool) -> CourseAudioSource? {
-        if allowRecordedAudio {
-            // A legacy attachment must not hide a usable field-media recording.
-            let names = [card.promptAudioName, card.fieldMedia?["prompt"]?.audio]
-            for name in names.compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
-                where !name.isEmpty && recordingAvailable(name) {
-                return .recording(name)
-            }
-        }
-        guard allowKoreanSpeech, let text = card.speechText?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty, canSpeak(text) else { return nil }
-        return .koreanSpeech(text)
-    }
-
-    @MainActor
-    static func source(for card: CourseLessonCard, allowRecordedAudio: Bool, allowKoreanSpeech: Bool) -> CourseAudioSource? {
-        source(for: card, allowRecordedAudio: allowRecordedAudio, allowKoreanSpeech: allowKoreanSpeech,
-               recordingAvailable: { CardAudioStore.isAvailable(named: $0) },
-               canSpeak: { KoreanSpeechManager.shared.canPlay($0) })
-    }
-
-    static func isListening(card: CourseLessonCard, source: CourseAudioSource?, prefersReading: Bool) -> Bool {
-        card.isListeningQuestion && source != nil && !prefersReading
-    }
-
     static func readingQuestion(for card: CourseLessonCard) -> String {
         if let prompt = card.readingPrompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return prompt }
         if let cue = card.activity?.readingCue, !cue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return cue }
@@ -893,38 +867,6 @@ enum LanguageDeckProjection {
             self.cards = cards
             self.importance = min(10, max(1, importance))
         }
-    }
-    struct Level: Identifiable {
-        let id: String
-        let title: String
-        let topics: [Topic]
-        var cards: [CourseLessonCard] { topics.flatMap(\.cards) }
-    }
-
-    static func levels(_ course: CourseDefinition) -> [Level] {
-        let topics = topics(course)
-        let byID = Dictionary(topics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var result: [Level] = []
-        var assigned = Set<String>()
-        func append(_ id: String, _ title: String, _ members: [Topic]) {
-            let members = members.filter { !assigned.contains($0.id) && !$0.cards.isEmpty }
-            guard !members.isEmpty else { return }
-            assigned.formUnion(members.map(\.id))
-            let levelTitle = result.isEmpty && course.language == "Spanish" ? "Introduction & basics" : title
-            result.append(Level(id: id, title: levelTitle, topics: members))
-        }
-        // Split the original Korean foundation unit before it introduces phrases.
-        // Stable lesson IDs keep saved cards and progress attached to their source.
-        if CourseAudioPolicy.allowsKoreanSpeech(for: course.language) {
-            append("hangul-alphabet", "Hangul alphabet", ["kr-1-1", "kr-1-2"].compactMap { byID[$0] })
-            append("hangul-blocks", "Building syllables & words", ["kr-1-3", "kr-1-4"].compactMap { byID[$0] })
-        }
-        for unit in course.units {
-            let title = unit.title.replacingOccurrences(of: #"^Unit\s+\d+\s*:\s*"#, with: "", options: .regularExpression)
-            append(unit.id, title, unit.lessons.compactMap { byID[$0.id] })
-        }
-        for topic in topics where !assigned.contains(topic.id) { append(topic.id, topic.title, [topic]) }
-        return result
     }
     private struct Word { let text: String; let image: String }
     private static var cached: [String: (source: CourseDefinition, topics: [Topic])] = [:]
