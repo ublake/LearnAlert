@@ -15,6 +15,12 @@ nonisolated enum NotificationViewportGeometry {
         let height = containerHeight.isFinite && containerHeight > 0 ? containerHeight : 760
         return min(height, max(160, min(680, height - 220)))
     }
+    /// Leave room for system notification chrome while using more of the
+    /// display for imported HTML. UIKit may grant less; the view fits that size.
+    static func ankiPreferredHeight(containerHeight: CGFloat) -> CGFloat {
+        let height = containerHeight.isFinite && containerHeight > 0 ? containerHeight : 760
+        return min(height, max(160, min(760, height - 200)))
+    }
     static func preferredHeight(contentHeight: CGFloat, containerHeight: CGFloat, baseline: CGFloat = 300) -> CGFloat {
         let maximum = maximumHeight(containerHeight: containerHeight)
         let content = contentHeight.isFinite && contentHeight > 0 ? ceil(contentHeight) : baseline

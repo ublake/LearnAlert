@@ -311,12 +311,10 @@ struct DeckStudyView: View {
 
     private func restartCycle() {
         withAnimation(.snappy) {
-                shortReviews = AnkiSessionReviewQueue()
+            shortReviews = AnkiSessionReviewQueue()
             waitingForReview = false
             ratingCounts = [:]
             reviewedAnkiIDs = []
-            allCards = deck.cards
-            studyQueue = buildSmartStudyQueue()
             cardIndex = 0
             selectedAnswer = nil
             isRevealed = false
@@ -326,6 +324,7 @@ struct DeckStudyView: View {
             showingHint = false
             hasRecordedHint = false
             isComplete = false
+            setupStudyQueue()
         }
     }
 

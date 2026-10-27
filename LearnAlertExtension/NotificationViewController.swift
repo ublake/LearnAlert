@@ -73,6 +73,13 @@ private struct NotificationContentHeightKey: PreferenceKey {
     }
 }
 
+private struct NotificationAnkiChromeHeightKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+
 struct FlashcardNotificationView: View {
     var cardId: String
     var deckId: String
@@ -101,10 +108,18 @@ struct FlashcardNotificationView: View {
     var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
+    var onPresentationCardTypeChange: ((String) -> Void)? = nil
 
     @State private var ankiIsLoading = true
     @State private var ankiReviewOptions: [AnkiReviewOption] = []
+    @State private var ankiHeaderHeight: CGFloat = 36
+    @State private var ankiFooterHeight: CGFloat = 60
     @State private var ankiFutureReviewDate: Date?
+    @State private var waitingForAnki: AnkiReviewWait?
+    private struct AnkiReviewWait: Hashable {
+        let deckID: UUID
+        let due: Date
+    }
     @FocusState private var isAnswerFieldFocused: Bool
 
     @Environment(\.colorScheme) private var systemColorScheme
@@ -288,61 +303,194 @@ struct FlashcardNotificationView: View {
         .notificationLiquidGlass(cornerRadius: 18, isLight: isLight)
     }
 
+    private var notificationPadding: CGFloat { isCompactLayout ? 12 : 18 }
+    private var notificationSpacing: CGFloat { isCompactLayout ? 10 : 18 }
+    private var ankiCardHeight: CGFloat {
+        max(100, viewportHeight - notificationPadding * 2 - ankiHeaderHeight - ankiFooterHeight - notificationSpacing * 2)
+    }
+
+    private var notificationHeader: some View {
+        VStack(spacing: notificationSpacing) {
+            // Header Bar: Deck Name, Hint, Controls
+            HStack(alignment: .top, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "rectangle.stack.fill")
+                        .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
+                        .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
+                    Text(activeDeckName)
+                        .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
+                        .foregroundStyle(textColorPrimary)
+                }
+                .padding(.top, 4)
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    if hasHint && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                showingHint.toggle()
+                                if showingHint { recordHintUsed() }
+                            }
+                        } label: {
+                            Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
+                                .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                                .foregroundStyle(Color.orange)
+                                .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
+                                .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, tint: Color.orange.opacity(0.12), isLight: isLight)
+                        }
+                        .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
+                    }
+
+                    Button {
+                        withAnimation(.snappy) { showingControls.toggle() }
+                    } label: {
+                        Image(systemName: showingControls && !isCustomizationTest ? "xmark" : "gearshape.fill")
+                            .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                            .foregroundStyle(isCustomizationTest ? textColorSecondary : textColorPrimary)
+                            .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
+                            .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, isLight: isLight)
+                    }
+                    .disabled(isCustomizationTest)
+                    .opacity(isCustomizationTest ? 0.45 : 1)
+                    .accessibilityLabel(showingControls && !isCustomizationTest ? "Close controls" : "Study controls")
+                    .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : "")
+                }
+            }
+
+            if showingControls && !isCustomizationTest {
+                notificationControls
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if activeCardType == "anki" && showingHint && hasHint {
+                CardFieldContent(text: activeHint, media: activeMedia["hint"] ?? .init())
+                    .font(.subheadline.italic())
+                    .foregroundStyle(Color.orange)
+                    .padding(12)
+                    .frame(maxWidth: .infinity)
+                    .notificationLiquidGlass(cornerRadius: 12, tint: Color.orange.opacity(0.08), isLight: isLight)
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: NotificationAnkiChromeHeightKey.self, value: ["header": geometry.size.height])
+            }
+        }
+    }
+
+    private var notificationSkipRow: some View {
+        HStack(alignment: .center) {
+            Color.clear
+                .frame(width: isCompactLayout ? 36 : 40, height: 1)
+
+            Spacer()
+
+            if !cardProgressionText.isEmpty {
+                Text(cardProgressionText)
+                    .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(textColorSecondary)
+            }
+
+            Spacer()
+
+            Button {
+                recordSkipAndAdvance()
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
+                    .foregroundStyle(textColorSecondary)
+                    .frame(width: isCompactLayout ? 36 : 40, height: isCompactLayout ? 32 : 36)
+                    .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Skip")
+        }
+    }
+
+    private var notificationPostAnswer: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                NotificationStat(title: "Unlearned", value: unlearnedCount, icon: "sparkles", isLight: isLight)
+                NotificationStat(title: "Learning", value: learningCount, icon: "brain.head.profile", isLight: isLight)
+                NotificationStat(title: "Mastered", value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
+            }
+
+            Button {
+                advanceToNextCard()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Next Card")
+                        .font(.system(size: 15, weight: .bold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .foregroundStyle(.white)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.12, green: 0.50, blue: 0.98),
+                            Color(red: 0.20, green: 0.68, blue: 0.96)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.35), radius: 8, y: 3)
+            }
+            .buttonStyle(.plain)
+        }
+        .transition(.opacity)
+    }
+
+    private var ankiReviewFooter: some View {
+        VStack(spacing: notificationSpacing) {
+            if let waitingForAnki {
+                VStack(spacing: 6) {
+                    Text("You're caught up")
+                        .font(.subheadline.weight(.semibold))
+                    HStack(spacing: 5) {
+                        Text("Next review in")
+                        Text(timerInterval: Date()...max(Date(), waitingForAnki.due), countsDown: true)
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(textColorSecondary)
+                }
+                .frame(maxWidth: .infinity)
+            } else if isGraded {
+                notificationPostAnswer
+            } else if let date = ankiFutureReviewDate {
+                VStack(spacing: 8) {
+                    Text("Next review in \(AnkiReviewScheduling.intervalLabel(max(0, date.timeIntervalSinceNow)))")
+                        .font(.subheadline).foregroundStyle(textColorSecondary)
+                    Button("Review early") { ankiFutureReviewDate = nil }
+                        .buttonStyle(.bordered).font(.subheadline.weight(.semibold))
+                }
+            } else {
+                AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
+                    onReveal: { withAnimation(.snappy) { isRevealed = true } },
+                    onGrade: { gradeAnki($0) })
+                    .disabled(ankiIsLoading)
+            }
+            if !isRevealed && !isGraded && !isSkipped {
+                notificationSkipRow
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: NotificationAnkiChromeHeightKey.self, value: ["footer": geometry.size.height])
+            }
+        }
+    }
+
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
             VStack(spacing: isCompactLayout ? 10 : 18) {
-                // Header Bar: Deck Name, Hint, Controls
-                HStack(alignment: .top, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "rectangle.stack.fill")
-                            .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
-                            .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
-                        Text(activeDeckName)
-                            .font(.system(size: isCompactLayout ? 12 : 13, weight: .bold))
-                            .foregroundStyle(textColorPrimary)
-                    }
-                    .padding(.top, 4)
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        if hasHint && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
-                            Button {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                    showingHint.toggle()
-                                    if showingHint { recordHintUsed() }
-                                }
-                            } label: {
-                                Image(systemName: showingHint ? "lightbulb.slash.fill" : "lightbulb.fill")
-                                    .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
-                                    .foregroundStyle(Color.orange)
-                                    .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
-                                    .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, tint: Color.orange.opacity(0.12), isLight: isLight)
-                            }
-                            .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
-                        }
-
-                        Button {
-                            withAnimation(.snappy) { showingControls.toggle() }
-                        } label: {
-                            Image(systemName: showingControls && !isCustomizationTest ? "xmark" : "gearshape.fill")
-                                .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
-                                .foregroundStyle(isCustomizationTest ? textColorSecondary : textColorPrimary)
-                                .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
-                                .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, isLight: isLight)
-                        }
-                        .disabled(isCustomizationTest)
-                        .opacity(isCustomizationTest ? 0.45 : 1)
-                        .accessibilityLabel(showingControls && !isCustomizationTest ? "Close controls" : "Study controls")
-                        .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : "")
-                    }
-                }
-
-                if showingControls && !isCustomizationTest {
-                    notificationControls
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                notificationHeader
 
                 // Question Box & Prompt Image
                 if activeCardType != "images" && activeCardType != "anki" && !(activeCardType == "fill_blank" && !activeOptions.isEmpty) {
@@ -363,23 +511,11 @@ struct FlashcardNotificationView: View {
                     if let content = activeAnkiContent {
                         AnkiCardView(content: content, showingBack: isRevealed, compact: true, centered: true, animatedReveal: true,
                             loadingChanged: { ankiIsLoading = $0 })
-                            .frame(height: min(isCompactLayout ? 260 : 320, max(120, viewportHeight - 180)))
+                            .frame(height: ankiCardHeight)
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
                             .environment(\.colorScheme, isLight ? .light : .dark)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                        if let date = ankiFutureReviewDate, !isGraded {
-                            VStack(spacing: 8) {
-                                Text("Next review in \(AnkiReviewScheduling.intervalLabel(max(0, date.timeIntervalSinceNow)))")
-                                    .font(.subheadline).foregroundStyle(textColorSecondary)
-                                Button("Review early") { ankiFutureReviewDate = nil }
-                                    .buttonStyle(.bordered).font(.subheadline.weight(.semibold))
-                            }
-                        } else {
-                        AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
-                            onReveal: { withAnimation(.snappy) { isRevealed = true } },
-                            onGrade: { gradeAnki($0) })
-                            .disabled(ankiIsLoading)
-                        }
+                        ankiReviewFooter
                     } else {
                         Button("Open this Anki card in LearnAlert", action: openApp)
                             .buttonStyle(.borderedProminent)
@@ -563,7 +699,7 @@ struct FlashcardNotificationView: View {
                     }
                 }
 
-                if showingHint && hasHint {
+                if activeCardType != "anki" && showingHint && hasHint {
                     CardFieldContent(text: activeHint, media: activeMedia["hint"] ?? .init())
                         .font(.subheadline.italic())
                         .foregroundStyle(Color.orange)
@@ -573,75 +709,15 @@ struct FlashcardNotificationView: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                // Card Progression Fraction & Skip Button (Aligned right)
-                if selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
-                    HStack(alignment: .center) {
-                        Color.clear
-                            .frame(width: isCompactLayout ? 36 : 40, height: 1)
-
-                        Spacer()
-
-                        if !cardProgressionText.isEmpty {
-                            Text(cardProgressionText)
-                                .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(textColorSecondary)
-                        }
-
-                        Spacer()
-
-                        Button {
-                            recordSkipAndAdvance()
-                        } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
-                                .foregroundStyle(textColorSecondary)
-                                .frame(width: isCompactLayout ? 36 : 40, height: isCompactLayout ? 32 : 36)
-                                .notificationLiquidGlass(cornerRadius: 10, isLight: isLight)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Skip")
-                    }
+                if activeCardType != "anki" && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
+                    notificationSkipRow
                 }
 
-                // Post-Answer Study Stats & Next Card
-                if isGraded {
-                    VStack(spacing: 14) {
-                        HStack(spacing: 10) {
-                            NotificationStat(title: "Unlearned", value: unlearnedCount, icon: "sparkles", isLight: isLight)
-                            NotificationStat(title: "Learning", value: learningCount, icon: "brain.head.profile", isLight: isLight)
-                            NotificationStat(title: "Mastered", value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
-                        }
-
-                        Button {
-                            advanceToNextCard()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.right.circle.fill")
-                                    .font(.system(size: 16, weight: .bold))
-                                Text("Next Card")
-                                    .font(.system(size: 15, weight: .bold))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .foregroundStyle(.white)
-                            .background(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.12, green: 0.50, blue: 0.98),
-                                        Color(red: 0.20, green: 0.68, blue: 0.96)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.35), radius: 8, y: 3)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .transition(.opacity)
+                if activeCardType != "anki" && isGraded {
+                    notificationPostAnswer
                 }
             }
+            .frame(minHeight: activeCardType == "anki" ? max(0, viewportHeight - notificationPadding * 2) : 0, alignment: .top)
             .padding(isCompactLayout ? 12 : 18)
             .background(
                 GeometryReader { geo in
@@ -656,6 +732,10 @@ struct FlashcardNotificationView: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .background(NotificationBackdrop(theme: customTheme, isLight: isLight))
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onPreferenceChange(NotificationAnkiChromeHeightKey.self) { heights in
+            if let header = heights["header"], header > 0, abs(ankiHeaderHeight - header) > 0.5 { ankiHeaderHeight = header }
+            if let footer = heights["footer"], footer > 0, abs(ankiFooterHeight - footer) > 0.5 { ankiFooterHeight = footer }
+        }
         .onPreferenceChange(NotificationContentHeightKey.self) { height in
             if height > 50 {
                 onContentHeightChange?(height)
@@ -678,8 +758,25 @@ struct FlashcardNotificationView: View {
             }
         }
         .onChange(of: activeCardId) { _, _ in
+            waitingForAnki = nil
             loadAnkiReviewOptions()
             if !previewMode { persistStudyHandoff() }
+        }
+        .task(id: waitingForAnki) {
+            guard let wait = waitingForAnki, !previewMode else { return }
+            // This lives only while the expanded alert is open. It doesn't add
+            // notifications or change the user's alert frequency.
+            do {
+                while wait.due > Date() {
+                    try await Task.sleep(for: .seconds(max(0, min(60, wait.due.timeIntervalSinceNow))))
+                    guard !Task.isCancelled, waitingForAnki == wait else { return }
+                }
+            } catch { return }
+            guard !Task.isCancelled, waitingForAnki == wait else { return }
+            loadNextCard(from: wait.deckID)
+        }
+        .onChange(of: activeCardType, initial: true) { _, type in
+            onPresentationCardTypeChange?(type)
         }
         .onChange(of: selectedAnswer) { _, _ in
             if !previewMode { persistStudyHandoff() }
@@ -845,22 +942,41 @@ struct FlashcardNotificationView: View {
         let now = Date()
         let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
+        let dueAnki = eligible.compactMap { card -> (card: Flashcard, learning: Bool, due: Date, order: Int)? in
+            guard card.cardType == .anki, !card.isNew,
+                  card.id.uuidString != activeCardId || isGraded || eligible.count == 1 else { return nil }
+            let state = card.ankiReviewState
+            return (card, state.phase != .review, state.dueDate, card.orderIndex)
+        }.min { first, second in
+            if first.learning != second.learning { return first.learning }
+            if first.due != second.due { return first.due < second.due }
+            if first.order != second.order { return first.order < second.order }
+            return first.card.id.uuidString < second.card.id.uuidString
+        }?.card
         let nextCard: Flashcard?
-        if let card = unseenCards.first {
+        // A due learning step must not sit behind thousands of unseen cards.
+        if let card = dueAnki ?? unseenCards.first {
             nextCard = card
         } else {
             seenCardIds.removeAll()
-            let sortedCards = eligible.sorted { $0.studyPriority > $1.studyPriority }
+            let sortedCards = eligible.filter {
+                isGraded || eligible.count == 1 || $0.id.uuidString != activeCardId
+            }.sorted { $0.studyPriority > $1.studyPriority }
             nextCard = sortedCards.first
         }
 
         guard let cardToStudy = nextCard else {
             if let next = cards.filter({ $0.cardType == .anki }).map(\.nextReviewDate).min() {
+                waitingForAnki = .init(deckID: deck.id, due: next)
                 statusMessage = "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow)))."
-            } else { statusMessage = "This deck has no cards." }
+            } else {
+                waitingForAnki = nil
+                statusMessage = "This deck has no cards."
+            }
             return
         }
 
+        waitingForAnki = nil
         seenCardIds.insert(cardToStudy.id.uuidString)
         withAnimation(.snappy) {
             sessionCard = NotificationSessionCard(
@@ -1242,9 +1358,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let containerHeight = NotificationViewportGeometry.containerHeight(
             sceneHeight: scene?.effectiveGeometry.coordinateSpace.bounds.height,
             displayHeight: scene?.screen.coordinateSpace.bounds.height ?? 760)
-        let requested = height
-        let targetHeight = NotificationViewportGeometry.preferredHeight(contentHeight: requested,
-            containerHeight: containerHeight, baseline: isAnkiContent ? 500 : 300)
+        // Anki gets a stable display-based budget. Measuring its viewport and
+        // feeding that value back into the window would reintroduce resize loops.
+        let targetHeight = isAnkiContent
+            ? NotificationViewportGeometry.ankiPreferredHeight(containerHeight: containerHeight)
+            : NotificationViewportGeometry.preferredHeight(contentHeight: height, containerHeight: containerHeight)
         let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
         if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
             preferredContentSize = targetSize
@@ -1388,6 +1506,11 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             },
             onContentHeightChange: { [weak self] newHeight in
                 self?.fitContent(newHeight)
+            },
+            onPresentationCardTypeChange: { [weak self] type in
+                guard let self, self.isAnkiContent != (type == "anki") else { return }
+                self.isAnkiContent = type == "anki"
+                self.fitContent(self.measuredContentHeight)
             }
         )
 
