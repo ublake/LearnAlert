@@ -148,6 +148,8 @@ struct CommunityFeedView: View {
     let onShare: () -> Void
     var showsSearchField = true
     var showsTitle = true
+    var searchAction: (() -> Void)? = nil
+    var searchExpanded = false
     @Namespace private var sortNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
@@ -158,12 +160,26 @@ struct CommunityFeedView: View {
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }
                 else { sortSelector }
                 Spacer(minLength: 4)
-                categoryFilter
+                HStack(spacing: 0) {
+                    categoryFilter
+                    if let searchAction {
+                        Button(action: searchAction) {
+                            Image(systemName: searchExpanded ? "xmark" : "magnifyingglass")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(searchExpanded ? "Close search" : "Search Discover")
+                        .accessibilityValue(searchExpanded ? "Expanded" : "Collapsed")
+                    }
+                }
             }
             if showsTitle { sortSelector }
             if showsSearchField {
@@ -292,7 +308,9 @@ struct CommunityFeedView: View {
                 if store.category != "All" { Text(store.category).lineLimit(1) }
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
             }
-            .font(.subheadline.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 44)
+            .font(.subheadline.weight(.medium))
+            .padding(.leading, 12).padding(.trailing, searchAction == nil ? 12 : 0)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

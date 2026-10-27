@@ -108,15 +108,20 @@ struct AnkiImportView: View {
     }
 
     private var converting: some View {
-        VStack(spacing: 12) {
-            if let completed = session.completedFiles, let total = session.totalFiles {
-                Text("\(completed.formatted()) / \(total.formatted()) files")
-            } else {
-                Text("— / — files")
+        VStack(spacing: 24) {
+            AnkiConversionArtwork(progress: min(0.99, session.progress.fraction), active: true)
+                .frame(height: 230)
+            VStack(spacing: 12) {
+                if let completed = session.completedFiles, let total = session.totalFiles {
+                    Text("\(completed.formatted()) / \(total.formatted()) files")
+                } else {
+                    Text("— / — files")
+                }
+                Text(session.filePercentage.map { "\($0)%" } ?? "—%")
+                    .font(.largeTitle.weight(.semibold))
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
             }
-            Text(session.filePercentage.map { "\($0)%" } ?? "—%")
-                .font(.largeTitle.weight(.semibold))
-                .foregroundStyle(LearnAlertStyle.textPrimary)
+            .accessibilityElement(children: .combine)
         }
         .font(.title3.monospacedDigit())
         .foregroundStyle(LearnAlertStyle.textSecondary)
@@ -124,7 +129,6 @@ struct AnkiImportView: View {
         .contentTransition(.numericText())
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
-        .accessibilityElement(children: .combine)
         .onAppear { session.savingViewDidAppear() }
     }
 
@@ -259,7 +263,7 @@ private struct AnkiConversionArtwork: View {
                     }
                     .frame(width: 120, height: 156)
                     .shadow(color: LearnAlertStyle.appAccent.opacity(0.12), radius: 20, y: 12)
-                    .animation(.easeInOut(duration: 0.4), value: progress)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: progress)
                 if active {
                     Image(systemName: "photo.fill").font(.title3)
                         .foregroundStyle(LearnAlertStyle.appAccentForeground.opacity(0.7))

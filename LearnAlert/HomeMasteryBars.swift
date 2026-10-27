@@ -6,30 +6,35 @@ struct HomeMasteryBars: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            bar("Mastered", count: summary.masteredCount, light: "#44856C", dark: "#9BD5B3")
-            bar("Learning", count: summary.learningCount, light: "#8060B4", dark: "#B9A2E0")
-            bar("Need to learn", count: summary.needToLearnCount, light: "#AA6945", dark: "#E6B298")
+        GeometryReader { geometry in
+            // Leave the trailing alert button its own hit area on narrow tiles.
+            let columnWidth = min(32, max(0, (geometry.size.width - 43) / 3))
+            HStack(alignment: .bottom, spacing: 0) {
+                bar("checkmark.seal.fill", count: summary.masteredCount, width: columnWidth, light: "#44856C", dark: "#9BD5B3")
+                bar("clock.badge.exclamationmark", count: summary.learningCount, width: columnWidth, light: "#8060B4", dark: "#B9A2E0")
+                bar("rectangle.stack.fill", count: summary.needToLearnCount, width: columnWidth, light: "#AA6945", dark: "#E6B298")
+            }
+            .frame(height: 62, alignment: .bottom)
         }
+        .frame(height: 62)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
         .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: summary)
     }
 
-    private func bar(_ label: String, count: Int, light: String, dark: String) -> some View {
+    private func bar(_ icon: String, count: Int, width: CGFloat, light: String, dark: String) -> some View {
         let tint = Color(hex: colorScheme == .dark ? dark : light)
         let fraction = CGFloat(count) / CGFloat(max(1, summary.cardCount))
-        return VStack(spacing: 3) {
-            Text(count.formatted()).font(.caption2.weight(.semibold)).monospacedDigit()
-                .foregroundStyle(LearnAlertStyle.textPrimary)
-            UnevenRoundedRectangle(topLeadingRadius: 7, topTrailingRadius: 7)
+        return VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(height: 16)
+                .accessibilityHidden(true)
+            UnevenRoundedRectangle(topLeadingRadius: 9, topTrailingRadius: 9)
                 .fill(tint.opacity(colorScheme == .dark ? 0.9 : 0.75))
-                .frame(width: 19, height: 30 * fraction)
-                .frame(height: 30, alignment: .bottom)
-                .overlay(alignment: .bottom) { Rectangle().fill(tint.opacity(0.2)).frame(height: 1) }
-            Text(label).font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                .frame(height: 42 * fraction)
         }
-        .frame(maxWidth: .infinity)
+        .frame(width: width)
     }
 }

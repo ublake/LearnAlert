@@ -1601,7 +1601,7 @@ private struct HomeStudyCard: View {
             ZStack(alignment: .topTrailing) {
                 ZStack(alignment: .bottomTrailing) {
                     NavigationLink(destination: DeckDetailView(deck: deck)) {
-                        HStack(spacing: 16) {
+                        HStack(alignment: .bottom, spacing: 16) {
                             DeckCreatureView(
                                 stableID: deck.id,
                                 appearanceSeed: deck.appearanceSeed,
@@ -1609,6 +1609,7 @@ private struct HomeStudyCard: View {
                                 colorHex: deck.colorHex
                             )
                             .frame(width: 96, height: 88)
+                            .padding(.bottom, 16)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(deck.name)
@@ -1623,11 +1624,13 @@ private struct HomeStudyCard: View {
 
                                 Spacer(minLength: 0)
 
-                                HomeMasteryBars(summary: summary).padding(.trailing, 40)
+                                HomeMasteryBars(summary: summary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                     }
@@ -1666,6 +1669,7 @@ private struct HomeStudyCard: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .appCardSurface()
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)

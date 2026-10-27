@@ -23,28 +23,8 @@ struct PremadeDecksView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 10) {
                 languageRail
-
-                HStack(alignment: .center) {
-                    Text("Shared decks").font(StudyStudioStyle.title(24))
-                    Spacer()
-                    Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
-                        searchFocused = showingSearch
-                        if !showingSearch { discoverSearch = "" }
-                    } label: {
-                        Image(systemName: showingSearch ? "xmark" : "magnifyingglass")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                            .frame(width: 44, height: 44)
-                            .appCardSurface(cornerRadius: 14)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(showingSearch ? "Close search" : "Search Discover")
-                    .accessibilityValue(showingSearch ? "Expanded" : "Collapsed")
-                }
-                .foregroundStyle(StudyStudioStyle.ink)
 
                 if showingSearch {
                     HStack(spacing: 8) {
@@ -71,7 +51,8 @@ struct PremadeDecksView: View {
                 }
 
                 CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
-                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false)
+                    onAddDeck: add, onShare: { showingShareSheet = true }, showsSearchField: false, showsTitle: false,
+                    searchAction: toggleSearch, searchExpanded: showingSearch)
 
             }
             .padding(.horizontal, 20)
@@ -113,8 +94,14 @@ struct PremadeDecksView: View {
         }
     }
 
+    private func toggleSearch() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
+        searchFocused = showingSearch
+        if !showingSearch { discoverSearch = "" }
+    }
+
     private var languageRail: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("Languages")
                 .font(StudyStudioStyle.heading(21))
                 .foregroundStyle(StudyStudioStyle.ink)
@@ -139,10 +126,8 @@ struct PremadeDecksView: View {
                         .accessibilityHint(course == nil ? "" : "Opens \(choice.name) decks")
                     }
                 }
-                .padding(.vertical, 3)
             }
         }
-        .padding(.bottom, 6)
     }
 
     private var searchResults: some View {
@@ -231,38 +216,31 @@ struct PremadeDecksView: View {
 
 private struct DiscoverLanguageChoice: Identifiable {
     let name: String
-    let flag: String
+    let flagAssetName: String
     var id: String { name }
 
     static let choices = [
-        Self(name: "Spanish", flag: "🇪🇸"),
-        Self(name: "Korean", flag: "🇰🇷"),
-        Self(name: "French", flag: "🇫🇷"),
-        Self(name: "Japanese", flag: "🇯🇵")
+        Self(name: "Spanish", flagAssetName: "FlagSpain"),
+        Self(name: "Korean", flagAssetName: "FlagKorea"),
+        Self(name: "French", flagAssetName: "FlagFrance"),
+        Self(name: "Japanese", flagAssetName: "FlagJapan")
     ]
 }
 
 private struct DiscoverLanguageButton: View {
     let choice: DiscoverLanguageChoice
     let available: Bool
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 7) {
-            ZStack {
-                Circle().fill(LearnAlertStyle.surface)
-                Text(choice.flag)
-                    .font(.system(size: 51))
-                    .offset(y: 1)
-                    .saturation(available ? 1 : 0.12)
-                    .opacity(available ? 1 : 0.32)
-            }
-            .frame(width: 72, height: 72)
-            .clipShape(Circle())
-            .overlay {
-                Circle().strokeBorder(available ? LearnAlertStyle.appAccentForeground.opacity(colorScheme == .dark ? 0.7 : 0.5) : StudyStudioStyle.hairline, lineWidth: available ? 2 : 1)
-            }
+        VStack(spacing: 6) {
+            Image(choice.flagAssetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 84, height: 56)
+                .saturation(available ? 1 : 0.1)
+                .opacity(available ? 1 : 0.35)
+                .accessibilityHidden(true)
             Text(choice.name)
                 .font(StudyStudioStyle.heading(13))
                 .foregroundStyle(available ? StudyStudioStyle.ink : StudyStudioStyle.secondary)
