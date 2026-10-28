@@ -105,6 +105,7 @@ struct FlashcardNotificationView: View {
     var readingPrompt: String? = nil
     var previewMode = false
     var isTutorial = false
+    var tutorialAttemptID: String? = nil
     var isCustomizationTest = false
     var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
@@ -1266,12 +1267,8 @@ struct FlashcardNotificationView: View {
                 isGraded = true
                 showingHint = false
             }
-            if isOnboardingTutorial, let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {
-                defaults.set(Date().timeIntervalSince1970, forKey: "lastNotificationAnsweredTimestamp")
-                defaults.set(isCorrect, forKey: "lastNotificationWasCorrect")
-                defaults.set(activeCardId, forKey: "lastNotificationCardId")
-                defaults.set(true, forKey: "lastNotificationWasGraded")
-                defaults.synchronize()
+            if isOnboardingTutorial {
+                TutorialNotificationProgress.recordAnswer(attemptID: tutorialAttemptID)
             }
             return
         }
@@ -1751,6 +1748,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             questionsPerAlert: min(3, max(1, userInfo["questionsPerAlert"] as? Int ?? 3)),
             readingPrompt: snapshot.readingPrompt,
             isTutorial: isTutorial,
+            tutorialAttemptID: userInfo["tutorialAttemptID"] as? String,
             isCustomizationTest: isCustomizationTest,
             appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in

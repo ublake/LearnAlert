@@ -191,6 +191,7 @@
 				NotificationLearningBudget.swift,
 				NotificationViewportGeometry.swift,
 				SharedDatabase.swift,
+				TutorialNotificationProgress.swift,
 			);
 			target = 254C85122F47BFAF0026450E /* LearnAlertExtension */;
 		};

@@ -263,6 +263,7 @@ struct HomeLibraryView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var draggedLibraryID: String?
     @State private var revealedScheduleDeckID: UUID?
@@ -284,7 +285,6 @@ struct HomeLibraryView: View {
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
     @AppStorage("tutorialDeckId") private var tutorialDeckId: String = ""
     @AppStorage("targetDeckId") private var targetDeckId: String = "ALL"
-    @State private var liveTutorialStartTime: TimeInterval = 0
 
     @Binding var searchText: String
     @Binding var selectedTab: Int
@@ -579,15 +579,8 @@ struct HomeLibraryView: View {
                 HandDrawnUpwardArrowView()
 
                 LiveTestAlertFloatingBanner(
-                    deckName: ordinaryDecks.first(where: { $0.id.uuidString == targetDeckId })?.name ?? "Starter Deck",
                     onResend: {
                         sendTutorialTestAlert()
-                    },
-                    onComplete: {
-                        HapticFeedback.success()
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            homeTutorialStep = 5
-                        }
                     },
                     onDismiss: {
                         withAnimation(.snappy) {
@@ -601,29 +594,6 @@ struct HomeLibraryView: View {
             }
             .transition(.scale(scale: 0.94).combined(with: .opacity))
             .zIndex(30)
-        }
-
-        if homeTutorialStep == 5 {
-            VStack {
-                TutorialCompletedBanner {
-                    withAnimation(.snappy) {
-                        homeTutorialStep = 0
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                Spacer()
-            }
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .zIndex(30)
-            .task {
-                try? await Task.sleep(nanoseconds: 3_500_000_000)
-                withAnimation(.snappy) {
-                    if homeTutorialStep == 5 {
-                        homeTutorialStep = 0
-                    }
-                }
-            }
         }
 
         if showingDeckRequirementAlert {
@@ -730,23 +700,24 @@ struct HomeLibraryView: View {
         }
         .task(id: homeTutorialStep) {
             guard homeTutorialStep == 4 else { return }
-            let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-            defaults?.set(false, forKey: "lastNotificationWasGraded")
-
             while homeTutorialStep == 4 && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                defaults?.synchronize()
-                let wasGraded = defaults?.bool(forKey: "lastNotificationWasGraded") ?? false
-                let answeredTime = defaults?.double(forKey: "lastNotificationAnsweredTimestamp") ?? 0
-
-                if wasGraded && answeredTime >= (liveTutorialStartTime - 1.5) {
-                    HapticFeedback.success()
-                    defaults?.set(false, forKey: "lastNotificationWasGraded")
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                        homeTutorialStep = 5
-                    }
-                    break
-                }
+                if finishTutorialIfAnswered() { return }
+                do { try await Task.sleep(for: .milliseconds(500)) }
+                catch { return }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { finishTutorialIfAnswered() }
+        }
+        .onChange(of: homeTutorialStep) { _, step in
+            if step == 0 { TutorialNotificationProgress.reset() }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { homeTutorialStep == 5 },
+            set: { if !$0 && homeTutorialStep == 5 { homeTutorialStep = 0 } }
+        )) {
+            TutorialCompletionView {
+                homeTutorialStep = 0
             }
         }
         .task(id: showingQuickScheduleTipToast) {
@@ -809,7 +780,6 @@ struct HomeLibraryView: View {
         guard let deck = ordinaryDecks.first(where: { $0.id.uuidString == targetDeckId }) ?? ordinaryDecks.first,
               let card = deck.cards.first else { return }
 
-        liveTutorialStartTime = Date().timeIntervalSince1970
         NotificationManager.shared.scheduleTutorialAlert(
             deckTitle: deck.name,
             question: card.studyQuestion,
@@ -818,8 +788,17 @@ struct HomeLibraryView: View {
             hint: card.hint,
             cardId: card.id,
             deckId: deck.id,
-            delay: 0.6
+            delay: 0.6,
+            isOnboarding: true
         )
+    }
+
+    @discardableResult
+    private func finishTutorialIfAnswered() -> Bool {
+        guard homeTutorialStep == 4, TutorialNotificationProgress.hasAnswered else { return false }
+        HapticFeedback.success()
+        withAnimation(.snappy) { homeTutorialStep = 5 }
+        return true
     }
 
     private func quickSchedule(_ deck: Deck, fromDeckCard: Bool = false) {
@@ -1915,9 +1894,7 @@ private struct HandDrawnUpwardArrowView: View {
 }
 
 private struct LiveTestAlertFloatingBanner: View {
-    let deckName: String
     let onResend: () -> Void
-    let onComplete: () -> Void
     let onDismiss: () -> Void
 
     var body: some View {
@@ -1936,7 +1913,7 @@ private struct LiveTestAlertFloatingBanner: View {
                     Text("Real Notification Sent!")
                         .font(.custom("Poppins-SemiBold", size: 14))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text("Swipe down or press & hold the banner above to answer the quiz live.")
+                    Text("Expand the notification and answer the quiz. The tour will finish automatically.")
                         .font(.custom("Poppins-Regular", size: 12))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -1967,17 +1944,6 @@ private struct LiveTestAlertFloatingBanner: View {
 
                 Spacer()
 
-                Button(action: onComplete) {
-                    Label("I Answered It", systemImage: "checkmark.circle.fill")
-                        .font(.custom("Poppins-SemiBold", size: 12))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(LearnAlertStyle.indigo)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
-                        .shadow(color: LearnAlertStyle.indigo.opacity(0.35), radius: 6, y: 2)
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(14)
@@ -1991,52 +1957,6 @@ private struct LiveTestAlertFloatingBanner: View {
     }
 }
 
-private struct TutorialCompletedBanner: View {
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(LearnAlertStyle.lime.opacity(0.2))
-                    .frame(width: 36, height: 36)
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(LearnAlertStyle.lime)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("🎉 You're all set!")
-                    .font(.custom("Poppins-SemiBold", size: 14))
-                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                Text("You've scheduled your alerts. Quizzes will arrive directly in your notifications.")
-                    .font(.custom("Poppins-Regular", size: 11))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
-            }
-
-            Spacer()
-
-            Button(action: onDismiss) {
-                Text("Done")
-                    .font(.custom("Poppins-SemiBold", size: 12))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(LearnAlertStyle.indigo)
-                    .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(LearnAlertStyle.courseSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(LearnAlertStyle.lime.opacity(0.4), lineWidth: 1)
-        )
-        .shadow(color: LearnAlertStyle.lime.opacity(0.2), radius: 12, y: 5)
-    }
-}
 private struct AlertsInfoControl: View {
     @State private var isExpanded = false
 

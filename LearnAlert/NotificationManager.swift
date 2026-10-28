@@ -219,12 +219,17 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         delay: TimeInterval = 0.8,
         appearance: NotificationAppearance = .saved(),
         isCustomizationTest: Bool = false,
+        isOnboarding: Bool = false,
         completion: ((Error?) -> Void)? = nil
     ) {
         setupCategories()
         let content = Self.tutorialAlertContent(deckTitle: deckTitle, question: question, options: options,
             correctAnswer: correctAnswer, hint: hint, cardId: cardId, deckId: deckId, appearance: appearance,
             isCustomizationTest: isCustomizationTest)
+
+        let tutorialAttemptID = isOnboarding && !isCustomizationTest
+            ? TutorialNotificationProgress.beginAttempt() : nil
+        if let tutorialAttemptID { content.userInfo["tutorialAttemptID"] = tutorialAttemptID }
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(delay, 0.5), repeats: false)
         let request = UNNotificationRequest(
@@ -235,6 +240,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
+                if let tutorialAttemptID { TutorialNotificationProgress.cancelAttempt(tutorialAttemptID) }
                 print("Error scheduling tutorial alert: \(error)")
             }
             completion?(error)
