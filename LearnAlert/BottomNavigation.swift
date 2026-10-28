@@ -285,6 +285,7 @@ private struct NavigationDock: View {
 
     private func tabIcon(_ index: Int, size: CGFloat, weight: Font.Weight = .semibold) -> some View {
         NavigationTabIcon(tab: index, outlineSymbol: tabs[index].outline,
+                          selectedSymbol: tabs[index].symbol,
                           isSelected: selectedTab == index, size: size, weight: weight)
     }
 
@@ -441,8 +442,15 @@ struct DuoSystemNavigationModifier: ViewModifier {
 
     private func destination(_ tab: Int, title: String, symbol: String, selectedSymbol: String) -> some View {
         let selected = selectedTab == tab
-        return Button(title, systemImage: selected ? selectedSymbol : symbol) {
+        return Button {
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { selectedTab = tab }
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                NavigationTabIcon(tab: tab, outlineSymbol: symbol, selectedSymbol: selectedSymbol,
+                                  isSelected: selected, size: 20)
+            }
         }
         .tint(selected ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
         .disabled(homeTutorialStep > 0)

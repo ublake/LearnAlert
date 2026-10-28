@@ -24,7 +24,7 @@ struct PremadeDecksView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                languageRail
+                // Keep the language rail available for a future design pass.
 
                 if showingSearch {
                     HStack(spacing: 8) {
