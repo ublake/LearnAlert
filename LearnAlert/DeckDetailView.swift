@@ -92,14 +92,13 @@ struct DeckDetailView: View {
     @State private var previewRevision = 0
     @State private var previewOffset = 0
     @State private var tutorialCoachIndex: Int?
+    @State private var tutorialBackFrame = CGRect.zero
 
     private var tutorialCoachSteps: [TutorialCoachStep] {
         guard homeTutorialStep == 2 else { return [] }
         return [
-            TutorialCoachStep(target: .deckTools, title: "View, edit & study",
-                message: "Browse your cards, make changes, or start a study session here."),
-            TutorialCoachStep(target: .deckBack, title: "Back to your library",
-                message: "Tap Back when you’re ready to choose your alerts.")
+            TutorialCoachStep(target: .deckBack, title: "View, edit & study",
+                message: "Browse your cards, make changes, or start a study session here. Tap Back to return to your library.")
         ]
     }
 
@@ -268,21 +267,31 @@ struct DeckDetailView: View {
             .disabled(homeTutorialStep > 0)
             .allowsHitTesting(homeTutorialStep == 0)
         }
-        // This points just below the native Back control without replacing it.
-        .overlay(alignment: .topLeading) {
-            Color.clear.frame(width: 44, height: 1)
-                .tutorialCoachTarget(.deckBack)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .tutorialCoach(steps: tutorialCoachSteps, activeIndex: $tutorialCoachIndex)
+        .tutorialCoach(steps: tutorialCoachSteps, activeIndex: $tutorialCoachIndex,
+                       globalTargets: tutorialBackFrame.isEmpty ? [:] : [.deckBack: tutorialBackFrame])
         .navigationTitle(deck.name)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(homeTutorialStep == 2)
         .task(id: PreviewRequest(deckID: deck.id, search: searchText, section: selectedSectionFilter, revision: previewRevision)) {
             await loadPreview()
         }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in previewRevision += 1 }
         .toolbar {
+            if homeTutorialStep == 2 {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                    }
+                    .accessibilityLabel("Back")
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .global)
+                    } action: { frame in
+                        tutorialBackFrame = frame
+                    }
+                }
+            }
             if homeTutorialStep == 0 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { withAnimation(.snappy) { isSearching.toggle(); if !isSearching { searchText = "" } } } label: {
@@ -527,7 +536,6 @@ struct DeckDetailView: View {
                 deckAction("Study", icon: "play.fill", prominent: true) { showingStudy = true }
                     .disabled(snapshot.cardCount == 0)
             }
-            .tutorialCoachTarget(.deckTools)
         }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
     }
 

@@ -299,16 +299,18 @@ struct HomeLibraryView: View {
     private var ordinaryDecks: [Deck] { allDecks }
 
     private var dimsTutorialLibrary: Bool {
-        homeTutorialStep == 4 || (homeTutorialStep == 3 && tutorialCoachIndex == 1)
+        homeTutorialStep == 4
     }
 
     private var tutorialCoachSteps: [TutorialCoachStep] {
+        if homeTutorialStep == 1 {
+            return [TutorialCoachStep(target: .firstDeck, title: "Your first deck",
+                message: "Tap your deck to see its cards, make changes, and start studying.")]
+        }
         guard homeTutorialStep == 3 else { return [] }
         return [
-            TutorialCoachStep(target: .homeLibrary, title: "Your library lives here",
-                message: "All your decks stay together here. Pick one to view its cards or study."),
-            TutorialCoachStep(target: .homeSchedule, title: "Set your study alerts",
-                message: "Choose a deck and schedule its alerts here. Try a test alert to see how it works.")
+            TutorialCoachStep(target: .homeSchedule, title: "Your library & alerts",
+                message: "All your decks live on Home. Choose a deck and schedule its alerts here. Try a test alert to see how it works.")
         ]
     }
 
@@ -456,7 +458,7 @@ struct HomeLibraryView: View {
             targetDeckId: $targetDeckId,
             isScheduling: isSchedulingAlerts,
             homeTutorialStep: homeTutorialStep,
-            isTutorialScheduleHighlighted: homeTutorialStep == 3 && tutorialCoachIndex == 1,
+            isTutorialScheduleHighlighted: homeTutorialStep == 3 && tutorialCoachIndex != nil,
             showSettings: { showingAlertSettings = true },
             showDeckRequirement: {
                 withAnimation(.snappy) { showingDeckRequirementAlert = true }
@@ -464,7 +466,7 @@ struct HomeLibraryView: View {
             schedule: { quickSchedule($0, fromDeckCard: false) }
         )
         .padding(.horizontal, 20)
-        .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : homeTutorialStep == 3 && tutorialCoachIndex == 0 ? 0.35 : 1.0)
+        .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
         .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
         .disabled(homeTutorialStep != 0 && homeTutorialStep != 3)
         .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
@@ -537,7 +539,6 @@ struct HomeLibraryView: View {
                 .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
             }
             .padding(.horizontal, 20)
-            .tutorialCoachTarget(.homeLibrary)
 
             if unpinnedDecks.isEmpty && pinnedItems.isEmpty {
                 EmptyLibraryCard(
@@ -1600,7 +1601,6 @@ private struct HomeStudyCard: View {
     let shuffleAppearance: () -> Void
     let delete: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulseGlow = false
     @State private var lockedSwipeAxis: SwipeState.Axis?
     @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var swipe = SwipeState()
 
@@ -1621,24 +1621,6 @@ private struct HomeStudyCard: View {
     var body: some View {
         let summary = deck.librarySummary
         VStack(alignment: .leading, spacing: 8) {
-            if isTutorialHighlighted {
-                HStack(spacing: 6) {
-                    Image(systemName: "hand.tap.fill")
-                        .font(.system(size: 11, weight: .bold))
-                    Text("Step 1 of 3: Tap here to explore flashcards")
-                        .font(.custom("Poppins-SemiBold", size: 11))
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(LearnAlertStyle.appAccentInk)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(LearnAlertStyle.appAccent, in: Capsule())
-                .shadow(color: LearnAlertStyle.appAccent.opacity(0.6), radius: 6, y: 2)
-                .scaleEffect(pulseGlow ? 1.03 : 0.98)
-                .transition(.opacity.combined(with: .scale))
-            }
-
             ZStack(alignment: .trailing) {
                 Button(action: scheduleFromSwipe) {
                     VStack(spacing: 7) {
@@ -1673,6 +1655,11 @@ private struct HomeStudyCard: View {
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+            .background {
+                if isTutorialHighlighted {
+                    Color.clear.tutorialCoachTarget(.firstDeck)
+                }
+            }
             .accessibilityAction(named: "Quick schedule alerts") {
                 if canSwipe { scheduleFromSwipe() }
             }
@@ -1687,20 +1674,6 @@ private struct HomeStudyCard: View {
                         Label("Shuffle Appearance", systemImage: "shuffle")
                     }
                     Button(role: .destructive, action: delete) { Label("Delete", systemImage: "trash") }
-                }
-            }
-        }
-        .onAppear {
-            if isTutorialHighlighted {
-                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
-                    pulseGlow = true
-                }
-            }
-        }
-        .onChange(of: isTutorialHighlighted) { _, highlighted in
-            if highlighted {
-                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
-                    pulseGlow = true
                 }
             }
         }

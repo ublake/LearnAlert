@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum TutorialCoachTarget: Hashable {
-    case deckTools, deckBack, homeLibrary, homeSchedule
+    case firstDeck, deckBack, homeSchedule
 }
 
 struct TutorialCoachStep: Hashable {
@@ -24,36 +24,40 @@ extension View {
         anchorPreference(key: TutorialCoachAnchorKey.self, value: .bounds) { [target: $0] }
     }
 
-    func tutorialCoach(steps: [TutorialCoachStep], activeIndex: Binding<Int?>) -> some View {
+    func tutorialCoach(steps: [TutorialCoachStep], activeIndex: Binding<Int?>,
+                       globalTargets: [TutorialCoachTarget: CGRect] = [:]) -> some View {
         overlayPreferenceValue(TutorialCoachAnchorKey.self) { anchors in
-            TutorialCoachOverlay(steps: steps, activeIndex: activeIndex, anchors: anchors)
+            TutorialCoachOverlay(steps: steps, activeIndex: activeIndex, anchors: anchors,
+                                 globalTargets: globalTargets)
         }
     }
 }
 
-/// A passive, view-scoped tour: no timers survive navigation or skipping the tour.
+/// One passive callout per tour step, with a short pause before it appears.
 struct TutorialCoachOverlay: View {
     let steps: [TutorialCoachStep]
     @Binding var activeIndex: Int?
     private let anchors: [TutorialCoachTarget: Anchor<CGRect>]
+    private let globalTargets: [TutorialCoachTarget: CGRect]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sequenceGeneration = UUID()
 
     fileprivate init(steps: [TutorialCoachStep], activeIndex: Binding<Int?>,
-                     anchors: [TutorialCoachTarget: Anchor<CGRect>]) {
+                     anchors: [TutorialCoachTarget: Anchor<CGRect>],
+                     globalTargets: [TutorialCoachTarget: CGRect]) {
         self.steps = steps
         _activeIndex = activeIndex
         self.anchors = anchors
+        self.globalTargets = globalTargets
     }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 if let index = activeIndex, steps.indices.contains(index),
-                   let anchor = anchors[steps[index].target] {
-                    TutorialCoachScene(step: steps[index], index: index, count: steps.count,
-                                       target: proxy[anchor], canvas: proxy.size)
-                        .id(index)
+                   let target = resolvedTarget(steps[index].target, in: proxy) {
+                    TutorialCoachScene(step: steps[index], target: target, canvas: proxy.size)
+                        .id(steps[index])
                         .transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : 8)))
                 }
             }
@@ -67,23 +71,27 @@ struct TutorialCoachOverlay: View {
             guard !steps.isEmpty else { return }
             do {
                 try await Task.sleep(for: .seconds(1))
-                var index = 0
-                while !Task.isCancelled && sequenceGeneration == generation {
-                    withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.86)) {
-                        activeIndex = index
-                    }
-                    try await Task.sleep(for: .seconds(5))
-                    try Task.checkCancellation()
-                    index = (index + 1) % steps.count
+                try Task.checkCancellation()
+                guard sequenceGeneration == generation else { return }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.86)) {
+                    activeIndex = 0
                 }
             } catch is CancellationError {
-                // Leaving the page cancels both the initial pause and the cycle.
+                // Leaving the page cancels the entrance before it can show.
             } catch { }
         }
         .onDisappear {
             sequenceGeneration = UUID()
             activeIndex = nil
         }
+    }
+
+    private func resolvedTarget(_ target: TutorialCoachTarget, in proxy: GeometryProxy) -> CGRect? {
+        if let frame = globalTargets[target], !frame.isNull, !frame.isEmpty {
+            let origin = proxy.frame(in: .global).origin
+            return frame.offsetBy(dx: -origin.x, dy: -origin.y)
+        }
+        return anchors[target].map { proxy[$0] }
     }
 }
 
@@ -96,13 +104,30 @@ private struct TutorialCoachBubbleHeightKey: PreferenceKey {
 
 private struct TutorialCoachScene: View {
     let step: TutorialCoachStep
-    let index: Int
-    let count: Int
     let target: CGRect
     let canvas: CGSize
+    @Environment(\.colorScheme) private var pageColorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bubbleHeight: CGFloat = 112
     @State private var arrowProgress: CGFloat = 0
+
+    // Explicit colors keep the inverse appearance reliable for System Default too.
+    private var bubbleScheme: ColorScheme { pageColorScheme == .dark ? .light : .dark }
+    private var bubbleSurface: Color {
+        pageColorScheme == .dark ? .white : Color(red: 0.14, green: 0.15, blue: 0.18)
+    }
+    private var bubbleTitle: Color {
+        pageColorScheme == .dark ? Color(red: 0.15, green: 0.18, blue: 0.21)
+            : Color(red: 0.95, green: 0.96, blue: 0.98)
+    }
+    private var bubbleText: Color {
+        pageColorScheme == .dark ? Color(red: 0.39, green: 0.43, blue: 0.47)
+            : Color(red: 0.76, green: 0.79, blue: 0.84)
+    }
+    private var bubbleBorder: Color {
+        pageColorScheme == .dark ? Color(red: 0.22, green: 0.40, blue: 0.56).opacity(0.35)
+            : Color(red: 0.66, green: 0.83, blue: 0.97).opacity(0.45)
+    }
 
     private var bubbleWidth: CGFloat { min(292, max(1, canvas.width - 32)) }
     private var showsBelow: Bool {
@@ -112,20 +137,22 @@ private struct TutorialCoachScene: View {
     }
     private var bubbleCenter: CGPoint {
         let halfWidth = bubbleWidth / 2
-        let preferredX = step.target == .deckBack ? target.minX + 130 : target.midX
+        let preferredX = step.target == .deckBack
+            ? target.midX + (target.midX > canvas.width / 2 ? -108 : 108) : target.midX
         let x = min(max(preferredX, 16 + halfWidth), max(16 + halfWidth, canvas.width - 16 - halfWidth))
-        let preferredY = showsBelow ? target.maxY + 54 + bubbleHeight / 2 : target.minY - 54 - bubbleHeight / 2
+        let preferredY = step.target == .deckBack ? arrowEnd.y + 54 + bubbleHeight / 2
+            : showsBelow ? target.maxY + 54 + bubbleHeight / 2 : target.minY - 54 - bubbleHeight / 2
         let minY = 16 + bubbleHeight / 2
         let maxY = max(minY, canvas.height - 16 - bubbleHeight / 2)
         return CGPoint(x: x, y: min(max(preferredY, minY), maxY))
     }
     private var arrowStart: CGPoint {
-        CGPoint(x: bubbleCenter.x + (step.target == .deckBack ? -44 : 24),
+        CGPoint(x: bubbleCenter.x + (step.target == .deckBack ? (target.midX > canvas.width / 2 ? 44 : -44) : 24),
                 y: bubbleCenter.y + (showsBelow ? -bubbleHeight / 2 - 8 : bubbleHeight / 2 + 8))
     }
     private var arrowEnd: CGPoint {
-        let x = step.target == .deckBack ? target.minX + min(22, target.width / 2) : target.midX
-        let y = step.target == .deckBack ? target.midY : (showsBelow ? target.maxY + 6 : target.minY - 6)
+        let x = target.midX
+        let y = step.target == .deckBack ? target.maxY + 6 : (showsBelow ? target.maxY + 6 : target.minY - 6)
         return CGPoint(x: min(max(x, 8), canvas.width - 8),
                        y: min(max(y, 5), canvas.height - 5))
     }
@@ -134,41 +161,36 @@ private struct TutorialCoachScene: View {
         ZStack(alignment: .topLeading) {
             TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { timeline in
                 let bend: CGFloat = reduceMotion ? 0 : CGFloat(sin(timeline.date.timeIntervalSinceReferenceDate * 2.2) * 3)
-                TutorialCoachArrow(start: arrowStart, end: arrowEnd, bend: bend)
+                let arrow = TutorialCoachArrow(start: arrowStart, end: arrowEnd, bend: bend,
+                    aim: step.target == .deckBack ? CGPoint(x: target.midX, y: target.midY) : nil)
                     .trim(from: 0, to: arrowProgress)
-                    .stroke(LearnAlertStyle.appAccentForeground,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .shadow(color: LearnAlertStyle.courseSurface.opacity(0.9), radius: 2)
+                ZStack {
+                    arrow.stroke(pageColorScheme == .dark ? Color.black.opacity(0.8) : Color.white.opacity(0.95),
+                        style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    arrow.stroke(LearnAlertStyle.appAccentForeground,
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                }
             }
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(step.title)
-                        .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .callout))
-                        .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Spacer(minLength: 0)
-                    HStack(spacing: 3) {
-                        ForEach(0..<count, id: \.self) { item in
-                            Capsule().fill(LearnAlertStyle.appAccentForeground.opacity(item == index ? 0.85 : 0.2))
-                                .frame(width: item == index ? 10 : 4, height: 4)
-                        }
-                    }
-                    .accessibilityHidden(true)
-                }
+                Text(step.title)
+                    .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .callout))
+                    .foregroundStyle(bubbleTitle)
                 Text(step.message)
                     .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .foregroundStyle(bubbleText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
             .frame(width: bubbleWidth, alignment: .leading)
-            .background(LearnAlertStyle.courseSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(bubbleSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(LearnAlertStyle.appAccentForeground.opacity(0.35), lineWidth: 1.2)
+                    .stroke(bubbleBorder, lineWidth: 1.2)
             }
             .shadow(color: .black.opacity(0.14), radius: 14, y: 5)
+            .environment(\.colorScheme, bubbleScheme)
             .background {
                 GeometryReader { bubble in
                     Color.clear.preference(key: TutorialCoachBubbleHeightKey.self, value: bubble.size.height)
@@ -192,13 +214,21 @@ private struct TutorialCoachArrow: Shape {
     let start: CGPoint
     let end: CGPoint
     let bend: CGFloat
+    var aim: CGPoint? = nil
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let direction: CGFloat = end.y > start.y ? 1 : -1
         let travel = max(18, abs(end.y - start.y) * 0.55)
         let control1 = CGPoint(x: start.x - 20 + bend, y: start.y + travel * direction)
-        let control2 = CGPoint(x: end.x + 16 + bend, y: end.y - travel * direction)
+        let control2: CGPoint
+        if let aim {
+            let dx = aim.x - end.x, dy = aim.y - end.y
+            let distance = max(1, hypot(dx, dy))
+            control2 = CGPoint(x: end.x - dx / distance * travel, y: end.y - dy / distance * travel)
+        } else {
+            control2 = CGPoint(x: end.x + 16 + bend, y: end.y - travel * direction)
+        }
         path.move(to: start)
         path.addCurve(to: end, control1: control1, control2: control2)
 
