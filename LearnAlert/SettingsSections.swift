@@ -686,6 +686,7 @@ struct ManageMyDataView: View {
                 }.value
                 context.processPendingChanges()
                 StudyEngine.shared.stopAlerts()
+                await PracticeSessionStore.shared.removeAll()
                 HapticFeedback.success()
                 InteractionSoundPlayer.shared.play(.correct)
                 completedSummaryMessage = result.decks == 0 && result.cards == 0

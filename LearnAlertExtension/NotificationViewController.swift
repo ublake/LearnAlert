@@ -101,12 +101,14 @@ struct FlashcardNotificationView: View {
     var correctOptionIndex: Int? = nil
     var optionImageNames: [String] = []
     var notificationRequestID: String? = nil
+    var questionsPerAlert = 3
     var readingPrompt: String? = nil
     var previewMode = false
     var isTutorial = false
     var isCustomizationTest = false
     var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
+    var openDeck: ((String) -> Void)? = nil
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
     var onPresentationCardTypeChange: ((String) -> Void)? = nil
 
@@ -146,6 +148,17 @@ struct FlashcardNotificationView: View {
     @State private var matchingAssignments: [String: String] = [:]
     @State private var matchingResults: [String: Bool] = [:]
     @State private var hadMatchingMistake = false
+    @State private var batchQuestionLimit = 3
+    @State private var batchConsumedCount = 0
+    @State private var dailyAnsweredCount = 0
+    @State private var sessionFinished = false
+    @State private var caughtUp = false
+    @State private var pendingGrade: PendingGrade?
+    private struct PendingGrade {
+        let correct: Bool
+        let playFeedback: Bool
+        let rating: AnkiReviewRating?
+    }
 
     // Session Stats
     @State private var unlearnedCount: Int = 0
@@ -153,6 +166,7 @@ struct FlashcardNotificationView: View {
     @State private var masteredCount: Int = 0
 
     private var cardProgressionText: String {
+        if !isSyntheticSession { return "\(currentBatchPosition)/\(batchQuestionLimit)" }
         if progress.contains("/") {
             return progress
         }
@@ -160,6 +174,16 @@ struct FlashcardNotificationView: View {
             return progress
         }
         return "\(completedCount + 1)/10"
+    }
+
+    private var isSyntheticSession: Bool { previewMode || isTutorial || isCustomizationTest }
+    private var currentBatchPosition: Int { min(batchQuestionLimit, batchConsumedCount + (isGraded ? 0 : 1)) }
+    private var isDayComplete: Bool { dailyAnsweredCount >= NotificationLearningBudget.goal }
+    private var presentationCardType: String { sessionFinished ? "completed_batch" : activeCardType }
+    private var nextCardActionTitle: String {
+        if isSyntheticSession { return "Next Card" }
+        if isDayComplete { return "Finish for today" }
+        return batchConsumedCount >= batchQuestionLimit ? "Finish batch" : "Next Card"
     }
 
     // MARK: - Appearance & Customization Dynamics
@@ -324,6 +348,14 @@ struct FlashcardNotificationView: View {
 
                 Spacer()
 
+                if !isSyntheticSession {
+                    Text(cardProgressionText)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(textColorSecondary)
+                        .padding(.top, 7)
+                        .accessibilityLabel("Question \(currentBatchPosition) of \(batchQuestionLimit)")
+                }
+
                 HStack(spacing: 8) {
                     if hasHint && selectedAnswer == nil && !isRevealed && !isGraded && !isSkipped {
                         Button {
@@ -385,7 +417,7 @@ struct FlashcardNotificationView: View {
             Spacer()
 
             if !cardProgressionText.isEmpty {
-                Text(cardProgressionText)
+                Text(isSyntheticSession ? cardProgressionText : "\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) today")
                     .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(textColorSecondary)
             }
@@ -420,7 +452,7 @@ struct FlashcardNotificationView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.right.circle.fill")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Next Card")
+                    Text(nextCardActionTitle)
                         .font(.system(size: 15, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
@@ -430,6 +462,46 @@ struct FlashcardNotificationView: View {
             .buttonStyle(.plain)
         }
         .transition(.opacity)
+    }
+
+    private var batchCompletion: some View {
+        VStack(spacing: 18) {
+            Image(systemName: isDayComplete ? "checkmark.seal.fill" : "sparkles")
+                .font(.system(size: 46, weight: .light))
+                .foregroundStyle(isDayComplete ? Color.green : Color(red: 0.38, green: 0.68, blue: 0.93))
+                .symbolEffect(.bounce, value: sessionFinished)
+                .accessibilityHidden(true)
+            Text(isDayComplete ? "You’re done for today!" : caughtUp ? "You’re caught up" : "This batch is complete")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(textColorPrimary)
+                .multilineTextAlignment(.center)
+            Text(isDayComplete
+                ? "\(NotificationLearningBudget.goal)/\(NotificationLearningBudget.goal) questions answered across your library. Your alerts will return on the next scheduled day."
+                : caughtUp
+                    ? "There’s nothing else to review in this deck right now."
+                    : "A little progress, nicely done. Your next alert will arrive on schedule.")
+                .font(.subheadline)
+                .foregroundStyle(textColorSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if !isDayComplete {
+                Text("\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) questions answered today")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(textColorSecondary)
+            }
+            Button(action: openPracticeApp) {
+                Label("Open app to practice", systemImage: "arrow.up.right")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .notificationPrimaryAction(isLight: isLight)
+            }
+            .buttonStyle(.plain)
+            Text("In-app practice keeps its own progress.")
+                .font(.caption)
+                .foregroundStyle(textColorSecondary)
+        }
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
     }
 
     private var ankiReviewFooter: some View {
@@ -489,7 +561,20 @@ struct FlashcardNotificationView: View {
         ScrollViewReader { scrollProxy in
             ScrollView {
             VStack(spacing: notificationSpacing) {
+                if sessionFinished {
+                    batchCompletion
+                } else {
                 notificationHeader
+
+                if let pendingGrade {
+                    VStack(spacing: 8) {
+                        Text(statusMessage ?? "Review couldn’t be saved.")
+                            .font(.caption).foregroundStyle(textColorSecondary)
+                        Button("Retry review") {
+                            gradeCard(isCorrect: pendingGrade.correct, playFeedback: pendingGrade.playFeedback, ankiRating: pendingGrade.rating)
+                        }.notificationPrimaryActionStyle()
+                    }
+                }
 
                 // Question Box & Prompt Image
                 if activeCardType != "images" && activeCardType != "anki" && !(activeCardType == "fill_blank" && !activeOptions.isEmpty) {
@@ -727,8 +812,9 @@ struct FlashcardNotificationView: View {
                 if activeCardType != "anki" && isGraded {
                     notificationPostAnswer
                 }
+                }
             }
-            .frame(minHeight: activeCardType == "anki" ? max(0, viewportHeight - notificationPadding * 2) : 0, alignment: .top)
+            .frame(minHeight: !sessionFinished && activeCardType == "anki" ? max(0, viewportHeight - notificationPadding * 2) : 0, alignment: .top)
             .padding(notificationPadding)
             .background(
                 GeometryReader { geo in
@@ -764,8 +850,9 @@ struct FlashcardNotificationView: View {
         }
         .onAppear {
             seenCardIds.insert(activeCardId)
-            loadAnkiReviewOptions()
-            if !previewMode {
+            restoreBatch()
+            if !sessionFinished { loadAnkiReviewOptions() }
+            if !isSyntheticSession && !sessionFinished {
                 loadAvailableDecks()
                 persistStudyHandoff()
             }
@@ -773,10 +860,10 @@ struct FlashcardNotificationView: View {
         .onChange(of: activeCardId) { _, _ in
             waitingForAnki = nil
             loadAnkiReviewOptions()
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
         .task(id: waitingForAnki) {
-            guard let wait = waitingForAnki, !previewMode else { return }
+            guard let wait = waitingForAnki, !isSyntheticSession, !sessionFinished else { return }
             // This lives only while the expanded alert is open. It doesn't add
             // notifications or change the user's alert frequency.
             do {
@@ -788,23 +875,23 @@ struct FlashcardNotificationView: View {
             guard !Task.isCancelled, waitingForAnki == wait else { return }
             loadNextCard(from: wait.deckID)
         }
-        .onChange(of: activeCardType, initial: true) { _, type in
+        .onChange(of: presentationCardType, initial: true) { _, type in
             onPresentationCardTypeChange?(type)
         }
         .onChange(of: selectedAnswer) { _, _ in
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
         .onChange(of: isGraded) { _, _ in
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
         .onChange(of: isRevealed) { _, _ in
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
         .onChange(of: hasViewedImageBack) { _, _ in
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
         .onChange(of: showingHint) { _, _ in
-            if !previewMode { persistStudyHandoff() }
+            if !isSyntheticSession { persistStudyHandoff() }
         }
     }
 
@@ -885,6 +972,60 @@ struct FlashcardNotificationView: View {
     }
 
     // MARK: - Logic Helpers
+    private func refreshBatchCounts() {
+        guard !isSyntheticSession else { return }
+        batchQuestionLimit = NotificationLearningBudget.batchLimit(for: notificationRequestID, requested: questionsPerAlert)
+        batchConsumedCount = NotificationLearningBudget.batchConsumed(for: notificationRequestID)
+        completedCount = NotificationLearningBudget.batchCompleted(for: notificationRequestID)
+        dailyAnsweredCount = NotificationLearningBudget.today().completedCount
+    }
+
+    private func restoreBatch() {
+        guard !isSyntheticSession else { return }
+        refreshBatchCounts()
+        let handled = NotificationLearningBudget.handledCardIDs(for: notificationRequestID)
+        seenCardIds.formUnion(handled)
+        if isDayComplete || batchQuestionLimit <= batchConsumedCount {
+            finishBatch()
+        } else if handled.contains(activeCardId) {
+            if let id = UUID(uuidString: activeDeckId) { loadNextCard(from: id) }
+            else { finishBatch(caughtUp: true) }
+        }
+    }
+
+    private func finishBatch(caughtUp: Bool = false) {
+        guard !isSyntheticSession else { return }
+        refreshBatchCounts()
+        self.caughtUp = caughtUp
+        waitingForAnki = nil
+        pendingGrade = nil
+        showingHint = false
+        showingControls = false
+        isAnswerFieldFocused = false
+        CardAudioPlayer.stopActive()
+        withAnimation(.snappy) { sessionFinished = true }
+        clearNotificationHandoff()
+        if isDayComplete { Task { await NotificationLearningBudget.reconcilePending() } }
+    }
+
+    private func clearNotificationHandoff() {
+        guard let requestID = notificationRequestID, !requestID.isEmpty,
+              let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
+              defaults.string(forKey: "handoffNotificationRequestID") == requestID else { return }
+        for key in ["handoffDeckId", "handoffCardId", "handoffNotificationRequestID", "handoffSelectedAnswer",
+                    "handoffWasCorrect", "handoffWasGraded", "handoffWasRevealed", "handoffImageBackViewed",
+                    "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp"] {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.synchronize()
+    }
+
+    private func openPracticeApp() {
+        clearNotificationHandoff()
+        if let openDeck { openDeck(activeDeckId) }
+        else { openApp() }
+    }
+
     private func loadAvailableDecks() {
         let context = ModelContext(SharedDatabase.shared.container)
         let descriptor = FetchDescriptor<Deck>(sortBy: [SortDescriptor(\.name)])
@@ -893,7 +1034,7 @@ struct FlashcardNotificationView: View {
     }
 
     private func recordHintUsed() {
-        guard !previewMode,
+        guard !isSyntheticSession, !sessionFinished,
               let uuid = UUID(uuidString: activeCardId) else { return }
         let context = ModelContext(SharedDatabase.shared.container)
         let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
@@ -903,22 +1044,30 @@ struct FlashcardNotificationView: View {
     }
 
     private func recordSkipAndAdvance() {
+        guard !sessionFinished else { return }
         isAnswerFieldFocused = false
-        NotificationFeedbackSoundPlayer.shared.play(named: "skip")
-        if !previewMode, let uuid = UUID(uuidString: activeCardId) {
+        if !isSyntheticSession {
+            guard let uuid = UUID(uuidString: activeCardId),
+                  NotificationLearningBudget.recordSkip(requestID: notificationRequestID, cardID: uuid,
+                    batchOrdinal: batchConsumedCount, batchLimit: batchQuestionLimit) else {
+                restoreBatch()
+                return
+            }
             let context = ModelContext(SharedDatabase.shared.container)
             let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
             if let card = try? context.fetch(descriptor).first {
                 card.recordSkip()
                 try? context.save()
             }
+            refreshBatchCounts()
         }
+        NotificationFeedbackSoundPlayer.shared.play(named: "skip")
         advanceToNextCard()
     }
 
     private func advanceToNextCard() {
         isAnswerFieldFocused = false
-        if previewMode {
+        if isSyntheticSession {
             withAnimation(.snappy) {
                 selectedAnswer = nil
                 isRevealed = false
@@ -935,6 +1084,12 @@ struct FlashcardNotificationView: View {
             return
         }
 
+        refreshBatchCounts()
+        guard !sessionFinished, !isDayComplete, batchConsumedCount < batchQuestionLimit else {
+            finishBatch()
+            return
+        }
+
         let context = ModelContext(SharedDatabase.shared.container)
         guard let uuid = UUID(uuidString: activeCardId) else { return }
         let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
@@ -947,13 +1102,21 @@ struct FlashcardNotificationView: View {
     }
 
     private func loadNextCard(from deckId: UUID) {
+        if !isSyntheticSession {
+            refreshBatchCounts()
+            guard !sessionFinished, !isDayComplete, batchConsumedCount < batchQuestionLimit else {
+                finishBatch()
+                return
+            }
+        }
         let context = ModelContext(SharedDatabase.shared.container)
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
         let cards = deck.cards
         let now = Date()
-        let eligible = cards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }
+        let handled = isSyntheticSession ? Set<String>() : NotificationLearningBudget.handledCardIDs(for: notificationRequestID)
+        let eligible = cards.filter { !handled.contains($0.id.uuidString) && ($0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now) }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
         let dueAnki = eligible.compactMap { card -> (card: Flashcard, learning: Bool, due: Date, order: Int)? in
             guard card.cardType == .anki, !card.isNew,
@@ -979,6 +1142,10 @@ struct FlashcardNotificationView: View {
         }
 
         guard let cardToStudy = nextCard else {
+            if !isSyntheticSession {
+                finishBatch(caughtUp: true)
+                return
+            }
             if let next = cards.filter({ $0.cardType == .anki }).map(\.nextReviewDate).min() {
                 waitingForAnki = .init(deckID: deck.id, due: next)
                 statusMessage = "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow)))."
@@ -1023,14 +1190,26 @@ struct FlashcardNotificationView: View {
             matchingResults = [:]
             hadMatchingMistake = false
             statusMessage = nil
+            pendingGrade = nil
         }
         // A short repeat can have the same card ID but a different learning step.
         loadAnkiReviewOptions()
     }
 
     private func stopScheduledAlerts() {
+        let stoppedPrefix = DailyDeckAlertScheduler.activePlan?.identifierPrefix
         DailyDeckAlertScheduler.clear()
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        let center = UNUserNotificationCenter.current()
+        Task {
+            let pending = await center.pendingNotificationRequests()
+            guard DailyDeckAlertScheduler.activePlan == nil,
+                  UserDefaults(suiteName: "group.com.learnalert.shared")?.bool(forKey: "extensionDidStopAlerts") == true else { return }
+            let ids = pending.filter { request in
+                AlertTimelineStore.isStudy(request.content) && (stoppedPrefix.map { prefix in request.identifier.hasPrefix(prefix + "-") } ?? true)
+            }.map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+            NotificationLearningBudget.cancelReservations(requestIDs: ids)
+        }
         let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
         sharedDefaults?.set(true, forKey: "extensionDidStopAlerts")
         sharedDefaults?.set("", forKey: "extensionActiveDeckName")
@@ -1038,10 +1217,6 @@ struct FlashcardNotificationView: View {
     }
 
     private func gradeReveal(correct: Bool) {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-            isGraded = true
-            showingHint = false
-        }
         gradeCard(isCorrect: correct)
     }
 
@@ -1049,7 +1224,7 @@ struct FlashcardNotificationView: View {
         ankiFutureReviewDate = nil
         guard activeCardType == "anki" else { ankiReviewOptions = []; return }
         let now = Date()
-        if !previewMode, let id = UUID(uuidString: activeCardId) {
+        if !isSyntheticSession, let id = UUID(uuidString: activeCardId) {
             let context = ModelContext(SharedDatabase.shared.container)
             if let card = try? context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == id })).first {
                 ankiReviewOptions = card.ankiReviewOptions(at: now)
@@ -1066,13 +1241,11 @@ struct FlashcardNotificationView: View {
     }
 
     private func gradeCard(isCorrect: Bool, playFeedback: Bool = true, ankiRating: AnkiReviewRating? = nil) {
+        guard !sessionFinished, !isGraded else { return }
         isAnswerFieldFocused = false
-        if playFeedback {
-            NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect")
-        }
-        lastAnswerWasCorrect = isCorrect
-
-        if previewMode {
+        if isSyntheticSession {
+            if playFeedback { NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect") }
+            lastAnswerWasCorrect = isCorrect
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                 unlearnedCount = 5
                 learningCount = isCorrect ? 2 : 3
@@ -1090,14 +1263,33 @@ struct FlashcardNotificationView: View {
 
         let descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == uuid })
         if let card = try? context.fetch(descriptor).first {
+            let ordinal = batchConsumedCount
+            guard NotificationLearningBudget.canAnswer(requestID: notificationRequestID, batchLimit: batchQuestionLimit),
+                  NotificationLearningBudget.recordAnswer(requestID: notificationRequestID, cardID: uuid,
+                    batchOrdinal: ordinal, batchLimit: batchQuestionLimit, previousReviewCount: card.reviewCount) else {
+                restoreBatch()
+                return
+            }
             if let ankiRating { card.recordAnkiReview(rating: ankiRating, at: Date()) }
             else { card.processAnswer(isCorrect: isCorrect) }
-            do { try context.save() }
+            do {
+                try context.save()
+                NotificationLearningBudget.commitAnswer(requestID: notificationRequestID, batchOrdinal: ordinal)
+            }
             catch {
                 context.rollback()
+                NotificationLearningBudget.rollbackAnswer(requestID: notificationRequestID, batchOrdinal: ordinal)
+                refreshBatchCounts()
+                pendingGrade = .init(correct: isCorrect, playFeedback: playFeedback, rating: ankiRating)
                 statusMessage = "Review couldn't be saved. Please try again."
                 return
             }
+            pendingGrade = nil
+            lastAnswerWasCorrect = isCorrect
+            if playFeedback { NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect") }
+            refreshBatchCounts()
+            isGraded = true
+            showingHint = false
             AlertTimelineStore.shared.answered(notificationRequestID)
             if ankiRating != nil {
                 Task { await AnkiReviewAlerts.reconcile(cardID: uuid) }
@@ -1119,7 +1311,6 @@ struct FlashcardNotificationView: View {
                     self.unlearnedCount = unlearned
                     self.learningCount = learning
                     self.masteredCount = mastered
-                    self.completedCount += 1
                     self.isGraded = true
                     self.showingHint = false
                 }
@@ -1133,11 +1324,16 @@ struct FlashcardNotificationView: View {
                     }
                 }
             }
+            // Leave the final answer/feedback visible until the learner finishes.
+            // Pending alerts are still cancelled immediately when the daily goal is met.
+            if isDayComplete { Task { await NotificationLearningBudget.reconcilePending() } }
         }
     }
 
     private func persistStudyHandoff() {
-        guard !isTutorial, !activeDeckId.isEmpty, !activeCardId.isEmpty,
+        guard !isSyntheticSession else { return }
+        if sessionFinished { clearNotificationHandoff(); return }
+        guard !activeDeckId.isEmpty, !activeCardId.isEmpty,
               let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") else { return }
         defaults.set(activeDeckId, forKey: "handoffDeckId")
         defaults.set(activeCardId, forKey: "handoffCardId")
@@ -1433,7 +1629,6 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     func didReceive(_ notification: UNNotification) {
         CardAudioPlayer.stopActive()
         AlertTimelineStore.shared.delivered(notification)
-        Task { try? await DailyDeckAlertScheduler.replenish() }
         let content = notification.request.content
         var userInfo = content.userInfo
 
@@ -1478,6 +1673,13 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             (content.categoryIdentifier == "FLASHCARD_TEST" &&
              userInfo["isCustomizationTest"] == nil && snapshot.deckName == "Example")
         let isSynthetic = isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" || isCustomizationTest
+        if !isSynthetic {
+            NotificationLearningBudget.recordDelivered(requestID: notification.request.identifier, at: notification.date)
+            Task {
+                await NotificationLearningBudget.reconcilePending()
+                try? await DailyDeckAlertScheduler.replenish()
+            }
+        }
         if isSynthetic {
             self.extensionContext?.notificationActions = []
         } else if let cardId = UUID(uuidString: snapshot.id),
@@ -1527,6 +1729,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             fieldMedia: snapshot.fieldMedia, correctOptionIndex: snapshot.correctOptionIndex,
             optionImageNames: snapshot.optionImageNames,
             notificationRequestID: isSynthetic ? nil : notification.request.identifier,
+            questionsPerAlert: min(3, max(1, userInfo["questionsPerAlert"] as? Int ?? 3)),
             readingPrompt: snapshot.readingPrompt,
             isTutorial: isTutorial,
             isCustomizationTest: isCustomizationTest,
@@ -1534,6 +1737,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             openApp: { [weak self] in
                 self?.openHostApp(deckId: snapshot.deckId)
             },
+            openDeck: { [weak self] deckID in self?.openHostApp(deckId: deckID) },
             onContentHeightChange: { [weak self] newHeight in
                 self?.fitContent(newHeight)
             },

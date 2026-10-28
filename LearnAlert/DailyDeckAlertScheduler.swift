@@ -15,17 +15,26 @@ enum DailyDeckAlertScheduler {
     }
     static var activePlan: DailyDeckAlertPlan? { storedPlan?.plan }
     static func clear() {
+        NotificationLearningBudget.invalidateSchedule()
         inFlight?.task.cancel()
         inFlight = nil
         defaults?.removeObject(forKey: planKey)
         defaults?.synchronize()
     }
     static func activate(_ plan: DailyDeckAlertPlan) async throws -> [Date] {
+        NotificationLearningBudget.invalidateSchedule()
+        NotificationLearningBudget.setNotificationLimit(plan.requestedDailyCount)
         let data = try JSONEncoder().encode(plan)
         defaults?.set(data, forKey: planKey)
         defaults?.synchronize()
         do { return try await replenish() }
         catch {
+            // A failed partial activation must not leave untracked deliveries behind.
+            let center = UNUserNotificationCenter.current()
+            let pending = await center.pendingNotificationRequests()
+            let ids = pending.filter { $0.identifier.hasPrefix(plan.identifierPrefix + "-") }.map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+            NotificationLearningBudget.cancelReservations(requestIDs: ids)
             // A superseded activation must not clear the replacement plan.
             if defaults?.data(forKey: planKey) == data { clear() }
             throw error
@@ -74,29 +83,47 @@ enum DailyDeckAlertScheduler {
         if shouldStop {
             guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
             clear()
-            center.removePendingNotificationRequests(withIdentifiers: pending.filter { $0.identifier.hasPrefix(plan.identifierPrefix + "-") }.map(\.identifier))
+            let ids = pending.filter { $0.identifier.hasPrefix(plan.identifierPrefix + "-") }.map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+            NotificationLearningBudget.cancelReservations(requestIDs: ids)
             defaults?.set(true, forKey: "extensionDidStopAlerts")
             return []
         }
-        let slots = candidateSlots.filter { slot in
+        let eligibleSlots = candidateSlots.filter { slot in
             guard let card = lookup[slot.cardId] else { return false }
             return card.cardType != .anki || card.isNew || card.nextReviewDate <= slot.date
         }
         func identifier(_ slot: (date: Date, cardId: UUID)) -> String {
             plan.identifierPrefix + "-" + String(Int(slot.date.timeIntervalSince1970))
         }
-        let desired = Set(slots.map(identifier))
+        let preliminary = Set(eligibleSlots.map(identifier))
         guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
-        center.removePendingNotificationRequests(withIdentifiers: pending.filter {
-            $0.identifier.hasPrefix(plan.identifierPrefix + "-") && !desired.contains($0.identifier)
-        }.map(\.identifier))
-        // Older language alerts used these same IDs but had no card snapshot.
-        // Replacing their payload in place preserves their time and schedule.
-        let existing = Set(pending.filter { $0.content.userInfo["cardId"] as? String != nil }.map(\.identifier))
-        for slot in slots {
+        let obsolete = pending.filter {
+            $0.identifier.hasPrefix(plan.identifierPrefix + "-") && !preliminary.contains($0.identifier)
+        }.map(\.identifier)
+        center.removePendingNotificationRequests(withIdentifiers: obsolete)
+        NotificationLearningBudget.cancelReservations(requestIDs: obsolete)
+        // Existing requests outside this plan participate in the same spacing and
+        // daily cap. Test previews are deliberately outside the learning budget.
+        let otherDates = pending.filter {
+            $0.content.categoryIdentifier == "FLASHCARD_REVEAL" && !$0.identifier.hasPrefix(plan.identifierPrefix + "-")
+        }.compactMap { request in
+            (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+                ?? (request.trigger as? UNTimeIntervalNotificationTrigger)?.nextTriggerDate()
+        }
+        let existing = Dictionary(pending.map { ($0.identifier, $0) }, uniquingKeysWith: { first, _ in first })
+        var slots: [(date: Date, cardId: UUID)] = []
+        for slot in eligibleSlots {
             let id = identifier(slot)
             guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
-            guard !existing.contains(id), let card = lookup[slot.cardId] else { continue }
+            guard let card = lookup[slot.cardId], NotificationLearningBudget.remainingQuestions(on: slot.date) > 0,
+                  NotificationLearningBudget.reserveNotification(requestID: id, at: slot.date, pendingDates: otherDates + slots.map(\.date), minimumSpacingMinutes: plan.minimumSpacingMinutes,
+                      dailyNotificationLimit: plan.requestedDailyCount) else { continue }
+            slots.append(slot)
+            // Current policy metadata replaces dense/legacy payloads in place.
+            if let request = existing[id], request.content.userInfo["questionsPerAlert"] as? Int == plan.questionsPerAlert,
+               request.content.userInfo["dailyQuestionGoal"] as? Int == 20,
+               request.content.userInfo["cardId"] as? String == card.id.uuidString { continue }
             let content = UNMutableNotificationContent()
             content.title = "LearnAlert: \(deck.name)"
             content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
@@ -109,17 +136,38 @@ enum DailyDeckAlertScheduler {
                 "hint": card.hint, "matchingLeftItems": card.matchingLeftItems,
                 "matchingRightItems": card.matchingRightItems, "promptImageName": card.promptImageName ?? "",
                 "answerImageName": card.answerImageName ?? "",
-                "optionImageNames": card.optionImageNames, "isRandom": false, "progress": "Daily card"]
+                "optionImageNames": card.optionImageNames, "isRandom": false,
+                "questionsPerAlert": plan.questionsPerAlert, "dailyQuestionGoal": 20,
+                "minimumSpacingMinutes": plan.minimumSpacingMinutes,
+                "progress": "1/\(plan.questionsPerAlert)"]
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)
             let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-            try await center.add(request)
+            do { try await center.add(request) }
+            catch {
+                NotificationLearningBudget.cancelReservations(requestIDs: [id])
+                throw error
+            }
+            if NotificationLearningBudget.remainingQuestions(on: slot.date) == 0 {
+                center.removePendingNotificationRequests(withIdentifiers: [id])
+                NotificationLearningBudget.cancelReservations(requestIDs: [id])
+                slots.removeAll { identifier($0) == id }
+                continue
+            }
             AlertTimelineStore.shared.scheduled(request, date: slot.date)
             if !isCurrent(planData: stored.data, defaults: defaults) {
                 center.removePendingNotificationRequests(withIdentifiers: [id])
+                NotificationLearningBudget.cancelReservations(requestIDs: [id])
                 return []
             }
         }
+        guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
+        let accepted = Set(slots.map(identifier))
+        let rejected = pending.filter {
+            $0.identifier.hasPrefix(plan.identifierPrefix + "-") && !accepted.contains($0.identifier)
+        }.map(\.identifier)
+        center.removePendingNotificationRequests(withIdentifiers: rejected)
+        NotificationLearningBudget.cancelReservations(requestIDs: rejected)
         return slots.map(\.date)
     }
 

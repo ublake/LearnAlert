@@ -764,10 +764,12 @@ struct HomeLibraryView: View {
                 InteractionSoundPlayer.shared.play(.deleteDeck)
                 let ankiFolders = Set(deckPendingDeletion.cards.compactMap { $0.ankiContent?.mediaFolder })
                 let media = deckPendingDeletion.cards.flatMap { $0.fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
+                let deletedDeckID = deckPendingDeletion.id
                 context.delete(deckPendingDeletion)
                 if (try? context.save()) != nil {
                     AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
                     CardAttachmentCleanup.removeUnreferenced(media, context: context)
+                    Task { await PracticeSessionStore.shared.removeSessions(deckID: deletedDeckID) }
                 }
                 self.deckPendingDeletion = nil
             }
@@ -1343,6 +1345,19 @@ private struct HomeAlertSetupCard: View {
             .font(.subheadline.weight(.semibold))
 
             UpcomingAlertsTimeline(scheduledDates: engine.scheduledDates, deckID: engine.activeDeckId?.uuidString)
+            TimelineView(.periodic(from: .now, by: 30)) { timeline in
+                let progress = NotificationLearningBudget.today(now: timeline.date)
+                HStack(spacing: 6) {
+                    Image(systemName: progress.isComplete ? "checkmark.seal.fill" : "sparkles")
+                        .foregroundStyle(progress.isComplete ? Color.green : LearnAlertStyle.appAccentForeground)
+                    Text(progress.isComplete ? "Done for today" : "Questions answered today")
+                    Spacer(minLength: 8)
+                    Text("\(progress.completedCount)/\(NotificationLearningBudget.goal)").monospacedDigit()
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(LearnAlertStyle.textSecondary)
+                .accessibilityElement(children: .combine)
+            }
         }
     }
 }
@@ -2233,7 +2248,6 @@ struct SetupAlertsView: View {
     @State private var errorMessage: String?
 
     private var selectedDeck: Deck? { decks.first { $0.id.uuidString == draft.targetId } }
-    private var automaticCount: Int { DeckAlertSettings.automaticDailyCount(cardCount: selectedDeck?.cardCount) }
     private var hasChanges: Bool { original.map { $0 != draft } ?? false }
     private var canSave: Bool {
         hasChanges && !saving && (!editingActiveSchedule || selectedDeck != nil)
@@ -2341,7 +2355,7 @@ struct SetupAlertsView: View {
             }
             .padding(.horizontal)
 
-            AlertPaceControls(settings: $draft.settings, automaticCount: automaticCount)
+            AlertPaceControls(settings: $draft.settings)
                 .padding(18)
                 .cleanSettingsCard()
                 .padding(.horizontal)

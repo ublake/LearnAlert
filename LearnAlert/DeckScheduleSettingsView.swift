@@ -22,12 +22,11 @@ struct DeckScheduleSettingsView: View {
                 Section {
                     Toggle("Add custom schedule settings for this deck", isOn: $useDeckSettings)
                 } footer: {
-                    Text("Remembers this deck’s pace and times. Alerts start when you schedule the deck.")
+                    Text("Remembers this deck’s alert limit, batch size, spacing, and times. Alerts start when you schedule the deck.")
                 }
                 if useDeckSettings {
                     Section {
-                        AlertPaceControls(settings: $draft,
-                            automaticCount: DeckAlertSettings.automaticDailyCount(cardCount: deck.cards.count))
+                        AlertPaceControls(settings: $draft)
                     }
                     Section("Daily schedule") { DeckScheduleTimingFields(settings: $draft) }
                     Section {

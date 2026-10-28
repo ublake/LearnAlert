@@ -378,6 +378,8 @@ struct DeckDetailView: View {
             Button("Reset Progress", role: .destructive) {
                 deck.cards.forEach { $0.resetProgress() }
                 try? context.save()
+                let deckID = deck.id
+                Task { await PracticeSessionStore.shared.removeSessions(deckID: deckID) }
             }
             Button("Cancel", role: .cancel) { }
         } message: {

@@ -27,7 +27,7 @@ class StudyEngine: ObservableObject {
     @Published private var defaultSettings = DeckAlertSettings.defaults()
     @Published private(set) var settingsDeck: Deck?
     @AppStorage("customVolume") private var storedCustomVolume: Int = 20
-    let volumeOptions = [3, 5, 7, 10, 15]
+    let volumeOptions = [1, 5, 10, 15, 20]
 
     var settings: DeckAlertSettings {
         get { settingsDeck?.alertSettings ?? defaultSettings }
@@ -45,9 +45,8 @@ class StudyEngine: ObservableObject {
     func selectSettings(for deck: Deck?) {
         settingsDeck = deck
     }
-    var automaticDailyCount: Int {
-        return DeckAlertSettings.automaticDailyCount(cardCount: settingsDeck?.cards.count)
-    }
+    // Retained for older settings call sites; there is no automatic pace mode.
+    var automaticDailyCount: Int { 20 }
     var globalSettings: DeckAlertSettings { defaultSettings }
 
     /// Called only after an explicit save. Failed scheduling restores the preferences.
@@ -86,14 +85,14 @@ class StudyEngine: ObservableObject {
     var startMinute: Int { get { settings.startMinute } set { settings.startMinute = newValue } }
     var endHour: Int { get { settings.endHour } set { settings.endHour = newValue } }
     var endMinute: Int { get { settings.endMinute } set { settings.endMinute = newValue } }
-    var activeVolume: Int { settings.resolvedDailyCount(automaticCount: automaticDailyCount) }
+    var activeVolume: Int { settings.resolvedDailyCount(automaticCount: 20) }
     var volumeSelectionIndex: Int {
         get { volumeOptions.firstIndex(of: settings.dailyCount) ?? 5 }
-        set { settings.dailyCount = newValue == 5 ? min(50, max(1, storedCustomVolume)) : volumeOptions[min(4, max(0, newValue))] }
+        set { settings.dailyCount = newValue == 5 ? min(30, max(1, storedCustomVolume)) : volumeOptions[min(4, max(0, newValue))] }
     }
     var customVolume: Int {
         get { volumeSelectionIndex == 5 ? settings.dailyCount : storedCustomVolume }
-        set { storedCustomVolume = min(50, max(1, newValue)); settings.dailyCount = storedCustomVolume }
+        set { storedCustomVolume = min(30, max(1, newValue)); settings.dailyCount = storedCustomVolume }
     }
 
     // Persistent Storage for Active Sessions
@@ -109,6 +108,7 @@ class StudyEngine: ObservableObject {
     }
     
     private var restoringSchedule = false
+    private var scheduleGeneration = UUID()
 
     func restoreSession() {
         if let plan = DailyDeckAlertScheduler.activePlan, savedIsActive {
@@ -124,7 +124,7 @@ class StudyEngine: ObservableObject {
                 do {
                     scheduledDates = try await DailyDeckAlertScheduler.replenish()
                     savedDatesData = try JSONEncoder().encode(scheduledDates)
-                    if scheduledDates.isEmpty { stopAlerts() }
+                    if scheduledDates.isEmpty && plan.expiresAt.map({ $0 <= Date() }) == true { stopAlerts() }
                 } catch { print("Daily alerts could not be restored: \(error.localizedDescription)") }
             }
             return
@@ -136,6 +136,18 @@ class StudyEngine: ObservableObject {
             savedDeckName = ""
             savedDatesData = Data()
             sharedDefaults?.set(false, forKey: "extensionDidStopAlerts")
+        }
+
+        // One-time conversion of older dense, one-off schedules. The replacement
+        // uses the current spacing policy and retains the shared daily ledger.
+        if savedIsActive, DailyDeckAlertScheduler.activePlan == nil {
+            activeDeckId = UUID(uuidString: savedDeckId)
+            activeDeckName = savedDeckName
+            activeSectionId = UUID(uuidString: savedSectionId)
+            activeSectionName = savedSectionName
+            isActive = true
+            rescheduleNextCycle()
+            return
         }
 
         // 1. Load saved dates from hard drive
@@ -172,8 +184,8 @@ class StudyEngine: ObservableObject {
     
     @discardableResult
     func startAlerts(for deck: Deck, section: DeckSection? = nil) async throws -> Int {
+        scheduleGeneration = UUID()
         selectSettings(for: deck)
-        DailyDeckAlertScheduler.clear()
         let cards = fetchCardsToStudy(from: deck, section: section)
         
         // If "Until Deck Learnt" is selected and all cards are mastered
@@ -194,56 +206,42 @@ class StudyEngine: ObservableObject {
             )
         }
         
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        
+        DailyDeckAlertScheduler.clear()
+        let center = UNUserNotificationCenter.current()
+        let previousRequests = await center.pendingNotificationRequests()
+        let oldStudyIDs = previousRequests.filter { $0.content.categoryIdentifier == "FLASHCARD_REVEAL" }.map(\.identifier)
+        center.removePendingNotificationRequests(withIdentifiers: oldStudyIDs)
+        NotificationLearningBudget.cancelReservations(requestIDs: oldStudyIDs)
+
         let now = Date()
         let calendar = Calendar.current
-        guard let window = StudyScheduling.window(now: now, startHour: startHour, startMinute: startMinute,
-            endHour: endHour, endMinute: endMinute, calendar: calendar) else {
-            throw NSError(domain: "LearnAlert.StudyEngine", code: 400,
-                userInfo: [NSLocalizedDescriptionKey: "Invalid study window configuration."])
-        }
-        let startTime = window.start
-        let endTime = window.end
-
-        let totalDuration = max(120.0, endTime.timeIntervalSince(startTime))
-        let interval = max(60.0, totalDuration / Double(max(1, cards.count)))
-        
-        var newScheduledDates: [Date] = []
-        if activeVolume == 1 {
-            let base = section?.cards ?? deck.cards
-            let ordered = smartSRS ? base.sorted { $0.studyPriority > $1.studyPriority } : orderedCards(deck: deck, section: section)
-            // Start with the next selected card, then rotate through the remaining material.
-            let first = cards[0]
-            let ids = [first.id] + ordered.filter { $0.id != first.id }.map(\.id)
-            guard let anchor = calendar.nextDate(after: now, matching: DateComponents(hour: settings.dailyHour,
-                minute: settings.dailyMinute, second: 0), matchingPolicy: .nextTime) else { return 0 }
-            let expiresAt = stopCondition == "Until Day Ends" ? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) : nil
-            let plan = DailyDeckAlertPlan(deckId: deck.id, sectionId: section?.id, cardIds: ids,
-                anchor: anchor, hour: settings.dailyHour, minute: settings.dailyMinute, expiresAt: expiresAt,
-                stopWhenMastered: stopCondition == "Until Deck Learnt", sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(false, forKey: "extensionDidStopAlerts")
-            newScheduledDates = try await DailyDeckAlertScheduler.activate(plan)
-            guard !newScheduledDates.isEmpty else {
-                DailyDeckAlertScheduler.clear()
-                throw NSError(domain: "LearnAlert.StudyEngine", code: 204,
-                    userInfo: [NSLocalizedDescriptionKey: "That time has passed today. Choose a later time or keep alerts running beyond today."])
-            }
+        let ordered = orderedCards(deck: deck, section: section)
+        let selectedIDs = Set(cards.map(\.id))
+        let ids = cards.map(\.id) + ordered.filter { !selectedIDs.contains($0.id) }.map(\.id)
+        let expiresAt = stopCondition == "Until Day Ends"
+            ? calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) : nil
+        var plan = DailyDeckAlertPlan(deckId: deck.id, sectionId: section?.id, cardIds: ids,
+            anchor: now, hour: settings.dailyHour, minute: settings.dailyMinute, expiresAt: expiresAt,
+            stopWhenMastered: stopCondition == "Until Deck Learnt",
+            sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
+        if !settings.isCustomDaily {
+            plan.window = DeckAlertWindow(endHour: settings.endHour, endMinute: settings.endMinute,
+                notificationLimit: activeVolume, minimumSpacingMinutes: settings.resolvedSpacingMinutes,
+                questionsPerAlert: settings.resolvedQuestionsPerAlert)
         } else {
-            for (index, card) in cards.enumerated() {
-                let triggerDate = startTime.addingTimeInterval(interval * Double(index))
-                newScheduledDates.append(triggerDate)
-                try await NotificationManager.shared.scheduleRealCardAsync(card, at: triggerDate, progress: "\(index + 1)/\(cards.count)")
-
-            }
+            // A single-time plan still needs the chosen batch size and gap policy.
+            plan.singleTimeQuestionsPerAlert = settings.resolvedQuestionsPerAlert
+            plan.singleTimeSpacingMinutes = settings.resolvedSpacingMinutes
         }
-
-        if !smartSRS {
-            let ordered = orderedCards(deck: deck, section: section)
-            if let last = cards.last, let index = ordered.firstIndex(where: { $0.id == last.id }) {
-                UserDefaults.standard.set(ordered[(index + 1) % ordered.count].id.uuidString,
-                    forKey: sequentialCursorKey(deck: deck, section: section))
-            }
+        UserDefaults(suiteName: "group.com.learnalert.shared")?.set(false, forKey: "extensionDidStopAlerts")
+        let newScheduledDates = try await DailyDeckAlertScheduler.activate(plan)
+        guard !newScheduledDates.isEmpty else {
+            DailyDeckAlertScheduler.clear()
+            let complete = NotificationLearningBudget.today().isComplete
+            throw NSError(domain: "LearnAlert.StudyEngine", code: 204,
+                userInfo: [NSLocalizedDescriptionKey: complete
+                    ? "You're done for today. Keep alerts running beyond today to continue tomorrow."
+                    : "No spaced alerts fit before this schedule ends. Extend the availability window or keep alerts running beyond today."])
         }
 
         // Update Live UI
@@ -271,13 +269,22 @@ class StudyEngine: ObservableObject {
             sharedDefaults.set(false, forKey: "extensionDidStopAlerts")
         }
         
-        return cards.count
+        return newScheduledDates.count
     }
     
     func stopAlerts() {
+        scheduleGeneration = UUID()
+        let generation = scheduleGeneration
         AlertTimelineStore.shared.cancelFuture()
         DailyDeckAlertScheduler.clear()
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        let center = UNUserNotificationCenter.current()
+        Task {
+            let pending = await center.pendingNotificationRequests()
+            guard self.scheduleGeneration == generation else { return }
+            let ids = pending.filter { $0.content.categoryIdentifier == "FLASHCARD_REVEAL" }.map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+            NotificationLearningBudget.cancelReservations(requestIDs: ids)
+        }
         withAnimation(.spring) {
             self.isActive = false
             self.scheduledDates = []

@@ -45,6 +45,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         checkPermission()
         Task { @MainActor [weak self] in
             self?.consumePendingStudyHandoff()
+            await NotificationLearningBudget.reconcilePending()
         }
     }
     
@@ -88,6 +89,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         UNUserNotificationCenter.current().setNotificationCategories([revealCategory, testCategory])
     }
     
+    @MainActor
     func scheduleRealCard(_ card: Flashcard, at date: Date, progress: String) {
         let content = UNMutableNotificationContent()
         let deckName = card.deck?.name ?? "Daily Review"
@@ -128,14 +130,28 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         
         let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDateComponents, repeats: false)
+        content.userInfo["questionsPerAlert"] = min(3, max(1, card.deck?.alertSettings?.questionsPerAlert ?? 3))
         let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
+        guard NotificationLearningBudget.reserveNotification(requestID: request.identifier, at: date) else { return }
         
         UNUserNotificationCenter.current().add(request) { error in
-            if let error = error { print("Error scheduling: \(error)") }
-            else { AlertTimelineStore.shared.scheduled(request, date: date) }
+            Task { @MainActor in
+                if let error {
+                    print("Error scheduling: \(error)")
+                    NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
+                    return
+                }
+                guard NotificationLearningBudget.remainingQuestions(on: date) > 0 else {
+                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                    NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
+                    return
+                }
+                AlertTimelineStore.shared.scheduled(request, date: date)
+            }
         }
     }
 
+    @MainActor
     func scheduleRealCardAsync(_ card: Flashcard, at date: Date, progress: String) async throws {
         let content = UNMutableNotificationContent()
         let deckName = card.deck?.name ?? "Daily Review"
@@ -174,9 +190,21 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
         let triggerDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: triggerDateComponents, repeats: false)
+        content.userInfo["questionsPerAlert"] = min(3, max(1, card.deck?.alertSettings?.questionsPerAlert ?? 3))
         let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
+        guard NotificationLearningBudget.reserveNotification(requestID: request.identifier, at: date) else {
+            throw NSError(domain: "LearnAlert.NotificationBudget", code: 429,
+                userInfo: [NSLocalizedDescriptionKey: "This alert is too close to another alert or the daily limit has been reached."])
+        }
 
-        try await UNUserNotificationCenter.current().add(request)
+        do { try await UNUserNotificationCenter.current().add(request) }
+        catch { NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier]); throw error }
+        guard NotificationLearningBudget.remainingQuestions(on: date) > 0 else {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [request.identifier])
+            NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
+            throw NSError(domain: "LearnAlert.NotificationBudget", code: 429,
+                userInfo: [NSLocalizedDescriptionKey: "You're done for today. Your next study alerts can continue tomorrow."])
+        }
         AlertTimelineStore.shared.scheduled(request, date: date)
     }
     
@@ -254,10 +282,16 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         AlertTimelineStore.shared.delivered(notification)
-        if #available(iOS 14.0, *) {
+        Task { @MainActor in
+            if AlertTimelineStore.isStudy(notification.request.content) {
+                NotificationLearningBudget.recordDelivered(requestID: notification.request.identifier, at: notification.date)
+                if NotificationLearningBudget.today().isComplete {
+                    completionHandler([])
+                    await NotificationLearningBudget.reconcilePending()
+                    return
+                }
+            }
             completionHandler([.banner, .sound, .list, .badge])
-        } else {
-            completionHandler([.alert, .sound, .badge])
         }
     }
 
@@ -280,6 +314,10 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             let requestID = response.notification.request.identifier
             AlertTimelineStore.shared.delivered(response.notification)
+            if AlertTimelineStore.isStudy(response.notification.request.content) {
+                NotificationLearningBudget.recordDelivered(requestID: requestID, at: response.notification.date)
+                Task { await NotificationLearningBudget.reconcilePending() }
+            }
             if response.actionIdentifier == UNNotificationDismissActionIdentifier {
                 AlertTimelineStore.shared.dismissed(requestID)
                 completionHandler()

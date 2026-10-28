@@ -188,6 +188,7 @@
 				ManagedCatalog.swift,
 				Models.swift,
 				NotificationDesignTheme.swift,
+				NotificationLearningBudget.swift,
 				NotificationViewportGeometry.swift,
 				SharedDatabase.swift,
 			);

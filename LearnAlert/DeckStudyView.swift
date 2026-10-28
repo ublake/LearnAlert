@@ -3,23 +3,28 @@ import SwiftData
 
 struct DeckStudyView: View {
     @Bindable var deck: Deck
-    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var practiceSessions = PracticeSessionStore()
     @StateObject private var ankiCache = AnkiStudyRenderCache()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
     @State private var studyQueue: [Flashcard] = []
+    @State private var queueIDs: [UUID] = []
     @State private var allCards: [Flashcard] = []
     @State private var shortReviews = AnkiSessionReviewQueue()
+    @State private var localAnkiStates: [UUID: Data] = [:]
     @State private var waitingForReview = false
     @State private var ratingCounts: [AnkiReviewRating: Int] = [:]
     @State private var reviewedAnkiIDs: Set<UUID> = []
+    @State private var reviewedCardIDs: Set<UUID> = []
+    @State private var answerCount = 0
     @State private var reviewError: String?
     @State private var cardIndex = 0
     @State private var selectedAnswer: String?
+    @State private var typedAnswer = ""
     @State private var isRevealed = false
     @State private var hasViewedImageBack = false
     @State private var isGraded = false
@@ -27,6 +32,9 @@ struct DeckStudyView: View {
     @State private var showingHint = false
     @State private var hasRecordedHint = false
     @State private var didApplyInitialState = false
+    @State private var loadingFailed = false
+    @State private var choosingSession = false
+    @State private var activeSession: PracticeSessionSnapshot?
     @State private var isComplete = false
 
     let initialCardId: UUID?
@@ -38,118 +46,197 @@ struct DeckStudyView: View {
     let initialImageBackViewed: Bool
     let notificationRequestID: String?
 
-    init(
-        deck: Deck,
-        initialCardId: UUID? = nil,
-        initialSelectedAnswer: String? = nil,
-        initialWasCorrect: Bool? = nil,
-        initialWasGraded: Bool = false,
-        initialHintVisible: Bool = false,
-        initialWasRevealed: Bool = false,
-        initialImageBackViewed: Bool = false,
-        notificationRequestID: String? = nil
-    ) {
-        self.deck = deck
-        self.initialCardId = initialCardId
-        self.initialSelectedAnswer = initialSelectedAnswer
-        self.initialWasCorrect = initialWasCorrect
-        self.initialWasGraded = initialWasGraded
-        self.initialHintVisible = initialHintVisible
-        self.initialWasRevealed = initialWasRevealed
-        self.initialImageBackViewed = initialImageBackViewed
+    init(deck: Deck, initialCardId: UUID? = nil, initialSelectedAnswer: String? = nil,
+         initialWasCorrect: Bool? = nil, initialWasGraded: Bool = false,
+         initialHintVisible: Bool = false, initialWasRevealed: Bool = false,
+         initialImageBackViewed: Bool = false, notificationRequestID: String? = nil) {
+        self.deck = deck; self.initialCardId = initialCardId
+        self.initialSelectedAnswer = initialSelectedAnswer; self.initialWasCorrect = initialWasCorrect
+        self.initialWasGraded = initialWasGraded; self.initialHintVisible = initialHintVisible
+        self.initialWasRevealed = initialWasRevealed; self.initialImageBackViewed = initialImageBackViewed
         self.notificationRequestID = notificationRequestID
     }
 
-    private var currentCard: Flashcard? {
-        studyQueue.indices.contains(cardIndex) ? studyQueue[cardIndex] : nil
-    }
-    private var ankiPresentation: AnkiStudyPresentation {
-        AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow
-    }
+    private var currentCard: Flashcard? { studyQueue.indices.contains(cardIndex) ? studyQueue[cardIndex] : nil }
+    private var ankiPresentation: AnkiStudyPresentation { AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow }
     private var isAnkiOnly: Bool { !allCards.isEmpty && allCards.allSatisfy { $0.cardType == .anki } }
     private var nextAnkiReview: Date? {
-        allCards.filter { $0.cardType == .anki && !$0.isNew }.map(\.nextReviewDate).min()
+        localAnkiStates.values.compactMap { try? JSONDecoder().decode(AnkiReviewState.self, from: $0).dueDate }.min()
+    }
+    private var resumableSessions: [PracticeSessionSnapshot] {
+        let ids = Set(allCards.map(\.id))
+        return practiceSessions.sessions.filter { $0.originalCardIDs.contains(where: ids.contains) }
     }
 
     var body: some View {
         ZStack {
             QuizTheme.canvas.ignoresSafeArea()
-
-            if didApplyInitialState && allCards.isEmpty {
-                QuizEmptyState(onClose: dismiss.callAsFunction)
+            if loadingFailed {
+                ContentUnavailableView {
+                    Label("Practice sessions unavailable", systemImage: "externaldrive.badge.exclamationmark")
+                } description: {
+                    Text("Your saved sessions couldn’t be opened. Try again to keep that progress safe.")
+                } actions: {
+                    Button("Try again") { Task { await preparePractice() } }
+                    Button("Close", action: closePractice)
+                }
+            } else if !didApplyInitialState {
+                ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if allCards.isEmpty {
+                QuizEmptyState(onClose: closePractice)
+            } else if choosingSession {
+                PracticeSessionPicker(deckName: deck.name, sessions: resumableSessions,
+                    onResume: resume, onNew: { startNewSession() }, onClose: closePractice)
             } else if isComplete {
                 if isAnkiOnly {
                     AnkiStudySummaryView(counts: ratingCounts, cardCount: reviewedAnkiIDs.count,
-                        nextReview: nextAnkiReview, onClose: dismiss.callAsFunction)
+                        nextReview: nextAnkiReview, onClose: closePractice)
                 } else {
-                    QuizResultsView(
-                    deckID: deck.id,
-                    appearanceSeed: deck.appearanceSeed,
-                    colorHex: deck.colorHex,
-                    deckName: deck.name,
-                    score: correctCount * 30,
-                    correctCount: correctCount,
-                    totalCount: allCards.count,
-                    isReviewOnly: allCards.allSatisfy { $0.cardType.isReviewOnly },
-                    onRestart: restartCycle,
-                    onClose: dismiss.callAsFunction
-                )
+                    QuizResultsView(deckID: deck.id, appearanceSeed: deck.appearanceSeed, colorHex: deck.colorHex,
+                        deckName: deck.name, score: correctCount * 30, correctCount: correctCount,
+                        totalCount: max(answerCount, reviewedCardIDs.count),
+                        isReviewOnly: allCards.allSatisfy { $0.cardType.isReviewOnly },
+                        onRestart: { startNewSession() }, onClose: closePractice)
                 }
             } else if waitingForReview, let date = shortReviews.nextDate {
                 AnkiLearningWaitView(nextReview: date, onReady: { resumeLearning() },
-                    onReviewEarly: { resumeLearning(early: true) },
-                    onFinish: { isComplete = true })
+                    onReviewEarly: { resumeLearning(early: true) }, onFinish: closePractice)
             } else if let card = currentCard {
-                QuizSessionView(
-                    deckName: deck.name,
-                    question: card.studyQuestion,
-                    cardType: card.cardType,
-                    options: card.options,
-                    matchingLeftItems: card.matchingLeftItems,
-                    matchingRightItems: card.matchingRightItems,
-                    correctAnswer: card.correctAnswer,
-                    hint: card.hint,
-                    promptImageName: card.promptImageName,
-                    answerImageName: card.answerImageName,
-                    optionImageNames: card.optionImageNames,
-                    promptAudioName: card.promptAudioName,
-                    readingPrompt: card.readingPrompt,
-                    ankiContent: card.ankiContent,
-                    ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
-                    ankiReviewOptions: card.cardType == .anki ? card.ankiReviewOptions(at: Date()) : [],
-                    ankiPresentation: ankiPresentation,
-                    fieldMedia: card.fieldMedia,
-                    correctOptionIndex: card.resolvedCorrectOptionIndex,
-                    cardNumber: cardIndex + 1,
-                    cardCount: studyQueue.count,
-                    correctCount: correctCount,
-                    selectedAnswer: selectedAnswer,
-                    isRevealed: $isRevealed,
-                    hasViewedImageBack: hasViewedImageBack,
-                    isGraded: isGraded,
-                    showingHint: showingHint,
-                    onSelect: { selectOption($0, for: card) },
-                    onReveal: { withAnimation(.snappy) { isRevealed = true } },
-                    onImageBackViewed: { hasViewedImageBack = true },
-                    onGrade: { grade(card, isCorrect: $0) },
-                    onAnkiGrade: { rateAnki(card, rating: $0) },
-                    onToggleHint: { toggleHint(for: card) },
-                    onSkip: { skip(card) },
-                    onContinue: { submitAndAdvance(card) },
-                    onClose: dismiss.callAsFunction
-                )
-                .id(card.id)
-                .task(id: "\(card.id)-\(colorScheme)-\(ankiPresentationRaw)") { prefetchAnki() }
+                QuizSessionView(deckName: deck.name, question: card.studyQuestion, cardType: card.cardType,
+                    options: card.options, matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
+                    correctAnswer: card.correctAnswer, hint: card.hint, promptImageName: card.promptImageName,
+                    answerImageName: card.answerImageName, optionImageNames: card.optionImageNames,
+                    promptAudioName: card.promptAudioName, readingPrompt: card.readingPrompt,
+                    ankiContent: card.ankiContent, ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
+                    ankiReviewOptions: card.cardType == .anki ? AnkiReviewScheduling.options(for: localState(for: card), at: Date()) : [],
+                    ankiPresentation: ankiPresentation, fieldMedia: card.fieldMedia, correctOptionIndex: card.resolvedCorrectOptionIndex,
+                    cardNumber: min(allCards.count, reviewedCardIDs.count + (reviewedCardIDs.contains(card.id) ? 0 : 1)),
+                    cardCount: allCards.count, correctCount: correctCount, selectedAnswer: selectedAnswer,
+                    typedAnswer: $typedAnswer, isRevealed: $isRevealed, hasViewedImageBack: hasViewedImageBack, isGraded: isGraded,
+                    showingHint: showingHint, onSelect: { selectOption($0, for: card) },
+                    onReveal: { withAnimation(.snappy) { isRevealed = true }; checkpoint() },
+                    onImageBackViewed: { hasViewedImageBack = true; checkpoint() },
+                    onGrade: { grade(card, isCorrect: $0) }, onAnkiGrade: { rateAnki(card, rating: $0) },
+                    onToggleHint: toggleHint, onSkip: { skip(card) }, onContinue: { submitAndAdvance(card) }, onClose: closePractice)
+                    .id(card.id)
+                    .task(id: "\(card.id)-\(colorScheme)-\(ankiPresentationRaw)") { prefetchAnki() }
             } else {
                 ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .task { await Task.yield(); applyInitialStateIfNeeded() }
-        .onDisappear { ankiCache.clear() }
-        .alert("Review couldn't be saved", isPresented: Binding(get: { reviewError != nil }, set: { if !$0 { reviewError = nil } })) {
+        .task { await Task.yield(); await preparePractice() }
+        .onDisappear { checkpoint(immediately: true); ankiCache.clear() }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { checkpoint(immediately: true) } }
+        .onChange(of: isRevealed) { _, _ in checkpoint() }
+        .onChange(of: typedAnswer) { _, _ in checkpoint() }
+        .onChange(of: practiceSessions.errorMessage) { _, message in if let message { reviewError = message } }
+        .alert("Practice progress", isPresented: Binding(get: { reviewError != nil }, set: { if !$0 { reviewError = nil } })) {
             Button("OK") { reviewError = nil }
         } message: { Text(reviewError ?? "Please try again.") }
+    }
+
+    private func preparePractice() async {
+        guard !didApplyInitialState || loadingFailed else { return }
+        allCards = deck.cards
+        guard await practiceSessions.load(deckID: deck.id), !Task.isCancelled else { loadingFailed = true; return }
+        loadingFailed = false; didApplyInitialState = true
+        if initialCardId != nil || notificationRequestID != nil { startNewSession(applyHandoff: true) }
+        else if !resumableSessions.isEmpty { choosingSession = true }
+        else { startNewSession() }
+    }
+
+    private func startNewSession(applyHandoff: Bool = false) {
+        ankiCache.clear()
+        allCards = deck.cards.sorted {
+            $0.orderIndex == $1.orderIndex ? $0.id.uuidString < $1.id.uuidString : $0.orderIndex < $1.orderIndex
+        }
+        studyQueue = allCards
+        queueIDs = allCards.map(\.id)
+        shortReviews = .init(); localAnkiStates = [:]; waitingForReview = false
+        ratingCounts = [:]; reviewedAnkiIDs = []; reviewedCardIDs = []
+        answerCount = 0; correctCount = 0; cardIndex = 0; resetCardState()
+        isComplete = false; choosingSession = false
+        let now = Date()
+        activeSession = PracticeSessionSnapshot(deckID: deck.id, createdAt: now, updatedAt: now,
+            originalCardIDs: allCards.map(\.id), queueIDs: studyQueue.map(\.id))
+        if applyHandoff, let id = initialCardId, let card = allCards.first(where: { $0.id == id }) {
+            studyQueue.removeAll { $0.id == id }; studyQueue.insert(card, at: 0)
+            queueIDs.removeAll { $0 == id }; queueIDs.insert(id, at: 0)
+            selectedAnswer = initialSelectedAnswer; isGraded = initialWasGraded
+            isRevealed = initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
+            hasViewedImageBack = initialImageBackViewed || initialWasRevealed || initialWasGraded
+            showingHint = initialHintVisible; hasRecordedHint = initialHintVisible
+            if initialWasGraded {
+                // The completed notification review remains acknowledged; this practice
+                // session never replays it into notification state or the daily budget.
+                reviewedCardIDs.insert(id); answerCount = 1
+                correctCount = initialWasCorrect == true ? 1 : 0
+                if card.cardType == .anki { reviewedAnkiIDs.insert(id) }
+            }
+        }
+        checkpoint(immediately: true)
+    }
+
+    private func resume(_ saved: PracticeSessionSnapshot) {
+        ankiCache.clear()
+        let lookup = Dictionary(deck.cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let validIDs = Set(lookup.keys)
+        let index = min(max(0, saved.cardIndex), saved.queueIDs.count)
+        let savedCurrentID = saved.queueIDs.indices.contains(index) ? saved.queueIDs[index] : nil
+        let earlierCount = saved.queueIDs.prefix(index).filter(validIDs.contains).count
+        let hasSurvivingRemainder = saved.queueIDs.dropFirst(index).contains(where: validIDs.contains)
+        studyQueue = saved.queueIDs.compactMap { lookup[$0] }
+        queueIDs = saved.queueIDs.filter(validIDs.contains)
+        allCards = saved.originalCardIDs.compactMap { lookup[$0] }
+        cardIndex = min(earlierCount, max(0, studyQueue.count - 1))
+        reviewedCardIDs = saved.reviewedCardIDs.intersection(validIDs)
+        reviewedAnkiIDs = saved.reviewedAnkiIDs.intersection(validIDs)
+        correctCount = saved.correctCount; answerCount = saved.answerCount
+        selectedAnswer = saved.selectedAnswer; isRevealed = saved.isRevealed
+        typedAnswer = saved.typedAnswer
+        hasViewedImageBack = saved.hasViewedImageBack; isGraded = saved.isGraded
+        showingHint = saved.showingHint; hasRecordedHint = saved.hasRecordedHint
+        waitingForReview = saved.waitingForReview; isComplete = saved.isComplete
+        localAnkiStates = saved.localAnkiStates.filter { validIDs.contains($0.key) }
+        shortReviews = .init()
+        for (id, date) in saved.pendingAnkiReviews where validIDs.contains(id) { shortReviews.schedule(id, due: date, repeatsInSession: true) }
+        ratingCounts = Dictionary(saved.ratingCounts.compactMap { key, value in AnkiReviewRating(rawValue: key).map { ($0, value) } }, uniquingKeysWith: +)
+        if savedCurrentID != currentCard?.id { resetCardState() }
+        if !hasSurvivingRemainder {
+            // All current/later cards were deleted. Earlier completed cards must
+            // not become a fresh ungraded question merely because the index clamps.
+            waitingForReview = shortReviews.nextDate != nil
+            isComplete = !waitingForReview
+        }
+        if waitingForReview && shortReviews.nextDate == nil { waitingForReview = false; isComplete = true }
+        if studyQueue.isEmpty { isComplete = true }
+        activeSession = saved
+        activeSession?.originalCardIDs = allCards.map(\.id)
+        choosingSession = false
+        checkpoint(immediately: true)
+    }
+
+    private func checkpoint(immediately: Bool = false) {
+        guard !choosingSession, !loadingFailed, var session = activeSession else { return }
+        session.updatedAt = Date()
+        session.queueIDs = queueIDs; session.cardIndex = cardIndex
+        session.reviewedCardIDs = reviewedCardIDs; session.answerCount = answerCount; session.correctCount = correctCount
+        session.selectedAnswer = selectedAnswer; session.isRevealed = isRevealed
+        session.typedAnswer = typedAnswer
+        session.hasViewedImageBack = hasViewedImageBack; session.isGraded = isGraded
+        session.showingHint = showingHint; session.hasRecordedHint = hasRecordedHint
+        session.waitingForReview = waitingForReview; session.isComplete = isComplete
+        session.localAnkiStates = localAnkiStates; session.pendingAnkiReviews = shortReviews.pending
+        session.ratingCounts = Dictionary(uniqueKeysWithValues: ratingCounts.map { ($0.key.rawValue, $0.value) })
+        session.reviewedAnkiIDs = reviewedAnkiIDs
+        activeSession = session
+        practiceSessions.save(session, immediately: immediately)
+    }
+
+    private func closePractice() { checkpoint(immediately: true); dismiss() }
+    private func localState(for card: Flashcard) -> AnkiReviewState {
+        localAnkiStates[card.id].flatMap { try? JSONDecoder().decode(AnkiReviewState.self, from: $0) } ?? card.ankiReviewState
     }
 
     private func prefetchAnki() {
@@ -162,212 +249,137 @@ struct DeckStudyView: View {
             configuration: .init(dark: colorScheme == .dark, reduceMotion: reduceMotion, presentation: ankiPresentation))
     }
 
-    private func setupStudyQueue() {
-        allCards = deck.cards
-        studyQueue = buildSmartStudyQueue()
-        let queuedIDs = Set(studyQueue.map(\.id))
-        for card in allCards where card.cardType == .anki && !queuedIDs.contains(card.id) {
-                let state = card.ankiReviewState
-                if state.phase != .review {
-                    shortReviews.schedule(card.id, due: state.dueDate, repeatsInSession: true)
-                }
-        }
-        if studyQueue.isEmpty && isAnkiOnly {
-            waitingForReview = shortReviews.nextDate != nil
-            isComplete = !waitingForReview
-        }
-    }
-
-    private func buildSmartStudyQueue() -> [Flashcard] {
-        let now = Date()
-        return allCards.filter { $0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now }.sorted {
-            if $0.cardType == .anki && $1.cardType == .anki {
-                if $0.isNew != $1.isNew { return !$0.isNew }
-                if !$0.isNew && $0.nextReviewDate != $1.nextReviewDate { return $0.nextReviewDate < $1.nextReviewDate }
-                if $0.orderIndex != $1.orderIndex { return $0.orderIndex < $1.orderIndex }
-            }
-            if $0.studyPriority != $1.studyPriority {
-                return $0.studyPriority > $1.studyPriority
-            }
-            if $0.accuracy != $1.accuracy {
-                return $0.accuracy < $1.accuracy
-            }
-            return $0.id.uuidString < $1.id.uuidString
-        }
-    }
-
     private func selectOption(_ option: String, for card: Flashcard) {
-        // Lock answer once clicked: ignore any subsequent clicks
         guard !isGraded && selectedAnswer == nil else { return }
         selectedAnswer = option
-        let isCorrect = CardChoiceIdentity.index(option, options: card.options) == card.resolvedCorrectOptionIndex
-        grade(card, isCorrect: isCorrect)
+        grade(card, isCorrect: CardChoiceIdentity.index(option, options: card.options) == card.resolvedCorrectOptionIndex)
     }
-
-    private func toggleHint(for card: Flashcard) {
-        if !hasRecordedHint {
-            card.recordHintUsed()
-            hasRecordedHint = true
-            try? context.save()
-        }
+    private func toggleHint() {
+        hasRecordedHint = true
         withAnimation(.snappy) { showingHint.toggle() }
+        checkpoint()
     }
-
     private func skip(_ card: Flashcard) {
         InteractionSoundPlayer.shared.play(.skip)
-        card.recordSkip()
-        // Smart repetition: re-queue skipped card so user gets another chance to master it
-        let reinsertIndex = min(cardIndex + 3, studyQueue.count)
-        studyQueue.insert(card, at: reinsertIndex)
-        try? context.save()
-        advance()
+        requeue(card); advance()
     }
-
+    private func requeue(_ card: Flashcard) {
+        let remaining = studyQueue.dropFirst(min(cardIndex + 1, studyQueue.count))
+        if !remaining.contains(where: { $0.id == card.id }) {
+            let index = min(cardIndex + 3, studyQueue.count)
+            studyQueue.insert(card, at: index); queueIDs.insert(card.id, at: index)
+        }
+    }
+    private func recordPracticeAnswer(_ card: Flashcard, correct: Bool) {
+        reviewedCardIDs.insert(card.id); answerCount += 1
+        if correct { correctCount += 1 }
+    }
     private func grade(_ card: Flashcard, isCorrect: Bool) {
         guard !isGraded else { return }
         InteractionSoundPlayer.shared.play(isCorrect ? .correct : .incorrect)
-        card.processAnswer(isCorrect: isCorrect)
-        if isCorrect {
-            correctCount += 1
-        } else {
-            // Smart repetition: re-queue missed card into the active study queue to master it
-            let reinsertIndex = min(cardIndex + 3, studyQueue.count)
-            studyQueue.insert(card, at: reinsertIndex)
-        }
+        recordPracticeAnswer(card, correct: isCorrect)
+        if !isCorrect { requeue(card) }
         isGraded = true
-        if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
+        checkpoint()
     }
-
     private func rateAnki(_ card: Flashcard, rating: AnkiReviewRating) {
         guard card.cardType == .anki, isRevealed, !isGraded else { return }
-        let option = card.recordAnkiReview(rating: rating, at: Date())
-        do { try context.save() }
-        catch {
-            context.rollback()
-            reviewError = error.localizedDescription
-            return
-        }
+        let option = AnkiReviewScheduling.option(for: rating, state: localState(for: card), at: Date())
+        localAnkiStates[card.id] = try? JSONEncoder().encode(option.nextState)
         shortReviews.schedule(card.id, due: option.nextReviewDate, repeatsInSession: option.shouldRepeatInSession)
-        ratingCounts[rating, default: 0] += 1
-        reviewedAnkiIDs.insert(card.id)
-        if rating.wasCorrect { correctCount += 1 }
+        ratingCounts[rating, default: 0] += 1; reviewedAnkiIDs.insert(card.id)
+        recordPracticeAnswer(card, correct: rating.wasCorrect)
         InteractionSoundPlayer.shared.play(rating.wasCorrect ? .correct : .incorrect)
-        AlertTimelineStore.shared.answered(notificationRequestID)
-        let cardID = card.id
-        Task { await AnkiReviewAlerts.reconcile(cardID: cardID) }
         isGraded = true
-        advance()
+        checkpoint(); advance()
     }
-
     private func submitAndAdvance(_ card: Flashcard) {
         guard card.cardType != .images || CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
         if card.cardType == .images, let back = card.answerImageName, !back.isEmpty {
             guard hasViewedImageBack, CardImageStore.loadImage(named: back) != nil else { return }
         }
         if card.cardType.isReviewOnly {
-            // A notification may already have recorded this review before handing off.
-            if !isGraded {
-                        card.processAnswer(isCorrect: true)
-                correctCount += 1
-                if (try? context.save()) != nil { AlertTimelineStore.shared.answered(notificationRequestID) }
-            }
-            advance()
-            return
+            if !isGraded { recordPracticeAnswer(card, correct: true); isGraded = true; checkpoint() }
+            advance(); return
         }
         guard isGraded else { return }
         advance()
     }
-
+    private func resetCardState() {
+        selectedAnswer = nil; isRevealed = false; hasViewedImageBack = false
+        typedAnswer = ""
+        isGraded = false; showingHint = false; hasRecordedHint = false
+    }
     private func advance() {
         enqueueReadyReviews()
         guard cardIndex + 1 < studyQueue.count else {
-            withAnimation(.snappy) {
-                waitingForReview = shortReviews.nextDate != nil
-                isComplete = !waitingForReview
-            }
-            return
+            withAnimation(.snappy) { waitingForReview = shortReviews.nextDate != nil; isComplete = !waitingForReview }
+            checkpoint(immediately: true); return
         }
-        withAnimation(.snappy) {
-            cardIndex += 1
-            selectedAnswer = nil
-            isRevealed = false
-            hasViewedImageBack = false
-            isGraded = false
-            showingHint = false
-            hasRecordedHint = false
-        }
+        withAnimation(.snappy) { cardIndex += 1; resetCardState() }
+        checkpoint()
     }
-
     private func enqueueReadyReviews(early: Bool = false) {
         let ids = shortReviews.takeReady(at: Date(), reviewEarly: early)
-        let lookup = Dictionary(uniqueKeysWithValues: allCards.map { ($0.id, $0) })
+        guard !ids.isEmpty else { return }
+        let lookup = Dictionary(allCards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let cards = ids.compactMap { lookup[$0] }
-        studyQueue.insert(contentsOf: cards, at: min(cardIndex + 1, studyQueue.count))
+        let index = min(cardIndex + 1, studyQueue.count)
+        studyQueue.insert(contentsOf: cards, at: index); queueIDs.insert(contentsOf: cards.map(\.id), at: index)
     }
-
     private func resumeLearning(early: Bool = false) {
         guard waitingForReview else { return }
-        let wasEmpty = studyQueue.isEmpty
+        let oldCount = studyQueue.count
         enqueueReadyReviews(early: early)
-        if wasEmpty && !studyQueue.isEmpty { cardIndex = -1 }
-        guard cardIndex + 1 < studyQueue.count else { return }
+        guard studyQueue.count > oldCount else { return }
         waitingForReview = false
+        // Ready cards were inserted after the currently completed card.
         advance()
     }
+}
 
-    private func restartCycle() {
-        withAnimation(.snappy) {
-            shortReviews = AnkiSessionReviewQueue()
-            waitingForReview = false
-            ratingCounts = [:]
-            reviewedAnkiIDs = []
-            cardIndex = 0
-            selectedAnswer = nil
-            isRevealed = false
-            hasViewedImageBack = false
-            isGraded = false
-            correctCount = 0
-            showingHint = false
-            hasRecordedHint = false
-            isComplete = false
-            setupStudyQueue()
-        }
-    }
+private struct PracticeSessionPicker: View {
+    let deckName: String
+    let sessions: [PracticeSessionSnapshot]
+    let onResume: (PracticeSessionSnapshot) -> Void
+    let onNew: () -> Void
+    let onClose: () -> Void
 
-    private func applyInitialStateIfNeeded() {
-        guard !didApplyInitialState else { return }
-        didApplyInitialState = true
-        setupStudyQueue()
-
-        if let initialCardId, let initialCard = allCards.first(where: { $0.id == initialCardId }) {
-            if initialCard.cardType == .anki {
-                // An old delivered alert can refer to a card already reviewed.
-                // Offer due cards or an explicit early-learning action instead.
-                guard initialWasGraded || initialCard.isNew || initialCard.nextReviewDate <= Date() else { return }
-                studyQueue.removeAll { $0.id == initialCardId }
-                studyQueue.insert(initialCard, at: 0)
-                waitingForReview = false
-                isComplete = false
-                if initialWasGraded {
-                    let state = initialCard.ankiReviewState
-                    shortReviews.schedule(initialCardId, due: state.dueDate, repeatsInSession: state.phase != .review)
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Text(deckName).font(.title2.bold()).foregroundStyle(QuizTheme.ink)
+                    Spacer()
+                    Button(action: onClose) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                        .accessibilityLabel("Close practice")
                 }
-            } else if let initialIndex = studyQueue.firstIndex(where: { $0.id == initialCardId }) {
-                cardIndex = initialIndex
-            }
+                Text("Your practice sessions").font(.headline).foregroundStyle(QuizTheme.ink)
+                Text("Pick up where you left off. Practice stays separate from notification learning.")
+                    .font(.subheadline).foregroundStyle(QuizTheme.inkSecondary)
+                ForEach(sessions) { session in
+                    Button { onResume(session) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: session.isComplete ? "checkmark.circle" : "play.circle.fill")
+                                .font(.title2).foregroundStyle(QuizTheme.green)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("\(session.reviewedCount)/\(session.totalCount) reviewed")
+                                    .font(.headline).foregroundStyle(QuizTheme.ink)
+                                Text(session.updatedAt, format: .dateTime.month(.abbreviated).day().hour().minute())
+                                    .font(.caption).foregroundStyle(QuizTheme.inkSecondary)
+                            }
+                            Spacer(minLength: 8)
+                            Text(session.isComplete ? "Results" : "Resume")
+                                .font(.subheadline.weight(.semibold)).foregroundStyle(QuizTheme.ink)
+                        }
+                        .padding(16).background(QuizTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(QuizTheme.border, lineWidth: 1))
+                    }.buttonStyle(.plain)
+                }
+                Button("Start a new session", action: onNew).buttonStyle(QuizActionButtonStyle())
+                    .padding(.top, 4)
+            }.padding(20).frame(maxWidth: 640).frame(maxWidth: .infinity)
         }
-        // A queued notification can belong to a level that is no longer active.
-        // Its answer/grade must never be applied to the replacement current card.
-        if let initialCardId, currentCard?.id != initialCardId { return }
-        selectedAnswer = initialSelectedAnswer
-        isGraded = initialWasGraded
-        isRevealed = currentCard?.cardType == .images
-            ? initialWasRevealed
-            : initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
-        hasViewedImageBack = initialImageBackViewed || initialWasRevealed || initialWasGraded
-        showingHint = initialHintVisible
-        hasRecordedHint = initialHintVisible
-        correctCount = initialWasCorrect == true ? 1 : 0
     }
 }
 
@@ -474,6 +486,7 @@ private struct QuizSessionView: View {
     let cardCount: Int
     let correctCount: Int
     let selectedAnswer: String?
+    @Binding var typedAnswer: String
     @Binding var isRevealed: Bool
     let hasViewedImageBack: Bool
     let isGraded: Bool
@@ -595,7 +608,7 @@ private struct QuizSessionView: View {
                             } else if correctAnswer.isEmpty {
                                 QuizRevealCard(answer: "", media: fieldMedia["answer"] ?? .init(), isRevealed: isRevealed, isGraded: isGraded, onReveal: onReveal, onGrade: onGrade)
                             } else {
-                                QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade)
+                                QuizFillBlankCard(answer: correctAnswer, isGraded: isGraded, onGrade: onGrade, response: $typedAnswer)
                                 if isGraded { CardFieldContent(media: fieldMedia["answer"] ?? .init()) }
                             }
                         case .matching:
@@ -741,8 +754,11 @@ private struct QuizFillBlankCard: View {
     let answer: String
     let isGraded: Bool
     let onGrade: (Bool) -> Void
-    @State private var response = ""
-    @State private var wasCorrect: Bool?
+    @Binding var response: String
+    private var wasCorrect: Bool {
+        response.trimmingCharacters(in: .whitespacesAndNewlines)
+            .localizedCaseInsensitiveCompare(answer.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -772,7 +788,6 @@ private struct QuizFillBlankCard: View {
                     let entered = response.trimmingCharacters(in: .whitespacesAndNewlines)
                     let expected = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                     let correct = entered.localizedCaseInsensitiveCompare(expected) == .orderedSame
-                    wasCorrect = correct
                     onGrade(correct)
                 }
                 .buttonStyle(QuizActionButtonStyle())
@@ -782,7 +797,7 @@ private struct QuizFillBlankCard: View {
     }
 
     private var borderColor: Color {
-        guard isGraded, let wasCorrect else { return QuizTheme.border }
+        guard isGraded else { return QuizTheme.border }
         return wasCorrect ? QuizTheme.green : LearnAlertStyle.coral
     }
 }

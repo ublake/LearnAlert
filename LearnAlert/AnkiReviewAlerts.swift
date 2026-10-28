@@ -28,6 +28,7 @@ enum AnkiReviewAlerts {
             }
             guard !obsolete.isEmpty else { continue }
             center.removePendingNotificationRequests(withIdentifiers: obsolete)
+            NotificationLearningBudget.cancelReservations(requestIDs: obsolete)
             AlertTimelineStore.shared.reconcile(pending: await center.pendingNotificationRequests())
         }
     }

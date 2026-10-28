@@ -55,6 +55,9 @@ nonisolated final class AlertTimelineStore: @unchecked Sendable {
     func entries(deckID: String, now: Date = Date()) -> [AlertTimelineEntry] {
         (try? locked { try read().filter { $0.deckID == deckID && $0.date >= now.addingTimeInterval(-86_400) }.sorted { $0.date < $1.date } }) ?? []
     }
+    func recentStudyEntries(now: Date = Date()) -> [AlertTimelineEntry] {
+        (try? locked { try read().filter { $0.date >= now.addingTimeInterval(-14 * 86_400) } }) ?? []
+    }
     func scheduled(id: String, deckID: String, date: Date, now: Date = Date()) {
         guard !deckID.isEmpty else { return }
         update(now: now) { rows in

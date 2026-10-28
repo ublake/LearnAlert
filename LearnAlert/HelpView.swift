@@ -9,6 +9,7 @@ struct HelpView: View {
     @State private var showingEmptyDeckAlert = false
     @State private var showingPermissionAlert = false
     @State private var testScheduledSuccess = false
+    @State private var testNotificationError: String?
 
     private var selectedDeck: Deck? {
         decks.first { $0.id.uuidString == selectedDeckId }
@@ -53,6 +54,10 @@ struct HelpView: View {
         } message: {
             Text("LearnAlert needs notification permissions to send you flashcard alerts. Please allow Notifications in your iPhone Settings.")
         }
+        .alert("Couldn’t send test alert", isPresented: Binding(
+            get: { testNotificationError != nil }, set: { if !$0 { testNotificationError = nil } }
+        )) { Button("OK", role: .cancel) { testNotificationError = nil } }
+        message: { Text(testNotificationError ?? "Please try again.") }
     }
 
     private func testNotification() {
@@ -91,15 +96,27 @@ struct HelpView: View {
     }
 
     private func triggerTestCard(_ card: Flashcard) {
-        NotificationManager.shared.scheduleRealCard(card, at: Date().addingTimeInterval(3), progress: "Test")
-        HapticFeedback.success()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            testScheduledSuccess = true
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
-            withAnimation {
-                testScheduledSuccess = false
+        let hasText = !card.studyQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !card.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let options = card.options.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        NotificationManager.shared.scheduleTutorialAlert(
+            deckTitle: card.deck?.name ?? "Example",
+            question: hasText ? card.studyQuestion : "Where can you answer a LearnAlert notification?",
+            options: hasText ? (options.count >= 2 ? options : []) : ["Inside the expanded alert", "Only in the app"],
+            correctAnswer: hasText ? card.correctAnswer : "Inside the expanded alert",
+            hint: hasText ? card.hint : "Press and hold an alert to expand it.",
+            delay: 3, isCustomizationTest: true
+        ) { error in
+            Task { @MainActor in
+                if let error {
+                    HapticFeedback.warning()
+                    testNotificationError = error.localizedDescription
+                    return
+                }
+                HapticFeedback.success()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { testScheduledSuccess = true }
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation { testScheduledSuccess = false }
             }
         }
     }
@@ -281,6 +298,10 @@ private struct NotificationTestSection: View {
                 .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
                 .foregroundStyle(LearnAlertStyle.textSecondary)
                 .lineSpacing(2)
+
+            Text("Preview only. Your learning progress and daily budget stay unchanged.")
+                .font(.caption)
+                .foregroundStyle(LearnAlertStyle.textSecondary)
 
             Menu {
                 Picker("Deck", selection: $selectedDeckId) {
