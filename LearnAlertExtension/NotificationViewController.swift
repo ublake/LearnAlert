@@ -177,6 +177,8 @@ struct FlashcardNotificationView: View {
     }
 
     private var isSyntheticSession: Bool { previewMode || isTutorial || isCustomizationTest }
+    private var isOnboardingTutorial: Bool { isTutorial && !isCustomizationTest }
+    private var controlsUnavailable: Bool { isTutorial || isCustomizationTest }
     private var currentBatchPosition: Int { min(batchQuestionLimit, batchConsumedCount + (isGraded ? 0 : 1)) }
     private var isDayComplete: Bool { dailyAnsweredCount >= NotificationLearningBudget.goal }
     private var presentationCardType: String { sessionFinished ? "completed_batch" : activeCardType }
@@ -376,20 +378,20 @@ struct FlashcardNotificationView: View {
                     Button {
                         withAnimation(.snappy) { showingControls.toggle() }
                     } label: {
-                        Image(systemName: showingControls && !isCustomizationTest ? "xmark" : "gearshape.fill")
+                        Image(systemName: showingControls && !controlsUnavailable ? "xmark" : "gearshape.fill")
                             .font(.system(size: isCompactLayout ? 13 : 14, weight: .semibold))
-                            .foregroundStyle(isCustomizationTest ? textColorSecondary : textColorPrimary)
+                            .foregroundStyle(controlsUnavailable ? textColorSecondary : textColorPrimary)
                             .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
                             .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, isLight: isLight)
                     }
-                    .disabled(isCustomizationTest)
-                    .opacity(isCustomizationTest ? 0.45 : 1)
-                    .accessibilityLabel(showingControls && !isCustomizationTest ? "Close controls" : "Study controls")
-                    .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : "")
+                    .disabled(controlsUnavailable)
+                    .opacity(controlsUnavailable ? 0.45 : 1)
+                    .accessibilityLabel(showingControls && !controlsUnavailable ? "Close controls" : "Study controls")
+                    .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : isTutorial ? "Unavailable in a tutorial alert" : "")
                 }
             }
 
-            if showingControls && !isCustomizationTest {
+            if showingControls && !controlsUnavailable {
                 notificationControls
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -446,20 +448,30 @@ struct FlashcardNotificationView: View {
                 NotificationStat(title: "Mastered", value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
             }
 
-            Button {
-                advanceToNextCard()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 16, weight: .bold))
-                    Text(nextCardActionTitle)
-                        .font(.system(size: 15, weight: .bold))
+            if isOnboardingTutorial {
+                Text("That easy! Now you can swipe or tap out of the notification to continue what you were doing.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(textColorSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+            } else {
+                Button {
+                    advanceToNextCard()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 16, weight: .bold))
+                        Text(nextCardActionTitle)
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, appearance.design.verticalPadding(14))
+                    .notificationPrimaryAction(isLight: isLight)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, appearance.design.verticalPadding(14))
-                .notificationPrimaryAction(isLight: isLight)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .transition(.opacity)
     }
@@ -1253,6 +1265,13 @@ struct FlashcardNotificationView: View {
                 completedCount += 1
                 isGraded = true
                 showingHint = false
+            }
+            if isOnboardingTutorial, let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") {
+                defaults.set(Date().timeIntervalSince1970, forKey: "lastNotificationAnsweredTimestamp")
+                defaults.set(isCorrect, forKey: "lastNotificationWasCorrect")
+                defaults.set(activeCardId, forKey: "lastNotificationCardId")
+                defaults.set(true, forKey: "lastNotificationWasGraded")
+                defaults.synchronize()
             }
             return
         }
