@@ -9,6 +9,9 @@ struct NotificationCustomizeView: View {
     @AppStorage("notificationCustomLayout", store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var storedLayoutRaw: String = NotificationLayoutMode.automatic.rawValue
 
+    @AppStorage("notificationDesignTheme", store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var storedDesignRaw = NotificationDesignTheme.liquidGlass.rawValue
+
     @AppStorage("appearanceMode") private var appearanceMode = "system"
 
     @Environment(\.colorScheme) private var colorScheme
@@ -30,9 +33,14 @@ struct NotificationCustomizeView: View {
         NotificationLayoutMode(rawValue: storedLayoutRaw) ?? .automatic
     }
 
+    private var currentDesign: NotificationDesignTheme {
+        NotificationDesignTheme(rawValue: storedDesignRaw) ?? .liquidGlass
+    }
+
     private var isDefaultSettings: Bool {
         storedThemeRaw == NotificationTheme.defaultTheme.rawValue &&
-        storedLayoutRaw == NotificationLayoutMode.automatic.rawValue
+        storedLayoutRaw == NotificationLayoutMode.automatic.rawValue &&
+        currentDesign == .liquidGlass
     }
 
     var body: some View {
@@ -57,8 +65,9 @@ struct NotificationCustomizeView: View {
                     }.accessibilityLabel("Appearance options")
                 }
                 NotificationSimulatedContainer(theme: currentTheme, layout: currentLayout,
-                    cardType: previewCardType, isLight: isLight).id(previewCardType)
+                    design: currentDesign, cardType: previewCardType, isLight: isLight).id(previewCardType)
                 CustomizeStyleControls(appearanceMode: $appearanceMode, layoutRaw: $storedLayoutRaw)
+                themeChoices
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Color").font(.headline).foregroundStyle(StudyStudioStyle.ink)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 8)], spacing: 12) {
@@ -87,8 +96,14 @@ struct NotificationCustomizeView: View {
                     Button(action: sendTestNotification) {
                         Label(testScheduledSuccess ? "Sent · arrives in 3 seconds" : "Send a test alert",
                             systemImage: testScheduledSuccess ? "checkmark" : "bell")
-                            .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 52)
-                    }.buttonStyle(.bordered).tint(StudyStudioStyle.ink)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(StudyStudioStyle.ink)
+                            .frame(maxWidth: .infinity, minHeight: 32)
+                            .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(StudyStudioStyle.hairline, lineWidth: 1))
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                     Button("How to open the alert", systemImage: "hand.draw") { showingTestGuide = true }
                         .font(.footnote).frame(minHeight: 44)
                 }
@@ -107,11 +122,52 @@ struct NotificationCustomizeView: View {
             message: { Text(testSchedulingError ?? "Please try again.") }
     }
 
+    private var themeChoices: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Theme").font(.headline).foregroundStyle(StudyStudioStyle.ink)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 0) {
+                ForEach(NotificationDesignTheme.allCases) { design in
+                    let selected = currentDesign == design
+                    Button {
+                        withAnimation(.snappy) { storedDesignRaw = design.rawValue }
+                        HapticFeedback.selection()
+                    } label: {
+                        VStack(spacing: 6) {
+                            NotificationThemeSwatch(design: design, isLight: isLight || currentTheme == .light)
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                                .overlay(RoundedRectangle(cornerRadius: 10)
+                                    .strokeBorder(selected ? StudyStudioStyle.ink : StudyStudioStyle.hairline, lineWidth: selected ? 2 : 1))
+                                .overlay(alignment: .topTrailing) {
+                                    if selected {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundStyle(StudyStudioStyle.canvas)
+                                            .frame(width: 14, height: 14)
+                                            .background(StudyStudioStyle.ink, in: Circle())
+                                            .offset(x: 3, y: -3)
+                                    }
+                                }
+                            Text(design == .liquidGlass ? " " : design.title)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(selected ? StudyStudioStyle.ink : StudyStudioStyle.secondary)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(design.title)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+
     private func resetToDefault() {
         guard !isDefaultSettings else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             storedThemeRaw = NotificationTheme.defaultTheme.rawValue
             storedLayoutRaw = NotificationLayoutMode.automatic.rawValue
+            storedDesignRaw = NotificationDesignTheme.liquidGlass.rawValue
         }
         HapticFeedback.success()
     }
@@ -154,7 +210,7 @@ struct NotificationCustomizeView: View {
             correctAnswer: "Saturn",
             hint: "It is the sixth planet from the Sun.",
             delay: 3,
-            appearance: NotificationAppearance(theme: currentTheme, layout: currentLayout, mode: appearanceMode),
+            appearance: NotificationAppearance(theme: currentTheme, layout: currentLayout, mode: appearanceMode, design: currentDesign),
             isCustomizationTest: true
         ) { error in
             Task { @MainActor in
@@ -262,6 +318,34 @@ struct CustomizeStyleControls: View {
     }
 }
 
+/// Tiny controls show the design rather than repeating the color palette.
+private struct NotificationThemeSwatch: View {
+    let design: NotificationDesignTheme
+    let isLight: Bool
+
+    var body: some View {
+        Group {
+            if design == .liquidGlass {
+                Color.clear
+            } else {
+                HStack(spacing: 4) {
+                    Circle().fill(ink.opacity(0.75)).frame(width: 4, height: 4)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Capsule().fill(ink.opacity(0.7)).frame(width: 13, height: 2)
+                        Capsule().fill(ink.opacity(0.35)).frame(width: 9, height: 2)
+                    }
+                }
+                .frame(width: 31, height: 24)
+                .notificationControlSurface(cornerRadius: 7, tint: Color.blue.opacity(0.12), isLight: isLight)
+            }
+        }
+        .environment(\.notificationDesignTheme, design)
+        .accessibilityHidden(true)
+    }
+
+    private var ink: Color { isLight ? Color(red: 0.15, green: 0.23, blue: 0.35) : .white }
+}
+
 // MARK: - Matching Preview Model
 private struct MatchingPreviewPair: Identifiable {
     let id = UUID()
@@ -273,6 +357,7 @@ private struct MatchingPreviewPair: Identifiable {
 private struct NotificationSimulatedContainer: View {
     let theme: NotificationTheme
     let layout: NotificationLayoutMode
+    let design: NotificationDesignTheme
     let cardType: FlashcardType
     let isLight: Bool
 
@@ -381,9 +466,9 @@ private struct NotificationSimulatedContainer: View {
 
             // Custom Notification Flashcard Canvas
             ZStack {
-                NotificationThemeBackdrop(theme: theme, isLight: isLight)
+                NotificationThemeBackdrop(theme: theme, isLight: isThemeLight)
 
-                VStack(spacing: isCompact ? 10 : 16) {
+                VStack(spacing: design.spacing(isCompact ? 10 : 16)) {
                     // Top Deck & Header Bar
                     HStack(alignment: .top, spacing: 8) {
                         HStack(spacing: 5) {
@@ -408,7 +493,7 @@ private struct NotificationSimulatedContainer: View {
                                         .font(.system(size: isCompact ? 12 : 13, weight: .bold))
                                         .foregroundStyle(Color.orange)
                                         .frame(width: isCompact ? 30 : 34, height: isCompact ? 30 : 34)
-                                        .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.12), isLight: isLight)
+                                        .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.12), isLight: isThemeLight)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
@@ -418,10 +503,12 @@ private struct NotificationSimulatedContainer: View {
                     }
 
                     // Interactive Card Area based on Card Type
-                    VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
+                    VStack(alignment: .leading, spacing: design.spacing(isCompact ? 10 : 14)) {
                         switch cardType {
-                        case .images, .anki:
+                        case .images:
                             imagePreview
+                        case .anki:
+                            ankiPreview
                         case .vocabulary:
                             vocabularyPreview
                         case .multipleChoice:
@@ -444,7 +531,7 @@ private struct NotificationSimulatedContainer: View {
                                 .foregroundStyle(Color.orange)
                                 .padding(10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.08), isLight: isLight)
+                                .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.08), isLight: isThemeLight)
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
@@ -462,26 +549,18 @@ private struct NotificationSimulatedContainer: View {
                                 Text("Try again")
                             }
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(design == .liquidGlass ? Color.white : textColorPrimary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: isCompact ? 40 : 44)
-                            .background(
-                                LinearGradient(
-                                    colors: [
-                                        Color(red: 0.12, green: 0.50, blue: 0.98),
-                                        Color(red: 0.20, green: 0.68, blue: 0.96)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .frame(height: 44 + design.verticalPadding(6) - 6)
+                            .modifier(NotificationPreviewActionSurface(design: design, isLight: isThemeLight))
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(isCompact ? 12 : 18)
+                .padding(design.verticalPadding(isCompact ? 12 : 18))
             }
+            .environment(\.notificationDesignTheme, design)
+            .environment(\.colorScheme, isThemeLight ? .light : .dark)
         }
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
@@ -516,17 +595,42 @@ private struct NotificationSimulatedContainer: View {
             }
             .frame(height: isCompact ? 200 : 280)
             .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: design.cornerRadius(14), style: .continuous))
             if !isGraded {
-                Button("Reviewed", systemImage: "checkmark") {
+                Button {
                     withAnimation(.snappy) { isGraded = true }
+                } label: {
+                    Label("Reviewed", systemImage: "checkmark")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(textColorPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .glassCard(cornerRadius: 14, isLight: isThemeLight)
                 }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .buttonStyle(.bordered)
-                .tint(textColorPrimary)
+                .buttonStyle(.plain)
                 .disabled(!hasViewedImageBack)
             }
+        }
+    }
+
+    private var ankiPreview: some View {
+        VStack(spacing: design.spacing(14)) {
+            VStack(spacing: 12) {
+                Text("Hola").font(.system(size: isCompact ? 26 : 30, weight: .semibold))
+                if isRevealed {
+                    Divider()
+                    Text("Hello").font(.title3)
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
+            }
+            .foregroundStyle(textColorPrimary)
+            .frame(maxWidth: .infinity, minHeight: isCompact ? 110 : 150)
+            .padding(12)
+            .glassCard(cornerRadius: 16, isLight: isThemeLight)
+
+            AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
+                options: AnkiReviewScheduling.options(for: .init(), at: Date()),
+                onReveal: { withAnimation(.snappy) { isRevealed = true } },
+                onGrade: { _ in withAnimation(.snappy) { isGraded = true } })
         }
     }
 
@@ -554,7 +658,7 @@ private struct NotificationSimulatedContainer: View {
                 .foregroundStyle(textColorPrimary)
                 .padding(isCompact ? 10 : 14)
                 .frame(maxWidth: .infinity)
-                .glassCard(cornerRadius: 12, isLight: isLight)
+                .glassCard(cornerRadius: 12, isLight: isThemeLight)
         }
         .frame(maxWidth: .infinity)
     }
@@ -595,12 +699,13 @@ private struct NotificationSimulatedContainer: View {
                             }
                         }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, isCompact ? 9 : 11)
+                        .padding(.vertical, design.verticalPadding(isCompact ? 9 : 11))
+                        .frame(minHeight: 44)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(
                             cornerRadius: 10,
                             tint: quizOptionTint(option),
-                            isLight: isLight,
+                            isLight: isThemeLight,
                             customBorderColor: quizOptionBorder(option)
                         )
                     }
@@ -613,7 +718,7 @@ private struct NotificationSimulatedContainer: View {
 
     // MARK: - Tap Reveal Preview
     private var revealPreview: some View {
-        VStack(alignment: .leading, spacing: isCompact ? 10 : 14) {
+        VStack(alignment: .leading, spacing: design.spacing(isCompact ? 10 : 14)) {
             Text(questionText)
                 .font(.system(size: isCompact ? 13 : 15, weight: .semibold))
                 .foregroundStyle(textColorPrimary)
@@ -632,7 +737,7 @@ private struct NotificationSimulatedContainer: View {
                     .foregroundStyle(textColorPrimary)
                     .frame(maxWidth: .infinity)
                     .frame(height: isCompact ? 44 : 50)
-                    .glassCard(cornerRadius: 12, isLight: isLight)
+                    .glassCard(cornerRadius: 12, isLight: isThemeLight)
                 }
                 .buttonStyle(.plain)
             } else {
@@ -647,7 +752,7 @@ private struct NotificationSimulatedContainer: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .glassCard(cornerRadius: 12, tint: Color.green.opacity(0.08), isLight: isLight)
+                .glassCard(cornerRadius: 12, tint: Color.green.opacity(0.08), isLight: isThemeLight)
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
                 if !isGraded {
@@ -660,7 +765,7 @@ private struct NotificationSimulatedContainer: View {
                                 .foregroundStyle(Color.green)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 38)
-                                .glassCard(cornerRadius: 10, tint: Color.green.opacity(0.12), isLight: isLight)
+                                .glassCard(cornerRadius: 10, tint: Color.green.opacity(0.12), isLight: isThemeLight)
                         }
 
                         Button {
@@ -671,7 +776,7 @@ private struct NotificationSimulatedContainer: View {
                                 .foregroundStyle(Color.red)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 38)
-                                .glassCard(cornerRadius: 10, tint: Color.red.opacity(0.12), isLight: isLight)
+                                .glassCard(cornerRadius: 10, tint: Color.red.opacity(0.12), isLight: isThemeLight)
                         }
                     }
                     .buttonStyle(.plain)
@@ -702,7 +807,7 @@ private struct NotificationSimulatedContainer: View {
                             .glassCard(
                                 cornerRadius: 8,
                                 tint: selectedMatchingLeft == pair.left ? LearnAlertStyle.indigo.opacity(0.20) : nil,
-                                isLight: isLight
+                                isLight: isThemeLight
                             )
                     }
                     .buttonStyle(.plain)
@@ -731,7 +836,7 @@ private struct NotificationSimulatedContainer: View {
                             .glassCard(
                                 cornerRadius: 8,
                                 tint: matchingResults[pair.left] == true ? Color.green.opacity(0.15) : nil,
-                                isLight: isLight
+                                isLight: isThemeLight
                             )
                     }
                     .buttonStyle(.plain)
@@ -753,7 +858,7 @@ private struct NotificationSimulatedContainer: View {
                     .font(.system(size: 13))
                     .foregroundStyle(textColorPrimary)
                     .padding(10)
-                    .glassCard(cornerRadius: 10, isLight: isLight)
+                    .glassCard(cornerRadius: 10, isLight: isThemeLight)
                     .disabled(isGraded)
 
                 Button {
@@ -778,7 +883,7 @@ private struct NotificationSimulatedContainer: View {
                 }
                 .padding(.vertical, 8)
                 .frame(maxWidth: .infinity)
-                .glassCard(cornerRadius: 10, tint: Color.green.opacity(0.12), isLight: isLight)
+                .glassCard(cornerRadius: 10, tint: Color.green.opacity(0.12), isLight: isThemeLight)
             }
         }
     }
@@ -921,31 +1026,26 @@ struct NotificationThemeBackdrop: View {
     }
 }
 
-// MARK: - Glass Card Modifier
-private struct GlassCardModifier: ViewModifier {
-    var cornerRadius: CGFloat = 12
-    var tint: Color? = nil
-    var isLight: Bool = false
-    var customBorderColor: Color? = nil
+// MARK: - Shared Notification Surfaces
+private struct NotificationPreviewActionSurface: ViewModifier {
+    let design: NotificationDesignTheme
+    let isLight: Bool
 
-    func body(content: Content) -> some View {
-        content
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(tint ?? (isLight ? Color.white.opacity(0.65) : Color.white.opacity(0.08)))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        customBorderColor ?? (isLight ? Color.black.opacity(0.08) : Color.white.opacity(0.14)),
-                        lineWidth: customBorderColor != nil ? 1.5 : 1
-                    )
-            }
+    @ViewBuilder func body(content: Content) -> some View {
+        if design == .liquidGlass {
+            content
+                .background(LinearGradient(
+                    colors: [Color(red: 0.12, green: 0.50, blue: 0.98), Color(red: 0.20, green: 0.68, blue: 0.96)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            content.notificationControlSurface(cornerRadius: 12, tint: Color.blue.opacity(0.18), isLight: isLight)
+        }
     }
 }
 
 private extension View {
     func glassCard(cornerRadius: CGFloat = 12, tint: Color? = nil, isLight: Bool = false, customBorderColor: Color? = nil) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius, tint: tint, isLight: isLight, customBorderColor: customBorderColor))
+        notificationControlSurface(cornerRadius: cornerRadius, tint: tint, isLight: isLight, customBorderColor: customBorderColor)
     }
 }

@@ -186,6 +186,7 @@
 				LibraryPreferences.swift,
 				ManagedCatalog.swift,
 				Models.swift,
+				NotificationDesignTheme.swift,
 				NotificationViewportGeometry.swift,
 				SharedDatabase.swift,
 			);

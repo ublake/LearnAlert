@@ -36,11 +36,12 @@ struct CardFieldContent: View {
     var text = ""
     var media = CardFieldMedia()
     var imageHeight: CGFloat = 150
+    @Environment(\.notificationDesignTheme) private var notificationDesign
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let image = CardImageStore.loadImage(named: media.image) {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: imageHeight)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: notificationDesign?.cornerRadius(10) ?? 10))
             }
             if !text.isEmpty { Text(text).fixedSize(horizontal: false, vertical: true) }
             if let audio = media.audio, !audio.isEmpty { CardAudioPlaybackButton(name: audio) }
@@ -68,9 +69,13 @@ struct CardQuestionContent: View {
                              media: .init(image: media.image), imageHeight: imageHeight)
             if !isListeningCard || listening, let audio = media.audio { CardAudioPlaybackButton(name: audio) }
             if isListeningCard && recordingAvailable {
-                Button(listening ? "I can’t listen right now" : "Back to listening") {
+                Button {
                     withAnimation(.snappy) { reading.toggle() }
-                }.font(.caption.weight(.semibold)).buttonStyle(.plain)
+                } label: {
+                    Text(listening ? "I can’t listen right now" : "Back to listening")
+                        .font(.caption.weight(.semibold))
+                        .modifier(NotificationReadingToggleSurface())
+                }.buttonStyle(.plain)
             }
         }.onChange(of: question) { _, _ in reading = false }
     }
@@ -84,15 +89,16 @@ struct CardMediaChoiceList: View {
     let isGraded: Bool
     let onSelect: (String) -> Void
     @State private var order: [Int] = []
+    @Environment(\.notificationDesignTheme) private var notificationDesign
     private var choiceOrder: [Int] { order.count == options.count ? order : Array(options.indices) }
     private var picturesOnly: Bool { options.count >= 2 && options.indices.allSatisfy { options[$0].isEmpty && fields["option:\($0)"]?.image != nil } }
     var body: some View {
         Group {
             if picturesOnly {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: notificationDesign?.spacing(10) ?? 10) {
                     ForEach(choiceOrder, id: \.self) { choice($0) }
                 }
-            } else { VStack(spacing: 10) { ForEach(choiceOrder, id: \.self) { choice($0) } } }
+            } else { VStack(spacing: notificationDesign?.spacing(10) ?? 10) { ForEach(choiceOrder, id: \.self) { choice($0) } } }
         }.onAppear { order = Array(options.indices).shuffled() }
             .onChange(of: options) { _, _ in order = Array(options.indices).shuffled() }
     }
@@ -107,12 +113,15 @@ struct CardMediaChoiceList: View {
                     CardFieldContent(text: options[index], media: .init(image: media.image), imageHeight: picturesOnly ? 80 : 100)
                         .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     if !picturesOnly { Spacer(minLength: 0) }
-                }.padding(12).frame(maxWidth: media.audio != nil && options[index].isEmpty && media.image == nil ? 48 : .infinity, minHeight: picturesOnly ? 104 : 48, alignment: .leading).contentShape(Rectangle())
+                }.padding(.horizontal, 12).padding(.vertical, notificationDesign?.verticalPadding(12) ?? 12)
+                    .frame(maxWidth: media.audio != nil && options[index].isEmpty && media.image == nil ? 48 : .infinity, minHeight: picturesOnly ? 104 : 48, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(isGraded || selection != nil)
                 .accessibilityLabel(options[index].isEmpty ? "Select choice \(index + 1)" : "Select \(options[index])")
             if let audio = media.audio { CardAudioPlaybackButton(name: audio, compact: picturesOnly).padding(.trailing, 8) }
-        }.background(color.opacity(selected || (isGraded && correctIndex == index) ? 0.16 : 0.05), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(selected || (isGraded && correctIndex == index) ? color : Color.primary.opacity(0.18), lineWidth: selected ? 2 : 1))
+        }.modifier(NotificationMediaSurface(cornerRadius: 14,
+            fill: color.opacity(selected || (isGraded && correctIndex == index) ? 0.16 : 0.05),
+            border: selected || (isGraded && correctIndex == index) ? color : Color.primary.opacity(0.18),
+            borderWidth: selected ? 2 : 1, emphasized: selected || (isGraded && correctIndex == index)))
     }
 }
 
@@ -163,6 +172,7 @@ struct CardMediaMatchingBoard: View {
     @State private var state: MatchingCardState
     @State private var order: [Int]
     @State private var submitted = false
+    @Environment(\.notificationDesignTheme) private var notificationDesign
 
     init(left: [String], right: [String], fields: [String: CardFieldMedia], isGraded: Bool, onGrade: @escaping (Bool) -> Void) {
         self.left = left; self.right = right; self.fields = fields; self.isGraded = isGraded; self.onGrade = onGrade
@@ -178,8 +188,8 @@ struct CardMediaMatchingBoard: View {
                 Text("\(state.matched.count)/\(state.pairCount)").monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 10) {
-                VStack(spacing: 8) { ForEach(0..<state.pairCount, id: \.self) { tile($0, leftSide: true) } }
-                VStack(spacing: 8) { ForEach(order, id: \.self) { tile($0, leftSide: false) } }
+                VStack(spacing: notificationDesign?.spacing(8) ?? 8) { ForEach(0..<state.pairCount, id: \.self) { tile($0, leftSide: true) } }
+                VStack(spacing: notificationDesign?.spacing(8) ?? 8) { ForEach(order, id: \.self) { tile($0, leftSide: false) } }
             }
         }
     }
@@ -197,9 +207,10 @@ struct CardMediaMatchingBoard: View {
                     CardFieldContent(text: (leftSide ? left : right)[index], media: .init(image: media.image), imageHeight: 80)
                         .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
                     if matched { Image(systemName: "checkmark").font(.caption.bold()) }
-                }.padding(10).contentShape(Rectangle())
-                    .background(Color.primary.opacity(selected ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(selected ? 0.7 : 0.18), lineWidth: selected ? 2 : 1))
+                }.padding(.horizontal, 10).padding(.vertical, notificationDesign?.verticalPadding(10) ?? 10).contentShape(Rectangle())
+                    .modifier(NotificationMediaSurface(cornerRadius: 12, fill: Color.primary.opacity(selected ? 0.12 : 0.04),
+                        border: Color.primary.opacity(selected ? 0.7 : 0.18), borderWidth: selected ? 2 : 1,
+                        emphasized: selected, insetBorder: true))
             }.buttonStyle(.plain).disabled(isGraded || matched).opacity(matched ? 0.4 : 1)
                 .accessibilityLabel((leftSide ? left : right)[index].isEmpty ? "\(leftSide ? "Left" : "Right") item \(index + 1)" : (leftSide ? left : right)[index])
                 .accessibilityValue(matched ? "Matched" : selected ? "Selected" : "")
@@ -226,6 +237,7 @@ struct CardBlankChoicePanel: View {
     @State private var state = BlankChoiceState()
     @State private var order: [Int] = []
     @State private var correct: Bool?
+    @Environment(\.notificationDesignTheme) private var notificationDesign
 
     private var words: [String] {
         let range = prompt.range(of: #"_{2,}|\{blank\}|\[blank\]"#, options: .regularExpression)
@@ -248,8 +260,8 @@ struct CardBlankChoicePanel: View {
                                     if !isGraded { Image(systemName: "xmark").font(.caption2) }
                                 } else { Text("        ") }
                             }.padding(.horizontal, 10).frame(minWidth: 72, minHeight: 44)
-                                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
-                                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary.opacity(0.35), lineWidth: 1))
+                                .modifier(NotificationMediaSurface(cornerRadius: 9, fill: Color.primary.opacity(0.08),
+                                    border: Color.primary.opacity(0.35), emphasized: state.selected != nil, insetBorder: true))
                         }.buttonStyle(.plain).disabled(isGraded || state.selected == nil)
                             .accessibilityLabel(state.selected.map { "Remove \(options[$0]) from blank" } ?? "Empty blank")
                     } else { Text(word).font(.title3.weight(.semibold)) }
@@ -259,11 +271,13 @@ struct CardBlankChoicePanel: View {
                 HStack {
                     Button { withAnimation(.snappy) { state.select(index) } } label: {
                         CardFieldContent(text: options[index], media: .init(image: fields["option:\(index)"]?.image), imageHeight: 100)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(10).contentShape(Rectangle())
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .padding(.horizontal, 10).padding(.vertical, notificationDesign?.verticalPadding(10) ?? 10).contentShape(Rectangle())
                     }.buttonStyle(.plain).disabled(isGraded)
                     if let audio = fields["option:\(index)"]?.audio { CardAudioPlaybackButton(name: audio).padding(.trailing, 8) }
-                }.background(Color.primary.opacity(state.selected == index ? 0.12 : 0.04), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(state.selected == index ? 0.7 : 0.18), lineWidth: state.selected == index ? 2 : 1))
+                }.modifier(NotificationMediaSurface(cornerRadius: 12, fill: Color.primary.opacity(state.selected == index ? 0.12 : 0.04),
+                    border: Color.primary.opacity(state.selected == index ? 0.7 : 0.18), borderWidth: state.selected == index ? 2 : 1,
+                    emphasized: state.selected == index, insetBorder: true))
                     .accessibilityAddTraits(state.selected == index ? .isSelected : [])
             }
             if isGraded {
@@ -271,9 +285,49 @@ struct CardBlankChoicePanel: View {
                     .font(.subheadline).foregroundStyle(.secondary)
             } else {
                 Button("Check answer") { let result = state.isCorrect(answerIndex: answerIndex); correct = result; onGrade(result) }
-                    .buttonStyle(.borderedProminent).disabled(state.selected == nil)
+                    .notificationPrimaryActionStyle().disabled(state.selected == nil)
             }
         }.onAppear { order = Array(options.indices).shuffled() }
+    }
+}
+
+/// The same card views also serve in-app study; only notification descendants opt in.
+private struct NotificationReadingToggleSurface: ViewModifier {
+    @Environment(\.notificationDesignTheme) private var design
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let design, design != .liquidGlass {
+            content.padding(.horizontal, 10).frame(minHeight: 44)
+                .notificationControlSurface(cornerRadius: 10, isLight: colorScheme == .light)
+        } else { content }
+    }
+}
+
+private struct NotificationMediaSurface: ViewModifier {
+    let cornerRadius: CGFloat
+    let fill: Color
+    let border: Color
+    var borderWidth: CGFloat = 1
+    var emphasized = false
+    var insetBorder = false
+    @Environment(\.notificationDesignTheme) private var design
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let design, design != .liquidGlass {
+            content.notificationControlSurface(cornerRadius: cornerRadius, tint: fill,
+                isLight: colorScheme == .light, customBorderColor: emphasized ? border : nil)
+        } else {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius)
+            content.background(fill, in: shape)
+                .overlay {
+                    if insetBorder { shape.strokeBorder(border, lineWidth: borderWidth).allowsHitTesting(false) }
+                    else { shape.stroke(border, lineWidth: borderWidth).allowsHitTesting(false) }
+                }
+        }
     }
 }
 

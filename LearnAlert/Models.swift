@@ -816,27 +816,32 @@ public nonisolated struct NotificationAppearance: Equatable {
     public var theme: NotificationTheme
     public var layout: NotificationLayoutMode
     public var mode: String
+    public var design: NotificationDesignTheme
 
-    public init(theme: NotificationTheme, layout: NotificationLayoutMode, mode: String) {
+    public init(theme: NotificationTheme, layout: NotificationLayoutMode, mode: String, design: NotificationDesignTheme = .liquidGlass) {
         self.theme = theme
         self.layout = layout
         self.mode = ["light", "dark"].contains(mode) ? mode : "system"
+        self.design = design
     }
 
     public static func saved(in defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared")) -> Self {
         Self(theme: NotificationTheme(rawValue: defaults?.string(forKey: "notificationCustomTheme") ?? "") ?? .defaultTheme,
              layout: NotificationLayoutMode(rawValue: defaults?.string(forKey: "notificationCustomLayout") ?? "") ?? .automatic,
-             mode: defaults?.string(forKey: "appearanceMode") ?? "system")
+             mode: defaults?.string(forKey: "appearanceMode") ?? "system",
+             design: NotificationDesignTheme(rawValue: defaults?.string(forKey: "notificationDesignTheme") ?? "") ?? .liquidGlass)
     }
 
     public var userInfo: [String: String] {
-        ["notificationCustomTheme": theme.rawValue, "notificationCustomLayout": layout.rawValue, "appearanceMode": mode]
+        ["notificationCustomTheme": theme.rawValue, "notificationCustomLayout": layout.rawValue,
+         "appearanceMode": mode, "notificationDesignTheme": design.rawValue]
     }
 
     public static func resolve(userInfo: [AnyHashable: Any], fallback: Self = .saved()) -> Self {
         Self(theme: (userInfo["notificationCustomTheme"] as? String).flatMap(NotificationTheme.init(rawValue:)) ?? fallback.theme,
              layout: (userInfo["notificationCustomLayout"] as? String).flatMap(NotificationLayoutMode.init(rawValue:)) ?? fallback.layout,
-             mode: (userInfo["appearanceMode"] as? String).flatMap { ["system", "light", "dark"].contains($0) ? $0 : nil } ?? fallback.mode)
+             mode: (userInfo["appearanceMode"] as? String).flatMap { ["system", "light", "dark"].contains($0) ? $0 : nil } ?? fallback.mode,
+             design: (userInfo["notificationDesignTheme"] as? String).flatMap(NotificationDesignTheme.init(rawValue:)) ?? fallback.design)
     }
 }
 

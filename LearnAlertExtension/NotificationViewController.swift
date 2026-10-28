@@ -264,12 +264,7 @@ struct FlashcardNotificationView: View {
                     .foregroundStyle(textColorPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .background(
-                        isLight
-                            ? Color.white.opacity(0.60)
-                            : Color.white.opacity(0.08)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .notificationPlainSurface(cornerRadius: 12, tint: isLight ? Color.white.opacity(0.60) : Color.white.opacity(0.08), isLight: isLight)
                 }
             }
 
@@ -288,8 +283,7 @@ struct FlashcardNotificationView: View {
                 .foregroundStyle(Color.red)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(Color.red.opacity(isLight ? 0.12 : 0.20))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .notificationPlainSurface(cornerRadius: 12, tint: Color.red.opacity(isLight ? 0.12 : 0.20), isLight: isLight)
             }
             .buttonStyle(.plain)
 
@@ -303,8 +297,8 @@ struct FlashcardNotificationView: View {
         .notificationLiquidGlass(cornerRadius: 18, isLight: isLight)
     }
 
-    private var notificationPadding: CGFloat { isCompactLayout ? 12 : 18 }
-    private var notificationSpacing: CGFloat { isCompactLayout ? 10 : 18 }
+    private var notificationPadding: CGFloat { appearance.design.verticalPadding(isCompactLayout ? 12 : 18) }
+    private var notificationSpacing: CGFloat { appearance.design.spacing(isCompactLayout ? 10 : 18) }
     private var ankiCardHeight: CGFloat {
         max(100, viewportHeight - notificationPadding * 2 - ankiHeaderHeight - ankiFooterHeight - notificationSpacing * 2)
     }
@@ -425,20 +419,8 @@ struct FlashcardNotificationView: View {
                         .font(.system(size: 15, weight: .bold))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .foregroundStyle(.white)
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.12, green: 0.50, blue: 0.98),
-                            Color(red: 0.20, green: 0.68, blue: 0.96)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.35), radius: 8, y: 3)
+                .padding(.vertical, appearance.design.verticalPadding(14))
+                .notificationPrimaryAction(isLight: isLight)
             }
             .buttonStyle(.plain)
         }
@@ -466,8 +448,19 @@ struct FlashcardNotificationView: View {
                 VStack(spacing: 8) {
                     Text("Next review in \(AnkiReviewScheduling.intervalLabel(max(0, date.timeIntervalSinceNow)))")
                         .font(.subheadline).foregroundStyle(textColorSecondary)
-                    Button("Review early") { ankiFutureReviewDate = nil }
-                        .buttonStyle(.bordered).font(.subheadline.weight(.semibold))
+                    if appearance.design == .liquidGlass {
+                        Button("Review early") { ankiFutureReviewDate = nil }
+                            .buttonStyle(.bordered).font(.subheadline.weight(.semibold))
+                    } else {
+                        Button { ankiFutureReviewDate = nil } label: {
+                            Text("Review early")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .notificationLiquidGlass(cornerRadius: 12, isLight: isLight)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             } else {
                 AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
@@ -489,7 +482,7 @@ struct FlashcardNotificationView: View {
     var body: some View {
         ScrollViewReader { scrollProxy in
             ScrollView {
-            VStack(spacing: isCompactLayout ? 10 : 18) {
+            VStack(spacing: notificationSpacing) {
                 notificationHeader
 
                 // Question Box & Prompt Image
@@ -501,7 +494,7 @@ struct FlashcardNotificationView: View {
                             .foregroundStyle(textColorPrimary).frame(maxWidth: .infinity)
 
                     }
-                    .padding(.vertical, isCompactLayout ? 12 : 20)
+                    .padding(.vertical, appearance.design.verticalPadding(isCompactLayout ? 12 : 20))
                     .padding(.horizontal, isCompactLayout ? 14 : 18)
                     .notificationLiquidGlass(cornerRadius: 20, isLight: isLight)
                 }
@@ -514,11 +507,21 @@ struct FlashcardNotificationView: View {
                             .frame(height: ankiCardHeight)
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
                             .environment(\.colorScheme, isLight ? .light : .dark)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .clipShape(RoundedRectangle(cornerRadius: appearance.design.cornerRadius(16)))
                         ankiReviewFooter
                     } else {
-                        Button("Open this Anki card in LearnAlert", action: openApp)
-                            .buttonStyle(.borderedProminent)
+                        if appearance.design == .liquidGlass {
+                            Button("Open this Anki card in LearnAlert", action: openApp)
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Button(action: openApp) {
+                                Text("Open this Anki card in LearnAlert")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .notificationPrimaryAction(isLight: isLight)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 } else if activeCardType == "images" {
                     VStack(spacing: 14) {
@@ -538,7 +541,7 @@ struct FlashcardNotificationView: View {
                             }
                         }
                         .frame(maxWidth: .infinity).frame(height: isCompactLayout ? 280 : 340)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: appearance.design.cornerRadius(14), style: .continuous))
 
                         if isGraded {
                             Label("Reviewed", systemImage: "checkmark")
@@ -584,7 +587,7 @@ struct FlashcardNotificationView: View {
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundStyle(textColorPrimary)
                                 .padding(.horizontal, 14)
-                                .padding(.vertical, 12)
+                                .padding(.vertical, appearance.design.verticalPadding(12))
                                 .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
                                 .focused($isAnswerFieldFocused)
                                 .id("fill_blank_field")
@@ -645,7 +648,7 @@ struct FlashcardNotificationView: View {
                                         .font(.headline.weight(.semibold))
                                 }
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 18)
+                                .padding(.vertical, appearance.design.verticalPadding(18))
                                 .foregroundStyle(textColorPrimary)
                                 .notificationLiquidGlass(cornerRadius: 16, isLight: isLight)
                             }
@@ -656,7 +659,7 @@ struct FlashcardNotificationView: View {
                                     .font(.title3.bold())
                                     .foregroundStyle(Color(red: 0.12, green: 0.50, blue: 0.98))
                                     .multilineTextAlignment(.center)
-                                    .padding(.vertical, 18)
+                                    .padding(.vertical, appearance.design.verticalPadding(18))
                                     .padding(.horizontal, 16)
                                     .frame(maxWidth: .infinity)
                                     .notificationLiquidGlass(cornerRadius: 16, tint: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.12), isLight: isLight)
@@ -673,7 +676,7 @@ struct FlashcardNotificationView: View {
                                             .font(.headline.weight(.bold))
                                             .foregroundStyle(Color.red)
                                             .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 14)
+                                            .padding(.vertical, appearance.design.verticalPadding(14))
                                             .notificationLiquidGlass(cornerRadius: 14, tint: Color.red.opacity(0.16), isLight: isLight)
                                         }
                                         .buttonStyle(.plain)
@@ -688,7 +691,7 @@ struct FlashcardNotificationView: View {
                                             .font(.headline.weight(.bold))
                                             .foregroundStyle(Color.green)
                                             .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 14)
+                                            .padding(.vertical, appearance.design.verticalPadding(14))
                                             .notificationLiquidGlass(cornerRadius: 14, tint: Color.green.opacity(0.16), isLight: isLight)
                                         }
                                         .buttonStyle(.plain)
@@ -718,7 +721,7 @@ struct FlashcardNotificationView: View {
                 }
             }
             .frame(minHeight: activeCardType == "anki" ? max(0, viewportHeight - notificationPadding * 2) : 0, alignment: .top)
-            .padding(isCompactLayout ? 12 : 18)
+            .padding(notificationPadding)
             .background(
                 GeometryReader { geo in
                     Color.clear.preference(
@@ -731,6 +734,8 @@ struct FlashcardNotificationView: View {
         .scrollBounceBehavior(.basedOnSize)
         .frame(maxWidth: .infinity, alignment: .top)
         .background(NotificationBackdrop(theme: customTheme, isLight: isLight))
+        .environment(\.notificationDesignTheme, appearance.design)
+        .environment(\.colorScheme, isLight ? .light : .dark)
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onPreferenceChange(NotificationAnkiChromeHeightKey.self) { heights in
             if let header = heights["header"], header > 0, abs(ankiHeaderHeight - header) > 0.5 { ankiHeaderHeight = header }
@@ -1298,49 +1303,66 @@ private struct NotificationBackdrop: View {
     }
 }
 
-// MARK: - Liquid Glass View Extension
-private extension View {
+// MARK: - Notification Design Surfaces
+private struct NotificationPlainSurface: ViewModifier {
+    @Environment(\.notificationDesignTheme) private var design
+    let cornerRadius: CGFloat
+    let tint: Color
+    let isLight: Bool
+
     @ViewBuilder
+    func body(content: Content) -> some View {
+        if (design ?? .liquidGlass) == .liquidGlass {
+            content.background(tint)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            content.notificationControlSurface(cornerRadius: cornerRadius, tint: tint, isLight: isLight)
+        }
+    }
+}
+
+private struct NotificationPrimaryAction: ViewModifier {
+    @Environment(\.notificationDesignTheme) private var design
+    let isLight: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if (design ?? .liquidGlass) == .liquidGlass {
+            content
+                .foregroundStyle(.white)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.12, green: 0.50, blue: 0.98), Color(red: 0.20, green: 0.68, blue: 0.96)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.35), radius: 8, y: 3)
+        } else {
+            content
+                .foregroundStyle(isLight ? Color(red: 0.10, green: 0.13, blue: 0.24) : .white)
+                .notificationControlSurface(cornerRadius: 14,
+                    tint: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(isLight ? 0.18 : 0.25), isLight: isLight)
+        }
+    }
+}
+
+private extension View {
     func notificationLiquidGlass(
         cornerRadius: CGFloat = 16,
         tint: Color? = nil,
         isLight: Bool = false,
         customBorderColor: Color? = nil
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, *) {
-            self
-                .glassEffect(.regular.tint(tint).interactive(), in: .rect(cornerRadius: cornerRadius))
-                .overlay(
-                    shape.stroke(
-                        customBorderColor ?? (isLight ? Color.white.opacity(0.85) : Color.white.opacity(0.18)),
-                        lineWidth: customBorderColor != nil ? 1.5 : 1
-                    )
-                )
-                .shadow(
-                    color: isLight ? Color.black.opacity(0.05) : Color.black.opacity(0.22),
-                    radius: isLight ? 6 : 10,
-                    y: isLight ? 2 : 4
-                )
-        } else {
-            self
-                .background(
-                    tint ?? (isLight ? Color.white.opacity(0.65) : Color(red: 0.08, green: 0.10, blue: 0.20).opacity(0.65)),
-                    in: shape
-                )
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(
-                    shape.stroke(
-                        customBorderColor ?? (isLight ? Color.white.opacity(0.88) : Color.white.opacity(0.20)),
-                        lineWidth: customBorderColor != nil ? 1.5 : 1
-                    )
-                )
-                .shadow(
-                    color: isLight ? Color.black.opacity(0.05) : Color.black.opacity(0.22),
-                    radius: isLight ? 6 : 10,
-                    y: isLight ? 2 : 4
-                )
-        }
+        notificationControlSurface(cornerRadius: cornerRadius, tint: tint, isLight: isLight, customBorderColor: customBorderColor)
+    }
+
+    func notificationPlainSurface(cornerRadius: CGFloat, tint: Color, isLight: Bool) -> some View {
+        modifier(NotificationPlainSurface(cornerRadius: cornerRadius, tint: tint, isLight: isLight))
+    }
+
+    func notificationPrimaryAction(isLight: Bool) -> some View {
+        modifier(NotificationPrimaryAction(isLight: isLight))
     }
 }
 

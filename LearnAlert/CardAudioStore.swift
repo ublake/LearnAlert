@@ -151,6 +151,7 @@ struct CardAudioPlaybackButton: View {
                 else { Image(systemName: "waveform").font(.caption2) }
             }.font(compact ? .caption.weight(.semibold) : .body.weight(.medium))
                 .frame(minWidth: 44, minHeight: 44)
+                .modifier(NotificationAudioSurface(compact: compact))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(player.isPlaying ? "Stop audio" : "Play audio")
@@ -162,5 +163,19 @@ struct CardAudioPlaybackButton: View {
         .alert("Audio Unavailable", isPresented: Binding(get: { player.errorMessage != nil }, set: { if !$0 { player.errorMessage = nil } })) {
             Button("OK", role: .cancel) { }
         } message: { Text(player.errorMessage ?? "") }
+    }
+}
+
+private struct NotificationAudioSurface: ViewModifier {
+    let compact: Bool
+    @Environment(\.notificationDesignTheme) private var design
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let design, design != .liquidGlass {
+            content.padding(.horizontal, compact ? 6 : 10)
+                .notificationControlSurface(cornerRadius: 12, tint: Color.accentColor.opacity(0.08), isLight: colorScheme == .light)
+        } else { content }
     }
 }

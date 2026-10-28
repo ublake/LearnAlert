@@ -410,11 +410,12 @@ struct AnkiReviewControls: View {
     let onReveal: () -> Void
     let onGrade: (AnkiReviewRating) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.notificationDesignTheme) private var notificationDesign
 
     var body: some View {
         if !isGraded {
             if isRevealed {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: notificationDesign?.spacing(8) ?? 8), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: notificationDesign?.spacing(8) ?? 8) {
                     ForEach(options, id: \.rating) { option in
                         Button { onGrade(option.rating) } label: {
                             VStack(spacing: 4) {
@@ -427,10 +428,9 @@ struct AnkiReviewControls: View {
                                     .foregroundStyle(option.rating.reviewTint)
                             }
                             .frame(maxWidth: .infinity, minHeight: 48)
-                            .padding(.vertical, 6)
-                            .background(option.rating.reviewTint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(option.rating.reviewTint.opacity(0.28), lineWidth: 1))
-                            .contentShape(RoundedRectangle(cornerRadius: 14))
+                            .padding(.vertical, notificationDesign?.verticalPadding(6) ?? 6)
+                            .modifier(AnkiNotificationRatingSurface(tint: option.rating.reviewTint))
+                            .contentShape(RoundedRectangle(cornerRadius: notificationDesign?.cornerRadius(14) ?? 14))
                         }
                         .buttonStyle(AnkiRatingButtonStyle())
                         .accessibilityLabel("\(option.rating.title), next review in \(option.intervalLabel)")
@@ -439,8 +439,25 @@ struct AnkiReviewControls: View {
             } else {
                 Button(action: onReveal) {
                     Label("Flip/reveal", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity, minHeight: 42)
-                }.buttonStyle(.borderedProminent).font(.subheadline.weight(.semibold))
+                }.notificationPrimaryActionStyle().font(.subheadline.weight(.semibold))
             }
+        }
+    }
+}
+
+private struct AnkiNotificationRatingSurface: ViewModifier {
+    let tint: Color
+    @Environment(\.notificationDesignTheme) private var design
+    @Environment(\.colorScheme) private var colorScheme
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let design, design != .liquidGlass {
+            content.notificationControlSurface(cornerRadius: 14, tint: tint.opacity(0.12),
+                isLight: colorScheme == .light, customBorderColor: tint.opacity(0.6))
+        } else {
+            content.background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.28), lineWidth: 1).allowsHitTesting(false))
         }
     }
 }
