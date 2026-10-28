@@ -407,8 +407,8 @@ private struct StarterDeckSelectionPage: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Header with Back Button
-            ZStack {
+            // Navigation and the heading occupy separate rows, so neither can overlap.
+            VStack(alignment: .leading, spacing: 12) {
                 if let onBack {
                     HStack {
                         Button(action: onBack) {
@@ -421,6 +421,7 @@ private struct StarterDeckSelectionPage: View {
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .padding(.vertical, 8)
                             .padding(.horizontal, 12)
+                            .frame(minHeight: 44)
                             .background(LearnAlertStyle.courseSurface, in: Capsule())
                             .overlay(
                                 Capsule()
@@ -443,6 +444,7 @@ private struct StarterDeckSelectionPage: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 10)
                 }
+                .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 18)
             .padding(.top, 6)
