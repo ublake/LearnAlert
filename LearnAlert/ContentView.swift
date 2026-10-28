@@ -1714,15 +1714,16 @@ private struct HomeStudyCard: View {
                     Text("\(deck.deckType) · \(summary.cardCount) cards")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
-                    Spacer(minLength: 66)
+                    Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
             }
+            .padding(.trailing, 32)
             .padding(.horizontal, 16)
             .padding(.top, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottomTrailing) {
-                HomeMasteryBars(summary: summary).allowsHitTesting(false)
+            .overlay(alignment: .trailing) {
+                HomeMasteryBars(summary: summary, isPinned: isPinned).allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
                 if isPinned {
