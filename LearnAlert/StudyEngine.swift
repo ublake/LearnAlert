@@ -186,7 +186,14 @@ class StudyEngine: ObservableObject {
     func startAlerts(for deck: Deck, section: DeckSection? = nil) async throws -> Int {
         scheduleGeneration = UUID()
         selectSettings(for: deck)
-        let cards = fetchCardsToStudy(from: deck, section: section)
+        var cards = fetchCardsToStudy(from: deck, section: section)
+        if cards.isEmpty {
+            // A future Anki review is still a schedulable deck. Preserve its due
+            // date instead of forcing early reviews just to start a schedule.
+            cards = orderedCards(deck: deck, section: section).filter {
+                $0.cardType == .anki && (stopCondition != "Until Deck Learnt" || $0.ankiReviewState.phase != .review)
+            }
+        }
         
         // If "Until Deck Learnt" is selected and all cards are mastered
         if stopCondition == "Until Deck Learnt" && cards.isEmpty {

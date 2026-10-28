@@ -102,6 +102,8 @@ struct FlashcardNotificationView: View {
     var optionImageNames: [String] = []
     var notificationRequestID: String? = nil
     var questionsPerAlert = 3
+    var notificationSectionID: UUID? = nil
+    var noDueAnkiCards = false
     var readingPrompt: String? = nil
     var previewMode = false
     var isTutorial = false
@@ -864,6 +866,7 @@ struct FlashcardNotificationView: View {
         .onAppear {
             seenCardIds.insert(activeCardId)
             restoreBatch()
+            if noDueAnkiCards && !sessionFinished { finishBatch(caughtUp: true) }
             if !sessionFinished { loadAnkiReviewOptions() }
             if !isSyntheticSession && !sessionFinished {
                 loadAvailableDecks()
@@ -1126,32 +1129,38 @@ struct FlashcardNotificationView: View {
         let descriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
         guard let deck = try? context.fetch(descriptor).first else { return }
 
-        let cards = deck.cards
+        let sectionID = deckId.uuidString == self.deckId ? notificationSectionID : nil
         let now = Date()
         let handled = isSyntheticSession ? Set<String>() : NotificationLearningBudget.handledCardIDs(for: notificationRequestID)
-        let eligible = cards.filter { !handled.contains($0.id.uuidString) && ($0.cardType != .anki || $0.isNew || $0.nextReviewDate <= now) }
+        let excluded = Set(handled.compactMap(UUID.init(uuidString:)))
+        let cards: [Flashcard]
+        let candidates: [AnkiNotificationSelection.Candidate]
+        do {
+            cards = try AnkiNotificationSelection.ordinaryCards(deckID: deckId, sectionID: sectionID, in: context)
+            candidates = try AnkiNotificationSelection.candidates(deckID: deckId, sectionID: sectionID, in: context)
+        } catch {
+            statusMessage = "This deck couldn’t be loaded. Please reopen the alert."
+            return
+        }
+        let eligible = cards.filter { !handled.contains($0.id.uuidString) }
         let unseenCards = eligible.filter { !seenCardIds.contains($0.id.uuidString) }
-        let dueAnki = eligible.compactMap { card -> (card: Flashcard, learning: Bool, due: Date, order: Int)? in
-            guard card.cardType == .anki, !card.isNew,
-                  card.id.uuidString != activeCardId || isGraded || eligible.count == 1 else { return nil }
-            let state = card.ankiReviewState
-            return (card, state.phase != .review, state.dueDate, card.orderIndex)
-        }.min { first, second in
-            if first.learning != second.learning { return first.learning }
-            if first.due != second.due { return first.due < second.due }
-            if first.order != second.order { return first.order < second.order }
-            return first.card.id.uuidString < second.card.id.uuidString
-        }?.card
+        let ankiID = AnkiNotificationSelection.next(in: candidates, at: now, excluding: excluded)
+        let nextAnki = ankiID.flatMap { id in
+            try? context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == id })).first
+        }
         let nextCard: Flashcard?
-        // A due learning step must not sit behind thousands of unseen cards.
-        if let card = dueAnki ?? unseenCards.first {
-            nextCard = card
+        if let nextAnki, !nextAnki.isNew {
+            // Learning steps and overdue reviews always precede introducing cards.
+            nextCard = nextAnki
+        } else if let ordinary = unseenCards.first {
+            nextCard = nextAnki.map { $0.orderIndex < ordinary.orderIndex ? $0 : ordinary } ?? ordinary
+        } else if let nextAnki {
+            nextCard = nextAnki
         } else {
             seenCardIds.removeAll()
-            let sortedCards = eligible.filter {
+            nextCard = eligible.filter {
                 isGraded || eligible.count == 1 || $0.id.uuidString != activeCardId
-            }.sorted { $0.studyPriority > $1.studyPriority }
-            nextCard = sortedCards.first
+            }.sorted { $0.studyPriority > $1.studyPriority }.first
         }
 
         guard let cardToStudy = nextCard else {
@@ -1159,7 +1168,7 @@ struct FlashcardNotificationView: View {
                 finishBatch(caughtUp: true)
                 return
             }
-            if let next = cards.filter({ $0.cardType == .anki }).map(\.nextReviewDate).min() {
+            if let next = candidates.map(\.due).min() {
                 waitingForAnki = .init(deckID: deck.id, due: next)
                 statusMessage = "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow)))."
             } else {
@@ -1689,6 +1698,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             (content.categoryIdentifier == "FLASHCARD_TEST" &&
              userInfo["isCustomizationTest"] == nil && snapshot.deckName == "Example")
         let isSynthetic = isTutorial || content.categoryIdentifier == "FLASHCARD_TEST" || isCustomizationTest
+        let notificationSectionID = (userInfo["sectionId"] as? String).flatMap(UUID.init(uuidString:))
+        var noDueAnkiCards = false
         if !isSynthetic {
             NotificationLearningBudget.recordDelivered(requestID: notification.request.identifier, at: notification.date)
             Task {
@@ -1709,7 +1720,27 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             let deckDescriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
             let resolvedDeck = scheduledCard?.deck?.id == deckId ? scheduledCard?.deck : try? context.fetch(deckDescriptor).first
             if let deck = resolvedDeck {
-                if let card = scheduledCard {
+                let expectsAnki = userInfo["ankiDueSelection"] as? Bool == true || snapshot.cardType == "anki"
+                let selectedCard: Flashcard?
+                do {
+                    let handled = NotificationLearningBudget.handledCardIDs(for: notification.request.identifier)
+                    let excluded = Set(handled.compactMap(UUID.init(uuidString:)))
+                    let candidates = try AnkiNotificationSelection.candidates(deckID: deckId, sectionID: notificationSectionID, in: context)
+                    let id = AnkiNotificationSelection.next(in: candidates, excluding: excluded)
+                    let dueAnki = id.flatMap { id in candidates.first { $0.id == id } }
+                    if let dueAnki, expectsAnki || !dueAnki.isNew {
+                        let id = dueAnki.id
+                        selectedCard = try context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == id })).first
+                    } else if expectsAnki {
+                        selectedCard = try AnkiNotificationSelection.ordinaryCards(deckID: deckId,
+                            sectionID: notificationSectionID, in: context).first { !excluded.contains($0.id) }
+                        noDueAnkiCards = selectedCard == nil
+                    } else { selectedCard = scheduledCard }
+                } catch {
+                    show(AnyView(Text("Your reviews couldn’t be loaded. Please reopen this alert.").padding(24)))
+                    return
+                }
+                if let card = selectedCard {
                 snapshot = NotificationSessionCard(
                     id: card.id.uuidString, deckId: deck.id.uuidString,
                     deckName: deck.name, deckType: card.cardType.title,
@@ -1746,6 +1777,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             optionImageNames: snapshot.optionImageNames,
             notificationRequestID: isSynthetic ? nil : notification.request.identifier,
             questionsPerAlert: min(3, max(1, userInfo["questionsPerAlert"] as? Int ?? 3)),
+            notificationSectionID: notificationSectionID,
+            noDueAnkiCards: noDueAnkiCards,
             readingPrompt: snapshot.readingPrompt,
             isTutorial: isTutorial,
             tutorialAttemptID: userInfo["tutorialAttemptID"] as? String,
@@ -1765,7 +1798,8 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             }
         )
 
-        show(AnyView(swiftUIView))
+        // A new alert owns a new batch; never retain a previous alert's graded UI.
+        show(AnyView(swiftUIView.id(notification.request.identifier)))
     }
 
     private func show(_ root: AnyView) {

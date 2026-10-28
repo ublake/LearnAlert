@@ -141,7 +141,7 @@ struct CreateCardView: View {
                         Spacer()
                         Picker("Category", selection: $selectedSectionId) {
                             Text("None").tag("NONE")
-                            ForEach(deck.sections) { Text($0.name).tag($0.id.uuidString) }
+                            ForEach(deck.sections, id: \.id) { Text($0.name).tag($0.id.uuidString) }
                         }.pickerStyle(.menu)
                     }.padding(.horizontal, 12).padding(.vertical, 4).editorSurface()
                 }

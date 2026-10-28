@@ -72,9 +72,31 @@ enum DailyDeckAlertScheduler {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
         guard isCurrent(planData: stored.data, defaults: defaults) else { return [] }
-        let candidateSlots = plan.slots()
-        let cards = try scheduledCards(cardIDs: candidateSlots.map(\.cardId), deckID: deckId,
+        let ankiCandidates = try AnkiNotificationSelection.candidates(deckID: deckId, sectionID: sectionId, in: context)
+        let onlyAnki: Bool
+        if ankiCandidates.isEmpty { onlyAnki = false }
+        else { onlyAnki = try AnkiNotificationSelection.isAnkiOnly(deckID: deckId, sectionID: sectionId, in: context) }
+        // An all-Anki deck can be caught up for weeks. Keep its existing time
+        // window, but search around its next due date instead of giving up after
+        // the first 60 empty appointments.
+        let earliest = ankiCandidates.map { $0.isNew ? Date.distantPast : $0.due }.min()
+        let searchDate = onlyAnki ? max(Date(), (earliest ?? Date()).addingTimeInterval(-2)) : Date()
+        let candidateSlots = plan.slots(now: searchDate)
+        var cards = try scheduledCards(cardIDs: candidateSlots.map(\.cardId), deckID: deckId,
             sectionID: sectionId, in: context)
+        let originalLookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
+        let ankiLookup = Dictionary(uniqueKeysWithValues: ankiCandidates.map { ($0.id, $0) })
+        let eligibleSlots = candidateSlots.compactMap { slot -> (date: Date, cardId: UUID)? in
+            let id = AnkiNotificationSelection.next(in: ankiCandidates, at: slot.date)
+            if let id, ankiLookup[id]?.isNew == false { return (slot.date, id) }
+            if onlyAnki || originalLookup[slot.cardId]?.cardType == .anki {
+                guard let id else { return nil }
+                return (slot.date, id)
+            }
+            return originalLookup[slot.cardId] == nil ? nil : slot
+        }
+        let extraIDs = Array(Set(eligibleSlots.map(\.cardId)).subtracting(originalLookup.keys))
+        cards += try scheduledCards(cardIDs: extraIDs, deckID: deckId, sectionID: sectionId, in: context)
         let lookup = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
         var shouldStop = false
         if plan.stopWhenMastered {
@@ -88,10 +110,6 @@ enum DailyDeckAlertScheduler {
             NotificationLearningBudget.cancelReservations(requestIDs: ids)
             defaults?.set(true, forKey: "extensionDidStopAlerts")
             return []
-        }
-        let eligibleSlots = candidateSlots.filter { slot in
-            guard let card = lookup[slot.cardId] else { return false }
-            return card.cardType != .anki || card.isNew || card.nextReviewDate <= slot.date
         }
         func identifier(_ slot: (date: Date, cardId: UUID)) -> String {
             plan.identifierPrefix + "-" + String(Int(slot.date.timeIntervalSince1970))
@@ -123,7 +141,9 @@ enum DailyDeckAlertScheduler {
             // Current policy metadata replaces dense/legacy payloads in place.
             if let request = existing[id], request.content.userInfo["questionsPerAlert"] as? Int == plan.questionsPerAlert,
                request.content.userInfo["dailyQuestionGoal"] as? Int == 20,
-               request.content.userInfo["cardId"] as? String == card.id.uuidString { continue }
+               request.content.userInfo["cardId"] as? String == card.id.uuidString,
+               request.content.userInfo["ankiDueSelection"] as? Bool == (card.cardType == .anki),
+               request.content.userInfo["sectionId"] as? String == (sectionId?.uuidString ?? "") { continue }
             let content = UNMutableNotificationContent()
             content.title = "LearnAlert: \(deck.name)"
             content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
@@ -139,6 +159,8 @@ enum DailyDeckAlertScheduler {
                 "optionImageNames": card.optionImageNames, "isRandom": false,
                 "questionsPerAlert": plan.questionsPerAlert, "dailyQuestionGoal": 20,
                 "minimumSpacingMinutes": plan.minimumSpacingMinutes,
+                "sectionId": sectionId?.uuidString ?? "",
+                "ankiDueSelection": card.cardType == .anki,
                 "progress": "1/\(plan.questionsPerAlert)"]
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)

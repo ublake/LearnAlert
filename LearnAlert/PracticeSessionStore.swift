@@ -145,6 +145,25 @@ final class PracticeSessionStore: ObservableObject {
         }
     }
 
+    /// Older app versions kept Anki state only in their three bookmarks. Prefer
+    /// the most recently rated state, not whichever bookmark was opened last.
+    func legacyAnkiStates() -> [UUID: Data] {
+        var newest: [UUID: (data: Data, state: AnkiReviewState)] = [:]
+        for session in sessions {
+            for (id, data) in session.localAnkiStates {
+                guard let state = try? JSONDecoder().decode(AnkiReviewState.self, from: data),
+                      state.reviewCount > 0 else { continue }
+                if let prior = newest[id] {
+                    let date = state.lastReviewedDate ?? .distantPast
+                    let priorDate = prior.state.lastReviewedDate ?? .distantPast
+                    guard date > priorDate || (date == priorDate && state.reviewCount > prior.state.reviewCount) else { continue }
+                }
+                newest[id] = (data, state)
+            }
+        }
+        return newest.mapValues(\.data)
+    }
+
     func removeAll() async {
         Self.allGeneration += 1
         Self.deckGenerations.removeAll()

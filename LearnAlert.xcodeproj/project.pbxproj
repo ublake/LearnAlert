@@ -113,6 +113,7 @@
 				AlertTimelineStore.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
+				AnkiNotificationSelection.swift,
 				AnkiReviewAlerts.swift,
 				AnkiReviewScheduling.swift,
 				AnkiStudyPreferences.swift,

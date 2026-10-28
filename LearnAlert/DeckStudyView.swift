@@ -4,6 +4,7 @@ import SwiftData
 struct DeckStudyView: View {
     @Bindable var deck: Deck
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var practiceSessions = PracticeSessionStore()
     @StateObject private var ankiCache = AnkiStudyRenderCache()
@@ -61,7 +62,8 @@ struct DeckStudyView: View {
     private var ankiPresentation: AnkiStudyPresentation { AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow }
     private var isAnkiOnly: Bool { !allCards.isEmpty && allCards.allSatisfy { $0.cardType == .anki } }
     private var nextAnkiReview: Date? {
-        localAnkiStates.values.compactMap { try? JSONDecoder().decode(AnkiReviewState.self, from: $0).dueDate }.min()
+        allCards.filter { $0.cardType == .anki }.map(\.ankiPracticeReviewState)
+            .filter { $0.reviewCount > 0 }.map(\.dueDate).min()
     }
     private var resumableSessions: [PracticeSessionSnapshot] {
         let ids = Set(allCards.map(\.id))
@@ -140,10 +142,32 @@ struct DeckStudyView: View {
         guard !didApplyInitialState || loadingFailed else { return }
         allCards = deck.cards
         guard await practiceSessions.load(deckID: deck.id), !Task.isCancelled else { loadingFailed = true; return }
+        do { try migratePracticeStates() }
+        catch {
+            loadingFailed = true
+            reviewError = "Your previous Anki practice couldn’t be saved. Try again before starting a new session."
+            return
+        }
         loadingFailed = false; didApplyInitialState = true
         if initialCardId != nil || notificationRequestID != nil { startNewSession(applyHandoff: true) }
         else if !resumableSessions.isEmpty { choosingSession = true }
         else { startNewSession() }
+    }
+
+    private func migratePracticeStates() throws {
+        let legacy = practiceSessions.legacyAnkiStates()
+        var changed = false
+        do {
+            for card in allCards where card.cardType == .anki && card.ankiPracticeReviewStateData == nil {
+                guard let data = legacy[card.id] else { continue }
+                card.ankiPracticeReviewStateData = data
+                changed = true
+            }
+            if changed { try context.save() }
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     private func startNewSession(applyHandoff: Bool = false) {
@@ -151,25 +175,48 @@ struct DeckStudyView: View {
         allCards = deck.cards.sorted {
             $0.orderIndex == $1.orderIndex ? $0.id.uuidString < $1.id.uuidString : $0.orderIndex < $1.orderIndex
         }
-        studyQueue = allCards
-        queueIDs = allCards.map(\.id)
-        shortReviews = .init(); localAnkiStates = [:]; waitingForReview = false
-        ratingCounts = [:]; reviewedAnkiIDs = []; reviewedCardIDs = []
-        answerCount = 0; correctCount = 0; cardIndex = 0; resetCardState()
-        isComplete = false; choosingSession = false
         let now = Date()
+        let entries = allCards.map { (card: $0, state: $0.cardType == .anki ? $0.ankiPracticeReviewState : nil) }
+        studyQueue = entries.filter { $0.state.map { $0.reviewCount == 0 || $0.dueDate <= now } ?? true }
+            .sorted { first, second in
+                func rank(_ state: AnkiReviewState?) -> Int {
+                    guard let state, state.reviewCount > 0 else { return 2 }
+                    return state.phase == .review ? 1 : 0
+                }
+                let firstRank = rank(first.state), secondRank = rank(second.state)
+                if firstRank != secondRank { return firstRank < secondRank }
+                if firstRank < 2, let firstDate = first.state?.dueDate, let secondDate = second.state?.dueDate,
+                   firstDate != secondDate { return firstDate < secondDate }
+                if first.card.orderIndex != second.card.orderIndex { return first.card.orderIndex < second.card.orderIndex }
+                return first.card.id.uuidString < second.card.id.uuidString
+            }.map(\.card)
+        queueIDs = studyQueue.map(\.id)
+        shortReviews = .init()
+        localAnkiStates = Dictionary(uniqueKeysWithValues: allCards.compactMap { card in
+            card.ankiPracticeReviewStateData.map { (card.id, $0) }
+        })
+        for entry in entries {
+            if let state = entry.state, state.reviewCount > 0, state.phase != .review, state.dueDate > now {
+                shortReviews.schedule(entry.card.id, due: state.dueDate, repeatsInSession: true)
+            }
+        }
+        ratingCounts = [:]; reviewedAnkiIDs = []; reviewedCardIDs = []
+        answerCount = 0; correctCount = 0; cardIndex = studyQueue.isEmpty ? -1 : 0; resetCardState()
+        waitingForReview = studyQueue.isEmpty && shortReviews.nextDate != nil
+        isComplete = studyQueue.isEmpty && !waitingForReview
+        choosingSession = false
         activeSession = PracticeSessionSnapshot(deckID: deck.id, createdAt: now, updatedAt: now,
-            originalCardIDs: allCards.map(\.id), queueIDs: studyQueue.map(\.id))
+            originalCardIDs: allCards.map(\.id), queueIDs: queueIDs)
         if applyHandoff, let id = initialCardId, let card = allCards.first(where: { $0.id == id }) {
             studyQueue.removeAll { $0.id == id }; studyQueue.insert(card, at: 0)
             queueIDs.removeAll { $0 == id }; queueIDs.insert(id, at: 0)
+            cardIndex = 0; waitingForReview = false; isComplete = false
             selectedAnswer = initialSelectedAnswer; isGraded = initialWasGraded
             isRevealed = initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
             hasViewedImageBack = initialImageBackViewed || initialWasRevealed || initialWasGraded
             showingHint = initialHintVisible; hasRecordedHint = initialHintVisible
             if initialWasGraded {
-                // The completed notification review remains acknowledged; this practice
-                // session never replays it into notification state or the daily budget.
+                // Acknowledging a notification never replays its rating into practice history.
                 reviewedCardIDs.insert(id); answerCount = 1
                 correctCount = initialWasCorrect == true ? 1 : 0
                 if card.cardType == .anki { reviewedAnkiIDs.insert(id) }
@@ -182,14 +229,49 @@ struct DeckStudyView: View {
         ankiCache.clear()
         let lookup = Dictionary(deck.cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let validIDs = Set(lookup.keys)
-        let index = min(max(0, saved.cardIndex), saved.queueIDs.count)
+        let savedIndex = min(max(0, saved.cardIndex), saved.queueIDs.count)
+        let index = saved.isComplete ? saved.queueIDs.count
+            : saved.waitingForReview && saved.isGraded ? min(savedIndex + 1, saved.queueIDs.count) : savedIndex
         let savedCurrentID = saved.queueIDs.indices.contains(index) ? saved.queueIDs[index] : nil
-        let earlierCount = saved.queueIDs.prefix(index).filter(validIDs.contains).count
-        let hasSurvivingRemainder = saved.queueIDs.dropFirst(index).contains(where: validIDs.contains)
-        studyQueue = saved.queueIDs.compactMap { lookup[$0] }
-        queueIDs = saved.queueIDs.filter(validIDs.contains)
+        let prefix = saved.queueIDs.prefix(index).compactMap { lookup[$0] }
+        let now = Date()
+        var queuedAnkiIDs = Set<UUID>()
+        var remaining: [Flashcard] = []
+        shortReviews = .init()
         allCards = saved.originalCardIDs.compactMap { lookup[$0] }
-        cardIndex = min(earlierCount, max(0, studyQueue.count - 1))
+        // The bookmark supplies position; the card supplies the latest learning state.
+        // A newer session's ratings cannot be rewound by opening an older bookmark.
+        for id in saved.queueIDs.dropFirst(index) {
+            guard let card = lookup[id] else { continue }
+            guard card.cardType == .anki else { remaining.append(card); continue }
+            guard queuedAnkiIDs.insert(id).inserted else { continue }
+            let state = card.ankiPracticeReviewState
+            if (id == savedCurrentID && saved.isGraded) || state.reviewCount == 0 || state.dueDate <= now {
+                remaining.append(card)
+            }
+        }
+        let remainingIDs = Set(remaining.map(\.id))
+        var newlyDue: [(card: Flashcard, state: AnkiReviewState)] = []
+        for card in allCards where card.cardType == .anki && !saved.isComplete {
+            let state = card.ankiPracticeReviewState
+            guard state.reviewCount > 0 else { continue }
+            if !remainingIDs.contains(card.id) && state.dueDate <= now {
+                newlyDue.append((card, state))
+            } else if state.phase != .review && state.dueDate > now {
+                shortReviews.schedule(card.id, due: state.dueDate, repeatsInSession: true)
+            }
+        }
+        // Keep the bookmarked card on screen; newly due reviews follow it.
+        let reviewInsertionIndex = savedCurrentID != nil && remaining.first?.id == savedCurrentID ? 1 : 0
+        remaining.insert(contentsOf: newlyDue.sorted { first, second in
+            if (first.state.phase == .review) != (second.state.phase == .review) { return first.state.phase != .review }
+            if first.state.dueDate != second.state.dueDate { return first.state.dueDate < second.state.dueDate }
+            return first.card.orderIndex == second.card.orderIndex ? first.card.id.uuidString < second.card.id.uuidString
+                : first.card.orderIndex < second.card.orderIndex
+        }.map(\.card), at: reviewInsertionIndex)
+        studyQueue = prefix + remaining
+        queueIDs = studyQueue.map(\.id)
+        cardIndex = remaining.isEmpty ? max(-1, studyQueue.count - 1) : prefix.count
         reviewedCardIDs = saved.reviewedCardIDs.intersection(validIDs)
         reviewedAnkiIDs = saved.reviewedAnkiIDs.intersection(validIDs)
         correctCount = saved.correctCount; answerCount = saved.answerCount
@@ -197,20 +279,17 @@ struct DeckStudyView: View {
         typedAnswer = saved.typedAnswer
         hasViewedImageBack = saved.hasViewedImageBack; isGraded = saved.isGraded
         showingHint = saved.showingHint; hasRecordedHint = saved.hasRecordedHint
-        waitingForReview = saved.waitingForReview; isComplete = saved.isComplete
-        localAnkiStates = saved.localAnkiStates.filter { validIDs.contains($0.key) }
-        shortReviews = .init()
-        for (id, date) in saved.pendingAnkiReviews where validIDs.contains(id) { shortReviews.schedule(id, due: date, repeatsInSession: true) }
+        localAnkiStates = Dictionary(uniqueKeysWithValues: allCards.compactMap { card in
+            card.ankiPracticeReviewStateData.map { (card.id, $0) }
+        })
         ratingCounts = Dictionary(saved.ratingCounts.compactMap { key, value in AnkiReviewRating(rawValue: key).map { ($0, value) } }, uniquingKeysWith: +)
         if savedCurrentID != currentCard?.id { resetCardState() }
-        if !hasSurvivingRemainder {
-            // All current/later cards were deleted. Earlier completed cards must
-            // not become a fresh ungraded question merely because the index clamps.
-            waitingForReview = shortReviews.nextDate != nil
-            isComplete = !waitingForReview
+        if saved.isComplete {
+            waitingForReview = false; isComplete = true
+        } else {
+            waitingForReview = remaining.isEmpty && shortReviews.nextDate != nil
+            isComplete = remaining.isEmpty && !waitingForReview
         }
-        if waitingForReview && shortReviews.nextDate == nil { waitingForReview = false; isComplete = true }
-        if studyQueue.isEmpty { isComplete = true }
         activeSession = saved
         activeSession?.originalCardIDs = allCards.map(\.id)
         choosingSession = false
@@ -236,7 +315,7 @@ struct DeckStudyView: View {
 
     private func closePractice() { checkpoint(immediately: true); dismiss() }
     private func localState(for card: Flashcard) -> AnkiReviewState {
-        localAnkiStates[card.id].flatMap { try? JSONDecoder().decode(AnkiReviewState.self, from: $0) } ?? card.ankiReviewState
+        card.ankiPracticeReviewState
     }
 
     private func prefetchAnki() {
@@ -284,8 +363,16 @@ struct DeckStudyView: View {
     }
     private func rateAnki(_ card: Flashcard, rating: AnkiReviewRating) {
         guard card.cardType == .anki, isRevealed, !isGraded else { return }
-        let option = AnkiReviewScheduling.option(for: rating, state: localState(for: card), at: Date())
-        localAnkiStates[card.id] = try? JSONEncoder().encode(option.nextState)
+        let option: AnkiReviewOption
+        do {
+            option = try card.recordAnkiPracticeReview(rating: rating)
+            try context.save()
+        } catch {
+            context.rollback()
+            reviewError = "Your Anki rating couldn’t be saved. Please try that rating again."
+            return
+        }
+        localAnkiStates[card.id] = card.ankiPracticeReviewStateData
         shortReviews.schedule(card.id, due: option.nextReviewDate, repeatsInSession: option.shouldRepeatInSession)
         ratingCounts[rating, default: 0] += 1; reviewedAnkiIDs.insert(card.id)
         recordPracticeAnswer(card, correct: rating.wasCorrect)
@@ -325,6 +412,12 @@ struct DeckStudyView: View {
         let lookup = Dictionary(allCards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let cards = ids.compactMap { lookup[$0] }
         let index = min(cardIndex + 1, studyQueue.count)
+        // A due repeat replaces any later copy rather than appearing twice.
+        let readyIDs = Set(cards.map(\.id))
+        let earlier = Array(studyQueue.prefix(index))
+        let later = studyQueue.dropFirst(index).filter { !readyIDs.contains($0.id) }
+        studyQueue = earlier + later
+        queueIDs = studyQueue.map(\.id)
         studyQueue.insert(contentsOf: cards, at: index); queueIDs.insert(contentsOf: cards.map(\.id), at: index)
     }
     private func resumeLearning(early: Bool = false) {

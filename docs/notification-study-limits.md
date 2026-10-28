@@ -12,6 +12,14 @@ The last graded answer remains visible until Finish is tapped. Finishing a batch
 offers app practice; reaching the daily goal also removes today's pending study
 alerts while retaining future days. Synthetic tutorial and test alerts are exempt.
 
+Anki notification questions prioritize due learning/relearning steps, then due
+reviews, then new cards. The first question is selected for its scheduled slot
+and resolved again when the alert opens using the current saved review state.
+Selection stays within the scheduled deck/folder and excludes cards already
+handled in that notification batch. Reviews use the same daily answer allowance
+as new cards. A one-minute learning step makes a card eligible again; it does not
+create an extra notification or shorten the delivery spacing.
+
 ## Delivery policy
 
 - The explicit daily alert ceiling defaults to 20 and accepts 1 through 30.
@@ -34,15 +42,31 @@ unavailable state pauses scheduling rather than silently resetting the quota.
 
 ## Independent practice
 
-`DeckStudyView` uses local session answers and Anki review states. It never writes
+`DeckStudyView` uses local session answers and a separate durable Anki practice
+state on each card. It never writes
 notification card mastery, review dates, the notification learning goal, or alert
 timeline answers. A notification handoff can acknowledge an already graded card
 without grading it again.
 
+`ankiReviewStateData` retains notification learning;
+`ankiPracticeReviewStateData` retains in-app learning. Each in-app Anki rating is
+saved before advancing. New practice sessions select due learning steps, then
+due reviews, then new cards from the practice state; future review cards keep
+their saved dates. Starting a session or changing the scheduled deck does not
+reset either track. Practice has no notification answer budget.
+
+Existing bookmarks migrate their latest rated Anki state once per card into the
+practice field. A resumed bookmark supplies the queue position and session
+answers, while the card supplies its latest learning state, so an older bookmark
+cannot rewind later ratings. Explicit Reset Progress clears both learning tracks
+and checkpoints. It stores a fresh practice state to prevent interrupted
+checkpoint cleanup from restoring discarded ratings.
+
 The latest three practice sessions are saved per deck under Application Support:
 `LearnAlert/PracticeSessions/<deck UUID>.json`. They retain stable card order,
 position, reviewed-card totals, answers, reveal/hint state, typed answers, and
-local Anki repeats. Encoding and atomic writes run off the UI actor. Deleting or
+Anki repeat bookmarks. The three-session limit does not limit durable per-card
+learning history. Encoding and atomic writes run off the UI actor. Deleting or
 resetting a deck removes its checkpoints; deleting all decks removes all sessions.
 
 The session picker shows Resume for unfinished sessions, Results for completed

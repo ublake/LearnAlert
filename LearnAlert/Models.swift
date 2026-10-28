@@ -253,6 +253,8 @@ class Flashcard {
     @Attribute(.externalStorage) var ankiContentData: Data?
     /// Optional additive storage keeps existing local and CloudKit cards migratable.
     var ankiReviewStateData: Data?
+    /// In-app practice keeps its own durable schedule, separate from alerts and mastery.
+    var ankiPracticeReviewStateData: Data?
     var sourceAnkiCardID: String?
     var sourceCourseCardID: String?
     /// Authored topic identity survives flattening a language level into one study deck.
@@ -282,6 +284,19 @@ class Flashcard {
 
     func ankiReviewOptions(at date: Date = Date()) -> [AnkiReviewOption] {
         AnkiReviewScheduling.options(for: ankiReviewState, at: date)
+    }
+
+    var ankiPracticeReviewState: AnkiReviewState {
+        ankiPracticeReviewStateData.flatMap { try? JSONDecoder().decode(AnkiReviewState.self, from: $0) } ?? .init()
+    }
+
+    /// Only the practice state changes here. Notification dates, mastery and totals stay intact.
+    @discardableResult
+    func recordAnkiPracticeReview(rating: AnkiReviewRating, at date: Date = Date()) throws -> AnkiReviewOption {
+        let option = AnkiReviewScheduling.option(for: rating, state: ankiPracticeReviewState, at: date)
+        guard cardType == .anki else { return option }
+        ankiPracticeReviewStateData = try JSONEncoder().encode(option.nextState)
+        return option
     }
 
     @discardableResult
@@ -579,6 +594,11 @@ class Flashcard {
         longestStreak = 0
         lastReviewedDate = nil
         ankiReviewStateData = nil
+        // A fresh encoded value also prevents old session bookmarks from migrating
+        // forgotten practice ratings back after an interrupted checkpoint cleanup.
+        if cardType == .anki {
+            ankiPracticeReviewStateData = try? JSONEncoder().encode(AnkiReviewState())
+        }
     }
 }
 
