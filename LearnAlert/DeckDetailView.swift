@@ -91,6 +91,17 @@ struct DeckDetailView: View {
     @State private var previewError: String?
     @State private var previewRevision = 0
     @State private var previewOffset = 0
+    @State private var tutorialCoachIndex: Int?
+
+    private var tutorialCoachSteps: [TutorialCoachStep] {
+        guard homeTutorialStep == 2 else { return [] }
+        return [
+            TutorialCoachStep(target: .deckTools, title: "View, edit & study",
+                message: "Browse your cards, make changes, or start a study session here."),
+            TutorialCoachStep(target: .deckBack, title: "Back to your library",
+                message: "Tap Back when you’re ready to choose your alerts.")
+        ]
+    }
 
     private struct PreviewRequest: Equatable {
         let deckID: UUID
@@ -106,34 +117,6 @@ struct DeckDetailView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                if homeTutorialStep == 2 {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.up.left")
-                            .font(.system(size: 13, weight: .bold))
-                            .accessibilityHidden(true)
-                        Text("Step 2 of 3: Tap Back above to schedule alerts")
-                            .font(.custom("Poppins-SemiBold", size: 11))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(
-                        LinearGradient(
-                            colors: [LearnAlertStyle.indigo, LearnAlertStyle.sky],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        in: Capsule()
-                    )
-                    .shadow(color: LearnAlertStyle.sky.opacity(0.6), radius: 6, y: 2)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    .padding(.bottom, 6)
-                    .transition(.opacity.combined(with: .scale))
-                }
-
                 deckHeader(snapshot: snapshot)
 
                 // Inline Rename Deck Banner
@@ -285,6 +268,14 @@ struct DeckDetailView: View {
             .disabled(homeTutorialStep > 0)
             .allowsHitTesting(homeTutorialStep == 0)
         }
+        // This points just below the native Back control without replacing it.
+        .overlay(alignment: .topLeading) {
+            Color.clear.frame(width: 44, height: 1)
+                .tutorialCoachTarget(.deckBack)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .tutorialCoach(steps: tutorialCoachSteps, activeIndex: $tutorialCoachIndex)
         .navigationTitle(deck.name)
         .navigationBarTitleDisplayMode(.inline)
         .task(id: PreviewRequest(deckID: deck.id, search: searchText, section: selectedSectionFilter, revision: previewRevision)) {
@@ -536,6 +527,7 @@ struct DeckDetailView: View {
                 deckAction("Study", icon: "play.fill", prominent: true) { showingStudy = true }
                     .disabled(snapshot.cardCount == 0)
             }
+            .tutorialCoachTarget(.deckTools)
         }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
     }
 

@@ -278,6 +278,7 @@ struct HomeLibraryView: View {
     @State private var deckPendingDeletion: Deck?
     @State private var homeAlertMessage: String?
     @State private var showingQuickScheduleTipToast = false
+    @State private var tutorialCoachIndex: Int?
 
     @AppStorage("hasSeenQuickScheduleSwitchTip") private var hasSeenQuickScheduleSwitchTip = false
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
@@ -296,6 +297,20 @@ struct HomeLibraryView: View {
 
 
     private var ordinaryDecks: [Deck] { allDecks }
+
+    private var dimsTutorialLibrary: Bool {
+        homeTutorialStep == 4 || (homeTutorialStep == 3 && tutorialCoachIndex == 1)
+    }
+
+    private var tutorialCoachSteps: [TutorialCoachStep] {
+        guard homeTutorialStep == 3 else { return [] }
+        return [
+            TutorialCoachStep(target: .homeLibrary, title: "Your library lives here",
+                message: "All your decks stay together here. Pick one to view its cards or study."),
+            TutorialCoachStep(target: .homeSchedule, title: "Set your study alerts",
+                message: "Choose a deck and schedule its alerts here. Try a test alert to see how it works.")
+        ]
+    }
 
     private enum HomeLibraryItem: Identifiable, Equatable {
         case deck(Deck)
@@ -376,9 +391,10 @@ struct HomeLibraryView: View {
                             homeTutorialStep = 0
                         }
                     } label: {
-                        Text("Skip Tour")
+                        Text(homeTutorialStep == 3 ? "Skip" : "Skip Tour")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
+                            .opacity(homeTutorialStep == 3 ? 0.6 : 1)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
                     }
@@ -440,6 +456,7 @@ struct HomeLibraryView: View {
             targetDeckId: $targetDeckId,
             isScheduling: isSchedulingAlerts,
             homeTutorialStep: homeTutorialStep,
+            isTutorialScheduleHighlighted: homeTutorialStep == 3 && tutorialCoachIndex == 1,
             showSettings: { showingAlertSettings = true },
             showDeckRequirement: {
                 withAnimation(.snappy) { showingDeckRequirementAlert = true }
@@ -447,7 +464,7 @@ struct HomeLibraryView: View {
             schedule: { quickSchedule($0, fromDeckCard: false) }
         )
         .padding(.horizontal, 20)
-        .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : 1.0)
+        .opacity((homeTutorialStep == 1 || homeTutorialStep == 4) ? 0.20 : homeTutorialStep == 3 && tutorialCoachIndex == 0 ? 0.35 : 1.0)
         .blur(radius: (homeTutorialStep == 1 || homeTutorialStep == 4) ? 2.0 : 0)
         .disabled(homeTutorialStep != 0 && homeTutorialStep != 3)
         .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 3)
@@ -515,11 +532,12 @@ struct HomeLibraryView: View {
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
-                .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
-                .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
+                .opacity(dimsTutorialLibrary ? 0.18 : 1.0)
+                .blur(radius: dimsTutorialLibrary ? 2.5 : 0)
                 .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
             }
             .padding(.horizontal, 20)
+            .tutorialCoachTarget(.homeLibrary)
 
             if unpinnedDecks.isEmpty && pinnedItems.isEmpty {
                 EmptyLibraryCard(
@@ -528,8 +546,8 @@ struct HomeLibraryView: View {
                     onBrowseDiscover: { selectedTab = 1 }
                 )
                 .padding(.horizontal, 20)
-                .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
-                .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
+                .opacity(dimsTutorialLibrary ? 0.18 : 1.0)
+                .blur(radius: dimsTutorialLibrary ? 2.5 : 0)
                 .disabled(homeTutorialStep > 0)
                 .allowsHitTesting(homeTutorialStep == 0)
             } else {
@@ -542,8 +560,8 @@ struct HomeLibraryView: View {
                     ForEach(unpinnedItems) { item in
                         libraryCard(item, pinned: false)
                     }
-                    .opacity((homeTutorialStep == 3 || homeTutorialStep == 4) ? 0.18 : 1.0)
-                    .blur(radius: (homeTutorialStep == 3 || homeTutorialStep == 4) ? 2.5 : 0)
+                    .opacity(dimsTutorialLibrary ? 0.18 : 1.0)
+                    .blur(radius: dimsTutorialLibrary ? 2.5 : 0)
                     .allowsHitTesting(homeTutorialStep == 0 || homeTutorialStep == 1)
                 }
                 .padding(.horizontal, 20)
@@ -704,6 +722,7 @@ struct HomeLibraryView: View {
             }
             .blur(radius: showingDeckRequirementAlert ? 3 : 0)
             .animation(.easeInOut(duration: 0.25), value: showingDeckRequirementAlert)
+            .tutorialCoach(steps: tutorialCoachSteps, activeIndex: $tutorialCoachIndex)
             }
 
             tourOverlays
@@ -1137,6 +1156,7 @@ private struct HomeAlertSetupCard: View {
     @Binding var targetDeckId: String
     var isScheduling = false
     var homeTutorialStep: Int = 0
+    var isTutorialScheduleHighlighted = false
     let showSettings: () -> Void
     let showDeckRequirement: () -> Void
     let schedule: (HomeAlertTarget) -> Void
@@ -1152,23 +1172,6 @@ private struct HomeAlertSetupCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if homeTutorialStep == 3 {
-                HStack(spacing: 6) {
-                    Image(systemName: "hand.tap.fill")
-                        .font(.system(size: 11, weight: .bold))
-                    Text("Step 3 of 3: Tap Schedule Alerts to try a live alert")
-                        .font(.custom("Poppins-SemiBold", size: 11))
-                    Image(systemName: "arrow.down")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(LearnAlertStyle.appAccentInk)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(LearnAlertStyle.appAccent, in: Capsule())
-                .shadow(color: LearnAlertStyle.appAccent.opacity(0.6), radius: 6, y: 2)
-                .transition(.opacity.combined(with: .scale))
-            }
-
             Group {
                 if engine.isActive {
                     activeContent
@@ -1181,7 +1184,7 @@ private struct HomeAlertSetupCard: View {
             .padding(16)
             .appCardSurface(cornerRadius: 20)
             .overlay {
-                if homeTutorialStep == 3 {
+                if isTutorialScheduleHighlighted {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(LearnAlertStyle.appAccent, lineWidth: 2)
                         .shadow(color: LearnAlertStyle.appAccent.opacity(0.5), radius: 10)
@@ -1267,12 +1270,13 @@ private struct HomeAlertSetupCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(homeTutorialStep == 3 ? LearnAlertStyle.appAccent : Color.clear, lineWidth: homeTutorialStep == 3 ? 2.5 : 0)
-                        .shadow(color: homeTutorialStep == 3 ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
+                        .stroke(isTutorialScheduleHighlighted ? LearnAlertStyle.appAccent : Color.clear, lineWidth: isTutorialScheduleHighlighted ? 2.5 : 0)
+                        .shadow(color: isTutorialScheduleHighlighted ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
                 )
                 .lightModeOutline(cornerRadius: 12, opacity: selectedTarget == nil ? 0.65 : 1)
-                .scaleEffect(homeTutorialStep == 3 && pulseScheduleButton ? 1.025 : 1.0)
+                .scaleEffect(isTutorialScheduleHighlighted && pulseScheduleButton ? 1.025 : 1.0)
                 .disabled(selectedTarget == nil || isScheduling)
+                .tutorialCoachTarget(.homeSchedule)
 
                 Button(action: showSettings) {
                     Image(systemName: "slider.horizontal.3")
