@@ -24,7 +24,7 @@ struct HomeMasteryBars: View {
     private func segment(_ icon: String, height: CGFloat, light: String, dark: String, topInset: CGFloat = 0) -> some View {
         let tint = Color(hex: colorScheme == .dark ? dark : light)
         return Rectangle()
-            .fill(tint.opacity(colorScheme == .dark ? 0.9 : 0.75))
+            .fill(tint.opacity(colorScheme == .dark ? 0.54 : 0.45))
             .frame(height: height)
             .overlay {
                 Image(systemName: icon)
