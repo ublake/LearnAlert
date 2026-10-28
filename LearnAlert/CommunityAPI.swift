@@ -64,8 +64,46 @@ struct CommunityDeckPayload: Codable, Identifiable {
 }
 
 enum CommunityDeckSort: String, CaseIterable {
-    case popular, recent
-    var title: String { self == .popular ? "Popular" : "Recent" }
+    case popular, likes, recent, oldest
+    var title: String {
+        switch self {
+        case .popular: "Downloads"
+        case .likes: "Likes"
+        case .recent: "Newest first"
+        case .oldest: "Oldest first"
+        }
+    }
+}
+
+enum CommunityDeckLanguage: String, CaseIterable, Identifiable {
+    case all = ""
+    case english = "en"
+    case spanish = "es"
+    case french = "fr"
+    case german = "de"
+    case italian = "it"
+    case portuguese = "pt"
+    case korean = "ko"
+    case japanese = "ja"
+    case chinese = "zh"
+    case arabic = "ar"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: "All languages"
+        case .english: "English"
+        case .spanish: "Spanish"
+        case .french: "French"
+        case .german: "German"
+        case .italian: "Italian"
+        case .portuguese: "Portuguese"
+        case .korean: "Korean"
+        case .japanese: "Japanese"
+        case .chinese: "Chinese"
+        case .arabic: "Arabic"
+        }
+    }
 }
 
 struct CommunityDeckPage: Decodable {
@@ -190,10 +228,11 @@ struct CommunityAPI {
         return try await jsonRequest("auth/apple", method: "POST", body: Body(identityToken: identityToken, nonce: nonce, givenName: givenName, authorizationCode: authorizationCode))
     }
 
-    func list(search: String, category: String, offset: Int = 0, sort: CommunityDeckSort = .recent, limit: Int = 30, token: String? = nil) async throws -> CommunityDeckPage {
+    func list(search: String, category: String, language: CommunityDeckLanguage = .all, offset: Int = 0, sort: CommunityDeckSort = .recent, limit: Int = 30, token: String? = nil) async throws -> CommunityDeckPage {
         var components = URLComponents(url: endpoint("decks"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "q", value: search),
                                  URLQueryItem(name: "category", value: category == "All" ? "" : category),
+                                 URLQueryItem(name: "language", value: language.rawValue),
                                  URLQueryItem(name: "offset", value: String(offset)),
                                  URLQueryItem(name: "sort", value: sort.rawValue),
                                  URLQueryItem(name: "limit", value: String(limit))]

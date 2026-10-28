@@ -10,7 +10,6 @@ struct PremadeDecksView: View {
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var addedDeckName: String?
     @State private var showingAllCommunity = false
@@ -108,9 +107,9 @@ struct PremadeDecksView: View {
                 .foregroundStyle(StudyStudioStyle.ink)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHGrid(
-                    rows: Array(repeating: GridItem(.fixed(dynamicTypeSize.isAccessibilitySize ? 118 : 78), alignment: .top), count: 2),
+                    rows: Array(repeating: GridItem(.fixed(43), spacing: 6, alignment: .top), count: 2),
                     alignment: .top,
-                    spacing: 16
+                    spacing: 12
                 ) {
                     ForEach(DiscoverLanguageChoice.choices) { choice in
                         let course = CourseCurriculumCatalog.courses.first {
@@ -127,11 +126,16 @@ struct PremadeDecksView: View {
                         .disabled(course == nil)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(choice.name)
-                        .accessibilityValue(course == nil ? "Coming soon" : "Available")
+                        .accessibilityValue(course == nil ? "Not available yet" : "Available")
                         .accessibilityHint(course == nil ? "" : "Opens \(choice.name) decks")
                     }
                 }
             }
+            Text("More languages on the way")
+                .font(StudyStudioStyle.heading(23))
+                .foregroundStyle(StudyStudioStyle.ink.opacity(0.16))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
         }
     }
 
@@ -228,36 +232,28 @@ private struct DiscoverLanguageChoice: Identifiable {
         Self(name: "Spanish", flagAssetName: "FlagSpain"),
         Self(name: "Korean", flagAssetName: "FlagKorea"),
         Self(name: "French", flagAssetName: "FlagFrance"),
-        Self(name: "Japanese", flagAssetName: "FlagJapan")
+        Self(name: "Japanese", flagAssetName: "FlagJapan"),
+        Self(name: "English", flagAssetName: "FlagUnitedKingdom"),
+        Self(name: "German", flagAssetName: "FlagGermany"),
+        Self(name: "Italian", flagAssetName: "FlagItaly"),
+        Self(name: "Portuguese", flagAssetName: "FlagPortugal"),
+        Self(name: "Chinese", flagAssetName: "FlagChina"),
+        Self(name: "Arabic", flagAssetName: "FlagSaudiArabia")
     ]
 }
 
 private struct DiscoverLanguageButton: View {
     let choice: DiscoverLanguageChoice
     let available: Bool
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
     var body: some View {
-        VStack(spacing: 3) {
-            Image(choice.flagAssetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 64, height: 43)
-                .saturation(available ? 1 : 0.1)
-                .opacity(available ? 1 : 0.35)
-                .accessibilityHidden(true)
-            Text(choice.name)
-                .font(StudyStudioStyle.heading(12))
-                .foregroundStyle(available ? StudyStudioStyle.ink : StudyStudioStyle.secondary)
-                .lineLimit(1)
-            if !available {
-                Text("Coming soon")
-                    .font(StudyStudioStyle.body(9))
-                    .foregroundStyle(StudyStudioStyle.secondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(width: dynamicTypeSize.isAccessibilitySize ? 112 : 64, alignment: .top)
-        .contentShape(Rectangle())
+        Image(choice.flagAssetName)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 64, height: 43)
+            .clipped()
+            .saturation(available ? 1 : 0.55)
+            .opacity(available ? 1 : 0.6)
+            .accessibilityHidden(true)
+            .contentShape(Rectangle())
     }
 }

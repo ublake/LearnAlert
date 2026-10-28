@@ -12,6 +12,7 @@ final class CommunityFeedStore: ObservableObject {
     static let pageSize = 20
     @Published var search = "" { didSet { if oldValue != search { invalidate() } } }
     @Published var category = "All" { didSet { if oldValue != category { invalidate() } } }
+    @Published var language: CommunityDeckLanguage = .all { didSet { if oldValue != language { invalidate() } } }
     @Published var sort: CommunityDeckSort = .popular { didSet { if oldValue != sort { invalidate() } } }
     @Published private(set) var decks: [CommunityDeckPayload] = []
     @Published private(set) var totalCount = 0
@@ -27,11 +28,12 @@ final class CommunityFeedStore: ObservableObject {
     private struct Query: Equatable {
         let search: String
         let category: String
+        let language: CommunityDeckLanguage
         let sort: CommunityDeckSort
         let token: String?
     }
     private var loadedQuery: Query?
-    private var query: Query { Query(search: search, category: category, sort: sort, token: viewerToken) }
+    private var query: Query { Query(search: search, category: category, language: language, sort: sort, token: viewerToken) }
     var hasMore: Bool { nextOffset != nil && loadedQuery == query }
     var canLoadMore: Bool { hasMore && !isLoading && !isLoadingMore }
     var paginationID: String { "\(requestID)-\(nextOffset ?? -1)" }
@@ -59,6 +61,7 @@ final class CommunityFeedStore: ObservableObject {
         defer { if requestID == id { isLoading = false } }
         do {
             let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
+                language: selectedQuery.language,
                 offset: 0, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
             guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
             try validateNextOffset(page.nextOffset, after: 0)
@@ -80,6 +83,7 @@ final class CommunityFeedStore: ObservableObject {
         defer { if requestID == id { isLoadingMore = false } }
         do {
             let page = try await api.list(search: selectedQuery.search, category: selectedQuery.category,
+                language: selectedQuery.language,
                 offset: offset, sort: selectedQuery.sort, limit: Self.pageSize, token: selectedQuery.token)
             guard !Task.isCancelled, requestID == id, query == selectedQuery else { return }
             try validateNextOffset(page.nextOffset, after: offset)
@@ -150,7 +154,6 @@ struct CommunityFeedView: View {
     var showsTitle = true
     var searchAction: (() -> Void)? = nil
     var searchExpanded = false
-    @Namespace private var sortNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
     @State private var selectedPreview: CommunityDeckPayload?
@@ -163,10 +166,10 @@ struct CommunityFeedView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }
-                else { sortSelector }
+                else { sortSummary }
                 Spacer(minLength: 4)
                 HStack(spacing: 0) {
-                    categoryFilter
+                    feedFilter
                     if let searchAction {
                         Button(action: searchAction) {
                             Image(systemName: searchExpanded ? "xmark" : "magnifyingglass")
@@ -181,7 +184,7 @@ struct CommunityFeedView: View {
                     }
                 }
             }
-            if showsTitle { sortSelector }
+            if showsTitle { sortSummary }
             if showsSearchField {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(LearnAlertStyle.textSecondary)
@@ -202,9 +205,9 @@ struct CommunityFeedView: View {
                 }.frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if store.hasLoaded && store.decks.isEmpty {
                 VStack(spacing: 8) {
-                    Text(store.search.isEmpty && store.category == "All" ? "No shared decks yet" : "No matching decks").font(.headline)
-                    if !store.search.isEmpty || store.category != "All" {
-                        Button("Clear filters") { store.search = ""; store.category = "All" }.frame(minHeight: 44)
+                    Text(store.search.isEmpty && store.category == "All" && store.language == .all ? "No shared decks yet" : "No matching decks").font(.headline)
+                    if !store.search.isEmpty || store.category != "All" || store.language != .all {
+                        Button("Clear filters") { store.search = ""; store.category = "All"; store.language = .all }.frame(minHeight: 44)
                     }
                 }.frame(maxWidth: .infinity).padding(.vertical, 24)
             }
@@ -226,7 +229,7 @@ struct CommunityFeedView: View {
 
         }
         .foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-        .task(id: "\(store.sort.rawValue):\(store.category):\(store.search):\(session.token ?? "anonymous")") {
+        .task(id: "\(store.sort.rawValue):\(store.category):\(store.language.rawValue):\(store.search):\(session.token ?? "anonymous")") {
             store.setViewer(token: session.token)
             do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             await store.load()
@@ -270,42 +273,48 @@ struct CommunityFeedView: View {
         }
     }
 
-    private var sortSelector: some View {
-        HStack(spacing: 16) {
-            ForEach(CommunityDeckSort.allCases, id: \.rawValue) { sort in
-                let selected = store.sort == sort
-                Button {
-                    guard !selected else { return }
-                    HapticFeedback.impact(.light)
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { store.sort = sort }
-                } label: {
-                    Text(sort.title).font(.subheadline.weight(selected ? .semibold : .medium))
-                        .foregroundStyle(selected ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-                        .frame(minHeight: 44)
-                        .overlay(alignment: .bottom) {
-                            if selected {
-                                Capsule().fill(LearnAlertStyle.appAccentForeground).frame(height: 3)
-                                    .matchedGeometryEffect(id: "sort", in: sortNamespace)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(sort.title) shared decks")
-                .accessibilityAddTraits(selected ? .isSelected : [])
+    private var sortSummary: some View {
+        HStack(spacing: 6) {
+            Text(store.sort.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(LearnAlertStyle.textPrimary)
+            if store.language != .all {
+                Text("· \(store.language.title)")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
             }
         }
+        .lineLimit(1)
+        .frame(minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
-    private var categoryFilter: some View {
+    private var feedFilter: some View {
         Menu {
-            Picker("Category", selection: $store.category) {
-                ForEach(Self.categories, id: \.self) { Text($0).tag($0) }
+            Section("Sort by") {
+                ForEach([CommunityDeckSort.likes, .popular, .recent, .oldest], id: \.rawValue) { sort in
+                    Button {
+                        HapticFeedback.selection()
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { store.sort = sort }
+                    } label: {
+                        if store.sort == sort { Label(sort.title, systemImage: "checkmark") }
+                        else { Text(sort.title) }
+                    }
+                }
+            }
+            Divider()
+            Menu {
+                Picker("Language", selection: $store.language) {
+                    ForEach(CommunityDeckLanguage.allCases) { language in
+                        Text(language.title).tag(language)
+                    }
+                }
+            } label: {
+                Label("Languages", systemImage: "globe")
             }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease")
-                if store.category != "All" { Text(store.category).lineLimit(1) }
                 Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
             }
             .font(.subheadline.weight(.medium))
@@ -314,7 +323,8 @@ struct CommunityFeedView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Filter shared decks").accessibilityValue(store.category)
+        .accessibilityLabel("Filter shared decks")
+        .accessibilityValue("\(store.sort.title), \(store.language.title)")
     }
 
     private func isAdded(_ deck: CommunityDeckPayload) -> Bool { libraryDecks.contains { $0.sourceCommunityID == deck.id } }
@@ -364,7 +374,7 @@ struct CommunityDeckCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(deck.name)
-        .accessibilityValue("\(deck.cardCount) cards, \(max(0, deck.imageCount ?? 0)) images, \(max(0, deck.audioCount ?? 0)) audio files")
+        .accessibilityValue(accessibleCounts)
         .accessibilityHint("Preview this shared deck")
     }
 
@@ -382,15 +392,30 @@ struct CommunityDeckCard: View {
             count(deck.cardCount, symbol: "rectangle.on.rectangle", tint: colorScheme == .dark
                 ? Color(red: 0.57, green: 0.72, blue: 0.86)
                 : Color(red: 0.22, green: 0.42, blue: 0.63))
-            count(deck.imageCount ?? 0, symbol: "photo", tint: colorScheme == .dark
-                ? Color(red: 0.74, green: 0.66, blue: 0.82)
-                : Color(red: 0.46, green: 0.36, blue: 0.59))
-            count(deck.audioCount ?? 0, symbol: "mic", tint: colorScheme == .dark
-                ? Color(red: 0.55, green: 0.74, blue: 0.69)
-                : Color(red: 0.23, green: 0.46, blue: 0.42))
+            if let images = deck.imageCount, images > 0 {
+                count(images, symbol: "photo", tint: colorScheme == .dark
+                    ? Color(red: 0.74, green: 0.66, blue: 0.82)
+                    : Color(red: 0.46, green: 0.36, blue: 0.59))
+            }
+            if let audio = deck.audioCount, audio > 0 {
+                count(audio, symbol: "mic", tint: colorScheme == .dark
+                    ? Color(red: 0.55, green: 0.74, blue: 0.69)
+                    : Color(red: 0.23, green: 0.46, blue: 0.42))
+            }
+            count(deck.downloadCount, symbol: "arrow.down.circle", tint: colorScheme == .dark
+                ? Color(red: 0.72, green: 0.73, blue: 0.77)
+                : Color(red: 0.42, green: 0.44, blue: 0.50))
         }
         .font(.caption.weight(.medium))
         .fixedSize()
+    }
+
+    private var accessibleCounts: String {
+        var values = ["\(max(0, deck.cardCount)) cards"]
+        if let images = deck.imageCount, images > 0 { values.append("\(images) images") }
+        if let audio = deck.audioCount, audio > 0 { values.append("\(audio) audio files") }
+        values.append("\(max(0, deck.downloadCount)) downloads")
+        return values.joined(separator: ", ")
     }
 
     private func count(_ value: Int, symbol: String, tint: Color) -> some View {
