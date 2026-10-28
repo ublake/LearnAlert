@@ -115,6 +115,7 @@
 				AnkiCardView.swift,
 				AnkiReviewAlerts.swift,
 				AnkiReviewScheduling.swift,
+				AnkiStudyPreferences.swift,
 				CardAudioStore.swift,
 				CardFieldMedia.swift,
 				CatalogGuideModels.swift,

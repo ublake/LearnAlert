@@ -377,7 +377,7 @@ private struct AnkiPreviewView: View {
                     let card = cards[index]
                     Picker("Side", selection: $showingBack) { Text("Front").tag(false); Text("Back").tag(true) }
                         .pickerStyle(.segmented).padding(.horizontal, 20)
-                    AnkiCardView(content: AnkiCardContent(frontHTML: card.front, backHTML: card.back, css: card.css, mediaFolder: "", templateOrdinal: card.templateOrdinal, noteType: card.noteType, tags: card.tags), showingBack: showingBack, mediaDirectory: mediaDirectory)
+                    AnkiCardView(content: AnkiCardContent(frontHTML: card.front, backHTML: card.back, css: card.css, mediaFolder: "", templateOrdinal: card.templateOrdinal, noteType: card.noteType, tags: card.tags, frontSideRanges: card.frontSideRanges), showingBack: showingBack, mediaDirectory: mediaDirectory)
                         .clipShape(RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 20)
                     HStack {
                         Button { index -= 1; showingBack = false } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.disabled(index == 0)

@@ -12,7 +12,9 @@ struct AnkiCardView: View {
     var compact = false
     var centered = false
     var animatedReveal = false
+    var presentation: AnkiStudyPresentation = .revealBelow
     var loadingChanged: ((Bool) -> Void)? = nil
+    var onCardTap: (() -> Void)? = nil
     private let preparedDocument: String?
     private let preparedMediaIndex: [String: String]?
     @StateObject private var localRenderer: AnkiCardRenderer
@@ -22,10 +24,12 @@ struct AnkiCardView: View {
     init(content: AnkiCardContent, showingBack: Bool, mediaDirectory: URL? = nil,
          compact: Bool = false, centered: Bool = false, animatedReveal: Bool = false,
          renderer: AnkiCardRenderer? = nil, loadingChanged: ((Bool) -> Void)? = nil,
-         preparedDocument: String? = nil, preparedMediaIndex: [String: String]? = nil) {
+         preparedDocument: String? = nil, preparedMediaIndex: [String: String]? = nil,
+         presentation: AnkiStudyPresentation = .revealBelow, onCardTap: (() -> Void)? = nil) {
         self.content = content; self.showingBack = showingBack; self.mediaDirectory = mediaDirectory
         self.compact = compact; self.centered = centered; self.animatedReveal = animatedReveal
         self.loadingChanged = loadingChanged
+        self.presentation = presentation; self.onCardTap = onCardTap
         self.preparedDocument = preparedDocument; self.preparedMediaIndex = preparedMediaIndex
         _localRenderer = StateObject(wrappedValue: renderer ?? AnkiCardRenderer())
     }
@@ -34,17 +38,17 @@ struct AnkiCardView: View {
         AnkiRenderedSurface(renderer: localRenderer,
             document: preparedDocument ?? Self.document(content: content, showingBack: showingBack,
                 configuration: .init(dark: colorScheme == .dark, compact: compact, centered: centered,
-                    animatedReveal: animatedReveal, reduceMotion: reduceMotion)),
+                    animatedReveal: animatedReveal, reduceMotion: reduceMotion, presentation: presentation)),
             directory: mediaDirectory ?? content.mediaURL, compact: compact, loadingChanged: loadingChanged,
-            mediaIndex: preparedMediaIndex)
+            mediaIndex: preparedMediaIndex, onCardTap: onCardTap)
     }
 
     nonisolated static func document(content: AnkiCardContent, showingBack: Bool, configuration: AnkiRenderConfiguration) -> String {
         let dark = configuration.dark, compact = configuration.compact, centered = configuration.centered
         let animatedReveal = configuration.animatedReveal, reduceMotion = configuration.reduceMotion
-        let html = showingBack ? content.backHTML : content.frontHTML
+        let html = showingBack ? (configuration.presentation == .tapToFlip ? content.flipBackHTML : content.backHTML) : content.frontHTML
         let cardHTML = "<main id=\"learnalert-anki-content\">\(html)</main>"
-        let revealStyle = animatedReveal && showingBack && !reduceMotion
+        let revealStyle = configuration.presentation == .revealBelow && animatedReveal && showingBack && !reduceMotion
             ? "@keyframes learnalertReveal { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } } #learnalert-anki-content { animation:learnalertReveal 280ms cubic-bezier(.2,.8,.2,1) both; }"
             : ""
         let hasMath = ["\\(", "\\[", "[latex]", "[$]", "[$$]"].contains { html.contains($0) }
@@ -82,7 +86,38 @@ struct AnkiCardView: View {
           {left:'[$$]',right:'[/$$]',display:true},{left:'[$]',right:'[/$]',display:false},
           {left:'[latex]',right:'[/latex]',display:true}
         ],throwOnError:false,trust:false,maxExpand:1000});}
-        </script><script>\(nativeThemeScript(dark: dark))</script></body></html>
+        </script><script>\(nativeThemeScript(dark: dark))</script>\(configuration.presentation == .tapToFlip ? "<script>" + cardTapScript + "</script>" : "")</body></html>
+        """
+    }
+
+    /// Listen in the document, rather than covering WebKit with a native button.
+    /// Template controls, media, text selection and scrolling keep their own input.
+    nonisolated private static var cardTapScript: String {
+        """
+        (() => {
+          const interactive='a,button,input,textarea,select,option,label,summary,details,audio,video,[contenteditable]:not([contenteditable="false"]),[role="button"],[role="link"],[onclick],[data-sound],[data-speech],.anki-sound';
+          let start=null, moved=false, lastScroll=-1000;
+          document.addEventListener('pointerdown',event=>{
+            if(!event.isPrimary){moved=true;return;}
+            if(event.button!==0){start=null;return;}
+            start={x:event.clientX,y:event.clientY,time:performance.now()};moved=false;
+          },{passive:true});
+          document.addEventListener('pointermove',event=>{
+            if(start && Math.hypot(event.clientX-start.x,event.clientY-start.y)>10)moved=true;
+          },{passive:true});
+          document.addEventListener('pointercancel',()=>{start=null;moved=true;},{passive:true});
+          document.addEventListener('scroll',()=>{lastScroll=performance.now();moved=true;},{capture:true,passive:true});
+          document.addEventListener('click',event=>{
+            const target=event.target instanceof Element?event.target:event.target.parentElement;
+            const selection=window.getSelection();
+            const blocked=!event.isTrusted || event.defaultPrevented || !target || target.closest(interactive) ||
+              (selection && !selection.isCollapsed) || moved || performance.now()-lastScroll<220 ||
+              (start && performance.now()-start.time>700);
+            start=null;
+            if(blocked)return;
+            window.webkit.messageHandlers.ankiCardTap.postMessage({kind:'tap'});
+          });
+        })();
         """
     }
 
@@ -215,7 +250,27 @@ struct AnkiCardView: View {
         var directory: URL?
         var media: AnkiMediaSchemeHandler?
         var permitsPlayback = false
+        var documentReady = false
+        private(set) var surfaceID: UUID?
+        private var onCardTap: (() -> Void)?
         var loadCompleted: ((Error?) -> Void)?
+
+        func attach(surfaceID: UUID, onCardTap: (() -> Void)?) {
+            self.surfaceID = surfaceID
+            self.onCardTap = onCardTap
+            permitsPlayback = true
+        }
+
+        func detach(surfaceID: UUID) {
+            guard self.surfaceID == surfaceID else { return }
+            self.surfaceID = nil; onCardTap = nil; permitsPlayback = false
+            stop()
+        }
+
+        func detachAll() {
+            surfaceID = nil; onCardTap = nil; permitsPlayback = false
+            stop()
+        }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard !webView.isLoading else { return }
             let expectedDocument = document
@@ -239,6 +294,12 @@ struct AnkiCardView: View {
         func stop() { audio?.stop(); audio = nil; speech.stopSpeaking(at: .immediate) }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "ankiCardTap" {
+                guard message.frameInfo.isMainFrame, permitsPlayback, documentReady, surfaceID != nil,
+                      let body = message.body as? [String: String], body["kind"] == "tap" else { return }
+                onCardTap?()
+                return
+            }
             guard permitsPlayback, let body = message.body as? [String: String] else { return }
             stop()
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
@@ -261,12 +322,134 @@ struct AnkiCardView: View {
     }
 }
 
+/// Study-only presentation. Import previews and editors keep their separate,
+/// explicit front/back controls and never inherit a global flipping gesture.
+struct AnkiStudyCardView: View {
+    let content: AnkiCardContent
+    @Binding var showingBack: Bool
+    var mediaDirectory: URL? = nil
+    var compact = false
+    var centered = true
+    var renderer: AnkiCardRenderer? = nil
+    var isEnabled = true
+    var loadingChanged: ((Bool) -> Void)? = nil
+
+    @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var presentationRaw = AnkiStudyPresentation.revealBelow.rawValue
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.notificationDesignTheme) private var notificationDesign
+    @State private var displayedBack = false
+    @State private var angle: Double = 0
+    @State private var isTurning = false
+    @State private var isLoading = true
+    @State private var turnID = UUID()
+
+    init(content: AnkiCardContent, showingBack: Binding<Bool>, mediaDirectory: URL? = nil,
+         compact: Bool = false, centered: Bool = true, renderer: AnkiCardRenderer? = nil,
+         isEnabled: Bool = true, loadingChanged: ((Bool) -> Void)? = nil) {
+        self.content = content; _showingBack = showingBack; self.mediaDirectory = mediaDirectory
+        self.compact = compact; self.centered = centered; self.renderer = renderer
+        self.isEnabled = isEnabled; self.loadingChanged = loadingChanged
+        _displayedBack = State(initialValue: showingBack.wrappedValue)
+    }
+
+    private var presentation: AnkiStudyPresentation { AnkiStudyPresentation(rawValue: presentationRaw) ?? .revealBelow }
+    private var busy: Bool { isTurning || isLoading }
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: notificationDesign?.cornerRadius(20) ?? 20, style: .continuous)
+    }
+
+    var body: some View {
+        Group {
+            if presentation == .tapToFlip {
+                AnkiCardView(content: content, showingBack: displayedBack, mediaDirectory: mediaDirectory,
+                    compact: compact, centered: centered, animatedReveal: false, renderer: renderer,
+                    loadingChanged: { isLoading = $0 }, presentation: .tapToFlip, onCardTap: flip)
+                    .background(Color.primary.opacity(colorScheme == .dark ? 0.045 : 0.025), in: shape)
+                    .overlay(shape.strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.28 : 0.23), lineWidth: 1.2).allowsHitTesting(false))
+                    .clipShape(shape)
+                    .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityHint(showingBack ? "Tap the card background to return to the front." : "Tap the card background to show the answer.")
+                    .accessibilityAction(named: showingBack ? "Flip to front" : "Flip to answer") { flip() }
+            } else {
+                AnkiCardView(content: content, showingBack: showingBack, mediaDirectory: mediaDirectory,
+                    compact: compact, centered: centered, animatedReveal: true, renderer: renderer,
+                    loadingChanged: loadingChanged)
+            }
+        }
+        .onAppear {
+            displayedBack = showingBack
+            angle = 0
+            if presentation == .tapToFlip { loadingChanged?(busy) }
+        }
+        .onChange(of: showingBack) { _, back in
+            if presentation == .tapToFlip { turn(to: back) }
+            else { displayedBack = back }
+        }
+        .onChange(of: busy) { _, value in
+            if presentation == .tapToFlip { loadingChanged?(value) }
+        }
+        .onChange(of: presentation) { _, _ in
+            turnID = UUID(); isTurning = false; angle = 0; displayedBack = showingBack
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            turnID = UUID(); isTurning = false; angle = 0; displayedBack = showingBack
+        }
+        .onDisappear { turnID = UUID(); isTurning = false }
+    }
+
+    private func flip() {
+        guard isEnabled, !busy else { return }
+        // Revealing is deliberately separate from grading or changing review dates.
+        showingBack.toggle()
+    }
+
+    private func turn(to back: Bool) {
+        let id = UUID()
+        turnID = id
+        isTurning = true
+        loadingChanged?(true)
+        guard !reduceMotion else {
+            displayedBack = back; angle = 0
+            Task { @MainActor in
+                await Task.yield()
+                guard turnID == id else { return }
+                isTurning = false
+                loadingChanged?(isLoading)
+            }
+            return
+        }
+        withAnimation(.easeIn(duration: 0.18), completionCriteria: .logicallyComplete) {
+            angle = 90
+        } completion: {
+            guard turnID == id else { return }
+            // Swap exactly at the edge: the reader never sees the other side mirrored.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { displayedBack = back; angle = -90 }
+            Task { @MainActor in
+                await Task.yield()
+                guard turnID == id else { return }
+                withAnimation(.easeOut(duration: 0.22), completionCriteria: .logicallyComplete) {
+                    angle = 0
+                } completion: {
+                    guard turnID == id else { return }
+                    isTurning = false
+                }
+            }
+        }
+    }
+}
+
 nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
     var dark = false
     var compact = false
     var centered = true
     var animatedReveal = true
     var reduceMotion = false
+    var presentation: AnkiStudyPresentation = .revealBelow
 }
 
 /// One renderer for the current card and one for the next; never preload a whole deck.
@@ -303,6 +486,7 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
         coordinator.media = handler
         configuration.setURLSchemeHandler(handler, forURLScheme: "anki-media")
         configuration.userContentController.add(coordinator, name: "ankiAudio")
+        configuration.userContentController.add(coordinator, name: "ankiCardTap")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator
         webView.isOpaque = false; webView.backgroundColor = .clear
@@ -311,13 +495,14 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
         webView.scrollView.alwaysBounceVertical = false
         webView.allowsBackForwardNavigationGestures = false
         coordinator.loadCompleted = { [weak self] error in
+            self?.coordinator.documentReady = error == nil
             self?.error = error == nil ? nil : "This card couldn’t load. Try again."
             self?.isLoading = false
         }
     }
     func load(_ document: String, directory: URL?, mediaIndex: [String: String]? = nil) {
         guard coordinator.document != document || coordinator.directory != directory else { return }
-        coordinator.stop(); error = nil; isLoading = true
+        coordinator.stop(); coordinator.documentReady = false; error = nil; isLoading = true
         coordinator.document = document; coordinator.directory = directory
         coordinator.media?.setDirectory(directory, preparedIndex: mediaIndex)
         webView.loadHTMLString(document, baseURL: URL(string: "anki-media://deck/"))
@@ -326,15 +511,31 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
         let document = coordinator.document, directory = coordinator.directory
         coordinator.document = ""; load(document, directory: directory)
     }
-    func discard() { webView.stopLoading(); coordinator.permitsPlayback = false; coordinator.stop() }
+    func discard() { webView.stopLoading(); coordinator.documentReady = false; coordinator.detachAll() }
 }
 
 private struct AnkiNativeWebView: UIViewRepresentable {
     let renderer: AnkiCardRenderer
-    func makeUIView(context: Context) -> WKWebView { renderer.webView }
-    func updateUIView(_ uiView: WKWebView, context: Context) { }
-    func makeCoordinator() -> AnkiCardRenderer { renderer }
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: AnkiCardRenderer) { coordinator.coordinator.stop() }
+    let surfaceID: UUID
+    let onCardTap: (() -> Void)?
+    let isActive: Bool
+    final class Attachment {
+        let renderer: AnkiCardRenderer
+        let surfaceID: UUID
+        init(renderer: AnkiCardRenderer, surfaceID: UUID) { self.renderer = renderer; self.surfaceID = surfaceID }
+    }
+    func makeUIView(context: Context) -> WKWebView {
+        if isActive { renderer.coordinator.attach(surfaceID: surfaceID, onCardTap: onCardTap) }
+        return renderer.webView
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        if isActive { renderer.coordinator.attach(surfaceID: surfaceID, onCardTap: onCardTap) }
+        else { renderer.coordinator.detach(surfaceID: surfaceID) }
+    }
+    func makeCoordinator() -> Attachment { Attachment(renderer: renderer, surfaceID: surfaceID) }
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Attachment) {
+        coordinator.renderer.coordinator.detach(surfaceID: coordinator.surfaceID)
+    }
 }
 
 private struct AnkiRenderedSurface: View {
@@ -344,9 +545,12 @@ private struct AnkiRenderedSurface: View {
     let compact: Bool
     let loadingChanged: ((Bool) -> Void)?
     var mediaIndex: [String: String]? = nil
+    var onCardTap: (() -> Void)? = nil
+    @State private var surfaceID = UUID()
+    @State private var isVisible = false
     var body: some View {
         ZStack {
-            AnkiNativeWebView(renderer: renderer)
+            AnkiNativeWebView(renderer: renderer, surfaceID: surfaceID, onCardTap: onCardTap, isActive: isVisible)
                 .opacity(renderer.isLoading || renderer.error != nil ? 0 : 1)
                 .allowsHitTesting(!renderer.isLoading && renderer.error == nil)
                 .accessibilityHidden(renderer.isLoading || renderer.error != nil)
@@ -360,8 +564,8 @@ private struct AnkiRenderedSurface: View {
                 }.padding()
             }
         }
-        .onAppear { renderer.coordinator.permitsPlayback = true }
-        .onDisappear { renderer.coordinator.permitsPlayback = false; renderer.coordinator.stop() }
+        .onAppear { isVisible = true; renderer.coordinator.attach(surfaceID: surfaceID, onCardTap: onCardTap) }
+        .onDisappear { isVisible = false; renderer.coordinator.detach(surfaceID: surfaceID) }
         .onChange(of: document, initial: true) { _, value in renderer.load(value, directory: directory, mediaIndex: mediaIndex) }
         .onChange(of: directory) { _, value in renderer.load(document, directory: value, mediaIndex: mediaIndex) }
         .onChange(of: renderer.isLoading, initial: true) { _, value in loadingChanged?(value || renderer.error != nil) }
@@ -407,6 +611,7 @@ struct AnkiReviewControls: View {
     let isRevealed: Bool
     let isGraded: Bool
     var options: [AnkiReviewOption] = []
+    var tapToFlip = false
     let onReveal: () -> Void
     let onGrade: (AnkiReviewRating) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -436,6 +641,12 @@ struct AnkiReviewControls: View {
                         .accessibilityLabel("\(option.rating.title), next review in \(option.intervalLabel)")
                     }
                 }
+            } else if tapToFlip {
+                Label("Tap card to flip", systemImage: "hand.tap")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 24)
+                    .accessibilityHidden(true)
             } else {
                 Button(action: onReveal) {
                     Label("Flip/reveal", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity, minHeight: 42)

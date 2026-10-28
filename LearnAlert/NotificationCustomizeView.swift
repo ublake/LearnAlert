@@ -360,6 +360,8 @@ private struct NotificationSimulatedContainer: View {
     let design: NotificationDesignTheme
     let cardType: FlashcardType
     let isLight: Bool
+    @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
 
     // Preview Interactive State
     @State private var selectedQuizChoice: String? = nil
@@ -371,8 +373,12 @@ private struct NotificationSimulatedContainer: View {
     @State private var selectedMatchingLeft: String? = nil
     @State private var matchingAssignments: [String: String] = [:]
     @State private var matchingResults: [String: Bool] = [:]
+    @State private var ankiPreviewIsLoading = true
 
     private var isCompact: Bool { layout == .compact }
+    private var ankiPresentation: AnkiStudyPresentation {
+        AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow
+    }
 
     private var questionText: String {
         switch cardType {
@@ -614,23 +620,34 @@ private struct NotificationSimulatedContainer: View {
 
     private var ankiPreview: some View {
         VStack(spacing: design.spacing(14)) {
-            VStack(spacing: 12) {
-                Text("Hola").font(.system(size: isCompact ? 26 : 30, weight: .semibold))
-                if isRevealed {
-                    Divider()
-                    Text("Hello").font(.title3)
-                        .transition(.opacity.combined(with: .offset(y: 6)))
+            if ankiPresentation == .tapToFlip {
+                AnkiStudyCardView(content: AnkiCardContent(frontHTML: "<strong>Hola</strong>",
+                    backHTML: "<strong>Hola</strong><hr id=\"answer\">Hello", css: ".card {text-align:center;}",
+                    mediaFolder: "", templateOrdinal: 0, noteType: "Basic", tags: []),
+                    showingBack: $isRevealed, compact: true, centered: true, isEnabled: !isGraded,
+                    loadingChanged: { ankiPreviewIsLoading = $0 })
+                    .frame(height: isCompact ? 134 : 174)
+            } else {
+                VStack(spacing: 12) {
+                    Text("Hola").font(.system(size: isCompact ? 26 : 30, weight: .semibold))
+                    if isRevealed {
+                        Divider()
+                        Text("Hello").font(.title3)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    }
                 }
+                .foregroundStyle(textColorPrimary)
+                .frame(maxWidth: .infinity, minHeight: isCompact ? 110 : 150)
+                .padding(12)
+                .glassCard(cornerRadius: 16, isLight: isThemeLight)
             }
-            .foregroundStyle(textColorPrimary)
-            .frame(maxWidth: .infinity, minHeight: isCompact ? 110 : 150)
-            .padding(12)
-            .glassCard(cornerRadius: 16, isLight: isThemeLight)
 
             AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded,
                 options: AnkiReviewScheduling.options(for: .init(), at: Date()),
+                tapToFlip: ankiPresentation == .tapToFlip,
                 onReveal: { withAnimation(.snappy) { isRevealed = true } },
                 onGrade: { _ in withAnimation(.snappy) { isGraded = true } })
+                .disabled(ankiPresentation == .tapToFlip && ankiPreviewIsLoading)
         }
     }
 

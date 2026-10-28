@@ -110,6 +110,8 @@ struct FlashcardNotificationView: View {
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
     var onPresentationCardTypeChange: ((String) -> Void)? = nil
 
+    @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
     @State private var ankiIsLoading = true
     @State private var ankiReviewOptions: [AnkiReviewOption] = []
     @State private var ankiHeaderHeight: CGFloat = 36
@@ -170,6 +172,9 @@ struct FlashcardNotificationView: View {
 
     private var customTheme: String {
         appearance.theme.rawValue
+    }
+    private var ankiPresentation: AnkiStudyPresentation {
+        AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow
     }
 
     private var isCompactLayout: Bool {
@@ -464,6 +469,7 @@ struct FlashcardNotificationView: View {
                 }
             } else {
                 AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
+                    tapToFlip: ankiPresentation == .tapToFlip,
                     onReveal: { withAnimation(.snappy) { isRevealed = true } },
                     onGrade: { gradeAnki($0) })
                     .disabled(ankiIsLoading)
@@ -502,8 +508,10 @@ struct FlashcardNotificationView: View {
                 // Image cards are self-review, before the empty-options reveal fallback.
                 if activeCardType == "anki" {
                     if let content = activeAnkiContent {
-                        AnkiCardView(content: content, showingBack: isRevealed, compact: true, centered: true, animatedReveal: true,
+                        AnkiStudyCardView(content: content, showingBack: $isRevealed, compact: true, centered: true,
+                            isEnabled: !isGraded && waitingForAnki == nil && ankiFutureReviewDate == nil,
                             loadingChanged: { ankiIsLoading = $0 })
+                            .id(activeCardId)
                             .frame(height: ankiCardHeight)
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
                             .environment(\.colorScheme, isLight ? .light : .dark)

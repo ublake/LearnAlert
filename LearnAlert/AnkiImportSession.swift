@@ -373,7 +373,8 @@ actor AnkiLibraryImporter {
             let question = String((source.plainFront.isEmpty ? "Image / audio card" : source.plainFront).prefix(8_000))
             let answer = String(source.plainBack.prefix(8_000))
             let content = AnkiCardContent(frontHTML: source.front, backHTML: source.back, css: source.css,
-                mediaFolder: mediaFolder, templateOrdinal: source.templateOrdinal, noteType: source.noteType, tags: source.tags)
+                mediaFolder: mediaFolder, templateOrdinal: source.templateOrdinal, noteType: source.noteType, tags: source.tags,
+                frontSideRanges: source.frontSideRanges)
             let contentData = try encoder.encode(content)
             if let found = existing[source.deckID]?[source.id] {
                 if let data = found.ankiContentData, let folder = try? decoder.decode(StoredMedia.self, from: data).mediaFolder { replacedMediaFolders.insert(folder) }

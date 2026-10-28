@@ -9,6 +9,8 @@ struct DeckStudyView: View {
     @StateObject private var ankiCache = AnkiStudyRenderCache()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
     @State private var studyQueue: [Flashcard] = []
     @State private var allCards: [Flashcard] = []
     @State private var shortReviews = AnkiSessionReviewQueue()
@@ -61,6 +63,9 @@ struct DeckStudyView: View {
     private var currentCard: Flashcard? {
         studyQueue.indices.contains(cardIndex) ? studyQueue[cardIndex] : nil
     }
+    private var ankiPresentation: AnkiStudyPresentation {
+        AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow
+    }
     private var isAnkiOnly: Bool { !allCards.isEmpty && allCards.allSatisfy { $0.cardType == .anki } }
     private var nextAnkiReview: Date? {
         allCards.filter { $0.cardType == .anki && !$0.isNew }.map(\.nextReviewDate).min()
@@ -112,6 +117,7 @@ struct DeckStudyView: View {
                     ankiContent: card.ankiContent,
                     ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
                     ankiReviewOptions: card.cardType == .anki ? card.ankiReviewOptions(at: Date()) : [],
+                    ankiPresentation: ankiPresentation,
                     fieldMedia: card.fieldMedia,
                     correctOptionIndex: card.resolvedCorrectOptionIndex,
                     cardNumber: cardIndex + 1,
@@ -133,7 +139,7 @@ struct DeckStudyView: View {
                     onClose: dismiss.callAsFunction
                 )
                 .id(card.id)
-                .task(id: "\(card.id)-\(colorScheme)") { prefetchAnki() }
+                .task(id: "\(card.id)-\(colorScheme)-\(ankiPresentationRaw)") { prefetchAnki() }
             } else {
                 ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -153,7 +159,7 @@ struct DeckStudyView: View {
             next = (studyQueue[cardIndex + 1].id, content)
         } else { next = nil }
         ankiCache.prepare(current: (card.id, content, isRevealed), next: next,
-            configuration: .init(dark: colorScheme == .dark, reduceMotion: reduceMotion))
+            configuration: .init(dark: colorScheme == .dark, reduceMotion: reduceMotion, presentation: ankiPresentation))
     }
 
     private func setupStudyQueue() {
@@ -460,6 +466,7 @@ private struct QuizSessionView: View {
     var ankiContent: AnkiCardContent? = nil
     var ankiRenderer: AnkiCardRenderer? = nil
     var ankiReviewOptions: [AnkiReviewOption] = []
+    var ankiPresentation: AnkiStudyPresentation = .revealBelow
     @State private var ankiIsLoading = true
     var fieldMedia: [String: CardFieldMedia] = [:]
     var correctOptionIndex: Int? = nil
@@ -506,11 +513,12 @@ private struct QuizSessionView: View {
 
             if cardType == .anki, let ankiContent {
                 VStack(spacing: 16) {
-                    AnkiCardView(content: ankiContent, showingBack: isRevealed, centered: true, animatedReveal: true,
-                        renderer: ankiRenderer, loadingChanged: { ankiIsLoading = $0 })
+                    AnkiStudyCardView(content: ankiContent, showingBack: $isRevealed, centered: true,
+                        renderer: ankiRenderer, isEnabled: !isGraded, loadingChanged: { ankiIsLoading = $0 })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 20))
                     AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
+                        tapToFlip: ankiPresentation == .tapToFlip,
                         onReveal: onReveal, onGrade: onAnkiGrade)
                         .disabled(ankiIsLoading)
                 }

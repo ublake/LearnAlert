@@ -287,7 +287,7 @@ public enum AnkiPackageReader {
             guard totalHTML <= 192 * 1_024 * 1_024 else { throw AnkiImportError.invalid("This deck contains too much card content to import at once. Export a smaller subdeck.") }
             warnings.formUnion(result.warnings)
             cards.append(AnkiImportedCard(id: "\(guid):\(ordinal)", noteGUID: guid, deckID: deckID, deckName: name, templateOrdinal: ordinal, noteType: type.name,
-                front: result.front, back: result.back, css: type.css, plainFront: AnkiTemplateRenderer.plainText(result.front), plainBack: AnkiTemplateRenderer.plainText(result.back), tags: tags, warnings: result.warnings))
+                front: result.front, back: result.back, css: type.css, plainFront: AnkiTemplateRenderer.plainText(result.front), plainBack: AnkiTemplateRenderer.plainText(result.back), tags: tags, warnings: result.warnings, frontSideRanges: result.frontSideRanges))
             if cards.count % 100 == 0 { progress(.init(0.12 + 0.34 * Double(cards.count + skipped) / Double(max(1, count)), "Converting cards", "\(cards.count) of \(count)", completedItems: cards.count + skipped, totalItems: count, unit: "cards")) }
         }
         progress(.init(0.46, "Converting cards", completedItems: cards.count + skipped, totalItems: count, unit: "cards"))

@@ -3,7 +3,13 @@ import Foundation
 /// Converts Anki field/conditional/cloze syntax into self-contained front/back HTML.
 /// Layout and scripts remain in the card; unknown filters are reported in the preview.
 public enum AnkiTemplateRenderer {
-    public struct Result: Sendable { public let front: String; public let back: String; public let warnings: [String] }
+    public struct Result: Sendable {
+        public let front: String
+        public let back: String
+        public let warnings: [String]
+        /// UTF-16 ranges of rendered FrontSide fields; nil means no provenance is available.
+        public var frontSideRanges: [[Int]]? = nil
+    }
     private indirect enum Node { case text(String), field(String), section(String, Bool, [Node]) }
 
     private static let templateExpression = try! NSRegularExpression(pattern: #"\{\{([^{}]+)\}\}"#)
@@ -14,6 +20,9 @@ public enum AnkiTemplateRenderer {
     private static let tagExpression = try! NSRegularExpression(pattern: #"<[^>]*>"#)
     private static let furiganaExpression = try! NSRegularExpression(pattern: #"([^\s\[\]<>]+)\[([^\[\]]+)\]"#)
     private static let soundExpression = try! NSRegularExpression(pattern: #"\[sound:([^\]]+)\]"#)
+    // Non-HTML sentinels survive sound filename escaping and are never persisted.
+    private static let frontSideStart = "\u{E000}learnalert-frontside-start\u{E001}"
+    private static let frontSideEnd = "\u{E000}learnalert-frontside-end\u{E001}"
 
     /// One import owns one session. Templates (including failed parses) and static
     /// CSS warnings are reused; rendered field HTML is never cached or discarded.
@@ -60,10 +69,40 @@ public enum AnkiTemplateRenderer {
         let frontNodes = try parseTemplate(template.front), backNodes = try parseTemplate(template.back)
         let front = evaluate(frontNodes, fields: fields, answer: false, ordinal: ordinal, warnings: &warnings)
         fields["FrontSide"] = front
-        let back = evaluate(backNodes, fields: fields, answer: true, ordinal: ordinal, warnings: &warnings)
+        let markedBack = evaluate(backNodes, fields: fields, answer: true, ordinal: ordinal, warnings: &warnings)
+        let (back, frontSideRanges) = extractFrontSideRanges(soundHTML(markedBack))
         warnings.formUnion(contentWarnings(front))
         warnings.formUnion(contentWarnings(back))
-        return Result(front: soundHTML(front), back: soundHTML(back), warnings: warnings.sorted())
+        return Result(front: soundHTML(front), back: back, warnings: warnings.sorted(), frontSideRanges: frontSideRanges)
+    }
+
+    /// Boundaries are removed before storage, preserving the original HTML and scripts.
+    private static func extractFrontSideRanges(_ marked: String) -> (String, [[Int]]) {
+        var output = "", ranges: [[Int]] = [], cursor = marked.startIndex, length = 0
+        while let start = marked.range(of: frontSideStart, range: cursor..<marked.endIndex),
+              let end = marked.range(of: frontSideEnd, range: start.upperBound..<marked.endIndex) {
+            let prefix = marked[cursor..<start.lowerBound]
+            output += prefix; length += prefix.utf16.count
+            let value = marked[start.upperBound..<end.lowerBound]
+            let lower = length
+            let isVisibleField = isVisibleFrontSide(in: output)
+            output += value; length += value.utf16.count
+            if isVisibleField { ranges.append([lower, length]) }
+            cursor = end.upperBound
+        }
+        output += marked[cursor...]
+        return (output, ranges)
+    }
+
+    private static func isVisibleFrontSide(in prefix: String) -> Bool {
+        // A field inside an attribute, script or style is data, not a repeated face.
+        // In particular [sound:{{FrontSide}}] must retain the complete audio filename.
+        if let open = prefix.lastIndex(of: "<"), prefix.lastIndex(of: ">").map({ open > $0 }) ?? true { return false }
+        for tag in ["script", "style"] {
+            if let open = prefix.range(of: "<" + tag, options: [.caseInsensitive, .backwards]),
+               prefix.range(of: "</" + tag, options: [.caseInsensitive, .backwards]).map({ open.lowerBound > $0.lowerBound }) ?? true { return false }
+        }
+        return true
     }
 
     private static func hasMatch(_ expression: NSRegularExpression, in text: String) -> Bool {
@@ -145,7 +184,7 @@ public enum AnkiTemplateRenderer {
                         } else { warnings.insert("Custom filter ‘\(filter)’ is shown without its Anki add-on transformation.") }
                     }
                 }
-                return value
+                return name == "FrontSide" && answer ? frontSideStart + value + frontSideEnd : value
             }
         }.joined()
     }

@@ -9,6 +9,42 @@ nonisolated struct AnkiCardContent: Codable, Equatable, Sendable {
     var templateOrdinal: Int
     var noteType: String
     var tags: [String]
+    /// Optional for existing imports; the original front/back HTML is always retained.
+    var frontSideRanges: [[Int]]? = nil
+
+    var flipBackHTML: String {
+        let answer: String
+        if let frontSideRanges {
+            var html = backHTML
+            for bounds in frontSideRanges.reversed() {
+                guard bounds.count == 2, bounds[0] >= 0, bounds[1] >= bounds[0],
+                      bounds[1] <= html.utf16.count,
+                      let range = Range(NSRange(location: bounds[0], length: bounds[1] - bounds[0]), in: html) else { return backHTML }
+                html.removeSubrange(range)
+            }
+            answer = html
+        } else {
+            // Older imports have no field provenance. Remove only an exact leading
+            // front or Anki's explicit answer divider, never repeated words in prose.
+            let front = frontHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+            let back = backHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+            let remainder = !front.isEmpty && back.hasPrefix(front) ? String(back.dropFirst(front.count)) : nil
+            let completeElement = front.hasPrefix("<") && front.hasSuffix(">")
+            let separated = remainder?.range(of: #"(?is)^\s*<(?:hr|br)\b"#, options: .regularExpression) != nil
+            if let remainder, completeElement || separated {
+                answer = remainder
+            } else if let divider = back.range(of: #"(?is)<hr\b[^>]*\bid\s*=\s*(?:["']answer["']|answer(?=\s|/?>))[^>]*>"#, options: .regularExpression) {
+                answer = String(back[divider.upperBound...])
+            } else { return backHTML }
+        }
+        let trimmed = answer.replacingOccurrences(of: #"(?is)^\s*(?:(?:<hr\b[^>]*>|<br\s*/?>)\s*)+"#,
+            with: "", options: .regularExpression)
+        // A FrontSide-only or script-driven template must still have a usable back.
+        let text = trimmed.replacingOccurrences(of: #"(?s)<[^>]*>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMedia = trimmed.range(of: #"(?i)<(?:img|audio|video|svg|canvas|script)\b"#, options: .regularExpression) != nil
+        return text.isEmpty && !hasMedia ? backHTML : trimmed
+    }
 
     static var mediaRoot: URL {
         let base = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.learnalert.shared")

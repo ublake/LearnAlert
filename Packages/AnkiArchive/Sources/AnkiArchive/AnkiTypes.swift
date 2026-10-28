@@ -64,6 +64,7 @@ public struct AnkiImportedCard: Sendable, Identifiable {
     public let plainBack: String
     public let tags: [String]
     public let warnings: [String]
+    public var frontSideRanges: [[Int]]? = nil
 }
 
 public struct AnkiImportedDeck: Sendable, Identifiable {

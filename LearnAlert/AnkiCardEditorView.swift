@@ -46,6 +46,7 @@ struct AnkiCardEditorView: View {
     }
     private func save() {
         guard var content = card.ankiContent else { return }
+        if content.frontHTML != front || content.backHTML != back { content.frontSideRanges = nil }
         content.frontHTML = front; content.backHTML = back; content.css = css
         let original = card.ankiContentData, question = card.question, answer = card.correctAnswer
         card.ankiContent = content

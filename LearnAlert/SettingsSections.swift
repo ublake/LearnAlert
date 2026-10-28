@@ -334,6 +334,9 @@ struct SettingsPreferencesGroup: View {
     var availableSounds: [AlertSoundOption] = AlertSoundOption.allSounds
     @Binding var appearanceMode: String
     @Binding var deckCreaturesHaveFaces: Bool
+    @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
+    @State private var showingAnkiSettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -370,11 +373,22 @@ struct SettingsPreferencesGroup: View {
                 }
                 .accessibilityLabel("Appearance")
                 .accessibilityValue(appearanceMode == "light" ? "Light" : appearanceMode == "dark" ? "Dark" : "System")
+
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+
+                Button { showingAnkiSettings = true } label: {
+                    SettingsPreferenceLabel(title: "Anki Settings", systemImage: "rectangle.on.rectangle.angled",
+                        value: (AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title,
+                        disclosureSymbol: "chevron.right")
+                }
+                .accessibilityLabel("Anki Settings")
+                .accessibilityValue((AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title)
             }
             .buttonStyle(.plain)
             .settingsGlassSurface(cornerRadius: 20)
         }
         .padding(.horizontal, 20)
+        .sheet(isPresented: $showingAnkiSettings) { AnkiStudySettingsView() }
     }
 }
 
@@ -382,6 +396,7 @@ private struct SettingsPreferenceLabel: View {
     let title: LocalizedStringResource
     let systemImage: String
     let value: String
+    var disclosureSymbol = "chevron.up.chevron.down"
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -396,7 +411,7 @@ private struct SettingsPreferenceLabel: View {
                 Text(value).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.up.chevron.down")
+            Image(systemName: disclosureSymbol)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(LearnAlertStyle.textSecondary)
         }
