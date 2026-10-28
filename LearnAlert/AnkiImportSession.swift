@@ -17,6 +17,8 @@ final class AnkiImportSession: ObservableObject {
     @Published var package: AnkiImportPackage?
     @Published var selectedDecks = Set<String>()
     @Published var updateExisting = false
+    @Published var deckNames: [String: String] = [:]
+    @Published private(set) var hasConfirmedDeckNames = false
     @Published var error: String?
     @Published var result: AnkiImportResult?
     private struct SaveRequest: Sendable {
@@ -25,6 +27,8 @@ final class AnkiImportSession: ObservableObject {
         let selection: Set<String>
         let update: Bool
         let filename: String
+        let deckNames: [String: String]
+        let renamedDecks: Set<String>
     }
     private var pendingSave: SaveRequest?
     private var workspace: URL?
@@ -32,10 +36,16 @@ final class AnkiImportSession: ObservableObject {
     private var savingWorker: Task<AnkiImportResult, Error>?
     private var operation: Task<Void, Never>?
     private var runID = UUID()
+    private var renamedDecks = Set<String>()
     var filename = ""
 
     var isBusy: Bool { phase == .converting || phase == .saving }
     var selectedCardCount: Int { package?.decks.filter { selectedDecks.contains($0.id) }.reduce(0) { $0 + $1.cardCount } ?? 0 }
+    var canConfirmDeckNames: Bool {
+        !selectedDecks.isEmpty && selectedDecks.allSatisfy {
+            !(deckNames[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
     var waitingForCommit: Bool { phase == .saving && progress.completedItems == nil && progress.fraction >= 0.96 }
     var filePercentage: Int? {
         guard let completedFiles, let totalFiles, totalFiles > 0 else { return nil }
@@ -49,6 +59,7 @@ final class AnkiImportSession: ObservableObject {
         let workspace = FileManager.default.temporaryDirectory.appendingPathComponent("LearnAlert-Anki-\(id.uuidString)", isDirectory: true)
         self.workspace = workspace; filename = url.lastPathComponent
         package = nil; error = nil; result = nil; phase = .converting
+        deckNames = [:]; renamedDecks = []; hasConfirmedDeckNames = false; updateExisting = false
         startedAt = Date(); stageStartedAt = startedAt; archiveBytes = nil; recentSamples = []
         completedFiles = nil; totalFiles = nil
         progress = .init(0, "Opening your deck", filename)
@@ -71,6 +82,9 @@ final class AnkiImportSession: ObservableObject {
                 self.totalFiles = package.mediaCount + 1
                 self.worker = nil
                 self.selectedDecks = Set(package.decks.map(\.id))
+                self.deckNames = Dictionary(uniqueKeysWithValues: package.decks.map {
+                    ($0.id, Self.suggestedDeckName($0.name, fallback: url.deletingPathExtension().lastPathComponent))
+                })
                 self.phase = .review
             } catch {
                 Self.removeWorkspace(workspace)
@@ -80,10 +94,35 @@ final class AnkiImportSession: ObservableObject {
         }
     }
 
+    /// Anki's hierarchy is useful inside Anki, but its leaf is the useful library title here.
+    nonisolated static func suggestedDeckName(_ name: String, fallback: String = "Imported deck") -> String {
+        let leaf = name.components(separatedBy: "::")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .last(where: { !$0.isEmpty }) ?? fallback
+        let spaced = leaf.replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "(?<=[0-9])(?=[A-Za-z])", with: " ", options: .regularExpression)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return spaced.isEmpty ? "Imported deck" : spaced
+    }
+
+    func setDeckName(_ name: String, for deckID: String) {
+        guard deckNames[deckID] != name else { return }
+        deckNames[deckID] = name
+        renamedDecks.insert(deckID)
+        hasConfirmedDeckNames = false
+    }
+
+    func confirmDeckNames() {
+        guard canConfirmDeckNames else { return }
+        for id in selectedDecks { deckNames[id] = deckNames[id]?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        hasConfirmedDeckNames = true
+    }
+
     func save(container: ModelContainer) {
-        guard let package, !selectedDecks.isEmpty, phase == .review else { return }
+        guard let package, !selectedDecks.isEmpty, phase == .review,
+              hasConfirmedDeckNames, canConfirmDeckNames else { return }
         pendingSave = SaveRequest(package: package, container: container, selection: selectedDecks,
-                                  update: updateExisting, filename: filename)
+                                  update: updateExisting, filename: filename, deckNames: deckNames, renamedDecks: renamedDecks)
         phase = .saving; startedAt = Date(); stageStartedAt = startedAt; recentSamples = []
         // Each extracted media file is prepared once. Keep the collection file
         // outstanding throughout card conversion and the atomic library commit.
@@ -107,7 +146,8 @@ final class AnkiImportSession: ObservableObject {
             try Task.checkCancellation()
             let committer = AnkiLibraryImporter(modelContainer: request.container)
             return try await committer.save(request.package, selectedDecks: request.selection,
-                updateExisting: request.update, filename: request.filename, consumeMedia: true) { relay.send($0) }
+                updateExisting: request.update, filename: request.filename, deckNames: request.deckNames,
+                renamedDecks: request.renamedDecks, consumeMedia: true) { relay.send($0) }
         }
         self.savingWorker = savingWorker
         operation = Task { [weak self] in
@@ -217,6 +257,7 @@ actor AnkiLibraryImporter {
     private nonisolated struct StoredMedia: Decodable { let mediaFolder: String }
 
     func save(_ package: AnkiImportPackage, selectedDecks: Set<String>, updateExisting: Bool, filename: String,
+              deckNames: [String: String] = [:], renamedDecks: Set<String> = [],
               consumeMedia: Bool = false, progress: @Sendable (AnkiImportProgress) -> Void) throws -> AnkiImportResult {
         modelContext.autosaveEnabled = false
         try Task.checkCancellation()
@@ -228,7 +269,7 @@ actor AnkiLibraryImporter {
         for index in cardIndices { incomingIDs[package.cards[index].deckID, default: []].insert(package.cards[index].id) }
         var decks: [String: Deck] = [:], existing: [String: [String: Flashcard]] = [:], deckCards: [String: [Flashcard]] = [:]
         var snapshots: [UUID: [Flashcard]] = [:]
-        var changes: [Int] = [], unchanged = 0
+        var changes: [Int] = [], unchanged = 0, renamedExistingDeck = false
         let mediaFolder = UUID().uuidString
         let destination = AnkiCardContent.mediaRoot.appendingPathComponent(mediaFolder, isDirectory: true)
         var saved = false, movedMedia = false, stagedMedia = false
@@ -252,9 +293,20 @@ actor AnkiLibraryImporter {
                 if overlap > bestOverlap { matched = candidate; bestOverlap = overlap }
             }
             let deck: Deck
-            if let matched { deck = matched }
+            let requestedName = deckNames[source.id]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let matched {
+                deck = matched
+                // Suggested source names must not overwrite a learner's saved title on re-import.
+                if renamedDecks.contains(source.id), let requestedName, !requestedName.isEmpty,
+                   deck.name != requestedName {
+                    deck.name = requestedName
+                    renamedExistingDeck = true
+                }
+            }
             else {
-                deck = Deck(name: source.name, colorHex: "#A9D7F5", deckType: "Anki", orderIndex: library.count + decks.count)
+                let name = requestedName.flatMap { $0.isEmpty ? nil : $0 }
+                    ?? AnkiImportSession.suggestedDeckName(source.name)
+                deck = Deck(name: name, colorHex: "#A9D7F5", deckType: "Anki", orderIndex: library.count + decks.count)
                 deck.sourceAnkiDeckID = source.id; deck.sourceKind = "anki"; deck.sourceName = filename
                 modelContext.insert(deck)
             }
@@ -270,7 +322,8 @@ actor AnkiLibraryImporter {
         }
         // A duplicate import does not enumerate, copy or move any media at all.
         guard !changes.isEmpty else {
-            modelContext.rollback()
+            if renamedExistingDeck { try modelContext.save(); saved = true }
+            else { modelContext.rollback() }
             progress(.init(0.99, "Already in your library", "\(unchanged.formatted()) cards kept as they are"))
             return AnkiImportResult(added: 0, updated: 0, unchanged: unchanged, decks: decks.count)
         }

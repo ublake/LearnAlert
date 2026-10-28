@@ -265,6 +265,7 @@ struct HomeLibraryView: View {
     @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
 
     @State private var draggedLibraryID: String?
+    @State private var revealedScheduleDeckID: UUID?
     @State private var isSearchExpanded = false
     @State private var showingAIComposer = false
     @State private var showingAlertSettings = false
@@ -482,6 +483,8 @@ struct HomeLibraryView: View {
                     deck: deck, isPinned: pinned,
                     isTargeted: engine.isActive && (targetDeckId == "ALL" || targetDeckId == deck.id.uuidString),
                     isTutorialHighlighted: highlighted, isTutorialActive: homeTutorialStep > 0,
+                    isReordering: draggedLibraryID != nil,
+                    revealedScheduleDeckID: $revealedScheduleDeckID,
                     onTapped: { if highlighted { homeTutorialStep = 2 } },
                     schedule: { quickSchedule(deck, fromDeckCard: true) },
                     togglePin: { libraryPreferences.togglePin(id: item.id) },
@@ -1570,12 +1573,31 @@ private struct HomeStudyCard: View {
     let isTargeted: Bool
     var isTutorialHighlighted: Bool = false
     var isTutorialActive: Bool = false
+    var isReordering: Bool = false
+    @Binding var revealedScheduleDeckID: UUID?
     var onTapped: (() -> Void)? = nil
     let schedule: () -> Void
     var togglePin: (() -> Void)? = nil
     let shuffleAppearance: () -> Void
     let delete: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulseGlow = false
+    @State private var lockedSwipeAxis: SwipeState.Axis?
+    @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var swipe = SwipeState()
+
+    private struct SwipeState {
+        enum Axis { case horizontal, vertical }
+        var axis: Axis?
+        var translation: CGFloat = 0
+    }
+
+    private let scheduleRevealWidth: CGFloat = 80
+    private var isScheduleRevealed: Bool { revealedScheduleDeckID == deck.id }
+    private var canSwipe: Bool { !isTutorialActive && !isReordering }
+    private var swipeAnimation: Animation? { reduceMotion ? nil : .snappy(duration: 0.25) }
+    private var cardOffset: CGFloat {
+        max(-scheduleRevealWidth, min(0, (isScheduleRevealed ? -scheduleRevealWidth : 0) + swipe.translation))
+    }
 
     var body: some View {
         let summary = deck.librarySummary
@@ -1598,86 +1620,42 @@ private struct HomeStudyCard: View {
                 .transition(.opacity.combined(with: .scale))
             }
 
-            ZStack(alignment: .topTrailing) {
-                ZStack(alignment: .bottomTrailing) {
-                    NavigationLink(destination: DeckDetailView(deck: deck)) {
-                        HStack(alignment: .bottom, spacing: 16) {
-                            DeckCreatureView(
-                                stableID: deck.id,
-                                appearanceSeed: deck.appearanceSeed,
-                                cardCount: summary.cardCount,
-                                colorHex: deck.colorHex
-                            )
-                            .frame(width: 96, height: 88)
-                            .padding(.bottom, 16)
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(deck.name)
-                                    .font(.headline)
-                                    .foregroundStyle(LearnAlertStyle.textPrimary)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-
-                                Text("\(deck.deckType) · \(summary.cardCount) cards")
-                                    .font(.subheadline)
-                                    .foregroundStyle(LearnAlertStyle.textSecondary)
-
-                                Spacer(minLength: 0)
-
-                                HomeMasteryBars(summary: summary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        onTapped?()
-                    })
-                    .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards. \(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
-
-                    Button(action: {
-                        if !isTutorialActive {
-                            schedule()
-                        }
-                    }) {
+            ZStack(alignment: .trailing) {
+                Button(action: scheduleFromSwipe) {
+                    VStack(spacing: 7) {
                         Image(systemName: isTargeted ? "bell.badge.fill" : "bell.badge")
-                            .foregroundStyle(isTargeted ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                            .font(.system(size: 21, weight: .semibold))
+                        Text("Alerts").font(.caption.weight(.semibold))
                     }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 9)
-                    .padding(.bottom, 7)
-                    .disabled(isTutorialActive)
-                    .opacity(isTutorialActive ? 0.35 : 1.0)
-                    .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
+                    .foregroundStyle(LearnAlertStyle.appAccentInk)
+                    .frame(width: scheduleRevealWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(LearnAlertStyle.appAccent)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .opacity(cardOffset < 0 ? 1 : 0)
+                .allowsHitTesting(isScheduleRevealed && canSwipe)
+                .accessibilityHidden(!isScheduleRevealed || !canSwipe)
+                .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
 
-                if isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
-                        .padding(.top, 7)
-                        .padding(.trailing, 7)
-                        .allowsHitTesting(false)
-                        .accessibilityLabel("Pinned")
-                }
+                cardFace(summary: summary)
+                    .overlay {
+                        if isScheduleRevealed {
+                            Color.clear.contentShape(Rectangle())
+                                .onTapGesture { closeSchedule() }
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .offset(x: cardOffset)
+                    .simultaneousGesture(swipeGesture, including: canSwipe ? .all : .subviews)
+                    .animation(swipeAnimation, value: isScheduleRevealed)
             }
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .appCardSurface()
-            .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(
-                        isTutorialHighlighted ? LearnAlertStyle.appAccent : Color.clear,
-                        lineWidth: isTutorialHighlighted ? 2.5 : 0.9
-                    )
-                    .shadow(color: isTutorialHighlighted ? LearnAlertStyle.appAccent.opacity(0.75) : Color.clear, radius: 10)
+            .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+            .accessibilityAction(named: "Quick schedule alerts") {
+                if canSwipe { scheduleFromSwipe() }
             }
             .contextMenu {
                 if !isTutorialActive {
@@ -1707,8 +1685,104 @@ private struct HomeStudyCard: View {
                 }
             }
         }
+        .onChange(of: canSwipe) { _, allowed in
+            if !allowed { lockedSwipeAxis = nil; closeSchedule() }
+        }
+        .onChange(of: swipe.axis) { _, axis in
+            if axis == nil { lockedSwipeAxis = nil }
+        }
+        .onDisappear {
+            if isScheduleRevealed { revealedScheduleDeckID = nil }
+        }
+        .transaction { if reduceMotion { $0.animation = nil } }
     }
 
+    private func cardFace(summary: DeckLibrarySummary) -> some View {
+        NavigationLink(destination: DeckDetailView(deck: deck)) {
+            HStack(alignment: .bottom, spacing: 16) {
+                DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed,
+                    cardCount: summary.cardCount, colorHex: deck.colorHex)
+                    .frame(width: 96, height: 88)
+                    .padding(.bottom, 16)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(deck.name)
+                        .font(.headline)
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text("\(deck.deckType) · \(summary.cardCount) cards")
+                        .font(.subheadline)
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                    Spacer(minLength: 66)
+                }
+                .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottomTrailing) {
+                HomeMasteryBars(summary: summary).allowsHitTesting(false)
+            }
+            .overlay(alignment: .topTrailing) {
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                        .padding(.top, 7).padding(.trailing, 7)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("Pinned")
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
+        .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards. \(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
+        .appCardSurface()
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(isTutorialHighlighted ? LearnAlertStyle.appAccent : Color.clear,
+                    lineWidth: isTutorialHighlighted ? 2.5 : 0.9)
+                .shadow(color: isTutorialHighlighted ? LearnAlertStyle.appAccent.opacity(0.75) : Color.clear, radius: 10)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .updating($swipe) { value, state, _ in
+                guard canSwipe else { return }
+                if state.axis == nil {
+                    state.axis = abs(value.translation.width) > abs(value.translation.height) * 1.2 ? .horizontal : .vertical
+                }
+                if state.axis == .horizontal { state.translation = value.translation.width }
+            }
+            .onChanged { value in
+                guard canSwipe, lockedSwipeAxis == nil else { return }
+                lockedSwipeAxis = abs(value.translation.width) > abs(value.translation.height) * 1.2 ? .horizontal : .vertical
+            }
+            .onEnded { value in
+                let axis = lockedSwipeAxis
+                lockedSwipeAxis = nil
+                guard canSwipe, axis == .horizontal else { return }
+                let projected = (isScheduleRevealed ? -scheduleRevealWidth : 0) + value.predictedEndTranslation.width
+                withAnimation(swipeAnimation) {
+                    revealedScheduleDeckID = projected < -scheduleRevealWidth / 2 ? deck.id : nil
+                }
+            }
+    }
+
+    private func closeSchedule() {
+        withAnimation(swipeAnimation) {
+            if isScheduleRevealed { revealedScheduleDeckID = nil }
+        }
+    }
+
+    private func scheduleFromSwipe() {
+        closeSchedule()
+        schedule()
+    }
 }
 
 // MARK: - Guided Walkthrough Top & Floating Banners// MARK: - Guided Walkthrough Top & Floating Banners
@@ -2835,7 +2909,7 @@ private struct QuickScheduleTipPopup: View {
                     .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .subheadline))
                     .foregroundStyle(.white)
 
-                Text("You can easily switch active alert decks anytime just by tapping this bell button—no need to reschedule!")
+                Text("Swipe a deck left and tap Alerts to switch your active alert deck anytime.")
                     .font(.custom("Poppins-Regular", size: 11, relativeTo: .caption))
                     .foregroundStyle(.white.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)

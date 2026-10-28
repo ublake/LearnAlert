@@ -316,6 +316,7 @@ struct AnkiImportTests {
         #expect(session.error == nil)
         #expect(session.selectedCardCount == 9)
         let container = try container()
+        session.confirmDeckNames()
         session.save(container: container)
         #expect(session.phase == .saving)
         #expect(session.progress.title == "Making room for your cards")

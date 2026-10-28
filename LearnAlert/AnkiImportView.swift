@@ -14,7 +14,9 @@ struct AnkiImportView: View {
     @StateObject private var session = AnkiImportSession()
     @State private var showingFilePicker = false
     @State private var showingSample = false
+    @State private var showingDeckNames = false
     @State private var openedInitialURL = false
+    @FocusState private var focusedDeckName: String?
     let initialURL: URL?
     let onFinish: () -> Void
 
@@ -57,6 +59,7 @@ struct AnkiImportView: View {
                     AnkiPreviewView(cards: package.cards.filter { session.selectedDecks.contains($0.deckID) }, mediaDirectory: package.mediaDirectory)
                 }
             }
+            .sheet(isPresented: $showingDeckNames) { deckNameEditor }
             .alert("Import couldn't finish", isPresented: Binding(get: { session.error != nil }, set: { if !$0 { session.error = nil } })) {
                 Button("OK") { session.error = nil }
             } message: { Text(session.error ?? "") }
@@ -71,6 +74,9 @@ struct AnkiImportView: View {
                 }
                 openedInitialURL = true
                 session.open(url)
+            }
+            .onChange(of: session.phase) { _, phase in
+                if phase == .review, !session.hasConfirmedDeckNames { showingDeckNames = true }
             }
             .onDisappear { if session.phase != .saving { session.cancel() } }
         }
@@ -136,6 +142,15 @@ struct AnkiImportView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let package = session.package {
+                    HStack {
+                        Text(package.decks.count == 1 ? "Your deck" : "Your decks")
+                            .font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
+                        Spacer()
+                        Button { showingDeckNames = true } label: {
+                            Label("Edit names", systemImage: "pencil")
+                                .font(.subheadline.weight(.medium))
+                        }
+                    }
                     HStack(spacing: 10) {
                         summary("\(session.selectedCardCount)", label: "cards", icon: "rectangle.on.rectangle")
                         summary("\(package.mediaCount)", label: "media", icon: "photo.on.rectangle")
@@ -150,7 +165,7 @@ struct AnkiImportView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: session.selectedDecks.contains(deck.id) ? "checkmark.circle.fill" : "circle")
                                         .font(.title3).foregroundStyle(LearnAlertStyle.appAccentForeground)
-                                    Text(deck.name).font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.textPrimary).multilineTextAlignment(.leading)
+                                    Text(session.deckNames[deck.id] ?? deck.name).font(.subheadline.weight(.medium)).foregroundStyle(LearnAlertStyle.textPrimary).multilineTextAlignment(.leading)
                                     Spacer(minLength: 4)
                                     Text("\(deck.cardCount)").font(.subheadline.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
                                 }.padding(16).contentShape(Rectangle())
@@ -168,8 +183,6 @@ struct AnkiImportView: View {
                     .buttonStyle(.plain).appCardSurface(cornerRadius: 18)
                     .disabled(session.selectedDecks.isEmpty)
 
-                    Toggle("Update previously imported cards", isOn: $session.updateExisting)
-                        .font(.subheadline).padding(16).appCardSurface(cornerRadius: 18)
                     if !package.warnings.isEmpty {
                         if package.skippedCards > 0 {
                             Label("\(package.skippedCards) cards couldn't be converted", systemImage: "exclamationmark.triangle")
@@ -195,10 +208,70 @@ struct AnkiImportView: View {
                     .foregroundStyle(LearnAlertStyle.appAccentInk)
             }
             .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 18))
-            .disabled(session.selectedDecks.isEmpty)
+            .disabled(session.selectedDecks.isEmpty || !session.hasConfirmedDeckNames || !session.canConfirmDeckNames)
             .padding(.horizontal, 20).padding(.vertical, 12)
             .background(LearnAlertStyle.courseCanvas)
         }
+    }
+
+    private var deckNameEditor: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Give \(session.selectedDecks.count == 1 ? "your deck a name" : "your decks names") before adding \(session.selectedDecks.count == 1 ? "it" : "them") to your library.")
+                        .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+                    if let package = session.package {
+                        ForEach(package.decks.filter { session.selectedDecks.contains($0.id) }) { deck in
+                            VStack(alignment: .leading, spacing: 7) {
+                                if session.selectedDecks.count > 1 {
+                                    Text("\(deck.cardCount.formatted()) cards")
+                                        .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
+                                TextField("Deck name", text: Binding(
+                                    get: { session.deckNames[deck.id] ?? "" },
+                                    set: { session.setDeckName($0, for: deck.id) }
+                                ))
+                                .font(.title3.weight(.semibold))
+                                .textInputAutocapitalization(.sentences)
+                                .submitLabel(.done)
+                                .focused($focusedDeckName, equals: deck.id)
+                                .padding(16)
+                                .appCardSurface(cornerRadius: 16)
+                            }
+                        }
+                    }
+                }.padding(20)
+            }
+            .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
+            .navigationTitle(session.selectedDecks.count == 1 ? "Name your deck" : "Name your decks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel import") {
+                        showingDeckNames = false
+                        session.cancel()
+                        dismiss()
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                Button {
+                    session.confirmDeckNames()
+                    showingDeckNames = false
+                } label: {
+                    Text("Continue").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 15)
+                        .foregroundStyle(LearnAlertStyle.appAccentInk)
+                }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 18))
+                .disabled(!session.canConfirmDeckNames)
+                .padding(20).background(LearnAlertStyle.courseCanvas)
+            }
+            .task {
+                focusedDeckName = session.package?.decks.first(where: { session.selectedDecks.contains($0.id) })?.id
+            }
+        }
+        .tint(LearnAlertStyle.appAccentForeground)
+        .interactiveDismissDisabled(!session.hasConfirmedDeckNames)
     }
 
     private func summary(_ value: String, label: String, icon: String) -> some View {
@@ -215,14 +288,12 @@ struct AnkiImportView: View {
             Image(systemName: "checkmark.rectangle.stack.fill")
                 .font(.system(size: 70, weight: .light)).foregroundStyle(LearnAlertStyle.appAccentForeground)
                 .symbolEffect(.bounce, value: session.phase == .complete)
-            Text("Right at home")
+            Text("Added to your library")
                 .font(.title.weight(.bold))
             if let result = session.result {
-                Text("\(result.added) added · \(result.updated) updated\(result.unchanged > 0 ? " · \(result.unchanged) already here" : "")")
+                Text(result.added > 0 ? "\(result.added.formatted()) cards added" : "These cards are already in your library.")
                     .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
             }
-            Text("Ready in your library. Set alerts whenever you like.")
-                .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
             Button("Go to library") { onFinish(); dismiss() }
                 .font(.headline).foregroundStyle(LearnAlertStyle.appAccentInk).buttonStyle(.borderedProminent).controlSize(.large)
             Spacer(); Spacer().frame(height: 40)

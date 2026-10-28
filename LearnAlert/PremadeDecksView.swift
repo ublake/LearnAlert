@@ -10,6 +10,7 @@ struct PremadeDecksView: View {
     @Environment(\.modelContext) private var context
     @Query private var libraryDecks: [Deck]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var addedDeckName: String?
     @State private var showingAllCommunity = false
@@ -106,7 +107,11 @@ struct PremadeDecksView: View {
                 .font(StudyStudioStyle.heading(21))
                 .foregroundStyle(StudyStudioStyle.ink)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 16) {
+                LazyHGrid(
+                    rows: Array(repeating: GridItem(.fixed(dynamicTypeSize.isAccessibilitySize ? 118 : 78), alignment: .top), count: 2),
+                    alignment: .top,
+                    spacing: 16
+                ) {
                     ForEach(DiscoverLanguageChoice.choices) { choice in
                         let course = CourseCurriculumCatalog.courses.first {
                             $0.language.caseInsensitiveCompare(choice.name) == .orderedSame && !LanguageDeckProjection.topics($0).isEmpty
@@ -233,25 +238,26 @@ private struct DiscoverLanguageButton: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 3) {
             Image(choice.flagAssetName)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 84, height: 56)
+                .frame(width: 64, height: 43)
                 .saturation(available ? 1 : 0.1)
                 .opacity(available ? 1 : 0.35)
                 .accessibilityHidden(true)
             Text(choice.name)
-                .font(StudyStudioStyle.heading(13))
+                .font(StudyStudioStyle.heading(12))
                 .foregroundStyle(available ? StudyStudioStyle.ink : StudyStudioStyle.secondary)
+                .lineLimit(1)
             if !available {
                 Text("Coming soon")
-                    .font(StudyStudioStyle.body(10))
+                    .font(StudyStudioStyle.body(9))
                     .foregroundStyle(StudyStudioStyle.secondary)
                     .multilineTextAlignment(.center)
             }
         }
-        .frame(width: dynamicTypeSize.isAccessibilitySize ? 112 : 84, alignment: .top)
+        .frame(width: dynamicTypeSize.isAccessibilitySize ? 112 : 64, alignment: .top)
         .contentShape(Rectangle())
     }
 }
