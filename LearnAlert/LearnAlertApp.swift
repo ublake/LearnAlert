@@ -24,62 +24,61 @@ struct LearnAlertApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var migrationNotice: String?
     
-    // Initialize our custom shared database
-    let sharedDatabase = SharedDatabase.shared
-    
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .alert("Saved learning data", isPresented: Binding(get: { migrationNotice != nil }, set: { if !$0 { migrationNotice = nil } })) {
-                    Button("OK") { migrationNotice = nil }
-                } message: { Text(migrationNotice ?? "") }
-                // Inject it into the SwiftUI environment
-                .modelContainer(sharedDatabase.container)
-                .task(id: hasCompletedOnboarding && scenePhase == .active) {
-                    #if TIKTOK_TRACKING_AVAILABLE
-                    guard TikTokTracking.isEnabled, hasCompletedOnboarding,
-                          scenePhase == .active else { return }
-                    do {
-                        try await Task.sleep(for: .seconds(1))
-                    } catch {
-                        return
+            AppLibraryLoader { sharedDatabase, startupURL in
+                ContentView(startupAnkiURL: startupURL)
+                    .alert("Saved learning data", isPresented: Binding(get: { migrationNotice != nil }, set: { if !$0 { migrationNotice = nil } })) {
+                        Button("OK") { migrationNotice = nil }
+                    } message: { Text(migrationNotice ?? "") }
+                    // Inject it into the SwiftUI environment
+                    .modelContainer(sharedDatabase.container)
+                    .task(id: hasCompletedOnboarding && scenePhase == .active) {
+                        #if TIKTOK_TRACKING_AVAILABLE
+                        guard TikTokTracking.isEnabled, hasCompletedOnboarding,
+                              scenePhase == .active else { return }
+                        do {
+                            try await Task.sleep(for: .seconds(1))
+                        } catch {
+                            return
+                        }
+                        guard UIApplication.shared.applicationState == .active,
+                              ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { return }
+                        TikTokBusiness.requestTrackingAuthorization { _ in }
+                        #endif
                     }
-                    guard UIApplication.shared.applicationState == .active,
-                          ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { return }
-                    TikTokBusiness.requestTrackingAuthorization { _ in }
-                    #endif
-                }
-                .onAppear {
-                    UserDefaults(suiteName: "group.com.learnalert.shared")?.set(true, forKey: "isAppInForeground")
-                }
-                .onChange(of: scenePhase) { _, newPhase in
-                    UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newPhase == .active, forKey: "isAppInForeground")
-                }
-                .task(id: scenePhase == .active) {
-                    guard scenePhase == .active else { return }
-                    await CommunitySession.shared.validateAppleCredential()
-                }
-                .task(id: scenePhase == .active) {
-                    guard scenePhase == .active else { return }
-                    // Let Home render before migrating preserved language library items.
-                    do { try await Task.sleep(for: .milliseconds(250)) }
-                    catch { return }
-                    // Convert saved identities without refreshing or replacing personal cards.
-                    await migrateSavedLanguageDecks()
-                    while !Task.isCancelled {
-                        await ManagedCatalogStore.shared.refresh()
-                        do { try await Task.sleep(for: .seconds(60)) }
+                    .onAppear {
+                        UserDefaults(suiteName: "group.com.learnalert.shared")?.set(true, forKey: "isAppInForeground")
+                    }
+                    .onChange(of: scenePhase) { _, newPhase in
+                        UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newPhase == .active, forKey: "isAppInForeground")
+                    }
+                    .task(id: scenePhase == .active) {
+                        guard scenePhase == .active else { return }
+                        await CommunitySession.shared.validateAppleCredential()
+                    }
+                    .task(id: scenePhase == .active) {
+                        guard scenePhase == .active else { return }
+                        // Let Home render before migrating preserved language library items.
+                        do { try await Task.sleep(for: .milliseconds(250)) }
                         catch { return }
+                        // Convert saved identities without refreshing or replacing personal cards.
+                        await migrateSavedLanguageDecks(in: sharedDatabase)
+                        while !Task.isCancelled {
+                            await ManagedCatalogStore.shared.refresh()
+                            do { try await Task.sleep(for: .seconds(60)) }
+                            catch { return }
+                        }
                     }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
-                    CommunitySession.shared.appleCredentialRevoked()
-                }
+                    .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
+                        CommunitySession.shared.appleCredentialRevoked()
+                    }
+            }
         }
     }
 
-    @MainActor private func migrateSavedLanguageDecks() async {
-        do { migrationNotice = try LanguageDeckMigration.run(in: sharedDatabase.container.mainContext) }
+    @MainActor private func migrateSavedLanguageDecks(in database: SharedDatabase) async {
+        do { migrationNotice = try LanguageDeckMigration.run(in: database.container.mainContext) }
         catch { migrationNotice = "Saved language decks could not be fully updated. Your original cards and history have been kept. Please reopen the app to retry. " + error.localizedDescription }
     }
 

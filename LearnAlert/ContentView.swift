@@ -7,6 +7,7 @@ import UserNotifications
 import UIKit
 
 struct ContentView: View {
+    var startupAnkiURL: URL? = nil
     @Query private var decks: [Deck]
     @ObservedObject private var notificationManager = NotificationManager.shared
     @State private var selectedTab = 0
@@ -102,6 +103,11 @@ struct ContentView: View {
         }
         .onAppear {
             UserDefaults(suiteName: "group.com.learnalert.shared")?.set(appearanceMode, forKey: "appearanceMode")
+        }
+        .onChange(of: startupAnkiURL, initial: true) { _, url in
+            guard let url, url.pathExtension.lowercased() == "apkg" else { return }
+            incomingAnkiURL = url
+            showingAnkiImporter = true
         }
     }
 
