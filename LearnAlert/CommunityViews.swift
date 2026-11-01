@@ -46,6 +46,12 @@ final class CommunityFeedStore: ObservableObject {
         invalidate()
     }
 
+    func updateReaction(deckID: String, count: Int, viewerHasLiked: Bool) {
+        guard let index = decks.firstIndex(where: { $0.id == deckID }) else { return }
+        decks[index].likeCount = max(0, count)
+        decks[index].viewerHasLiked = viewerHasLiked
+    }
+
     private func invalidate() {
         requestID = UUID()
         decks = []; totalCount = 0; nextOffset = nil; loadedQuery = nil
@@ -160,10 +166,15 @@ struct CommunityFeedView: View {
     @State private var downloadingID: String?
     @State private var downloadProgress = ""
     @State private var message: String?
+    @State private var refreshLikesOnDismiss = false
+    @AppStorage(DiscoverCategoryStyle.storageKey) private var categoryStyleRaw = DiscoverCategoryStyle.none.rawValue
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if !showsTitle, let categoryStyle = DiscoverCategoryStyle(rawValue: categoryStyleRaw), categoryStyle != .none {
+                DiscoverCategoryBrowser(style: categoryStyle, category: $store.category, language: $store.language)
+            }
             HStack(spacing: 8) {
                 if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }
                 else { sortSummary }
@@ -239,9 +250,18 @@ struct CommunityFeedView: View {
             store.setViewer(token: session.token)
             Task { await store.load() }
         }
-        .sheet(item: $selectedPreview) { deck in
+        .sheet(item: $selectedPreview, onDismiss: {
+            if refreshLikesOnDismiss {
+                refreshLikesOnDismiss = false
+                Task { await store.load() }
+            }
+        }) { deck in
             CommunityDeckPreviewSheet(deck: deck, isAdded: isAdded(deck), isDownloading: downloadingID == deck.id,
-                progress: downloadProgress, download: { Task { await download(deck) } })
+                progress: downloadProgress, download: { Task { await download(deck) } },
+                reactionChanged: { count, liked in
+                    store.updateReaction(deckID: deck.id, count: count, viewerHasLiked: liked)
+                    if store.sort == .likes { refreshLikesOnDismiss = true }
+                })
         }
         .alert("Shared decks", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK", role: .cancel) { message = nil }
@@ -278,6 +298,20 @@ struct CommunityFeedView: View {
             Text(store.sort.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(LearnAlertStyle.textPrimary)
+            if store.category != "All" {
+                Button { store.category = "All" } label: {
+                    HStack(spacing: 4) {
+                        Text("· \(store.category)")
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear \(store.category) topic filter")
+            }
             if store.language != .all {
                 Text("· \(store.language.title)")
                     .font(.caption.weight(.medium))
@@ -285,6 +319,7 @@ struct CommunityFeedView: View {
             }
         }
         .lineLimit(1)
+        .opacity(0.6)
         .frame(minHeight: 44, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
@@ -388,7 +423,7 @@ struct CommunityDeckCard: View {
     }
 
     private var mediaCounts: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 7) {
             count(deck.cardCount, symbol: "rectangle.on.rectangle", tint: colorScheme == .dark
                 ? Color(red: 0.57, green: 0.72, blue: 0.86)
                 : Color(red: 0.22, green: 0.42, blue: 0.63))
@@ -405,6 +440,9 @@ struct CommunityDeckCard: View {
             count(deck.downloadCount, symbol: "arrow.down.circle", tint: colorScheme == .dark
                 ? Color(red: 0.72, green: 0.73, blue: 0.77)
                 : Color(red: 0.42, green: 0.44, blue: 0.50))
+            count(deck.likeCount ?? 0, symbol: "heart.fill", tint: colorScheme == .dark
+                ? Color(red: 0.85, green: 0.48, blue: 0.52)
+                : Color(red: 0.67, green: 0.27, blue: 0.33))
         }
         .font(.caption.weight(.medium))
         .fixedSize()
@@ -415,6 +453,7 @@ struct CommunityDeckCard: View {
         if let images = deck.imageCount, images > 0 { values.append("\(images) images") }
         if let audio = deck.audioCount, audio > 0 { values.append("\(audio) audio files") }
         values.append("\(max(0, deck.downloadCount)) downloads")
+        values.append("\(max(0, deck.likeCount ?? 0)) likes")
         return values.joined(separator: ", ")
     }
 
@@ -447,6 +486,7 @@ struct CommunityDeckPreviewSheet: View {
     var isDownloading = false
     var progress = ""
     let download: () -> Void
+    var reactionChanged: ((Int, Bool) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var session = CommunitySession.shared
@@ -584,6 +624,7 @@ struct CommunityDeckPreviewSheet: View {
                 viewerHasLiked = result.viewerHasLiked
                 if !wasLiked && result.viewerHasLiked { likeAnimationID += 1 }
             }
+            reactionChanged?(likeCount, viewerHasLiked)
         } catch {
             guard !Task.isCancelled, session.token == token else { return }
             session.handle(error); actionMessage = error.localizedDescription

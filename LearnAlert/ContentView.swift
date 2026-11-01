@@ -2560,6 +2560,8 @@ struct AppSettingsView: View {
 
                 SettingsSupportGroup()
 
+                SettingsPreviewGroup()
+
                 Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }
             .padding(.top, 22)
