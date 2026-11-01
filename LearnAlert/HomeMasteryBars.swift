@@ -17,7 +17,7 @@ struct HomeMasteryBars: View {
                         lightInk: "#18785C", darkInk: "#A1F2CE")
             }
         }
-        .frame(height: 26)
+        .frame(height: 18)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
         .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: summary)
@@ -28,10 +28,10 @@ struct HomeMasteryBars: View {
         let tint = Color(hex: colorScheme == .dark ? dark : light)
         return Rectangle()
             .fill(tint.opacity(colorScheme == .dark ? 0.40 : 0.34))
-            .frame(width: width, height: 26)
+            .frame(width: width, height: 18)
             .overlay {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color(hex: colorScheme == .dark ? darkInk : lightInk))
                     .accessibilityHidden(true)
             }

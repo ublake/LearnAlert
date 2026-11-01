@@ -315,7 +315,7 @@ struct CommunityFeedView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease")
-                Image(systemName: "chevron.down").font(.caption2.weight(.semibold))
+                Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).hidden()
             }
             .font(.subheadline.weight(.medium))
             .padding(.leading, 12).padding(.trailing, searchAction == nil ? 12 : 0)

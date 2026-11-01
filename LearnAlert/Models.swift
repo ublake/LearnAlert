@@ -894,6 +894,7 @@ enum LanguageTopicStore {
         case "fillBlank", "fill_blank": return .fillBlank
         case "vocabulary": return .vocabulary
         case "tapReveal", "tap_reveal": return .tapReveal
+        case "images": return .images
         default: return .multipleChoice
         }
     }

@@ -1674,7 +1674,7 @@ private struct HomeStudyCard: View {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed,
                     cardCount: summary.cardCount, colorHex: deck.colorHex)
                     .frame(width: 96, height: 88)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 20)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(deck.name)
@@ -1687,12 +1687,12 @@ private struct HomeStudyCard: View {
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
                 .padding(.trailing, isPinned ? 12 : 0)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .padding(.bottom, 28)
+            .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .bottom) {
                 HomeMasteryBars(summary: summary).allowsHitTesting(false)
