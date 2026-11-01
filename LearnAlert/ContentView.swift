@@ -1674,7 +1674,7 @@ private struct HomeStudyCard: View {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed,
                     cardCount: summary.cardCount, colorHex: deck.colorHex)
                     .frame(width: 96, height: 88)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 12)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(deck.name)
@@ -1687,14 +1687,15 @@ private struct HomeStudyCard: View {
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: 128, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+                .padding(.trailing, isPinned ? 12 : 0)
             }
-            .padding(.trailing, 32)
             .padding(.horizontal, 16)
             .padding(.top, 16)
+            .padding(.bottom, 28)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .trailing) {
-                HomeMasteryBars(summary: summary, isPinned: isPinned).allowsHitTesting(false)
+            .overlay(alignment: .bottom) {
+                HomeMasteryBars(summary: summary).allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
                 if isPinned {
@@ -1706,6 +1707,7 @@ private struct HomeStudyCard: View {
                         .accessibilityLabel("Pinned")
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

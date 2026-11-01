@@ -2,54 +2,55 @@ import SwiftUI
 
 struct HomeMasteryBars: View {
     let summary: DeckLibrarySummary
-    var isPinned = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
-            let heights = segmentHeights(in: geometry.size.height)
-            VStack(spacing: 0) {
-                segment("rectangle.stack.fill", height: heights[0], light: "#758093", dark: "#A5AEBD", topInset: isPinned ? 24 : 0)
-                segment("clock.badge.exclamationmark", height: heights[1], light: "#8060B4", dark: "#B9A2E0")
-                segment("checkmark.seal.fill", height: heights[2], light: "#44856C", dark: "#9BD5B3")
+            let widths = segmentWidths(in: geometry.size.width)
+            HStack(spacing: 0) {
+                segment("rectangle.stack.fill", width: widths[0], light: "#8192B0", dark: "#ADC0DE",
+                        lightInk: "#435477", darkInk: "#D3E0F8")
+                segment("clock.badge.exclamationmark", width: widths[1], light: "#8745EE", dark: "#B07AFF",
+                        lightInk: "#6330AD", darkInk: "#DBC2FF")
+                segment("checkmark.seal.fill", width: widths[2], light: "#12B981", dark: "#42E8A3",
+                        lightInk: "#18785C", darkInk: "#A1F2CE")
             }
         }
-        .frame(width: 32)
+        .frame(height: 26)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
         .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: summary)
     }
 
-    private func segment(_ icon: String, height: CGFloat, light: String, dark: String, topInset: CGFloat = 0) -> some View {
+    private func segment(_ icon: String, width: CGFloat, light: String, dark: String,
+                         lightInk: String, darkInk: String) -> some View {
         let tint = Color(hex: colorScheme == .dark ? dark : light)
         return Rectangle()
-            .fill(tint.opacity(colorScheme == .dark ? 0.54 : 0.45))
-            .frame(height: height)
+            .fill(tint.opacity(colorScheme == .dark ? 0.40 : 0.34))
+            .frame(width: width, height: 26)
             .overlay {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color(red: 0.10, green: 0.13, blue: 0.24))
-                    .padding(.top, topInset)
+                    .foregroundStyle(Color(hex: colorScheme == .dark ? darkInk : lightInk))
                     .accessibilityHidden(true)
             }
     }
 
     /// Keep icons visible, then distribute the remaining space proportionally.
-    /// Pinning reserves a small pocket in the grey segment for the corner pin.
-    private func segmentHeights(in height: CGFloat) -> [CGFloat] {
-        let height = max(0, height)
-        let minimums: [CGFloat] = [isPinned ? 44 : 24, 24, 24]
+    private func segmentWidths(in width: CGFloat) -> [CGFloat] {
+        let width = max(0, width)
+        let minimums: [CGFloat] = [26, 26, 26]
         let minimumTotal = minimums.reduce(0, +)
-        guard height > minimumTotal else {
-            return minimums.map { $0 * height / minimumTotal }
+        guard width > minimumTotal else {
+            return minimums.map { $0 * width / minimumTotal }
         }
 
         var weights = [summary.needToLearnCount, summary.learningCount, summary.masteredCount].map { CGFloat(max(0, $0)) }
         if weights.reduce(0, +) == 0 { weights[0] = 1 }
         var sizes = [CGFloat](repeating: 0, count: 3)
         var remaining = [0, 1, 2]
-        var available = height
+        var available = width
         while !remaining.isEmpty {
             let total = remaining.reduce(CGFloat.zero) { $0 + weights[$1] }
             let proposed = remaining.map { total > 0 ? available * weights[$0] / total : available / CGFloat(remaining.count) }
