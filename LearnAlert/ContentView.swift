@@ -1233,7 +1233,11 @@ private struct HomeAlertSetupCard: View {
             }
             .overlay { DeckSelectionHintBorder(isVisible: hasStudyMaterial && selectedTarget == nil) }
 
-
+            if case .deck(let deck)? = selectedTarget {
+                HomeMasteryBars(summary: deck.librarySummary)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .allowsHitTesting(false)
+            }
 
             HStack(spacing: 10) {
                 Button {
@@ -1278,7 +1282,8 @@ private struct HomeAlertSetupCard: View {
     }
 
     private var activeContent: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        let _ = librarySaveRevision
+        return VStack(alignment: .leading, spacing: 15) {
             HStack(alignment: .top) {
                 HStack(spacing: 10) {
                     Image(systemName: "checkmark")
@@ -1299,6 +1304,13 @@ private struct HomeAlertSetupCard: View {
                 Spacer(minLength: 28)
             }
             .foregroundStyle(LearnAlertStyle.textPrimary)
+
+            if let activeDeckId = engine.activeDeckId,
+               let deck = decks.first(where: { $0.id == activeDeckId }) {
+                HomeMasteryBars(summary: deck.librarySummary)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .allowsHitTesting(false)
+            }
 
             HStack(spacing: 10) {
                 Button(action: showSettings) {
@@ -1598,7 +1610,7 @@ private struct HomeStudyCard: View {
     }
 
     var body: some View {
-        let summary = deck.librarySummary
+        let cardCount = deck.cardCount
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .trailing) {
                 Button(action: scheduleFromSwipe) {
@@ -1619,7 +1631,7 @@ private struct HomeStudyCard: View {
                 .accessibilityHidden(!isScheduleRevealed || !canSwipe)
                 .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
 
-                cardFace(summary: summary)
+                cardFace(cardCount: cardCount)
                     .overlay {
                         if isScheduleRevealed {
                             Color.clear.contentShape(Rectangle())
@@ -1668,13 +1680,12 @@ private struct HomeStudyCard: View {
         .transaction { if reduceMotion { $0.animation = nil } }
     }
 
-    private func cardFace(summary: DeckLibrarySummary) -> some View {
+    private func cardFace(cardCount: Int) -> some View {
         NavigationLink(destination: DeckDetailView(deck: deck)) {
             HStack(alignment: .bottom, spacing: 16) {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed,
-                    cardCount: summary.cardCount, colorHex: deck.colorHex)
+                    cardCount: cardCount, colorHex: deck.colorHex)
                     .frame(width: 96, height: 88)
-                    .padding(.bottom, 20)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(deck.name)
@@ -1682,21 +1693,18 @@ private struct HomeStudyCard: View {
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    Text("\(deck.deckType) · \(summary.cardCount) cards")
+                    Text("\(deck.deckType) · \(cardCount) cards")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
                 .padding(.trailing, isPinned ? 12 : 0)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .padding(.bottom, 20)
+            .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                HomeMasteryBars(summary: summary).allowsHitTesting(false)
-            }
             .overlay(alignment: .topTrailing) {
                 if isPinned {
                     Image(systemName: "pin.fill")
@@ -1712,7 +1720,7 @@ private struct HomeStudyCard: View {
         }
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
-        .accessibilityLabel("Open \(deck.name), \(summary.cardCount) cards. \(summary.masteredCount) mastered, \(summary.learningCount) learning, \(summary.needToLearnCount) need to learn")
+        .accessibilityLabel("Open \(deck.name), \(cardCount) cards")
         .appCardSurface()
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
