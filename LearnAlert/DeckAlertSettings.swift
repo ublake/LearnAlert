@@ -100,7 +100,7 @@ extension DeckAlertSettings {
 nonisolated struct AlertScheduleEdit: Equatable {
     var targetId = "ALL"
     var settings = DeckAlertSettings()
-    var sound = "alert3.wav"
+    var sound = AlertSoundCatalog.defaultFilename
 }
 
 nonisolated struct DailyDeckAlertPlan: Codable, Equatable {

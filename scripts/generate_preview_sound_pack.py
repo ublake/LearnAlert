@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild LearnAlert's original, preview-only sound pack (Python stdlib only).
+"""Rebuild LearnAlert's original sound pack (Python stdlib only).
 
 All notes, synthesis recipes and waveforms are created here; no samples or
 third-party compositions are used. Run from any directory. See
@@ -426,7 +426,7 @@ def main():
         rendered.append(samples)
     manifest = {"version": 1, "sampleRate": RATE, "channels": 1, "bitsPerSample": 16,
                 "created": "2026-11-01", "license": "Original LearnAlert procedural sound designs; no third-party samples.",
-                "previewOnly": True, "sounds": entries}
+                "previewOnly": False, "sounds": entries}
     (OUTPUT / "learnalert-sound-pack.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     if not args.no_preview:
         make_preview(entries, rendered)

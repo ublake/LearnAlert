@@ -100,7 +100,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         content.categoryIdentifier = "FLASHCARD_REVEAL"
         
         // NEW: Custom Sound Engine!
-        let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"
+        let savedSound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
         if savedSound == "Default" {
             content.sound = .default
         } else {
@@ -161,7 +161,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
         content.categoryIdentifier = "FLASHCARD_REVEAL"
 
-        let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"
+        let savedSound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
         if savedSound == "Default" {
             content.sound = .default
         } else {
@@ -256,7 +256,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         content.body = "Press and hold to answer"
         content.categoryIdentifier = "FLASHCARD_TEST"
 
-        let savedSound = UserDefaults.standard.string(forKey: "alertSound") ?? "Default"
+        let savedSound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
         if savedSound == "Default" {
             content.sound = .default
         } else {

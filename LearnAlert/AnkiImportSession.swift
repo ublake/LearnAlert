@@ -166,6 +166,7 @@ final class AnkiImportSession: ObservableObject {
                 let total = request.package.mediaCount + 1
                 self.recordProgress(.init(1, "Your deck is ready", completedFiles: total, totalFiles: total))
                 self.phase = .complete
+                if result.added > 0 { InteractionSoundPlayer.shared.play(.importCompleted) }
             } catch {
                 guard let self, self.runID == id, !Task.isCancelled else { return }
                 self.savingWorker = nil

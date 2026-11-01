@@ -8,9 +8,25 @@ Created November 1, 2026. Fifty original, short procedural sound designs:
 | Ringtones | 10 | Short notification-tone options |
 | Schedule celebrations | 10 | A lift, musical bloom and gentle firework sparkles for successful scheduling |
 
-The pack is a **preview collection**. The gallery in Settings plays these files
-on request; it does not replace existing sounds or activate new sound events.
-Event names in the manifest are suggestions for future integration.
+The gallery in Settings lets you audition every sound without changing preferences.
+A restrained selection also replaces the old app effects:
+
+- Real quiz answers: Correct · Bloom or Try again · Soft, in-app and in alerts.
+- Successful deck additions and removals: Deck added or Deck removed.
+- A completed Anki import that added cards: All unpacked.
+- Successful alert scheduling with fireworks: Grand little finale.
+
+Navigation, color selections, skipping, AI chat messages, and Anki self-ratings
+stay silent. Effects never stack; scheduling takes priority. Active card recordings
+suppress feedback, and **App sound effects** in Preferences can mute effects in
+both the app and expanded alerts. This does not mute notification ringtones or
+intentional sound previews. Effects use the ambient session and honor Silent mode.
+
+All ten ringtones are selectable in Alert Sound. Cloud drops is the default.
+The old alert1–5 filenames resolve to matching new tones, and their bundled WAV
+contents are replaced for pending-notification compatibility. Dates, card selection,
+and daily notification limits are not changed. Other manifest event names remain
+suggestions; they do not add sounds to every action.
 
 ## Audio assets
 

@@ -336,6 +336,8 @@ struct SettingsPreferencesGroup: View {
     @Binding var deckCreaturesHaveFaces: Bool
     @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
+    @AppStorage(InteractionSoundConfiguration.effectsStorageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var soundEffectsEnabled = true
     @State private var showingAnkiSettings = false
 
     var body: some View {
@@ -358,6 +360,24 @@ struct SettingsPreferencesGroup: View {
                 }
                 .accessibilityLabel("Alert Sound")
                 .accessibilityValue(AlertSoundOption.displayName(for: alertSound))
+
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+
+                Toggle(isOn: $soundEffectsEnabled) {
+                    HStack(spacing: 14) {
+                        SettingsRowIcon(systemName: "waveform")
+                        Text("App sound effects")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(LearnAlertStyle.textPrimary)
+                    }
+                }
+                .tint(LearnAlertStyle.appAccentForeground)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .frame(minHeight: 64)
+                .onChange(of: soundEffectsEnabled) { _, enabled in
+                    if !enabled { InteractionSoundPlayer.shared.stopEffects() }
+                }
 
                 Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
 
@@ -667,7 +687,6 @@ struct ManageMyDataView: View {
         deletionProgress = 0; totalCardsToDelete = 0
         deletionStatus = "Preparing your library"
         HapticFeedback.impact(.medium)
-        InteractionSoundPlayer.shared.play(.deleteDeck)
         Task { @MainActor in
             defer { isDeletingDecks = false }
             do {
@@ -688,7 +707,9 @@ struct ManageMyDataView: View {
                 StudyEngine.shared.stopAlerts()
                 await PracticeSessionStore.shared.removeAll()
                 HapticFeedback.success()
-                InteractionSoundPlayer.shared.play(.correct)
+                if result.decks > 0 || result.cards > 0 {
+                    InteractionSoundPlayer.shared.play(.deleteDeck)
+                }
                 completedSummaryMessage = result.decks == 0 && result.cards == 0
                     ? "No decks or cards found to delete."
                     : "Successfully removed \(result.decks) \(result.decks == 1 ? "deck" : "decks") and \(result.cards) \(result.cards == 1 ? "card" : "cards")."

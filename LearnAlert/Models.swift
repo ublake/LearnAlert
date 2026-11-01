@@ -621,16 +621,11 @@ struct AlertSoundOption: Identifiable, Hashable {
     let name: String
 
     static let allSounds: [AlertSoundOption] = [
-        AlertSoundOption(id: "Default", name: "Default"),
-        AlertSoundOption(id: "alert1.wav", name: "Level-up"),
-        AlertSoundOption(id: "alert2.wav", name: "Pulse"),
-        AlertSoundOption(id: "alert3.wav", name: "Breeze"),
-        AlertSoundOption(id: "alert4.wav", name: "Echo"),
-        AlertSoundOption(id: "alert5.wav", name: "Beacon")
-    ]
+        AlertSoundOption(id: AlertSoundCatalog.systemDefault, name: "System default")
+    ] + AlertSoundCatalog.ringtones.map { AlertSoundOption(id: $0.filename, name: $0.title) }
 
     static func displayName(for id: String) -> String {
-        allSounds.first { $0.id == id }?.name ?? id.replacingOccurrences(of: ".wav", with: "")
+        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? "Cloud drops"
     }
 }
 

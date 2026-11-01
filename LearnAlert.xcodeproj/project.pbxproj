@@ -110,6 +110,7 @@
 		254C85372F4971E60026450E /* Exceptions for "LearnAlert" folder in "LearnAlertExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AlertSoundCatalog.swift,
 				AlertTimelineStore.swift,
 				AnkiCardContent.swift,
 				AnkiCardView.swift,
@@ -172,6 +173,7 @@
 				hangulaudio/vowel_20.mp3,
 				hangulaudio/vowel_21.mp3,
 				ImageCardFlipView.swift,
+				InteractionSoundConfiguration.swift,
 				koreanimages/child.png,
 				koreanimages/door.png,
 				koreanimages/flower.png,

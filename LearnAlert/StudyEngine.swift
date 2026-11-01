@@ -230,7 +230,7 @@ class StudyEngine: ObservableObject {
         var plan = DailyDeckAlertPlan(deckId: deck.id, sectionId: section?.id, cardIds: ids,
             anchor: now, hour: settings.dailyHour, minute: settings.dailyMinute, expiresAt: expiresAt,
             stopWhenMastered: stopCondition == "Until Deck Learnt",
-            sound: UserDefaults.standard.string(forKey: "alertSound") ?? "Default")
+            sound: AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound")))
         if !settings.isCustomDaily {
             plan.window = DeckAlertWindow(endHour: settings.endHour, endMinute: settings.endMinute,
                 notificationLimit: activeVolume, minimumSpacingMinutes: settings.resolvedSpacingMinutes,

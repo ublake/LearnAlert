@@ -5,7 +5,7 @@
   "bitsPerSample": 16,
   "created": "2026-11-01",
   "license": "Original LearnAlert procedural sound designs; no third-party samples.",
-  "previewOnly": true,
+  "previewOnly": false,
   "sounds": [
     {
       "id": "ui.correct_bloom",

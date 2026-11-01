@@ -752,12 +752,12 @@ struct HomeLibraryView: View {
         ) {
             Button("Delete Deck", role: .destructive) {
                 guard let deckPendingDeletion else { return }
-                InteractionSoundPlayer.shared.play(.deleteDeck)
                 let ankiFolders = Set(deckPendingDeletion.cards.compactMap { $0.ankiContent?.mediaFolder })
                 let media = deckPendingDeletion.cards.flatMap { $0.fieldMedia.values }.enumerated().reduce(into: [String: CardFieldMedia]()) { $0[String($1.offset)] = $1.element }
                 let deletedDeckID = deckPendingDeletion.id
                 context.delete(deckPendingDeletion)
                 if (try? context.save()) != nil {
+                    InteractionSoundPlayer.shared.play(.deleteDeck)
                     AnkiMediaCleanup.removeUnreferenced(ankiFolders, context: context)
                     CardAttachmentCleanup.removeUnreferenced(media, context: context)
                     Task { await PracticeSessionStore.shared.removeSessions(deckID: deletedDeckID) }
@@ -2229,7 +2229,7 @@ struct SetupAlertsView: View {
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Menu {
-                            Picker("Sound", selection: Binding(get: { draft.sound }, set: { sound in
+                            Picker("Sound", selection: Binding(get: { AlertSoundCatalog.resolve(draft.sound) }, set: { sound in
                                 draft.sound = sound
                                 if sound == "Default" { AudioServicesPlaySystemSound(1007) }
                                 else { InteractionSoundPlayer.shared.previewSound(named: sound) }
@@ -2298,7 +2298,7 @@ struct SetupAlertsView: View {
         let storedTarget = UserDefaults.standard.string(forKey: "targetDeckId") ?? "ALL"
         draft.targetId = editingActiveSchedule ? engine.activeDeckId?.uuidString ?? storedTarget : storedTarget
         draft.settings = selectedDeck?.alertSettings ?? engine.globalSettings
-        draft.sound = UserDefaults.standard.string(forKey: "alertSound") ?? "alert3.wav"
+        draft.sound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
         original = draft
     }
 
@@ -2533,7 +2533,7 @@ struct AppSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @Environment(\.usesNativeStudyNavigation) private var usesNativeStudyNavigation
-    @AppStorage("alertSound") private var alertSound = "alert3.wav"
+    @AppStorage("alertSound") private var alertSound = AlertSoundCatalog.defaultFilename
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("deckCreaturesHaveFaces") private var deckCreaturesHaveFaces = false
 
@@ -2552,7 +2552,7 @@ struct AppSettingsView: View {
                 SettingsProfileCard()
 
                 SettingsPreferencesGroup(
-                    alertSound: $alertSound,
+                    alertSound: Binding(get: { AlertSoundCatalog.resolve(alertSound) }, set: { alertSound = $0 }),
                     availableSounds: availableSounds,
                     appearanceMode: $appearanceMode,
                     deckCreaturesHaveFaces: $deckCreaturesHaveFaces
@@ -2573,11 +2573,6 @@ struct AppSettingsView: View {
         .task {
             await refreshPermissionStatus()
             await communitySession.refreshProfile()
-        }
-        .onAppear {
-            if !availableSounds.contains(where: { $0.id == alertSound }) {
-                alertSound = "alert3.wav"
-            }
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }

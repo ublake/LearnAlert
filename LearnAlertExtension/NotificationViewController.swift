@@ -11,6 +11,7 @@ import UserNotificationsUI
 import SwiftUI
 import SwiftData
 import AVFoundation
+import Combine
 
 private struct NotificationSessionCard {
     let id: String
@@ -42,26 +43,56 @@ private struct NotificationDeckChoice: Identifiable {
 private final class NotificationFeedbackSoundPlayer {
     static let shared = NotificationFeedbackSoundPlayer()
     private var player: AVAudioPlayer?
+    private var activePriority = 0
+    private var playbackObservation: AnyCancellable?
 
-    private init() {}
+    private init() {
+        playbackObservation = CardAudioPlayer.playbackChanges.sink { [weak self] playing in
+            guard playing else { return }
+            Task { @MainActor [weak self] in
+                self?.player?.stop()
+                self?.player = nil
+            }
+        }
+    }
 
-    func play(named name: String) {
-        guard let url = soundURL(named: name),
-              let player = try? AVAudioPlayer(contentsOf: url) else { return }
-        self.player = player
-        player.prepareToPlay()
-        player.play()
+    func playAnswer(isCorrect: Bool) {
+        guard InteractionSoundConfiguration.effectsEnabled, !CardAudioPlayer.isAnyPlaying else { return }
+        let cue = InteractionSoundConfiguration.answer(isCorrect: isCorrect)
+        if player?.isPlaying == true, cue.priority <= activePriority { return }
+        guard let url = soundURL(named: cue.filename),
+              let next = try? AVAudioPlayer(contentsOf: url) else { return }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            if session.category != .ambient {
+                try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            }
+            try session.setActive(true)
+        } catch { return }
+        player?.stop()
+        next.volume = cue.volume
+        next.prepareToPlay()
+        if next.play() {
+            player = next
+            activePriority = cue.priority
+        }
     }
 
     private func soundURL(named name: String) -> URL? {
-        if let bundledURL = Bundle.main.url(forResource: name, withExtension: "mp3") {
+        if let bundledURL = bundledSoundURL(named: name, in: Bundle.main) {
             return bundledURL
         }
 
         let hostAppURL = Bundle.main.bundleURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return Bundle(url: hostAppURL)?.url(forResource: name, withExtension: "mp3")
+        guard let hostBundle = Bundle(url: hostAppURL) else { return nil }
+        return bundledSoundURL(named: name, in: hostBundle)
+    }
+
+    private func bundledSoundURL(named name: String, in bundle: Bundle) -> URL? {
+        bundle.url(forResource: name, withExtension: nil)
+            ?? bundle.url(forResource: name, withExtension: nil, subdirectory: "Sounds/PreviewPack")
     }
 }
 
@@ -1077,7 +1108,6 @@ struct FlashcardNotificationView: View {
             }
             refreshBatchCounts()
         }
-        NotificationFeedbackSoundPlayer.shared.play(named: "skip")
         advanceToNextCard()
     }
 
@@ -1259,14 +1289,14 @@ struct FlashcardNotificationView: View {
 
     private func gradeAnki(_ rating: AnkiReviewRating) {
         guard activeCardType == "anki", isRevealed, !isGraded, ankiFutureReviewDate == nil else { return }
-        gradeCard(isCorrect: rating.wasCorrect, ankiRating: rating)
+        gradeCard(isCorrect: rating.wasCorrect, playFeedback: false, ankiRating: rating)
     }
 
     private func gradeCard(isCorrect: Bool, playFeedback: Bool = true, ankiRating: AnkiReviewRating? = nil) {
         guard !sessionFinished, !isGraded else { return }
         isAnswerFieldFocused = false
         if isSyntheticSession {
-            if playFeedback { NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect") }
+            if playFeedback { NotificationFeedbackSoundPlayer.shared.playAnswer(isCorrect: isCorrect) }
             lastAnswerWasCorrect = isCorrect
             withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                 unlearnedCount = 5
@@ -1311,7 +1341,7 @@ struct FlashcardNotificationView: View {
             }
             pendingGrade = nil
             lastAnswerWasCorrect = isCorrect
-            if playFeedback { NotificationFeedbackSoundPlayer.shared.play(named: isCorrect ? "correct" : "incorrect") }
+            if playFeedback { NotificationFeedbackSoundPlayer.shared.playAnswer(isCorrect: isCorrect) }
             refreshBatchCounts()
             isGraded = true
             showingHint = false

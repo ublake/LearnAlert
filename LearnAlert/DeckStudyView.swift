@@ -376,7 +376,6 @@ struct DeckStudyView: View {
         shortReviews.schedule(card.id, due: option.nextReviewDate, repeatsInSession: option.shouldRepeatInSession)
         ratingCounts[rating, default: 0] += 1; reviewedAnkiIDs.insert(card.id)
         recordPracticeAnswer(card, correct: rating.wasCorrect)
-        InteractionSoundPlayer.shared.play(rating.wasCorrect ? .correct : .incorrect)
         isGraded = true
         checkpoint(); advance()
     }

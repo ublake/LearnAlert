@@ -148,7 +148,7 @@ enum DailyDeckAlertScheduler {
             content.title = "LearnAlert: \(deck.name)"
             content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
             content.categoryIdentifier = "FLASHCARD_REVEAL"
-            let sound = plan.sound
+            let sound = AlertSoundCatalog.resolve(plan.sound)
             content.sound = sound == "Default" ? .default : UNNotificationSound(named: UNNotificationSoundName(sound))
             content.userInfo = ["deckId": deck.id.uuidString, "cardId": card.id.uuidString,
                 "deckName": deck.name, "deckType": card.cardType.title, "cardType": card.cardType.rawValue,
