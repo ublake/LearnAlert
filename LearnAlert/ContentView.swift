@@ -969,6 +969,7 @@ private struct HomeWallpaperBackground: View {
 private struct ScheduleLightBurst: View {
     let event: HomeLibraryView.CelebrationEvent?
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var celebrationStart: Date?
     @State private var handledEventId: UUID?
@@ -980,11 +981,21 @@ private struct ScheduleLightBurst: View {
 
                 Canvas { context, size in
                     guard elapsed > 0 else { return }
+                    let isLight = colorScheme == .light
+                    let colors: [Color] = isLight ? [
+                        Color(red: 0.86, green: 0.31, blue: 0.04),
+                        Color(red: 0.00, green: 0.47, blue: 0.40),
+                        Color(red: 0.15, green: 0.36, blue: 0.85)
+                    ] : [
+                        Color(red: 1.0, green: 0.82, blue: 0.12),
+                        Color(red: 0.16, green: 1.0, blue: 0.84),
+                        Color(red: 0.48, green: 0.68, blue: 1.0)
+                    ]
 
                     let fireworks: [(launchX: CGFloat, burst: CGPoint, delay: Double, color: Color)] = [
-                        (size.width * 0.22, CGPoint(x: size.width * 0.30, y: 100), 0.00, Color(red: 1.0, green: 0.82, blue: 0.12)),
-                        (size.width * 0.50, CGPoint(x: size.width * 0.52, y: 65), 0.20, Color(red: 0.16, green: 1.0, blue: 0.84)),
-                        (size.width * 0.78, CGPoint(x: size.width * 0.72, y: 110), 0.40, Color(red: 0.48, green: 0.68, blue: 1.0))
+                        (size.width * 0.22, CGPoint(x: size.width * 0.30, y: 100), 0.00, colors[0]),
+                        (size.width * 0.50, CGPoint(x: size.width * 0.52, y: 65), 0.20, colors[1]),
+                        (size.width * 0.78, CGPoint(x: size.width * 0.72, y: 110), 0.40, colors[2])
                     ]
 
                     for (fireworkIndex, firework) in fireworks.enumerated() {
@@ -1012,8 +1023,8 @@ private struct ScheduleLightBurst: View {
                                     x: start.x + (firework.burst.x - start.x) * trailEased + jitter,
                                     y: start.y + (firework.burst.y - start.y) * trailEased + CGFloat(emberIndex) * 1.6
                                 )
-                                let emberRadius = max(0.6, 3.2 - CGFloat(emberIndex) * 0.14)
-                                let emberAlpha = max(0, 1.0 - Double(emberIndex) / 20.0) * 0.85
+                                let emberRadius = max(0.6, (isLight ? 3.6 : 3.2) - CGFloat(emberIndex) * 0.14)
+                                let emberAlpha = max(0, 1.0 - Double(emberIndex) / 20.0) * (isLight ? 0.95 : 0.85)
                                 context.fill(
                                     Path(ellipseIn: CGRect(x: point.x - emberRadius, y: point.y - emberRadius, width: emberRadius * 2, height: emberRadius * 2)),
                                     with: .color(firework.color.opacity(emberAlpha))
@@ -1021,7 +1032,7 @@ private struct ScheduleLightBurst: View {
                             }
 
                             context.fill(Path(ellipseIn: CGRect(x: head.x - 7, y: head.y - 7, width: 14, height: 14)), with: .color(firework.color.opacity(0.35)))
-                            context.fill(Path(ellipseIn: CGRect(x: head.x - 3, y: head.y - 3, width: 6, height: 6)), with: .color(Color.white))
+                            context.fill(Path(ellipseIn: CGRect(x: head.x - 3, y: head.y - 3, width: 6, height: 6)), with: .color(isLight ? firework.color : .white))
                             continue
                         }
 
@@ -1029,7 +1040,7 @@ private struct ScheduleLightBurst: View {
                         guard burstTime < burstDuration else { continue }
 
                         let burstProgress = CGFloat(burstTime / burstDuration)
-                        let fade = pow(max(0, 1.0 - burstProgress), 1.5)
+                        let fade = pow(max(0, 1.0 - burstProgress), isLight ? 1.15 : 1.5)
                         let shrink = max(0.0, 1.0 - burstProgress * 0.88)
                         let gravity = 190.0 * pow(burstProgress, 1.65)
                         let dragDecay = 1.0 - exp(-CGFloat(burstTime) * 2.8)
@@ -1039,7 +1050,7 @@ private struct ScheduleLightBurst: View {
                             let flashRadius = CGFloat(burstTime / 0.12) * 24.0
                             context.fill(
                                 Path(ellipseIn: CGRect(x: firework.burst.x - flashRadius, y: firework.burst.y - flashRadius, width: flashRadius * 2, height: flashRadius * 2)),
-                                with: .color(Color.white.opacity(flashAlpha))
+                                with: .color((isLight ? firework.color : .white).opacity(flashAlpha))
                             )
                         }
 
@@ -1074,11 +1085,11 @@ private struct ScheduleLightBurst: View {
                             trail.addLine(to: position)
                             context.stroke(
                                 trail,
-                                with: .color(firework.color.opacity(particleAlpha * 0.55)),
-                                lineWidth: max(0.8, 1.8 * shrink)
+                                with: .color(firework.color.opacity(particleAlpha * (isLight ? 0.80 : 0.55))),
+                                lineWidth: max(isLight ? 1.1 : 0.8, (isLight ? 2.3 : 1.8) * shrink)
                             )
 
-                            let coreSize = max(1.0, 3.8 * shrink)
+                            let coreSize = max(isLight ? 1.4 : 1.0, (isLight ? 4.4 : 3.8) * shrink)
                             context.fill(
                                 Path(ellipseIn: CGRect(x: position.x - coreSize/2, y: position.y - coreSize/2, width: coreSize, height: coreSize)),
                                 with: .color(firework.color.opacity(particleAlpha))
@@ -1087,12 +1098,12 @@ private struct ScheduleLightBurst: View {
                             let glowSize = coreSize * 2.0
                             context.fill(
                                 Path(ellipseIn: CGRect(x: position.x - glowSize, y: position.y - glowSize, width: glowSize * 2, height: glowSize * 2)),
-                                with: .color(firework.color.opacity(particleAlpha * 0.40))
+                                with: .color(firework.color.opacity(particleAlpha * (isLight ? 0.12 : 0.40)))
                             )
                         }
                     }
                 }
-                .blendMode(.plusLighter)
+                .blendMode(colorScheme == .light ? .normal : .plusLighter)
             }
         }
         .ignoresSafeArea()
