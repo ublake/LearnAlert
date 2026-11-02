@@ -23,7 +23,7 @@ private struct HomeLibraryDropDelegate: DropDelegate {
 }
 
 struct HomeLibraryDragModifier: ViewModifier {
-    static let contentType = UTType(exportedAs: "com.learnalert.library-order")
+    static let contentType = UTType(exportedAs: "com.learnalert.library-order", conformingTo: .data)
     let id: String
     let enabled: Bool
     @Binding var dragging: String?

@@ -16,6 +16,15 @@ target 'LearnAlertExtension' do
 end
 
 post_install do |installer|
+  # CocoaPods 1.17 still generates an Xcode 16 review marker. Keep the
+  # project-wide security settings aligned with the targets below and record
+  # the Xcode 27.1 settings review without changing dependency compiler modes.
+  installer.pods_project.root_object.attributes['LastUpgradeCheck'] = '2710'
+  installer.pods_project.root_object.attributes['BuildIndependentTargetsInParallel'] = '1'
+  installer.pods_project.build_configurations.each do |configuration|
+    configuration.build_settings['ENABLE_ENHANCED_SECURITY'] = 'YES'
+    configuration.build_settings['ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE'] = 'YES'
+  end
   crash_source = File.join(installer.sandbox.root, 'TikTokBusinessSDK/TikTokBusinessSDK/Core/TTSDKCrash/TTSDKCrashRecordingCore/TTSDKCPU_arm64.c')
   if File.exist?(crash_source)
     source = File.read(crash_source)

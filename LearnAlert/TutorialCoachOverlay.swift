@@ -1,10 +1,10 @@
 import SwiftUI
 
-enum TutorialCoachTarget: Hashable {
+nonisolated enum TutorialCoachTarget: Hashable, Sendable {
     case firstDeck, deckBack, homeSchedule
 }
 
-struct TutorialCoachStep: Hashable {
+nonisolated struct TutorialCoachStep: Hashable, Sendable {
     let target: TutorialCoachTarget
     let title: String
     let message: String

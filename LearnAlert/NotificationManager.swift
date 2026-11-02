@@ -7,7 +7,7 @@
 
 
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 import Combine
 import SwiftUI
 import SwiftData
@@ -134,20 +134,20 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
         guard NotificationLearningBudget.reserveNotification(requestID: request.identifier, at: date) else { return }
         
-        UNUserNotificationCenter.current().add(request) { error in
-            Task { @MainActor in
-                if let error {
-                    print("Error scheduling: \(error)")
-                    NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
-                    return
-                }
-                guard NotificationLearningBudget.remainingQuestions(on: date) > 0 else {
-                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [request.identifier])
-                    NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
-                    return
-                }
-                AlertTimelineStore.shared.scheduled(request, date: date)
+        Task { @MainActor in
+            do {
+                try await UNUserNotificationCenter.current().add(request)
+            } catch {
+                print("Error scheduling: \(error)")
+                NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
+                return
             }
+            guard NotificationLearningBudget.remainingQuestions(on: date) > 0 else {
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [request.identifier])
+                NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
+                return
+            }
+            AlertTimelineStore.shared.scheduled(request, date: date)
         }
     }
 
