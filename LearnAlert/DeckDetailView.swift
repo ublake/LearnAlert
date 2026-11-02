@@ -197,13 +197,6 @@ struct DeckDetailView: View {
                         Text(snapshot.cardCount == 0 ? "No cards in this deck yet" : "No cards match your filter")
                             .font(.custom("Poppins-Medium", size: 15))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
-                        if snapshot.cardCount == 0 {
-                            Button("Add First Card") {
-                                showingCreateCard = true
-                            }
-                            .buttonStyle(PrimaryActionButtonStyle())
-                            .frame(width: 180)
-                        }
                         Spacer()
                     }
                 } else {
