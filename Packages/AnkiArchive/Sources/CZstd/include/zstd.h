@@ -15,7 +15,11 @@
 /* ======   Dependencies   ======*/
 #include <stddef.h>   /* size_t */
 
-#include "zstd_errors.h" /* list of errors */
+#if __has_include(<CZstd/zstd_errors.h>)
+#include <CZstd/zstd_errors.h> /* framework import */
+#else
+#include "zstd_errors.h" /* local and Swift Package imports */
+#endif
 #if defined(ZSTD_STATIC_LINKING_ONLY) && !defined(ZSTD_H_ZSTD_STATIC_LINKING_ONLY)
 #include <limits.h>   /* INT_MAX */
 #endif /* ZSTD_STATIC_LINKING_ONLY */

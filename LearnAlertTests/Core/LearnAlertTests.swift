@@ -617,13 +617,13 @@ struct CourseCurriculumTests {
 
         var progressMap: [String: CourseLessonProgressRecord] = [:]
         // Initially lesson 1 is available and lesson 2 is locked
-        let initialStatus1 = progressMap[lesson1.id]?.status ?? (0 == 0 ? .available : .locked)
-        let initialStatus2 = progressMap[lesson2.id]?.status ?? (1 == 0 ? .available : .locked)
+        let initialStatus1 = progressMap[lesson1.id]?.status ?? .available
+        let initialStatus2 = progressMap[lesson2.id]?.status ?? .locked
         #expect(initialStatus1 == .available)
         #expect(initialStatus2 == .locked)
 
         // Complete lesson 1
-        var rec1 = CourseLessonProgressRecord(status: .completed, completedDate: Date())
+        let rec1 = CourseLessonProgressRecord(status: .completed, completedDate: Date())
         progressMap[lesson1.id] = rec1
 
         // Now lesson 2 should transition to available

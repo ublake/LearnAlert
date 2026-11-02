@@ -24,6 +24,9 @@ post_install do |installer|
   installer.pods_project.build_configurations.each do |configuration|
     configuration.build_settings['ENABLE_ENHANCED_SECURITY'] = 'YES'
     configuration.build_settings['ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE'] = 'YES'
+    configuration.build_settings['DEAD_CODE_STRIPPING'] = 'YES'
+    configuration.build_settings['STRING_CATALOG_GENERATE_SYMBOLS'] = 'YES'
+    configuration.build_settings.delete('STRIP_INSTALLED_PRODUCT')
   end
   crash_source = File.join(installer.sandbox.root, 'TikTokBusinessSDK/TikTokBusinessSDK/Core/TTSDKCrash/TTSDKCrashRecordingCore/TTSDKCPU_arm64.c')
   if File.exist?(crash_source)
@@ -34,13 +37,42 @@ post_install do |installer|
     File.chmod(File.stat(crash_source).mode | 0200, crash_source)
     File.write(crash_source, source)
   end
+  # CocoaPods emits quoted imports; CZstd's framework module requires qualified imports.
+  czstd_umbrella = File.join(installer.sandbox.root, 'Target Support Files/CZstd/CZstd-umbrella.h')
+  if File.exist?(czstd_umbrella)
+    source = File.read(czstd_umbrella)
+    %w[zstd.h zstd_errors.h].each do |header|
+      source = source.gsub(%(#import "#{header}"), %(#import <CZstd/#{header}>))
+    end
+    File.write(czstd_umbrella, source)
+  end
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |configuration|
       configuration.build_settings['ENABLE_ENHANCED_SECURITY'] = 'YES'
       configuration.build_settings['ENABLE_HARDWARE_CHECKED_POINTER_ARITHMETIC_SLICE'] = 'YES'
       deployment_target = configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
-      if deployment_target && Gem::Version.new(deployment_target) < Gem::Version.new('15.0')
-        configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # Xcode 27.1 recommends iOS 17 for dependencies with older minima.
+      if deployment_target && Gem::Version.correct?(deployment_target) && Gem::Version.new(deployment_target) < Gem::Version.new('17.0')
+        configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)'
+      end
+      if target.product_type == 'com.apple.product-type.framework'
+        %w[appletvos iphoneos watchos].each do |sdk|
+          configuration.build_settings.delete("CODE_SIGN_IDENTITY[sdk=#{sdk}*]")
+        end
+        configuration.build_settings['CODE_SIGN_IDENTITY'] = ''
+        configuration.build_settings['ENABLE_MODULE_VERIFIER'] = 'YES'
+        configuration.build_settings['MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS'] = 'gnu11 gnu++14'
+      end
+      if target.name.start_with?('Pods-')
+        configuration.build_settings.delete('ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES')
+        configuration.build_settings.delete('EMBEDDED_CONTENT_CONTAINS_SWIFT')
+      end
+      if target.name == 'ZIPFoundation'
+        # Match Clang's arm64e class_ro_t signing in this mixed Swift/ObjC pod.
+        flag_setting = 'OTHER_SWIFT_FLAGS[sdk=iphoneos*][arch=arm64e*]'
+        flags = Array(configuration.build_settings[flag_setting] || '$(inherited)')
+        flags << '-sign-class-ro' unless flags.any? { |value| value.split.include?('-sign-class-ro') }
+        configuration.build_settings[flag_setting] = flags
       end
     end
   end

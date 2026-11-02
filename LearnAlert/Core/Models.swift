@@ -70,7 +70,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct DeckLibrarySummary: Equatable {
+nonisolated struct DeckLibrarySummary: Equatable, Sendable {
     let cardCount: Int
     let cycleStreak: Int
     let cycleProgress: Double
