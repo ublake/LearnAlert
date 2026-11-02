@@ -64,7 +64,7 @@ actor LibraryDataWorker {
             summary.cardCount += 1
             if let id = card.section?.id { summary.sectionCounts[id, default: 0] += 1 }
             else { summary.uncategorizedCount += 1 }
-            if card.cardType == .anki {
+            if card.cardType.usesSpacedReview {
                 let state = card.ankiReviewState
                 if state.dueDate <= now { summary.dueCount += 1 }
                 if state.interval >= 7 * AnkiReviewScheduling.day { summary.masteredCount += 1 }

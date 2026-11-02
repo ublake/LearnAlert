@@ -594,7 +594,9 @@ private struct NotificationSimulatedContainer: View {
     // MARK: - Vocabulary Preview
     private var imagePreview: some View {
         VStack(spacing: 12) {
-            ImageCardFlipView(isShowingBack: $isRevealed, onBackViewed: { hasViewedImageBack = true }) {
+            ImageCardFlipView(isShowingBack: $isRevealed, onBackViewed: {
+                if CardImageStore.loadImage(named: "course-vocab-orange") != nil { hasViewedImageBack = true }
+            }) {
                 imagePreviewFace("course-vocab-apple")
             } back: {
                 imagePreviewFace("course-vocab-orange")
@@ -602,19 +604,12 @@ private struct NotificationSimulatedContainer: View {
             .frame(height: isCompact ? 200 : 280)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: design.cornerRadius(14), style: .continuous))
-            if !isGraded {
-                Button {
-                    withAnimation(.snappy) { isGraded = true }
-                } label: {
-                    Label("Reviewed", systemImage: "checkmark")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(textColorPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .glassCard(cornerRadius: 14, isLight: isThemeLight)
-                }
-                .buttonStyle(.plain)
-                .disabled(!hasViewedImageBack)
-            }
+            AnkiReviewControls(isRevealed: hasViewedImageBack, isGraded: isGraded,
+                options: AnkiReviewScheduling.options(for: .init(), at: Date()), tapToFlip: true,
+                onReveal: { withAnimation(.snappy) { isRevealed = true } },
+                onGrade: { _ in withAnimation(.snappy) { isGraded = true } })
+                .disabled(CardImageStore.loadImage(named: "course-vocab-apple") == nil ||
+                    CardImageStore.loadImage(named: "course-vocab-orange") == nil)
         }
     }
 
@@ -772,32 +767,9 @@ private struct NotificationSimulatedContainer: View {
                 .glassCard(cornerRadius: 12, tint: Color.green.opacity(0.08), isLight: isThemeLight)
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
-                if !isGraded {
-                    HStack(spacing: 8) {
-                        Button {
-                            withAnimation(.snappy) { isGraded = true }
-                        } label: {
-                            Label("Got it", systemImage: "checkmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Color.green)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 38)
-                                .glassCard(cornerRadius: 10, tint: Color.green.opacity(0.12), isLight: isThemeLight)
-                        }
-
-                        Button {
-                            withAnimation(.snappy) { isGraded = true }
-                        } label: {
-                            Label("Missed", systemImage: "xmark")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Color.red)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 38)
-                                .glassCard(cornerRadius: 10, tint: Color.red.opacity(0.12), isLight: isThemeLight)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
+                AnkiReviewControls(isRevealed: true, isGraded: isGraded,
+                    options: AnkiReviewScheduling.options(for: .init(), at: Date()),
+                    onReveal: {}, onGrade: { _ in withAnimation(.snappy) { isGraded = true } })
             }
         }
     }

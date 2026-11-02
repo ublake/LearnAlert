@@ -18,12 +18,12 @@ enum AnkiReviewAlerts {
             let center = UNUserNotificationCenter.current()
             let pending = await center.pendingNotificationRequests()
             let context = ModelContext(SharedDatabase.shared.container)
-            // Recheck every pending Anki card: another review may have happened while
+            // Recheck every self-rated card: another review may have happened while
             // replenishing, and an older pass must not resurrect its premature alerts.
             let ids = Set(pending.compactMap { UUID(uuidString: $0.content.userInfo["cardId"] as? String ?? "") })
             let obsolete = ids.flatMap { id -> [String] in
                 guard let card = try? context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == id })).first,
-                      card.cardType == .anki else { return [] }
+                      card.cardType.usesSpacedReview else { return [] }
                 return prematureRequests(pending, cardID: id, due: card.nextReviewDate)
             }
             guard !obsolete.isEmpty else { continue }

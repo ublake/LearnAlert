@@ -56,6 +56,14 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     }
 
     var isReviewOnly: Bool { self == .vocabulary || self == .images }
+
+    /// Self-assessed cards share four ratings without requiring Anki HTML.
+    nonisolated var usesSpacedReview: Bool {
+        switch self {
+        case .anki, .images, .tapReveal: true
+        default: false
+        }
+    }
 }
 
 struct DeckLibrarySummary: Equatable {
@@ -294,7 +302,7 @@ class Flashcard {
     @discardableResult
     func recordAnkiPracticeReview(rating: AnkiReviewRating, at date: Date = Date()) throws -> AnkiReviewOption {
         let option = AnkiReviewScheduling.option(for: rating, state: ankiPracticeReviewState, at: date)
-        guard cardType == .anki else { return option }
+        guard cardType.usesSpacedReview else { return option }
         ankiPracticeReviewStateData = try JSONEncoder().encode(option.nextState)
         return option
     }
@@ -302,7 +310,7 @@ class Flashcard {
     @discardableResult
     func recordAnkiReview(rating: AnkiReviewRating, at date: Date = Date()) -> AnkiReviewOption {
         let option = AnkiReviewScheduling.option(for: rating, state: ankiReviewState, at: date)
-        guard cardType == .anki else { return option }
+        guard cardType.usesSpacedReview else { return option }
         recordAggregateReview(wasCorrect: rating.wasCorrect, at: date)
         // The aggregate powers the app's Known/mastered summaries. Keep it in
         // step with Anki graduation rather than requiring three Easy ratings.
@@ -310,6 +318,7 @@ class Flashcard {
         else if rating == .again { masteryScore = 0 }
         else { masteryScore = min(2, masteryScore) }
         ankiReviewState = option.nextState
+        synchronizeLanguageNotificationReview()
         return option
     }
     var optionImageNamesData: Data = Data()
@@ -473,11 +482,15 @@ class Flashcard {
     }
 
     func recordReview(wasCorrect: Bool) {
-        if cardType == .anki {
+        if cardType.usesSpacedReview {
             recordAnkiReview(rating: wasCorrect ? .good : .again)
             return
         }
         recordAggregateReview(wasCorrect: wasCorrect, at: Date())
+        synchronizeLanguageNotificationReview()
+    }
+
+    private func synchronizeLanguageNotificationReview() {
         // Whole-collection alerts and topic study share the same authored card.
         // Copy review state only; each deck keeps its own editable presentation.
         if deck?.sourceKind == "managedLanguage", let courseID = deck?.sourceId,
@@ -487,6 +500,9 @@ class Flashcard {
                 sibling.reviewCount = reviewCount; sibling.correctCount = correctCount
                 sibling.masteryScore = masteryScore; sibling.lastReviewedDate = lastReviewedDate
                 sibling.streak = streak; sibling.longestStreak = longestStreak
+                if cardType.usesSpacedReview && sibling.cardType.usesSpacedReview {
+                    sibling.ankiReviewStateData = ankiReviewStateData
+                }
             }
         }
     }
@@ -517,7 +533,7 @@ class Flashcard {
     }
 
     var interval: Int {
-        if cardType == .anki { return max(0, Int(ankiReviewState.interval / AnkiReviewScheduling.day)) }
+        if cardType.usesSpacedReview { return max(0, Int(ankiReviewState.interval / AnkiReviewScheduling.day)) }
         switch masteryScore {
         case 0: return 0
         case 1: return 1
@@ -544,7 +560,7 @@ class Flashcard {
     }
 
     var nextReviewDate: Date {
-        cardType == .anki ? ankiReviewState.dueDate : legacyNextReviewDate
+        cardType.usesSpacedReview ? ankiReviewState.dueDate : legacyNextReviewDate
     }
 
     private var legacyNextReviewDate: Date {
@@ -596,7 +612,7 @@ class Flashcard {
         ankiReviewStateData = nil
         // A fresh encoded value also prevents old session bookmarks from migrating
         // forgotten practice ratings back after an interrupted checkpoint cleanup.
-        if cardType == .anki {
+        if cardType.usesSpacedReview {
             ankiPracticeReviewStateData = try? JSONEncoder().encode(AnkiReviewState())
         }
     }

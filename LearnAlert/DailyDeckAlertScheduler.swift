@@ -76,7 +76,7 @@ enum DailyDeckAlertScheduler {
         let onlyAnki: Bool
         if ankiCandidates.isEmpty { onlyAnki = false }
         else { onlyAnki = try AnkiNotificationSelection.isAnkiOnly(deckID: deckId, sectionID: sectionId, in: context) }
-        // An all-Anki deck can be caught up for weeks. Keep its existing time
+        // A self-rated deck can be caught up for weeks. Keep its existing time
         // window, but search around its next due date instead of giving up after
         // the first 60 empty appointments.
         let earliest = ankiCandidates.map { $0.isNew ? Date.distantPast : $0.due }.min()
@@ -89,7 +89,7 @@ enum DailyDeckAlertScheduler {
         let eligibleSlots = candidateSlots.compactMap { slot -> (date: Date, cardId: UUID)? in
             let id = AnkiNotificationSelection.next(in: ankiCandidates, at: slot.date)
             if let id, ankiLookup[id]?.isNew == false { return (slot.date, id) }
-            if onlyAnki || originalLookup[slot.cardId]?.cardType == .anki {
+            if onlyAnki || originalLookup[slot.cardId]?.cardType.usesSpacedReview == true {
                 guard let id else { return nil }
                 return (slot.date, id)
             }
@@ -142,7 +142,7 @@ enum DailyDeckAlertScheduler {
             if let request = existing[id], request.content.userInfo["questionsPerAlert"] as? Int == plan.questionsPerAlert,
                request.content.userInfo["dailyQuestionGoal"] as? Int == 20,
                request.content.userInfo["cardId"] as? String == card.id.uuidString,
-               request.content.userInfo["ankiDueSelection"] as? Bool == (card.cardType == .anki),
+               request.content.userInfo["ankiDueSelection"] as? Bool == card.cardType.usesSpacedReview,
                request.content.userInfo["sectionId"] as? String == (sectionId?.uuidString ?? "") { continue }
             let content = UNMutableNotificationContent()
             content.title = "LearnAlert: \(deck.name)"
@@ -160,7 +160,7 @@ enum DailyDeckAlertScheduler {
                 "questionsPerAlert": plan.questionsPerAlert, "dailyQuestionGoal": 20,
                 "minimumSpacingMinutes": plan.minimumSpacingMinutes,
                 "sectionId": sectionId?.uuidString ?? "",
-                "ankiDueSelection": card.cardType == .anki,
+                "ankiDueSelection": card.cardType.usesSpacedReview,
                 "progress": "1/\(plan.questionsPerAlert)"]
             let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute, .second], from: slot.date), repeats: false)
@@ -222,7 +222,7 @@ enum DailyDeckAlertScheduler {
             scope = #Predicate { $0.deck?.id == deckID }
         }
         guard try context.fetchCount(FetchDescriptor<Flashcard>(predicate: unmastered)) == 0 else { return false }
-        // Anki due dates live in its review-state JSON, so check the already
+        // Self-rated due dates live in review-state JSON, so check the already
         // mastered cards in bounded batches only for this explicit stop condition.
         var descriptor = FetchDescriptor<Flashcard>(predicate: scope)
         descriptor.fetchLimit = 200

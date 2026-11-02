@@ -23,7 +23,7 @@ struct DeckDetailSnapshot {
             if let sectionID { sectionCounts[sectionID, default: 0] += 1 }
             else { uncategorizedCount += 1 }
 
-            if card.cardType == .anki {
+            if card.cardType.usesSpacedReview {
                 // Both computed card properties decode the same review JSON.
                 let review = card.ankiReviewState
                 if review.dueDate <= now { dueCount += 1 }

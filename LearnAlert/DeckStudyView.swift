@@ -60,9 +60,9 @@ struct DeckStudyView: View {
 
     private var currentCard: Flashcard? { studyQueue.indices.contains(cardIndex) ? studyQueue[cardIndex] : nil }
     private var ankiPresentation: AnkiStudyPresentation { AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow }
-    private var isAnkiOnly: Bool { !allCards.isEmpty && allCards.allSatisfy { $0.cardType == .anki } }
+    private var isSpacedReviewOnly: Bool { !allCards.isEmpty && allCards.allSatisfy { $0.cardType.usesSpacedReview } }
     private var nextAnkiReview: Date? {
-        allCards.filter { $0.cardType == .anki }.map(\.ankiPracticeReviewState)
+        allCards.filter { $0.cardType.usesSpacedReview }.map(\.ankiPracticeReviewState)
             .filter { $0.reviewCount > 0 }.map(\.dueDate).min()
     }
     private var resumableSessions: [PracticeSessionSnapshot] {
@@ -90,7 +90,7 @@ struct DeckStudyView: View {
                 PracticeSessionPicker(deckName: deck.name, sessions: resumableSessions,
                     onResume: resume, onNew: { startNewSession() }, onClose: closePractice)
             } else if isComplete {
-                if isAnkiOnly {
+                if isSpacedReviewOnly {
                     AnkiStudySummaryView(counts: ratingCounts, cardCount: reviewedAnkiIDs.count,
                         nextReview: nextAnkiReview, onClose: closePractice)
                 } else {
@@ -110,7 +110,7 @@ struct DeckStudyView: View {
                     answerImageName: card.answerImageName, optionImageNames: card.optionImageNames,
                     promptAudioName: card.promptAudioName, readingPrompt: card.readingPrompt,
                     ankiContent: card.ankiContent, ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
-                    ankiReviewOptions: card.cardType == .anki ? AnkiReviewScheduling.options(for: localState(for: card), at: Date()) : [],
+                    ankiReviewOptions: card.cardType.usesSpacedReview ? AnkiReviewScheduling.options(for: localState(for: card), at: Date()) : [],
                     ankiPresentation: ankiPresentation, fieldMedia: card.fieldMedia, correctOptionIndex: card.resolvedCorrectOptionIndex,
                     cardNumber: min(allCards.count, reviewedCardIDs.count + (reviewedCardIDs.contains(card.id) ? 0 : 1)),
                     cardCount: allCards.count, correctCount: correctCount, selectedAnswer: selectedAnswer,
@@ -145,7 +145,7 @@ struct DeckStudyView: View {
         do { try migratePracticeStates() }
         catch {
             loadingFailed = true
-            reviewError = "Your previous Anki practice couldn’t be saved. Try again before starting a new session."
+            reviewError = "Your previous practice ratings couldn’t be saved. Try again before starting a new session."
             return
         }
         loadingFailed = false; didApplyInitialState = true
@@ -158,7 +158,7 @@ struct DeckStudyView: View {
         let legacy = practiceSessions.legacyAnkiStates()
         var changed = false
         do {
-            for card in allCards where card.cardType == .anki && card.ankiPracticeReviewStateData == nil {
+            for card in allCards where card.cardType.usesSpacedReview && card.ankiPracticeReviewStateData == nil {
                 guard let data = legacy[card.id] else { continue }
                 card.ankiPracticeReviewStateData = data
                 changed = true
@@ -176,7 +176,7 @@ struct DeckStudyView: View {
             $0.orderIndex == $1.orderIndex ? $0.id.uuidString < $1.id.uuidString : $0.orderIndex < $1.orderIndex
         }
         let now = Date()
-        let entries = allCards.map { (card: $0, state: $0.cardType == .anki ? $0.ankiPracticeReviewState : nil) }
+        let entries = allCards.map { (card: $0, state: $0.cardType.usesSpacedReview ? $0.ankiPracticeReviewState : nil) }
         studyQueue = entries.filter { $0.state.map { $0.reviewCount == 0 || $0.dueDate <= now } ?? true }
             .sorted { first, second in
                 func rank(_ state: AnkiReviewState?) -> Int {
@@ -219,7 +219,7 @@ struct DeckStudyView: View {
                 // Acknowledging a notification never replays its rating into practice history.
                 reviewedCardIDs.insert(id); answerCount = 1
                 correctCount = initialWasCorrect == true ? 1 : 0
-                if card.cardType == .anki { reviewedAnkiIDs.insert(id) }
+                if card.cardType.usesSpacedReview { reviewedAnkiIDs.insert(id) }
             }
         }
         checkpoint(immediately: true)
@@ -243,7 +243,7 @@ struct DeckStudyView: View {
         // A newer session's ratings cannot be rewound by opening an older bookmark.
         for id in saved.queueIDs.dropFirst(index) {
             guard let card = lookup[id] else { continue }
-            guard card.cardType == .anki else { remaining.append(card); continue }
+            guard card.cardType.usesSpacedReview else { remaining.append(card); continue }
             guard queuedAnkiIDs.insert(id).inserted else { continue }
             let state = card.ankiPracticeReviewState
             if (id == savedCurrentID && saved.isGraded) || state.reviewCount == 0 || state.dueDate <= now {
@@ -252,7 +252,7 @@ struct DeckStudyView: View {
         }
         let remainingIDs = Set(remaining.map(\.id))
         var newlyDue: [(card: Flashcard, state: AnkiReviewState)] = []
-        for card in allCards where card.cardType == .anki && !saved.isComplete {
+        for card in allCards where card.cardType.usesSpacedReview && !saved.isComplete {
             let state = card.ankiPracticeReviewState
             guard state.reviewCount > 0 else { continue }
             if !remainingIDs.contains(card.id) && state.dueDate <= now {
@@ -354,7 +354,7 @@ struct DeckStudyView: View {
         if correct { correctCount += 1 }
     }
     private func grade(_ card: Flashcard, isCorrect: Bool) {
-        guard !isGraded else { return }
+        guard !isGraded, !card.cardType.usesSpacedReview else { return }
         InteractionSoundPlayer.shared.play(isCorrect ? .correct : .incorrect)
         recordPracticeAnswer(card, correct: isCorrect)
         if !isCorrect { requeue(card) }
@@ -362,14 +362,23 @@ struct DeckStudyView: View {
         checkpoint()
     }
     private func rateAnki(_ card: Flashcard, rating: AnkiReviewRating) {
-        guard card.cardType == .anki, isRevealed, !isGraded else { return }
+        guard card.cardType.usesSpacedReview, currentCard?.id == card.id,
+              !isGraded, !waitingForReview, !isComplete else { return }
+        if card.cardType == .images {
+            guard CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
+            if let back = card.answerImageName, !back.isEmpty {
+                guard hasViewedImageBack, CardImageStore.loadImage(named: back) != nil else { return }
+            }
+        } else {
+            guard isRevealed else { return }
+        }
         let option: AnkiReviewOption
         do {
             option = try card.recordAnkiPracticeReview(rating: rating)
             try context.save()
         } catch {
             context.rollback()
-            reviewError = "Your Anki rating couldn’t be saved. Please try that rating again."
+            reviewError = "Your rating couldn’t be saved. Please try that rating again."
             return
         }
         localAnkiStates[card.id] = card.ankiPracticeReviewStateData
@@ -383,6 +392,10 @@ struct DeckStudyView: View {
         guard card.cardType != .images || CardImageStore.loadImage(named: card.promptImageName) != nil else { return }
         if card.cardType == .images, let back = card.answerImageName, !back.isEmpty {
             guard hasViewedImageBack, CardImageStore.loadImage(named: back) != nil else { return }
+        }
+        if card.cardType.usesSpacedReview {
+            guard isGraded else { return }
+            advance(); return
         }
         if card.cardType.isReviewOnly {
             if !isGraded { recordPracticeAnswer(card, correct: true); isGraded = true; checkpoint() }
@@ -596,13 +609,21 @@ private struct QuizSessionView: View {
     private var canContinue: Bool {
         if cardType == .images {
             guard CardImageStore.loadImage(named: promptImageName) != nil else { return false }
+            guard !hasImageBack || (hasViewedImageBack && CardImageStore.loadImage(named: answerImageName) != nil) else { return false }
+        }
+        if cardType.usesSpacedReview { return isGraded }
+        return cardType.isReviewOnly || isGraded
+    }
+    private var canRateReview: Bool {
+        guard cardType.usesSpacedReview else { return false }
+        if cardType == .images {
+            guard CardImageStore.loadImage(named: promptImageName) != nil else { return false }
             return !hasImageBack || (hasViewedImageBack && CardImageStore.loadImage(named: answerImageName) != nil)
         }
-        return cardType.isReviewOnly || isGraded
+        return isRevealed
     }
     private var hasImageBack: Bool { answerImageName?.isEmpty == false }
     private var actionTitle: LocalizedStringKey {
-        if cardType == .images { return "REVIEWED" }
         return cardNumber >= cardCount ? "FINISH" : "CONTINUE"
     }
 
@@ -691,8 +712,7 @@ private struct QuizSessionView: View {
                                 media: fieldMedia["answer"] ?? .init(),
                                 isRevealed: isRevealed,
                                 isGraded: isGraded,
-                                onReveal: onReveal,
-                                onGrade: onGrade
+                                onReveal: onReveal
                             )
                         case .fillBlank:
                             if !options.isEmpty {
@@ -725,7 +745,19 @@ private struct QuizSessionView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if cardType != .anki || isGraded {
+            if cardType.usesSpacedReview && cardType != .anki && !isGraded {
+                if canRateReview {
+                    AnkiReviewControls(isRevealed: true, isGraded: false, options: ankiReviewOptions,
+                        onReveal: onReveal, onGrade: onAnkiGrade)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(QuizTheme.canvas)
+                } else if cardType == .images && hasImageBack {
+                    Label("Tap image to flip", systemImage: "hand.tap")
+                        .font(.caption.weight(.medium)).foregroundStyle(QuizTheme.inkSecondary)
+                        .padding(.vertical, 12)
+                }
+            } else if !cardType.usesSpacedReview || isGraded {
             Button(actionTitle, action: onContinue)
                 .buttonStyle(QuizActionButtonStyle())
                 .disabled(!canContinue)
@@ -808,7 +840,7 @@ private struct QuizRevealCard: View {
     let isRevealed: Bool
     let isGraded: Bool
     let onReveal: () -> Void
-    let onGrade: (Bool) -> Void
+    var onGrade: ((Bool) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 16) {
@@ -821,14 +853,14 @@ private struct QuizRevealCard: View {
                     .background(QuizTheme.surface, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuizTheme.border, lineWidth: 1))
 
-                if !isGraded {
+                if !isGraded, let onGrade {
                     HStack(spacing: 12) {
                         Button("MISSED IT") { onGrade(false) }
                             .buttonStyle(QuizChoiceButtonStyle(color: LearnAlertStyle.coral))
                         Button("KNEW IT") { onGrade(true) }
                             .buttonStyle(QuizChoiceButtonStyle(color: QuizTheme.green))
                     }
-                } else {
+                } else if isGraded {
                     Text("Answer recorded")
                         .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .subheadline))
                         .foregroundStyle(QuizTheme.inkSecondary)

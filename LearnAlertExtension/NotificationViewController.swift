@@ -261,6 +261,17 @@ struct FlashcardNotificationView: View {
     private var activeCardType: String {
         sessionCard?.cardType ?? (cardType.isEmpty ? (activeOptions.count >= 2 ? "multiple_choice" : "tap_reveal") : cardType)
     }
+    private var activeUsesSpacedReview: Bool {
+        FlashcardType(rawValue: activeCardType)?.usesSpacedReview == true
+    }
+    private var canRateActiveCard: Bool {
+        switch activeCardType {
+        case "images": return canReviewImages
+        case "anki": return isRevealed && !ankiIsLoading
+        case "tap_reveal": return isRevealed
+        default: return false
+        }
+    }
 
     private var activeAnkiContent: AnkiCardContent? {
         let data = sessionCard == nil ? ankiContentData : sessionCard?.ankiContentData
@@ -567,7 +578,23 @@ struct FlashcardNotificationView: View {
                 .frame(maxWidth: .infinity)
             } else if isGraded {
                 notificationPostAnswer
-            } else if let date = ankiFutureReviewDate {
+            } else {
+                reviewRatingControls
+            }
+            if !isRevealed && !isGraded && !isSkipped {
+                notificationSkipRow
+            }
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: NotificationAnkiChromeHeightKey.self, value: ["footer": geometry.size.height])
+            }
+        }
+    }
+
+    private var reviewRatingControls: some View {
+        Group {
+            if let date = ankiFutureReviewDate {
                 VStack(spacing: 8) {
                     Text("Next review in \(AnkiReviewScheduling.intervalLabel(max(0, date.timeIntervalSinceNow)))")
                         .font(.subheadline).foregroundStyle(textColorSecondary)
@@ -586,19 +613,12 @@ struct FlashcardNotificationView: View {
                     }
                 }
             } else {
-                AnkiReviewControls(isRevealed: isRevealed, isGraded: isGraded, options: ankiReviewOptions,
-                    tapToFlip: ankiPresentation == .tapToFlip,
+                AnkiReviewControls(isRevealed: activeCardType == "images" ? !hasImageBack || hasViewedImageBack : isRevealed,
+                    isGraded: isGraded, options: ankiReviewOptions,
+                    tapToFlip: activeCardType == "images" ? hasImageBack : ankiPresentation == .tapToFlip,
                     onReveal: { withAnimation(.snappy) { isRevealed = true } },
                     onGrade: { gradeAnki($0) })
-                    .disabled(ankiIsLoading)
-            }
-            if !isRevealed && !isGraded && !isSkipped {
-                notificationSkipRow
-            }
-        }
-        .background {
-            GeometryReader { geometry in
-                Color.clear.preference(key: NotificationAnkiChromeHeightKey.self, value: ["footer": geometry.size.height])
+                    .disabled(activeCardType == "anki" ? ankiIsLoading : activeCardType == "images" && !canReviewImages)
             }
         }
     }
@@ -682,24 +702,7 @@ struct FlashcardNotificationView: View {
                         .frame(maxWidth: .infinity).frame(height: isCompactLayout ? 280 : 340)
                         .clipShape(RoundedRectangle(cornerRadius: appearance.design.cornerRadius(14), style: .continuous))
 
-                        if isGraded {
-                            Label("Reviewed", systemImage: "checkmark")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(textColorSecondary)
-                        } else {
-                            Button {
-                                guard !isGraded, canReviewImages else { return }
-                                gradeCard(isCorrect: true, playFeedback: false)
-                            } label: {
-                                Label("Reviewed", systemImage: "checkmark")
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundStyle(textColorPrimary)
-                                    .frame(maxWidth: .infinity, minHeight: 44)
-                                    .notificationLiquidGlass(cornerRadius: 14, isLight: isLight)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!canReviewImages)
-                        }
+                        if !isGraded { reviewRatingControls }
                     }
                 }
 
@@ -803,7 +806,9 @@ struct FlashcardNotificationView: View {
                                     .frame(maxWidth: .infinity)
                                     .notificationLiquidGlass(cornerRadius: 16, tint: Color(red: 0.12, green: 0.50, blue: 0.98).opacity(0.12), isLight: isLight)
 
-                                if !isGraded {
+                                if !isGraded && activeUsesSpacedReview {
+                                    reviewRatingControls
+                                } else if !isGraded {
                                     HStack(spacing: 12) {
                                         Button {
                                             gradeReveal(correct: false)
@@ -1274,7 +1279,7 @@ struct FlashcardNotificationView: View {
 
     private func loadAnkiReviewOptions() {
         ankiFutureReviewDate = nil
-        guard activeCardType == "anki" else { ankiReviewOptions = []; return }
+        guard activeUsesSpacedReview else { ankiReviewOptions = []; return }
         let now = Date()
         if !isSyntheticSession, let id = UUID(uuidString: activeCardId) {
             let context = ModelContext(SharedDatabase.shared.container)
@@ -1288,7 +1293,7 @@ struct FlashcardNotificationView: View {
     }
 
     private func gradeAnki(_ rating: AnkiReviewRating) {
-        guard activeCardType == "anki", isRevealed, !isGraded, ankiFutureReviewDate == nil else { return }
+        guard activeUsesSpacedReview, canRateActiveCard, !isGraded, ankiFutureReviewDate == nil else { return }
         gradeCard(isCorrect: rating.wasCorrect, playFeedback: false, ankiRating: rating)
     }
 
@@ -1734,7 +1739,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             NotificationLearningBudget.recordDelivered(requestID: notification.request.identifier, at: notification.date)
             Task {
                 await NotificationLearningBudget.reconcilePending()
-                try? await DailyDeckAlertScheduler.replenish()
+                _ = try? await DailyDeckAlertScheduler.replenish()
             }
         }
         if isSynthetic {
@@ -1750,7 +1755,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             let deckDescriptor = FetchDescriptor<Deck>(predicate: #Predicate { $0.id == deckId })
             let resolvedDeck = scheduledCard?.deck?.id == deckId ? scheduledCard?.deck : try? context.fetch(deckDescriptor).first
             if let deck = resolvedDeck {
-                let expectsAnki = userInfo["ankiDueSelection"] as? Bool == true || snapshot.cardType == "anki"
+                let expectsAnki = userInfo["ankiDueSelection"] as? Bool == true || FlashcardType(rawValue: snapshot.cardType)?.usesSpacedReview == true
                 let selectedCard: Flashcard?
                 do {
                     let handled = NotificationLearningBudget.handledCardIDs(for: notification.request.identifier)
