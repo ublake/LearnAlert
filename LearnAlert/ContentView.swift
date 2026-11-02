@@ -22,16 +22,7 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.layoutDirection) private var layoutDirection
-    @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
-
-    private var preferredColorScheme: ColorScheme? {
-        switch appearanceMode {
-        case "light": .light
-        case "dark": .dark
-        default: nil
-        }
-    }
     
     let enterForeground = NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
     
@@ -95,14 +86,6 @@ struct ContentView: View {
                     hasCompletedOnboarding = true
                 }
             }
-        }
-        // One appearance owner lets System Default clear the override for both screens.
-        .preferredColorScheme(preferredColorScheme)
-        .onChange(of: appearanceMode) { _, newMode in
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(newMode, forKey: "appearanceMode")
-        }
-        .onAppear {
-            UserDefaults(suiteName: "group.com.learnalert.shared")?.set(appearanceMode, forKey: "appearanceMode")
         }
         .onChange(of: startupAnkiURL, initial: true) { _, url in
             guard let url, url.pathExtension.lowercased() == "apkg" else { return }
