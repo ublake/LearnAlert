@@ -152,6 +152,8 @@ struct FlashcardNotificationView: View {
     @State private var ankiReviewOptions: [AnkiReviewOption] = []
     @State private var ankiHeaderHeight: CGFloat = 36
     @State private var ankiFooterHeight: CGFloat = 60
+    @State private var ankiStatusHeight: CGFloat = 0
+    @State private var ankiContentHeight: CGFloat?
     @State private var ankiFutureReviewDate: Date?
     @State private var waitingForAnki: AnkiReviewWait?
     private struct AnkiReviewWait: Hashable {
@@ -163,6 +165,7 @@ struct FlashcardNotificationView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.notificationViewportCompact) private var viewportCompact
     @Environment(\.notificationViewportHeight) private var viewportHeight
+    @Environment(\.notificationViewportWidth) private var viewportWidth
 
     @State private var selectedAnswer: String? = nil
     @State private var isRevealed = false
@@ -238,7 +241,8 @@ struct FlashcardNotificationView: View {
     }
 
     private var isCompactLayout: Bool {
-        appearance.layout == .compact || viewportCompact
+        // Height follows Anki content, so it must not also choose its chrome layout.
+        appearance.layout == .compact || (activeCardType == "anki" ? viewportWidth < 350 : viewportCompact)
     }
 
     private var isLight: Bool {
@@ -375,8 +379,17 @@ struct FlashcardNotificationView: View {
 
     private var notificationPadding: CGFloat { appearance.design.verticalPadding(isCompactLayout ? 12 : 18) }
     private var notificationSpacing: CGFloat { appearance.design.spacing(isCompactLayout ? 10 : 18) }
+    private var ankiChromeHeight: CGFloat {
+        notificationPadding * 2 + ankiHeaderHeight + ankiFooterHeight + notificationSpacing * 2
+            + (pendingGrade == nil ? 0 : ankiStatusHeight + notificationSpacing)
+    }
+    private var ankiPreferredContentHeight: CGFloat {
+        // Use the HTML's intrinsic height, never the height granted to the web view.
+        max(100, ankiContentHeight ?? 160) + ankiChromeHeight
+    }
     private var ankiCardHeight: CGFloat {
-        max(100, viewportHeight - notificationPadding * 2 - ankiHeaderHeight - ankiFooterHeight - notificationSpacing * 2)
+        NotificationViewportGeometry.ankiCardHeight(contentHeight: ankiContentHeight,
+            viewportHeight: viewportHeight, chromeHeight: ankiChromeHeight)
     }
 
     private var notificationHeader: some View {
@@ -640,6 +653,11 @@ struct FlashcardNotificationView: View {
                             gradeCard(isCorrect: pendingGrade.correct, playFeedback: pendingGrade.playFeedback, ankiRating: pendingGrade.rating)
                         }.notificationPrimaryActionStyle()
                     }
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: NotificationAnkiChromeHeightKey.self, value: ["status": geometry.size.height])
+                        }
+                    }
                 }
 
                 // Question Box & Prompt Image
@@ -659,9 +677,17 @@ struct FlashcardNotificationView: View {
                 // Image cards are self-review, before the empty-options reveal fallback.
                 if activeCardType == "anki" {
                     if let content = activeAnkiContent {
+                        let representedCardID = activeCardId
                         AnkiStudyCardView(content: content, showingBack: $isRevealed, compact: true, centered: true,
                             isEnabled: !isGraded && waitingForAnki == nil && ankiFutureReviewDate == nil,
-                            loadingChanged: { ankiIsLoading = $0 })
+                            loadingChanged: { loading in
+                                if activeCardId == representedCardID { ankiIsLoading = loading }
+                            }, contentHeightChanged: { height in
+                                guard activeCardId == representedCardID, height.isFinite, height > 0 else { return }
+                                if ankiContentHeight == nil || abs((ankiContentHeight ?? 0) - height) >= 1 {
+                                    ankiContentHeight = height
+                                }
+                            })
                             .id(activeCardId)
                             .frame(height: ankiCardHeight)
                             .foregroundStyle(textColorPrimary).tint(textColorPrimary)
@@ -872,7 +898,6 @@ struct FlashcardNotificationView: View {
                 }
                 }
             }
-            .frame(minHeight: !sessionFinished && activeCardType == "anki" ? max(0, viewportHeight - notificationPadding * 2) : 0, alignment: .top)
             .padding(notificationPadding)
             .background(
                 GeometryReader { geo in
@@ -892,9 +917,19 @@ struct FlashcardNotificationView: View {
         .onPreferenceChange(NotificationAnkiChromeHeightKey.self) { heights in
             if let header = heights["header"], header > 0, abs(ankiHeaderHeight - header) > 0.5 { ankiHeaderHeight = header }
             if let footer = heights["footer"], footer > 0, abs(ankiFooterHeight - footer) > 0.5 { ankiFooterHeight = footer }
+            let status = heights["status"] ?? 0
+            if abs(ankiStatusHeight - status) > 0.5 { ankiStatusHeight = status }
+        }
+        .onChange(of: ankiPreferredContentHeight, initial: true) { _, height in
+            if !sessionFinished && activeCardType == "anki" && activeAnkiContent != nil {
+                onContentHeightChange?(height)
+            }
         }
         .onPreferenceChange(NotificationContentHeightKey.self) { height in
-            if height > 50 {
+            // The visible Anki frame is capped to UIKit's actual viewport. Feeding
+            // it back as the desired height creates a resize loop; report only
+            // independent HTML + chrome above. Other cards retain natural sizing.
+            if height > 50 && (activeCardType != "anki" || sessionFinished || activeAnkiContent == nil) {
                 onContentHeightChange?(height)
             }
         }
@@ -918,6 +953,7 @@ struct FlashcardNotificationView: View {
             }
         }
         .onChange(of: activeCardId) { _, _ in
+            ankiContentHeight = nil
             waitingForAnki = nil
             loadAnkiReviewOptions()
             if !isSyntheticSession { persistStudyHandoff() }
@@ -1665,10 +1701,10 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         let containerHeight = NotificationViewportGeometry.containerHeight(
             sceneHeight: scene?.effectiveGeometry.coordinateSpace.bounds.height,
             displayHeight: scene?.screen.coordinateSpace.bounds.height ?? 760)
-        // Anki gets a stable display-based budget. Measuring its viewport and
-        // feeding that value back into the window would reintroduce resize loops.
+        // Anki reports intrinsic HTML + chrome, independent of its granted frame.
+        // The display still supplies a stable ceiling, so long cards scroll inside it.
         let targetHeight = isAnkiContent
-            ? NotificationViewportGeometry.ankiPreferredHeight(containerHeight: containerHeight)
+            ? NotificationViewportGeometry.ankiPreferredHeight(contentHeight: height, containerHeight: containerHeight)
             : NotificationViewportGeometry.preferredHeight(contentHeight: height, containerHeight: containerHeight)
         let targetSize = CGSize(width: view.bounds.width, height: targetHeight)
         if abs(preferredContentSize.height - targetHeight) > 2 || abs(preferredContentSize.width - targetSize.width) > 2 {
@@ -1730,7 +1766,7 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         }
 
         isAnkiContent = (userInfo["cardType"] as? String) == "anki"
-        fitContent(540)
+        fitContent(isAnkiContent ? 360 : 540)
 
         let isRandom = userInfo["isRandom"] as? Bool ?? false
         let progress = userInfo["progress"] as? String ?? "-"
@@ -1906,7 +1942,14 @@ private struct NotificationViewportCompactKey: EnvironmentKey {
 private struct NotificationViewportHeightKey: EnvironmentKey {
     static let defaultValue: CGFloat = 540
 }
+private struct NotificationViewportWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 350
+}
 private extension EnvironmentValues {
+    var notificationViewportWidth: CGFloat {
+        get { self[NotificationViewportWidthKey.self] }
+        set { self[NotificationViewportWidthKey.self] = newValue }
+    }
     var notificationViewportHeight: CGFloat {
         get { self[NotificationViewportHeightKey.self] }
         set { self[NotificationViewportHeightKey.self] = newValue }
@@ -1926,6 +1969,7 @@ private struct NotificationViewportRoot: View {
             content
                 .environment(\.notificationViewportCompact, usable.width < 350 || usable.height < 450)
                 .environment(\.notificationViewportHeight, usable.height)
+                .environment(\.notificationViewportWidth, min(640, usable.width))
                 .frame(width: min(640, usable.width), height: usable.height)
                 .clipped()
                 .position(x: usable.midX, y: usable.midY)

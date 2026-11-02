@@ -14,6 +14,7 @@ struct AnkiCardView: View {
     var animatedReveal = false
     var presentation: AnkiStudyPresentation = .revealBelow
     var loadingChanged: ((Bool) -> Void)? = nil
+    var contentHeightChanged: ((CGFloat) -> Void)? = nil
     var onCardTap: (() -> Void)? = nil
     private let preparedDocument: String?
     private let preparedMediaIndex: [String: String]?
@@ -24,11 +25,13 @@ struct AnkiCardView: View {
     init(content: AnkiCardContent, showingBack: Bool, mediaDirectory: URL? = nil,
          compact: Bool = false, centered: Bool = false, animatedReveal: Bool = false,
          renderer: AnkiCardRenderer? = nil, loadingChanged: ((Bool) -> Void)? = nil,
+         contentHeightChanged: ((CGFloat) -> Void)? = nil,
          preparedDocument: String? = nil, preparedMediaIndex: [String: String]? = nil,
          presentation: AnkiStudyPresentation = .revealBelow, onCardTap: (() -> Void)? = nil) {
         self.content = content; self.showingBack = showingBack; self.mediaDirectory = mediaDirectory
         self.compact = compact; self.centered = centered; self.animatedReveal = animatedReveal
         self.loadingChanged = loadingChanged
+        self.contentHeightChanged = contentHeightChanged
         self.presentation = presentation; self.onCardTap = onCardTap
         self.preparedDocument = preparedDocument; self.preparedMediaIndex = preparedMediaIndex
         _localRenderer = StateObject(wrappedValue: renderer ?? AnkiCardRenderer())
@@ -38,8 +41,10 @@ struct AnkiCardView: View {
         AnkiRenderedSurface(renderer: localRenderer,
             document: preparedDocument ?? Self.document(content: content, showingBack: showingBack,
                 configuration: .init(dark: colorScheme == .dark, compact: compact, centered: centered,
-                    animatedReveal: animatedReveal, reduceMotion: reduceMotion, presentation: presentation)),
+                    animatedReveal: animatedReveal, reduceMotion: reduceMotion, presentation: presentation,
+                    contentSized: contentHeightChanged != nil)),
             directory: mediaDirectory ?? content.mediaURL, compact: compact, loadingChanged: loadingChanged,
+            contentHeightChanged: contentHeightChanged,
             mediaIndex: preparedMediaIndex, onCardTap: onCardTap)
     }
 
@@ -57,8 +62,13 @@ struct AnkiCardView: View {
         <script src="anki-media://assets/katex.min.js"></script>
         <script src="anki-media://assets/contrib/auto-render.min.js"></script>
         """ : ""
+        let mediaHeight = configuration.contentSized ? "320px" : "65vh"
+        let contentSizingStyle = configuration.contentSized
+            ? "#learnalert-anki-content { height:auto !important; min-height:0 !important; flex:0 0 auto !important; }"
+            : ""
         // Templates may use inline scripts and bundled libraries, but have no network,
-        // account/session access, frame navigation, or native bridge beyond local audio.
+        // account/session access or frame navigation. Native bridges only handle
+        // local audio, card taps and content geometry.
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' anki-media:; style-src 'unsafe-inline' anki-media:; img-src anki-media: data:; media-src anki-media: data:; font-src anki-media: data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
@@ -71,7 +81,8 @@ struct AnkiCardView: View {
         details { margin:12px 0; } summary { cursor:pointer; } table { max-width:100%; }
         </style><style>\(content.css.replacingOccurrences(of: "</style", with: "<\\/style", options: .caseInsensitive))</style>
         <style>\(nativeThemeCSS(dark: dark))</style>
-        <style>\(centered ? "body { min-height:100vh; display:flex; flex-direction:column; } #learnalert-anki-content { width:100%; flex-shrink:0; margin-block:auto; } img,video { max-height:65vh; object-fit:contain; }" : "")</style>
+        <style>\(centered ? "body { min-height:100vh; display:flex; flex-direction:column; } #learnalert-anki-content { width:100%; flex-shrink:0; margin-block:auto; } img,video { max-height:\(mediaHeight); object-fit:contain; }" : "")</style>
+        <style>\(contentSizingStyle)</style>
         <style>\(revealStyle)</style>
         \(mathAssets)
         </head><body class="card card\(content.templateOrdinal + 1) iphone mobile \(dark ? "nightMode night_mode" : "")">\(cardHTML)
@@ -86,7 +97,53 @@ struct AnkiCardView: View {
           {left:'[$$]',right:'[/$$]',display:true},{left:'[$]',right:'[/$]',display:false},
           {left:'[latex]',right:'[/latex]',display:true}
         ],throwOnError:false,trust:false,maxExpand:1000});}
-        </script><script>\(nativeThemeScript(dark: dark))</script>\(configuration.presentation == .tapToFlip ? "<script>" + cardTapScript + "</script>" : "")</body></html>
+        </script><script>\(nativeThemeScript(dark: dark))</script>\(configuration.presentation == .tapToFlip ? "<script>" + cardTapScript + "</script>" : "")\(configuration.contentSized ? "<script>" + contentHeightScript + "</script>" : "")</body></html>
+        """
+    }
+
+    /// Substituted only when a renderer actually loads a document; rebuilding the
+    /// SwiftUI view must not produce a new document or invalidate cached WebKit.
+    nonisolated fileprivate static let contentHeightToken = "__LEARNALERT_ANKI_CONTENT_HEIGHT_GENERATION__"
+
+    nonisolated private static var contentHeightScript: String {
+        """
+        (() => {
+          const main=document.getElementById('learnalert-anki-content');
+          if(!main)return;
+          const generation='\(contentHeightToken)';
+          let pending=false,lastHeight=0;
+          const measure=()=>{
+            pending=false;
+            const width=main.clientWidth;
+            if(!main.isConnected || !Number.isFinite(width) || width<=0)return;
+            const style=getComputedStyle(document.body);
+            // Main's centered position and the body's 100vh floor describe the
+            // granted viewport, rather than the intrinsic card content.
+            const padding=(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0);
+            const height=Math.ceil(Math.max(main.offsetHeight,main.scrollHeight)+padding);
+            if(!Number.isFinite(height) || height<=0 || height===lastHeight)return;
+            lastHeight=height;
+            window.webkit.messageHandlers.ankiContentHeight.postMessage({generation,height});
+          };
+          const schedule=()=>{
+            if(pending)return;
+            pending=true;requestAnimationFrame(measure);
+          };
+          const resizeObserver=new ResizeObserver(schedule);
+          resizeObserver.observe(main);
+          resizeObserver.observe(document.body);
+          new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});
+          window.addEventListener('resize',schedule,{passive:true});
+          window.addEventListener('load',schedule,{once:true});
+          document.addEventListener('load',schedule,true);
+          document.addEventListener('error',schedule,true);
+          document.addEventListener('loadedmetadata',schedule,true);
+          if(document.fonts){
+            document.fonts.ready.then(schedule);
+            document.fonts.addEventListener('loadingdone',schedule);
+          }
+          schedule();
+        })();
         """
     }
 
@@ -271,6 +328,8 @@ struct AnkiCardView: View {
         private(set) var surfaceID: UUID?
         private var onCardTap: (() -> Void)?
         var loadCompleted: ((Error?) -> Void)?
+        var documentGeneration = UUID()
+        var contentHeightChanged: ((CGFloat) -> Void)?
 
         func attach(surfaceID: UUID, onCardTap: (() -> Void)?) {
             self.surfaceID = surfaceID
@@ -291,8 +350,10 @@ struct AnkiCardView: View {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard !webView.isLoading else { return }
             let expectedDocument = document
+            let expectedGeneration = documentGeneration
             webView.evaluateJavaScript("document.readyState") { [weak self, weak webView] _, error in
-                guard let self, self.document == expectedDocument, webView?.isLoading == false else { return }
+                guard let self, self.document == expectedDocument, self.documentGeneration == expectedGeneration,
+                      webView?.isLoading == false else { return }
                 self.loadCompleted?(error)
             }
         }
@@ -311,6 +372,14 @@ struct AnkiCardView: View {
         func stop() { audio?.stop(); audio = nil; speech.stopSpeaking(at: .immediate) }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "ankiContentHeight" {
+                guard message.frameInfo.isMainFrame,
+                      let body = message.body as? [String: Any],
+                      body["generation"] as? String == documentGeneration.uuidString,
+                      let height = body["height"] as? Double, height.isFinite, height > 0 else { return }
+                contentHeightChanged?(ceil(CGFloat(height)))
+                return
+            }
             if message.name == "ankiCardTap" {
                 guard message.frameInfo.isMainFrame, permitsPlayback, documentReady, surfaceID != nil,
                       let body = message.body as? [String: String], body["kind"] == "tap" else { return }
@@ -350,6 +419,7 @@ struct AnkiStudyCardView: View {
     var renderer: AnkiCardRenderer? = nil
     var isEnabled = true
     var loadingChanged: ((Bool) -> Void)? = nil
+    var contentHeightChanged: ((CGFloat) -> Void)? = nil
 
     @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var presentationRaw = AnkiStudyPresentation.revealBelow.rawValue
@@ -364,10 +434,12 @@ struct AnkiStudyCardView: View {
 
     init(content: AnkiCardContent, showingBack: Binding<Bool>, mediaDirectory: URL? = nil,
          compact: Bool = false, centered: Bool = true, renderer: AnkiCardRenderer? = nil,
-         isEnabled: Bool = true, loadingChanged: ((Bool) -> Void)? = nil) {
+         isEnabled: Bool = true, loadingChanged: ((Bool) -> Void)? = nil,
+         contentHeightChanged: ((CGFloat) -> Void)? = nil) {
         self.content = content; _showingBack = showingBack; self.mediaDirectory = mediaDirectory
         self.compact = compact; self.centered = centered; self.renderer = renderer
         self.isEnabled = isEnabled; self.loadingChanged = loadingChanged
+        self.contentHeightChanged = contentHeightChanged
         _displayedBack = State(initialValue: showingBack.wrappedValue)
     }
 
@@ -382,7 +454,8 @@ struct AnkiStudyCardView: View {
             if presentation == .tapToFlip {
                 AnkiCardView(content: content, showingBack: displayedBack, mediaDirectory: mediaDirectory,
                     compact: compact, centered: centered, animatedReveal: false, renderer: renderer,
-                    loadingChanged: { isLoading = $0 }, presentation: .tapToFlip, onCardTap: flip)
+                    loadingChanged: { isLoading = $0 }, contentHeightChanged: contentHeightChanged,
+                    presentation: .tapToFlip, onCardTap: flip)
                     .background(Color.primary.opacity(colorScheme == .dark ? 0.045 : 0.025), in: shape)
                     .overlay(shape.strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.28 : 0.23), lineWidth: 1.2).allowsHitTesting(false))
                     .clipShape(shape)
@@ -393,7 +466,7 @@ struct AnkiStudyCardView: View {
             } else {
                 AnkiCardView(content: content, showingBack: showingBack, mediaDirectory: mediaDirectory,
                     compact: compact, centered: centered, animatedReveal: true, renderer: renderer,
-                    loadingChanged: loadingChanged)
+                    loadingChanged: loadingChanged, contentHeightChanged: contentHeightChanged)
             }
         }
         .onAppear {
@@ -467,6 +540,7 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
     var animatedReveal = true
     var reduceMotion = false
     var presentation: AnkiStudyPresentation = .revealBelow
+    var contentSized = false
 }
 
 /// One renderer for the current card and one for the next; never preload a whole deck.
@@ -492,6 +566,7 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
 @MainActor final class AnkiCardRenderer: ObservableObject {
     @Published private(set) var isLoading = true
     @Published private(set) var error: String?
+    @Published private(set) var intrinsicHeight: CGFloat?
     let webView: WKWebView
     let coordinator = AnkiCardView.Coordinator()
     init() {
@@ -504,6 +579,7 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
         configuration.setURLSchemeHandler(handler, forURLScheme: "anki-media")
         configuration.userContentController.add(coordinator, name: "ankiAudio")
         configuration.userContentController.add(coordinator, name: "ankiCardTap")
+        configuration.userContentController.add(coordinator, name: "ankiContentHeight")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = coordinator
         webView.isOpaque = false; webView.backgroundColor = .clear
@@ -516,19 +592,30 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
             self?.error = error == nil ? nil : AppLocalization.string("This card couldn’t load. Try again.")
             self?.isLoading = false
         }
+        coordinator.contentHeightChanged = { [weak self] height in
+            guard let self, self.intrinsicHeight != height else { return }
+            self.intrinsicHeight = height
+        }
     }
     func load(_ document: String, directory: URL?, mediaIndex: [String: String]? = nil) {
         guard coordinator.document != document || coordinator.directory != directory else { return }
         coordinator.stop(); coordinator.documentReady = false; error = nil; isLoading = true
+        coordinator.documentGeneration = UUID(); intrinsicHeight = nil
         coordinator.document = document; coordinator.directory = directory
         coordinator.media?.setDirectory(directory, preparedIndex: mediaIndex)
-        webView.loadHTMLString(document, baseURL: URL(string: "anki-media://deck/"))
+        let loadedDocument = document.replacingOccurrences(of: AnkiCardView.contentHeightToken,
+            with: coordinator.documentGeneration.uuidString)
+        webView.loadHTMLString(loadedDocument, baseURL: URL(string: "anki-media://deck/"))
     }
     func retry() {
         let document = coordinator.document, directory = coordinator.directory
         coordinator.document = ""; load(document, directory: directory)
     }
-    func discard() { webView.stopLoading(); coordinator.documentReady = false; coordinator.detachAll() }
+    func discard() {
+        webView.stopLoading(); coordinator.documentReady = false
+        coordinator.documentGeneration = UUID(); intrinsicHeight = nil
+        coordinator.detachAll()
+    }
 }
 
 private struct AnkiNativeWebView: UIViewRepresentable {
@@ -561,6 +648,7 @@ private struct AnkiRenderedSurface: View {
     let directory: URL?
     let compact: Bool
     let loadingChanged: ((Bool) -> Void)?
+    let contentHeightChanged: ((CGFloat) -> Void)?
     var mediaIndex: [String: String]? = nil
     var onCardTap: (() -> Void)? = nil
     @State private var surfaceID = UUID()
@@ -581,12 +669,33 @@ private struct AnkiRenderedSurface: View {
                 }.padding()
             }
         }
-        .onAppear { isVisible = true; renderer.coordinator.attach(surfaceID: surfaceID, onCardTap: onCardTap) }
+        .onAppear {
+            isVisible = true; renderer.coordinator.attach(surfaceID: surfaceID, onCardTap: onCardTap)
+            reportContentHeight()
+        }
         .onDisappear { isVisible = false; renderer.coordinator.detach(surfaceID: surfaceID) }
         .onChange(of: document, initial: true) { _, value in renderer.load(value, directory: directory, mediaIndex: mediaIndex) }
         .onChange(of: directory) { _, value in renderer.load(document, directory: value, mediaIndex: mediaIndex) }
-        .onChange(of: renderer.isLoading, initial: true) { _, value in loadingChanged?(value || renderer.error != nil) }
-        .onChange(of: renderer.error) { _, value in loadingChanged?(renderer.isLoading || value != nil) }
+        .onChange(of: renderer.isLoading, initial: true) { _, value in
+            loadingChanged?(value || renderer.error != nil)
+            if !value { reportContentHeight() }
+        }
+        .onChange(of: renderer.error) { _, value in
+            loadingChanged?(renderer.isLoading || value != nil)
+            reportContentHeight()
+        }
+        .onChange(of: renderer.intrinsicHeight, initial: true) { _, _ in reportContentHeight() }
+    }
+
+    private func reportContentHeight() {
+        guard isVisible, renderer.coordinator.surfaceID == surfaceID,
+              renderer.coordinator.document == document, renderer.coordinator.directory == directory else { return }
+        if renderer.isLoading || renderer.error != nil {
+            // A short side's previous size must not clip the native retry UI.
+            contentHeightChanged?(160)
+        } else if let height = renderer.intrinsicHeight {
+            contentHeightChanged?(height)
+        }
     }
 }
 

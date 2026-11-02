@@ -21,6 +21,26 @@ nonisolated enum NotificationViewportGeometry {
         let height = containerHeight.isFinite && containerHeight > 0 ? containerHeight : 760
         return min(height, max(160, min(760, height - 200)))
     }
+    /// The preferred extent comes from intrinsic content and chrome, never the
+    /// viewport UIKit granted in response to a previous sizing request.
+    static func ankiPreferredHeight(contentHeight: CGFloat, containerHeight: CGFloat, baseline: CGFloat = 240) -> CGFloat {
+        let maximum = ankiPreferredHeight(containerHeight: containerHeight)
+        let floor = baseline.isFinite && baseline > 0 ? baseline : 240
+        let content = contentHeight.isFinite && contentHeight > 0 ? ceil(contentHeight) : floor
+        return min(maximum, max(min(floor, maximum), content))
+    }
+    /// Render inside the granted viewport, allowing long HTML to scroll while
+    /// leaving its header and review controls outside the card.
+    static func ankiCardHeight(contentHeight: CGFloat?, viewportHeight: CGFloat, chromeHeight: CGFloat,
+                               minimum: CGFloat = 100, fallback: CGFloat = 160) -> CGFloat {
+        let viewport = viewportHeight.isFinite && viewportHeight > 0 ? viewportHeight : 0
+        let chrome = chromeHeight.isFinite && chromeHeight > 0 ? chromeHeight : 0
+        let floor = minimum.isFinite && minimum > 0 ? minimum : 100
+        let estimate = fallback.isFinite && fallback > 0 ? fallback : 160
+        let content = contentHeight.flatMap { $0.isFinite && $0 > 0 ? ceil($0) : nil } ?? estimate
+        // A system-granted viewport smaller than the floor still wins.
+        return min(max(0, viewport - chrome), max(floor, content))
+    }
     static func preferredHeight(contentHeight: CGFloat, containerHeight: CGFloat, baseline: CGFloat = 300) -> CGFloat {
         let maximum = maximumHeight(containerHeight: containerHeight)
         let content = contentHeight.isFinite && contentHeight > 0 ? ceil(contentHeight) : baseline
