@@ -66,7 +66,6 @@ struct NotificationCustomizeView: View {
                 }
                 NotificationSimulatedContainer(theme: currentTheme, layout: currentLayout,
                     design: currentDesign, cardType: previewCardType, isLight: isLight).id(previewCardType)
-                CustomizeStyleControls(appearanceMode: $appearanceMode, layoutRaw: $storedLayoutRaw)
                 themeChoices
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Color").font(.headline).foregroundStyle(StudyStudioStyle.ink)
@@ -94,7 +93,7 @@ struct NotificationCustomizeView: View {
                 }
                 VStack(spacing: 8) {
                     Button(action: sendTestNotification) {
-                        Label(testScheduledSuccess ? String(localized: "Sent · arrives in 3 seconds") : String(localized: "Send a test alert"),
+                        Label(testScheduledSuccess ? AppLocalization.string("Sent · arrives in 3 seconds") : AppLocalization.string("Send a test alert"),
                             systemImage: testScheduledSuccess ? "checkmark" : "bell")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(StudyStudioStyle.ink)
@@ -119,7 +118,7 @@ struct NotificationCustomizeView: View {
             .alert("Couldn’t send test alert", isPresented: Binding(
                 get: { testSchedulingError != nil }, set: { if !$0 { testSchedulingError = nil } }
             )) { Button("OK", role: .cancel) { testSchedulingError = nil } }
-            message: { Text(testSchedulingError ?? String(localized: "Please try again.")) }
+            message: { Text(testSchedulingError ?? AppLocalization.string("Please try again.")) }
     }
 
     private var themeChoices: some View {
@@ -239,9 +238,9 @@ struct CustomizeStyleControls: View {
 
     private var appearanceTitle: String {
         switch appearanceMode {
-        case "light": String(localized: "Light")
-        case "dark": String(localized: "Dark")
-        default: String(localized: "System")
+        case "light": AppLocalization.string("Light")
+        case "dark": AppLocalization.string("Dark")
+        default: AppLocalization.string("System")
         }
     }
 
@@ -266,9 +265,9 @@ struct CustomizeStyleControls: View {
         selectorLayout {
             Menu {
                 Picker("Appearance", selection: $appearanceMode) {
-                    Label(String(localized: "System"), systemImage: "circle.lefthalf.filled").tag("system")
-                    Label(String(localized: "Light"), systemImage: "sun.max").tag("light")
-                    Label(String(localized: "Dark"), systemImage: "moon").tag("dark")
+                    Label(AppLocalization.string("System"), systemImage: "circle.lefthalf.filled").tag("system")
+                    Label(AppLocalization.string("Light"), systemImage: "sun.max").tag("light")
+                    Label(AppLocalization.string("Dark"), systemImage: "moon").tag("dark")
                 }
             } label: {
                 selectorLabel("Appearance", value: appearanceTitle, symbol: appearanceSymbol)
@@ -507,7 +506,7 @@ private struct NotificationSimulatedContainer: View {
                                         .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.12), isLight: isThemeLight)
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(showingHint ? String(localized: "Hide hint") : String(localized: "Show hint"))
+                                .accessibilityLabel(showingHint ? AppLocalization.string("Hide hint") : AppLocalization.string("Show hint"))
                             }
 
                         }
@@ -564,7 +563,7 @@ private struct NotificationSimulatedContainer: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "arrow.right.circle.fill")
-                                Text(cardType == .dragAnswer ? String(localized: "Next card") : String(localized: "Try again"))
+                                Text(cardType == .dragAnswer ? AppLocalization.string("Next card") : AppLocalization.string("Try again"))
                             }
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(design == .liquidGlass ? Color.white : textColorPrimary)

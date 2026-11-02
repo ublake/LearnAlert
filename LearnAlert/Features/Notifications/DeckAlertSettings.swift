@@ -3,7 +3,7 @@ import Foundation
 nonisolated enum AlertPaceMode: String, Codable, CaseIterable, Identifiable {
     case automatic, custom
     var id: Self { self }
-    var title: String { self == .automatic ? String(localized: "Automatic") : String(localized: "Custom") }
+    var title: String { self == .automatic ? AppLocalization.string("Automatic") : AppLocalization.string("Custom") }
 }
 
 /// Personal scheduling preferences; community exports do not include these settings.
@@ -64,7 +64,7 @@ nonisolated struct DeckAlertSettings: Codable, Equatable {
             let duration = end > start ? end - start : 24 * 60 - start + end
             count = min(plannedAlertsPerDay, max(1, Int(ceil(Double(duration) / Double(resolvedSpacingMinutes)))))
         }
-        return String(localized: "Up to \(count) alerts · \(resolvedSpacingMinutes) min apart · \(resolvedQuestionsPerAlert) questions each")
+        return AppLocalization.string("Up to \(count) alerts · \(resolvedSpacingMinutes) min apart · \(resolvedQuestionsPerAlert) questions each")
     }
 
     static func automaticDailyCount(cardCount: Int?, courseTarget: Int? = nil) -> Int {

@@ -95,29 +95,29 @@ struct AnkiProto {
         func varint() throws -> UInt64 {
             var value: UInt64 = 0
             for shift in stride(from: 0, through: 63, by: 7) {
-                guard position < bytes.count else { throw AnkiImportError.invalid(String(localized: "The Anki package contains incomplete metadata.")) }
+                guard position < bytes.count else { throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains incomplete metadata.")) }
                 let byte = bytes[position]; position += 1
-                if shift == 63 && byte > 1 { throw AnkiImportError.invalid(String(localized: "The Anki package contains invalid metadata.")) }
+                if shift == 63 && byte > 1 { throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains invalid metadata.")) }
                 value |= UInt64(byte & 127) << shift
                 if byte & 128 == 0 { return value }
             }
-            throw AnkiImportError.invalid(String(localized: "The Anki package contains invalid metadata."))
+            throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains invalid metadata."))
         }
         var result: [Field] = []
         while position < bytes.count {
             let key = try varint(), number = Int(key >> 3)
-            guard number > 0 else { throw AnkiImportError.invalid(String(localized: "The Anki package contains invalid metadata.")) }
+            guard number > 0 else { throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains invalid metadata.")) }
             switch key & 7 {
             case 0: result.append(Field(number: number, integer: try varint(), bytes: nil))
             case 1, 5:
                 position += key & 7 == 1 ? 8 : 4
-                guard position <= bytes.count else { throw AnkiImportError.invalid(String(localized: "The Anki package contains incomplete metadata.")) }
+                guard position <= bytes.count else { throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains incomplete metadata.")) }
             case 2:
                 let length = try varint()
-                guard length <= UInt64(bytes.count - position) else { throw AnkiImportError.invalid(String(localized: "The Anki package contains incomplete metadata.")) }
+                guard length <= UInt64(bytes.count - position) else { throw AnkiImportError.invalid(AnkiLocalization.string("The Anki package contains incomplete metadata.")) }
                 result.append(Field(number: number, integer: nil, bytes: Data(bytes[position..<position + Int(length)])))
                 position += Int(length)
-            default: throw AnkiImportError.invalid(String(localized: "This Anki metadata format is not supported."))
+            default: throw AnkiImportError.invalid(AnkiLocalization.string("This Anki metadata format is not supported."))
             }
         }
         fields = result

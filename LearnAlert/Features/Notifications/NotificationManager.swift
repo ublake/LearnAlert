@@ -72,7 +72,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     private func setupCategories() {
         let continueAction = UNNotificationAction(
             identifier: "CONTINUE_IN_APP",
-            title: String(localized: "Continue in App"),
+            title: AppLocalization.string("Continue in App"),
             options: [.foreground]
         )
         let revealCategory = UNNotificationCategory(
@@ -93,11 +93,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     @MainActor
     func scheduleRealCard(_ card: Flashcard, at date: Date, progress: String) {
         let content = UNMutableNotificationContent()
-        let deckName = card.deck?.name ?? String(localized: "Daily Review")
+        let deckName = card.deck?.name ?? AppLocalization.string("Daily Review")
         let deckType = card.cardType.title
         
-        content.title = String(localized: "LearnAlert: \(deckName)")
-        content.body = card.cardType.isReviewOnly ? String(localized: "Press and hold to review") : String(localized: "Press and hold to answer")
+        content.title = AppLocalization.string("LearnAlert: \(deckName)")
+        content.body = card.cardType.isReviewOnly ? AppLocalization.string("Press and hold to review") : AppLocalization.string("Press and hold to answer")
         content.categoryIdentifier = "FLASHCARD_REVEAL"
         
         // NEW: Custom Sound Engine!
@@ -155,11 +155,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     @MainActor
     func scheduleRealCardAsync(_ card: Flashcard, at date: Date, progress: String) async throws {
         let content = UNMutableNotificationContent()
-        let deckName = card.deck?.name ?? String(localized: "Daily Review")
+        let deckName = card.deck?.name ?? AppLocalization.string("Daily Review")
         let deckType = card.cardType.title
 
-        content.title = String(localized: "LearnAlert: \(deckName)")
-        content.body = card.cardType.isReviewOnly ? String(localized: "Press and hold to review") : String(localized: "Press and hold to answer")
+        content.title = AppLocalization.string("LearnAlert: \(deckName)")
+        content.body = card.cardType.isReviewOnly ? AppLocalization.string("Press and hold to review") : AppLocalization.string("Press and hold to answer")
         content.categoryIdentifier = "FLASHCARD_REVEAL"
 
         let savedSound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
@@ -195,7 +195,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         let request = UNNotificationRequest(identifier: "\(card.id.uuidString)_\(UUID().uuidString)", content: content, trigger: trigger)
         guard NotificationLearningBudget.reserveNotification(requestID: request.identifier, at: date) else {
             throw NSError(domain: "LearnAlert.NotificationBudget", code: 429,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "This alert is too close to another alert or the daily limit has been reached.")])
+                userInfo: [NSLocalizedDescriptionKey: AppLocalization.string("This alert is too close to another alert or the daily limit has been reached.")])
         }
 
         do { try await UNUserNotificationCenter.current().add(request) }
@@ -204,7 +204,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [request.identifier])
             NotificationLearningBudget.cancelReservations(requestIDs: [request.identifier])
             throw NSError(domain: "LearnAlert.NotificationBudget", code: 429,
-                userInfo: [NSLocalizedDescriptionKey: String(localized: "You're done for today. Your next study alerts can continue tomorrow.")])
+                userInfo: [NSLocalizedDescriptionKey: AppLocalization.string("You're done for today. Your next study alerts can continue tomorrow.")])
         }
         AlertTimelineStore.shared.scheduled(request, date: date)
     }
@@ -253,8 +253,8 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         cardId: UUID, deckId: UUID, appearance: NotificationAppearance, isCustomizationTest: Bool = false
     ) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = String(localized: "LearnAlert: \(deckTitle)")
-        content.body = String(localized: "Press and hold to answer")
+        content.title = AppLocalization.string("LearnAlert: \(deckTitle)")
+        content.body = AppLocalization.string("Press and hold to answer")
         content.categoryIdentifier = "FLASHCARD_TEST"
 
         let savedSound = AlertSoundCatalog.resolve(UserDefaults.standard.string(forKey: "alertSound"))
@@ -272,7 +272,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             "isRandom": false,
             "isTutorial": true,
             "isCustomizationTest": isCustomizationTest,
-            "progress": String(localized: "Tutorial \u{2022} Card 1"),
+            "progress": AppLocalization.string("Tutorial \u{2022} Card 1"),
             "question": question,
             "cardType": "multiple_choice",
             "options": options,

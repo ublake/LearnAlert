@@ -58,10 +58,10 @@ struct SettingsStatusSection: View {
                     .frame(width: 30)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(notificationsAllowed ? String(localized: "Notifications ready") : String(localized: "Notifications need attention"))
+                    Text(notificationsAllowed ? AppLocalization.string("Notifications ready") : AppLocalization.string("Notifications need attention"))
                         .font(.custom("Poppins-SemiBold", size: 14))
                         .foregroundStyle(LearnAlertStyle.textPrimary)
-                    Text(notificationsAllowed ? String(localized: "LearnAlert can deliver study cards.") : String(localized: "Allow alerts in iOS Settings."))
+                    Text(notificationsAllowed ? AppLocalization.string("LearnAlert can deliver study cards.") : AppLocalization.string("Allow alerts in iOS Settings."))
                         .font(.custom("Poppins-Regular", size: 10))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -132,9 +132,9 @@ struct SettingsLearningSection: View {
 
     private var stopLabel: String {
         switch engine.stopCondition {
-        case "Until Deck Learnt": return String(localized: "Deck learnt")
-        case "Until Day Ends": return String(localized: "Day ends")
-        default: return String(localized: "Until I say so")
+        case "Until Deck Learnt": return AppLocalization.string("Deck learnt")
+        case "Until Day Ends": return AppLocalization.string("Day ends")
+        default: return AppLocalization.string("Until I say so")
         }
     }
 }
@@ -225,9 +225,9 @@ private struct SettingsToggleRow: View {
             HStack(spacing: 12) {
                 SettingsRowIcon(systemName: systemImage)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(AppLocalization.string(title))
                         .font(.custom("Poppins-Medium", size: 13))
-                    Text(subtitle)
+                    Text(AppLocalization.string(subtitle))
                         .font(.custom("Poppins-Regular", size: 9))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -282,10 +282,10 @@ struct SettingsNavigationRow: View {
         HStack(spacing: 12) {
             SettingsRowIcon(systemName: systemImage)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(AppLocalization.string(title))
                     .font(.custom("Poppins-Medium", size: 13))
                 if let subtitle {
-                    Text(subtitle)
+                    Text(AppLocalization.string(subtitle))
                         .font(.custom("Poppins-Regular", size: 9))
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -311,7 +311,7 @@ struct SettingsVersionRow: View {
     private var versionText: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        return String(localized: "Version \(version) (\(build))")
+        return AppLocalization.string("Version \(version) (\(build))")
     }
 
     var body: some View {
@@ -330,6 +330,7 @@ struct SettingsVersionRow: View {
 }
 
 struct SettingsPreferencesGroup: View {
+    @ObservedObject private var languageSettings = AppLanguageSettings.shared
     @Binding var alertSound: String
     var availableSounds: [AlertSoundOption] = AlertSoundOption.allSounds
     @Binding var appearanceMode: String
@@ -348,6 +349,25 @@ struct SettingsPreferencesGroup: View {
                 .padding(.leading, 4)
 
             VStack(spacing: 0) {
+                Menu {
+                    Picker("Language", selection: Binding(
+                        get: { languageSettings.language },
+                        set: { languageSettings.select($0) }
+                    )) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(verbatim: language.displayName).tag(language)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    SettingsPreferenceLabel(title: "Language", systemImage: "globe",
+                        value: languageSettings.language.displayName)
+                }
+                .accessibilityLabel("Language")
+                .accessibilityValue(languageSettings.language.displayName)
+
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+
                 Menu {
                     Picker("Alert Sound", selection: $alertSound) {
                         ForEach(availableSounds) { sound in
@@ -389,10 +409,10 @@ struct SettingsPreferencesGroup: View {
                     }
                     .pickerStyle(.inline)
                 } label: {
-                    SettingsPreferenceLabel(title: "Appearance", systemImage: "circle.lefthalf.filled", value: appearanceMode == "light" ? String(localized: "Light") : appearanceMode == "dark" ? String(localized: "Dark") : String(localized: "System"))
+                    SettingsPreferenceLabel(title: "Appearance", systemImage: "circle.lefthalf.filled", value: appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
                 }
                 .accessibilityLabel("Appearance")
-                .accessibilityValue(appearanceMode == "light" ? String(localized: "Light") : appearanceMode == "dark" ? String(localized: "Dark") : String(localized: "System"))
+                .accessibilityValue(appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
 
                 Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
 
@@ -426,7 +446,7 @@ private struct SettingsPreferenceLabel: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
                 : AnyLayout(HStackLayout(spacing: 12))
             layout {
-                Text(title).font(.body.weight(.medium)).foregroundStyle(LearnAlertStyle.textPrimary)
+                Text(AppLocalization.string(title)).font(.body.weight(.medium)).foregroundStyle(LearnAlertStyle.textPrimary)
                 if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
                 Text(value).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -548,7 +568,7 @@ private struct SettingsGroupedRow: View {
     var body: some View {
         HStack(spacing: 14) {
             SettingsRowIcon(systemName: systemImage)
-            Text(title)
+            Text(AppLocalization.string(title))
                 .font(.body.weight(.medium))
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -574,7 +594,7 @@ struct ManageMyDataView: View {
 
     @State private var isDeletingDecks = false
     @State private var deletionProgress = 0.0
-    @State private var deletionStatus = String(localized: "Preparing your library")
+    @State private var deletionStatus = AppLocalization.string("Preparing your library")
     @State private var deletionError: String?
     @State private var totalCardsToDelete = 0
     @State private var showingDeleteCompleteAlert = false
@@ -649,7 +669,7 @@ struct ManageMyDataView: View {
         .alert("Couldn’t delete all decks", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
             Button("OK", role: .cancel) { deletionError = nil }
         } message: {
-            Text(deletionError ?? String(localized: "Please try again."))
+            Text(deletionError ?? AppLocalization.string("Please try again."))
         }
         .interactiveDismissDisabled(isDeletingDecks)
         .navigationBarBackButtonHidden(isDeletingDecks)
@@ -685,7 +705,7 @@ struct ManageMyDataView: View {
         guard !isDeletingDecks else { return }
         isDeletingDecks = true
         deletionProgress = 0; totalCardsToDelete = 0
-        deletionStatus = String(localized: "Preparing your library")
+        deletionStatus = AppLocalization.string("Preparing your library")
         HapticFeedback.impact(.medium)
         Task { @MainActor in
             defer { isDeletingDecks = false }
@@ -711,11 +731,11 @@ struct ManageMyDataView: View {
                     InteractionSoundPlayer.shared.play(.deleteDeck)
                 }
                 completedSummaryMessage = result.decks == 0 && result.cards == 0
-                    ? String(localized: "No decks or cards found to delete.")
-                    : String(localized: "Successfully removed \(result.decks) decks and \(result.cards) cards.")
+                    ? AppLocalization.string("No decks or cards found to delete.")
+                    : AppLocalization.string("Successfully removed \(result.decks) decks and \(result.cards) cards.")
                 showingDeleteCompleteAlert = true
             } catch {
-                deletionError = String(localized: "Deletion could not finish. Your library will show what remains. Please try again.")
+                deletionError = AppLocalization.string("Deletion could not finish. Your library will show what remains. Please try again.")
             }
         }
     }
@@ -726,10 +746,10 @@ struct ManageMyDataView: View {
     }
 
     private func makeDataExportFile() -> URL? {
-        var lines = [String(localized: "LearnAlert Data Export"), String(localized: "Generated: \(Date().formatted())"), ""]
+        var lines = [AppLocalization.string("LearnAlert Data Export"), AppLocalization.string("Generated: \(AppLocalization.date(Date()))"), ""]
         for deck in decks.sorted(by: { $0.orderIndex < $1.orderIndex }) {
             lines.append("# \(deck.name)")
-            lines.append(String(localized: "Created: \(deck.creationDate.formatted())"))
+            lines.append(AppLocalization.string("Created: \(AppLocalization.date(deck.creationDate))"))
             for card in deck.cards {
                 lines.append("- [\(card.cardType.title)] \(card.question)")
                 if card.cardType == .matching {
@@ -737,10 +757,10 @@ struct ManageMyDataView: View {
                         lines.append("  \(card.matchingLeftItems[index]) = \(card.matchingRightItems[index])")
                     }
                 } else {
-                    lines.append(String(localized: "  Answer: \(card.correctAnswer)"))
+                    lines.append(AppLocalization.string("  Answer: \(card.correctAnswer)"))
                     if !card.options.isEmpty {
                         let optionsList = card.options.joined(separator: " | ")
-                        lines.append(String(localized: "  Options: \(optionsList)"))
+                        lines.append(AppLocalization.string("  Options: \(optionsList)"))
                     }
                 }
             }
@@ -770,9 +790,9 @@ struct ManageMyDataView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(AppLocalization.string(title))
                     .font(.custom("Poppins-Medium", size: 13, relativeTo: .body))
-                Text(detail)
+                Text(AppLocalization.string(detail))
                     .font(.custom("Poppins-Regular", size: 10, relativeTo: .caption))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -846,7 +866,7 @@ private struct ReleaseNotesEntry: View {
                     .font(.custom("Poppins-SemiBold", size: 16))
 
                 if let badgeText {
-                    Text(badgeText)
+                    Text(AppLocalization.string(badgeText))
                         .font(.custom("Poppins-SemiBold", size: 10))
                         .foregroundStyle(badgeColor)
                         .padding(.horizontal, 7)
@@ -858,13 +878,13 @@ private struct ReleaseNotesEntry: View {
             }
 
             if let title {
-                Text(title)
+                Text(AppLocalization.string(title))
                     .font(.custom("Poppins-Medium", size: 13))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
 
             if let detail, !detail.key.isEmpty {
-                Text(detail)
+                Text(AppLocalization.string(detail))
                     .font(.custom("Poppins-Regular", size: 12))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -874,9 +894,9 @@ private struct ReleaseNotesEntry: View {
                 VStack(alignment: .leading, spacing: 14) {
                     ForEach(highlights.indices, id: \.self) { index in
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(highlights[index].title)
+                            Text(AppLocalization.string(highlights[index].title))
                                 .font(.custom("Poppins-Medium", size: 13))
-                            Text(highlights[index].detail)
+                            Text(AppLocalization.string(highlights[index].detail))
                                 .font(.custom("Poppins-Regular", size: 12))
                                 .foregroundStyle(LearnAlertStyle.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -963,8 +983,8 @@ struct FeedbackView: View {
         let deviceModel = UIDevice.current.model
         let sysVersion = UIDevice.current.systemVersion
         let userContent = feedbackText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let message = userContent.isEmpty ? String(localized: "[Please describe your thoughts or issue here]") : userContent
-        let details = String(localized: "App: LearnAlert v\(appVersion) (\(buildNumber))\nDevice: \(deviceModel), iOS \(sysVersion)")
+        let message = userContent.isEmpty ? AppLocalization.string("[Please describe your thoughts or issue here]") : userContent
+        let details = AppLocalization.string("App: LearnAlert v\(appVersion) (\(buildNumber))\nDevice: \(deviceModel), iOS \(sysVersion)")
         return "\(message)\n\n---\n\(details)"
     }
 
@@ -1054,7 +1074,7 @@ struct FeedbackView: View {
                                     HStack(spacing: 5) {
                                         Image(systemName: copiedMessage ? "checkmark" : "doc.on.doc")
                                             .font(.system(size: 11, weight: .semibold))
-                                        Text(copiedMessage ? String(localized: "Copied!") : String(localized: "Copy message"))
+                                        Text(copiedMessage ? AppLocalization.string("Copied!") : AppLocalization.string("Copy message"))
                                             .font(.custom("Poppins-Medium", size: 12))
                                     }
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
@@ -1074,7 +1094,7 @@ struct FeedbackView: View {
                                     HStack(spacing: 5) {
                                         Image(systemName: copiedEmail ? "checkmark" : "envelope")
                                             .font(.system(size: 11, weight: .semibold))
-                                        Text(copiedEmail ? String(localized: "Copied!") : String(localized: "Copy support email"))
+                                        Text(copiedEmail ? AppLocalization.string("Copied!") : AppLocalization.string("Copy support email"))
                                             .font(.custom("Poppins-Medium", size: 12))
                                     }
                                     .foregroundStyle(LearnAlertStyle.textPrimary)
@@ -1106,7 +1126,7 @@ struct FeedbackView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: copiedEmail ? "checkmark.circle.fill" : "envelope.fill")
                                     .font(.system(size: 13, weight: .semibold))
-                                Text(copiedEmail ? String(localized: "Email Copied to Clipboard!") : supportEmail)
+                                Text(copiedEmail ? AppLocalization.string("Email Copied to Clipboard!") : supportEmail)
                                     .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .body))
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.70)
@@ -1128,7 +1148,7 @@ struct FeedbackView: View {
         .sheet(isPresented: $showingInAppMail) {
             MailComposeView(
                 recipient: supportEmail,
-                subject: String(localized: "LearnAlert User Feedback"),
+                subject: AppLocalization.string("LearnAlert User Feedback"),
                 body: formattedEmailBody,
                 onFinish: { result in
                     if result == .sent {
@@ -1153,7 +1173,7 @@ struct FeedbackView: View {
         }
 
         // 2. Otherwise, attempt to open the system default email app via mailto
-        let subject = String(localized: "LearnAlert User Feedback")
+        let subject = AppLocalization.string("LearnAlert User Feedback")
         var components = URLComponents()
         components.scheme = "mailto"
         components.path = supportEmail

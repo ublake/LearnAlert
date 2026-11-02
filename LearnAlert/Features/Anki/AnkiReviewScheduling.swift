@@ -8,10 +8,10 @@ nonisolated enum AnkiReviewRating: Int, Codable, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .again: return String(localized: "Again")
-        case .hard: return String(localized: "Hard")
-        case .good: return String(localized: "Good")
-        case .easy: return String(localized: "Easy")
+        case .again: return AppLocalization.string("Again")
+        case .hard: return AppLocalization.string("Hard")
+        case .good: return AppLocalization.string("Good")
+        case .easy: return AppLocalization.string("Easy")
         }
     }
     var wasCorrect: Bool { self != .again }
@@ -186,10 +186,10 @@ nonisolated enum AnkiReviewScheduling {
     }
 
     static func intervalLabel(_ interval: TimeInterval) -> String {
-        guard interval.isFinite, interval > 0 else { return String(localized: "Now") }
-        if interval < 3_600 { return String(localized: "\(max(1, Int(ceil(interval / 60))))m", comment: "Compact review delay in minutes") }
-        if interval < day { return String(localized: "\(Int(ceil(interval / 3_600)))h", comment: "Compact review delay in hours") }
-        return String(localized: "\(Int(ceil(interval / day)))d", comment: "Compact review delay in days")
+        guard interval.isFinite, interval > 0 else { return AppLocalization.string("Now") }
+        if interval < 3_600 { return AppLocalization.string("\(max(1, Int(ceil(interval / 60))))m", comment: "Compact review delay in minutes") }
+        if interval < day { return AppLocalization.string("\(Int(ceil(interval / 3_600)))h", comment: "Compact review delay in hours") }
+        return AppLocalization.string("\(Int(ceil(interval / day)))d", comment: "Compact review delay in days")
     }
 
     private static func boundedDays(_ interval: TimeInterval) -> TimeInterval {

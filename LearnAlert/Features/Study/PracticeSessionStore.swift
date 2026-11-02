@@ -170,7 +170,7 @@ final class PracticeSessionStore: ObservableObject {
             errorMessage = nil
             return true
         } catch {
-            errorMessage = String(localized: "Saved practice sessions couldn’t be opened. Please try again.")
+            errorMessage = AppLocalization.string("Saved practice sessions couldn’t be opened. Please try again.")
             return false
         }
     }
@@ -190,7 +190,7 @@ final class PracticeSessionStore: ObservableObject {
                 try Task.checkCancellation()
                 try await PracticeSessionArchiveIO.shared.save(snapshot, generation: generation)
             } catch is CancellationError { }
-            catch { self?.errorMessage = String(localized: "Practice progress couldn’t be saved. Keep this session open and try again.") }
+            catch { self?.errorMessage = AppLocalization.string("Practice progress couldn’t be saved. Keep this session open and try again.") }
         }
     }
 
@@ -220,7 +220,7 @@ final class PracticeSessionStore: ObservableObject {
         loadedGeneration = nil; loadedDeckID = nil
         pendingSave?.cancel(); sessions.removeAll()
         do { try await PracticeSessionArchiveIO.shared.removeAll(generation: Self.allGeneration) }
-        catch { errorMessage = String(localized: "Saved practice sessions couldn’t be removed. Please try again.") }
+        catch { errorMessage = AppLocalization.string("Saved practice sessions couldn’t be removed. Please try again.") }
     }
 
     func removeSessions(deckID: UUID) async {
@@ -228,6 +228,6 @@ final class PracticeSessionStore: ObservableObject {
         Self.deckGenerations[deckID, default: 0] += 1
         pendingSave?.cancel(); sessions.removeAll { $0.deckID == deckID }
         do { try await PracticeSessionArchiveIO.shared.removeSessions(deckID: deckID, generation: Self.deckGenerations[deckID, default: 0]) }
-        catch { errorMessage = String(localized: "Saved practice sessions couldn’t be removed. Please try again.") }
+        catch { errorMessage = AppLocalization.string("Saved practice sessions couldn’t be removed. Please try again.") }
     }
 }

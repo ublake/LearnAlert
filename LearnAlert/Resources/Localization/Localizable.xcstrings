@@ -1780,6 +1780,47 @@
         }
       }
     },
+    "%lld cards · %lld media files": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld tarjetas · %lld archivos multimedia"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld cartões · %lld arquivos de mídia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld cartes · %lld fichiers multimédias"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Karten · %lld Mediendateien"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld枚のカード · %lld個のメディアファイル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카드 %lld개 · 미디어 파일 %lld개"
+          }
+        }
+      }
+    },
     "%lld categories": {
       "comment": "Interface copy. LearnAlert/DeckAIAssistantSheet.swift",
       "localizations": {
@@ -3115,6 +3156,47 @@
         }
       }
     },
+    "%lld of %lld": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sur %lld"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld von %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld件中%1$lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld개 중 %1$lld개"
+          }
+        }
+      }
+    },
     "%lld of %lld cards reviewed": {
       "comment": "Interface copy. LearnAlert/ProgressDashboardView.swift",
       "localizations": {
@@ -3152,6 +3234,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "카드 %lld / %lld개 복습 완료"
+          }
+        }
+      }
+    },
+    "%lld of %lld files": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld archivos"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld arquivos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fichiers sur %lld"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld von %lld Dateien"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lldファイル中%1$lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld개 파일 중 %1$lld개"
           }
         }
       }
@@ -7525,6 +7648,47 @@
         }
       }
     },
+    "Agree to the Terms and Conditions and Privacy Policy": {
+      "comment": "Interface copy. LearnAlert/Features/Community/CommunityViews.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aceptar los términos y condiciones y la política de privacidad"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Concordar com os Termos e Condições e a Política de Privacidade"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accepter les conditions générales et la politique de confidentialité"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den Nutzungsbedingungen und der Datenschutzerklärung zustimmen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用規約とプライバシーポリシーに同意する"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이용약관 및 개인정보 처리방침에 동의"
+          }
+        }
+      }
+    },
     "Alert Schedule": {
       "comment": "Interface copy. LearnAlert/ContentView.swift",
       "localizations": {
@@ -11666,6 +11830,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "기본 제공 덱은 공유 덱으로 게시할 수 없어요."
+          }
+        }
+      }
+    },
+    "By checking this box, I agree to the [Terms and Conditions](https://learnalertapp.com/terms) and [Privacy Policy](https://learnalertapp.com/privacy-policy).": {
+      "comment": "Interface copy. LearnAlert/Features/Community/CommunityViews.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al marcar esta casilla, acepto los [Términos y condiciones](https://learnalertapp.com/terms) y la [Política de privacidad](https://learnalertapp.com/privacy-policy)."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ao marcar esta caixa, concordo com os [Termos e Condições](https://learnalertapp.com/terms) e a [Política de Privacidade](https://learnalertapp.com/privacy-policy)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En cochant cette case, j’accepte les [Conditions générales](https://learnalertapp.com/terms) et la [Politique de confidentialité](https://learnalertapp.com/privacy-policy)."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durch Ankreuzen dieses Kästchens stimme ich den [Nutzungsbedingungen](https://learnalertapp.com/terms) und der [Datenschutzerklärung](https://learnalertapp.com/privacy-policy) zu."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このボックスにチェックを入れることで、[利用規約](https://learnalertapp.com/terms)と[プライバシーポリシー](https://learnalertapp.com/privacy-policy)に同意します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 확인란을 선택하면 [이용약관](https://learnalertapp.com/terms) 및 [개인정보 처리방침](https://learnalertapp.com/privacy-policy)에 동의합니다."
           }
         }
       }
@@ -15894,6 +16099,47 @@
         }
       }
     },
+    "Converting cards": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Convirtiendo tarjetas"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Convertendo cartões"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversion des cartes"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Karten werden konvertiert"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードを変換中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카드 변환 중"
+          }
+        }
+      }
+    },
     "Copied": {
       "comment": "Interface copy. LearnAlert/AIDiagnosticInspectorSheet.swift",
       "localizations": {
@@ -19662,6 +19908,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "발송됨"
+          }
+        }
+      }
+    },
+    "Description": {
+      "comment": "Interface copy. LearnAlert/Features/Community/CommunityViews.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descripción"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descrição"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschreibung"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설명"
           }
         }
       }
@@ -24172,6 +24459,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "앞뒷면을 뒤집어 스스로 평가"
+          }
+        }
+      }
+    },
+    "Gathering images & audio": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recopilando imágenes y audio"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reunindo imagens e áudio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récupération des images et de l’audio"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bilder und Audio werden gesammelt"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像と音声を収集中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지와 오디오 모으는 중"
           }
         }
       }
@@ -39876,6 +40204,47 @@
         }
       }
     },
+    "Reading cards": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leyendo tarjetas"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lendo cartões"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture des cartes"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Karten werden gelesen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カードを読み込み中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카드 읽는 중"
+          }
+        }
+      }
+    },
     "Ready for Study Alerts": {
       "comment": "Interface copy. LearnAlert/CreateDeckView.swift",
       "localizations": {
@@ -39954,6 +40323,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "덱을 편집하고, 명확하게 하고, 설명할 준비가 됐어요."
+          }
+        }
+      }
+    },
+    "Ready to import": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listo para importar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pronto para importar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prêt à importer"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereit zum Importieren"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インポート準備完了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가져올 준비 완료"
           }
         }
       }
@@ -55136,6 +55546,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "덱 좋아요 취소"
+          }
+        }
+      }
+    },
+    "Unpacking the collection": {
+      "comment": "Interface copy. Packages/AnkiArchive/Sources/AnkiArchive/AnkiPackageReader.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descomprimiendo la colección"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descompactando a coleção"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Décompression de la collection"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sammlung wird entpackt"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションを展開中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컬렉션 압축 푸는 중"
           }
         }
       }

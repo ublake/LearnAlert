@@ -66,6 +66,9 @@ struct DeckDetailView: View {
     @Bindable var deck: Deck
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var practiceActivity = PracticeStudyActivity.shared
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
     @AppStorage("tutorialDeckId") private var tutorialDeckId = ""
 
@@ -90,6 +93,7 @@ struct DeckDetailView: View {
     @State private var isLoadingPreview = true
     @State private var previewError: String?
     @State private var previewRevision = 0
+    @State private var needsForegroundPreviewRefresh = false
     @State private var previewOffset = 0
     @State private var tutorialCoachIndex: Int?
     @State private var tutorialBackFrame = CGRect.zero
@@ -159,7 +163,7 @@ struct DeckDetailView: View {
                 if !orderedSections.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        sectionFilterPill(title: String(localized: "All"), tag: "ALL", count: snapshot.cardCount)
+                        sectionFilterPill(title: AppLocalization.string("All"), tag: "ALL", count: snapshot.cardCount)
 
                         ForEach(orderedSections) { section in
                             sectionFilterPill(
@@ -171,7 +175,7 @@ struct DeckDetailView: View {
                         }
 
                         if snapshot.uncategorizedCount > 0 {
-                            sectionFilterPill(title: String(localized: "Unsorted"), tag: "NONE", count: snapshot.uncategorizedCount)
+                            sectionFilterPill(title: AppLocalization.string("Unsorted"), tag: "NONE", count: snapshot.uncategorizedCount)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -194,7 +198,7 @@ struct DeckDetailView: View {
                         Image(systemName: "rectangle.stack.badge.plus")
                             .font(.system(size: 44))
                             .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
-                        Text(snapshot.cardCount == 0 ? String(localized: "No cards in this deck yet") : String(localized: "No cards match your filter"))
+                        Text(snapshot.cardCount == 0 ? AppLocalization.string("No cards in this deck yet") : AppLocalization.string("No cards match your filter"))
                             .font(.custom("Poppins-Medium", size: 15))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                         Spacer()
@@ -232,7 +236,7 @@ struct DeckDetailView: View {
                                         delete(offsets, from: uncategorized)
                                     }
                                 } header: {
-                                    Text(String(localized: "Unsorted"))
+                                    Text(AppLocalization.string("Unsorted"))
                                         .font(.custom("Poppins-SemiBold", size: 13))
                                         .foregroundStyle(LearnAlertStyle.textSecondary)
                                 }
@@ -269,6 +273,13 @@ struct DeckDetailView: View {
             await loadPreview()
         }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in previewRevision += 1 }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { needsForegroundPreviewRefresh = true }
+            if phase == .active && needsForegroundPreviewRefresh {
+                needsForegroundPreviewRefresh = false
+                previewRevision += 1
+            }
+        }
         .toolbar {
             if homeTutorialStep == 2 {
                 ToolbarItem(placement: .topBarLeading) {
@@ -329,11 +340,14 @@ struct DeckDetailView: View {
                         } label: {
                             Label("Reset Progress", systemImage: "arrow.counterclockwise")
                         }
+
+                        Text(lastStudiedLabel(at: .now))
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(LearnAlertStyle.indigo)
                     }
+                    .menuOrder(.fixed)
                 }
             }
         }
@@ -398,8 +412,24 @@ struct DeckDetailView: View {
         }
     }
 
+    private func lastStudiedLabel(at now: Date) -> String {
+        let date = [previewSummary.lastStudiedAt, practiceActivity.lastStudied(deckID: deck.id)].compactMap { $0 }.max()
+        guard let date else { return AppLocalization.string("Last studied —") }
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return AppLocalization.string("Studied today") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return AppLocalization.string("Studied yesterday")
+        }
+        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
+            return AppLocalization.string("Studied \(date.formatted(.dateTime.month(.abbreviated).day().year().locale(locale)))")
+        }
+        return AppLocalization.string("Studied \(date.formatted(.dateTime.month(.abbreviated).day().locale(locale)))")
+    }
+
     // MARK: - Folder Header View
     private func loadPreview() async {
+        // An already-scheduled active load also satisfies a foreground refresh.
+        if scenePhase == .active { needsForegroundPreviewRefresh = false }
         isLoadingPreview = true; previewError = nil
         let container = context.container, deckID = deck.id, search = searchText, section = selectedSectionFilter
         let worker = Task.detached(priority: .userInitiated) {
@@ -416,7 +446,7 @@ struct DeckDetailView: View {
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled else { return }
-            previewError = String(localized: "Please try opening it again."); isLoadingPreview = false
+            previewError = AppLocalization.string("Please try opening it again."); isLoadingPreview = false
         }
     }
 
@@ -429,7 +459,7 @@ struct DeckDetailView: View {
             let byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             previewOffset += ids.count
             snapshot = DeckDetailSnapshot(summary: previewSummary, visibleCards: snapshot.filteredCards + ids.compactMap { byID[$0] })
-        } catch { previewError = String(localized: "The next cards couldn’t load. Please try again.") }
+        } catch { previewError = AppLocalization.string("The next cards couldn’t load. Please try again.") }
     }
 
     private func folderSectionHeader(section: DeckSection, count: Int) -> some View {
@@ -519,14 +549,14 @@ struct DeckDetailView: View {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: snapshot.cardCount,
                                  compactStack: DeckCreatureAppearance.visibleLayerCount(for: snapshot.cardCount) >= 7, colorHex: deck.colorHex)
                     .frame(width: 34, height: 28).accessibilityHidden(true)
-                compactStat(String(localized: "Cards"), value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
-                compactStat(String(localized: "Due"), value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
-                compactStat(String(localized: "Mastered"), value: snapshot.masteredCount, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
+                compactStat(AppLocalization.string("Cards"), value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
+                compactStat(AppLocalization.string("Due"), value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
+                compactStat(AppLocalization.string("Mastered"), value: snapshot.masteredCount, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
             }
             HStack(spacing: 8) {
-                deckAction(String(localized: "Add cards"), icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
-                deckAction(String(localized: "Add folder"), icon: "folder.badge.plus") { showingCreateCategory = true }
-                deckAction(String(localized: "Study"), icon: "play.fill", prominent: true) { showingStudy = true }
+                deckAction(AppLocalization.string("Add cards"), icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
+                deckAction(AppLocalization.string("Add folder"), icon: "folder.badge.plus") { showingCreateCategory = true }
+                deckAction(AppLocalization.string("Study"), icon: "play.fill", prominent: true) { showingStudy = true }
                     .disabled(snapshot.cardCount == 0)
             }
         }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
@@ -739,7 +769,7 @@ struct CardInteractivePreviewSheet: View {
                             CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
                                 fields: card.fieldMedia, isGraded: matchingGraded) { _ in matchingGraded = true }
                         } else if card.cardType == .anki {
-                            Button(isRevealed ? String(localized: "Show front") : String(localized: "Flip/reveal")) {
+                            Button(isRevealed ? AppLocalization.string("Show front") : AppLocalization.string("Flip/reveal")) {
                                 withAnimation(.snappy) { isRevealed.toggle() }
                             }.buttonStyle(PrimaryActionButtonStyle())
                         } else if card.cardType != .images {

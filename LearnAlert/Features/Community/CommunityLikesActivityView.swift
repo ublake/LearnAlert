@@ -24,7 +24,7 @@ struct CommunityLikesActivityView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Image(systemName: "heart.fill").foregroundStyle(.pink)
                             Text(totalCount.formatted()).font(.largeTitle.weight(.bold)).monospacedDigit()
-                            Text(totalCount == 1 ? String(localized: "heart received") : String(localized: "hearts received"))
+                            Text(totalCount == 1 ? AppLocalization.string("heart received") : AppLocalization.string("hearts received"))
                                 .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                         }
                         if !deckCounts.isEmpty { CommunityHeartsChart(counts: deckCounts) }

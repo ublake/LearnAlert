@@ -68,7 +68,7 @@ struct CreateCardView: View {
                 LearnAlertStyle.courseCanvas.ignoresSafeArea()
                 if selectedType == nil { typePicker } else { editor }
             }
-            .navigationTitle(cardToEdit == nil ? String(localized: "New Card") : String(localized: "Edit Card"))
+            .navigationTitle(cardToEdit == nil ? AppLocalization.string("New Card") : AppLocalization.string("Edit Card"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Cancel") { imageLoadID = UUID(); dismiss() } }
@@ -133,7 +133,7 @@ struct CreateCardView: View {
                 default: frontBackEditor
                 }
                 if selectedType != .images {
-                    Text(hasChoiceAnswers ? String(localized: "Swipe left on answer choices to add images or audio files.") : String(localized: "Swipe left on fields to add images or audio files."))
+                    Text(hasChoiceAnswers ? AppLocalization.string("Swipe left on answer choices to add images or audio files.") : AppLocalization.string("Swipe left on fields to add images or audio files."))
                         .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("Hint (optional)", isOn: $hintEnabled.animation(.snappy))
@@ -141,7 +141,7 @@ struct CreateCardView: View {
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .tint(LearnAlertStyle.indigo)
-                        if hintEnabled { mediaField("hint", title: "", placeholder: String(localized: "A small clue…"), text: $hint) }
+                        if hintEnabled { mediaField("hint", title: "", placeholder: AppLocalization.string("A small clue…"), text: $hint) }
                     }.padding(.horizontal, 12).padding(.vertical, 6).editorSurface()
                 }
                 if !deck.sections.isEmpty {
@@ -155,7 +155,7 @@ struct CreateCardView: View {
                     }.padding(.horizontal, 12).padding(.vertical, 4).editorSurface()
                 }
                 Button(action: saveCard) {
-                    Label(cardToEdit == nil ? String(localized: "Save Card") : String(localized: "Update Card"), systemImage: "checkmark.circle.fill")
+                    Label(cardToEdit == nil ? AppLocalization.string("Save Card") : AppLocalization.string("Update Card"), systemImage: "checkmark.circle.fill")
                         .font(.headline).frame(maxWidth: .infinity, minHeight: 46)
                 }.buttonStyle(.borderedProminent).disabled(!isFormValid)
             }.padding(16)
@@ -167,18 +167,18 @@ struct CreateCardView: View {
             if selectedType == .fillBlank {
                 Button { if !question.contains("___") { question += question.isEmpty ? "___" : " ___" } } label: { Label("Insert blank", systemImage: "plus.square.dashed").font(.caption) }.frame(maxWidth: .infinity, alignment: .trailing)
             }
-            mediaField("prompt", title: "", placeholder: selectedType == .vocabulary ? String(localized: "Term") : selectedType == .fillBlank ? String(localized: "Sentence with a ___ blank") : String(localized: "Front"), text: $question, minimumHeight: 56)
+            mediaField("prompt", title: "", placeholder: selectedType == .vocabulary ? AppLocalization.string("Term") : selectedType == .fillBlank ? AppLocalization.string("Sentence with a ___ blank") : AppLocalization.string("Front"), text: $question, minimumHeight: 56)
             if selectedType == .fillBlank {
                 Toggle("Answer choices", isOn: $blankUsesChoices.animation(.snappy))
                     .font(.subheadline).accessibilityHint("Choose an answer to place it into the sentence instead of typing.")
             }
             if selectedType == .fillBlank && blankUsesChoices { answerChoicesEditor }
-            else { mediaField("answer", title: "", placeholder: selectedType == .vocabulary ? String(localized: "Definition") : String(localized: "Answer"), text: $answer, minimumHeight: 56) }
+            else { mediaField("answer", title: "", placeholder: selectedType == .vocabulary ? AppLocalization.string("Definition") : AppLocalization.string("Answer"), text: $answer, minimumHeight: 56) }
         }.padding(12).editorSurface()
     }
     private var multipleChoiceEditor: some View {
         VStack(spacing: 12) {
-            mediaField("prompt", title: "", placeholder: String(localized: "Question"), text: $question, minimumHeight: 56)
+            mediaField("prompt", title: "", placeholder: AppLocalization.string("Question"), text: $question, minimumHeight: 56)
             answerChoicesEditor
         }.padding(12).editorSurface()
     }
@@ -196,27 +196,27 @@ struct CreateCardView: View {
                             .font(.title3).foregroundStyle(correctOptionIndex == index ? .green : LearnAlertStyle.textSecondary)
                             .frame(width: 32, height: 44)
                     }.buttonStyle(.plain).accessibilityLabel("Choice \(index + 1) is correct").accessibilityAddTraits(correctOptionIndex == index ? .isSelected : [])
-                    mediaField("option:\(index)", title: "", placeholder: String(localized: "Choice \(index + 1)"), text: $options[index])
+                    mediaField("option:\(index)", title: "", placeholder: AppLocalization.string("Choice \(index + 1)"), text: $options[index])
                 }
             }
         }
     }
     private var matchingEditor: some View {
         VStack(spacing: 12) {
-            mediaField("prompt", title: "", placeholder: String(localized: "Match the pairs (optional)"), text: $question, minimumHeight: 56)
+            mediaField("prompt", title: "", placeholder: AppLocalization.string("Match the pairs (optional)"), text: $question, minimumHeight: 56)
             HStack { Text("PAIRS").font(.caption.weight(.semibold)); Spacer(); Picker("Pairs", selection: $visiblePairCount) { ForEach(2...20, id: \.self) { Text("\($0)").tag($0) } }.pickerStyle(.menu) }
             ForEach(0..<visiblePairCount, id: \.self) { index in
                 HStack(alignment: .top, spacing: 8) {
-                    mediaField("left:\(index)", title: "", placeholder: String(localized: "Left \(index + 1)"), text: $matchingLeft[index])
+                    mediaField("left:\(index)", title: "", placeholder: AppLocalization.string("Left \(index + 1)"), text: $matchingLeft[index])
                     Image(systemName: "arrow.left.arrow.right").font(.caption).padding(.top, 16).foregroundStyle(LearnAlertStyle.indigo)
-                    mediaField("right:\(index)", title: "", placeholder: String(localized: "Match \(index + 1)"), text: $matchingRight[index])
+                    mediaField("right:\(index)", title: "", placeholder: AppLocalization.string("Match \(index + 1)"), text: $matchingRight[index])
                 }
             }
         }.padding(12).editorSurface()
     }
     private var dragAnswerEditor: some View {
         VStack(spacing: 12) {
-            mediaField("prompt", title: "", placeholder: String(localized: "Prompt"), text: $question, minimumHeight: 56)
+            mediaField("prompt", title: "", placeholder: AppLocalization.string("Prompt"), text: $question, minimumHeight: 56)
             HStack {
                 Text("CORRECT ORDER").font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
                 Spacer()
@@ -228,7 +228,7 @@ struct CreateCardView: View {
             ForEach(0..<visibleTokenCount, id: \.self) { index in
                 HStack(alignment: .center, spacing: 6) {
                     Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary).frame(width: 18)
-                    mediaField("option:\(index)", title: "", placeholder: String(localized: "Word or chunk \(index + 1)"), text: $orderedTokens[index])
+                    mediaField("option:\(index)", title: "", placeholder: AppLocalization.string("Word or chunk \(index + 1)"), text: $orderedTokens[index])
                     VStack(spacing: 0) {
                         Button { moveToken(index, by: -1) } label: { Image(systemName: "chevron.up").frame(width: 28, height: 24) }
                             .disabled(index == 0).accessibilityLabel("Move tile \(index + 1) earlier")
@@ -290,8 +290,8 @@ struct CreateCardView: View {
             Picker("Image layout", selection: $imageCardLayout) {
                 Text("Single").tag(ImageCardLayout.single); Text("Front & back").tag(ImageCardLayout.frontAndBack)
             }.pickerStyle(.segmented)
-            imageOnlyField("prompt", title: String(localized: "Front"))
-            if imageCardLayout == .frontAndBack { imageOnlyField("answer", title: String(localized: "Back side")) }
+            imageOnlyField("prompt", title: AppLocalization.string("Front"))
+            if imageCardLayout == .frontAndBack { imageOnlyField("answer", title: AppLocalization.string("Back side")) }
         }.padding(12).editorSurface().animation(.snappy, value: imageCardLayout)
     }
     private func imageOnlyField(_ key: String, title: String) -> some View {
@@ -326,7 +326,7 @@ struct CreateCardView: View {
                 isLoadingImage = false; pendingImageCrop = .init(image: image, key: key)
             } catch {
                 guard id == imageLoadID else { return }
-                isLoadingImage = false; self.error = String(localized: "This photo couldn’t be opened. Please choose another image.")
+                isLoadingImage = false; self.error = AppLocalization.string("This photo couldn’t be opened. Please choose another image.")
             }
         }
     }
@@ -355,7 +355,7 @@ struct CreateCardView: View {
         let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : type == .dragAnswer ? (0..<visibleTokenCount).map { "option:\($0)" } : hasChoiceAnswers ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
         for (key, image) in images where allowed.contains(key) {
             guard let name = CardImageStore.saveImage(image) else {
-                savedImages.forEach { CardImageStore.deleteImage(named: $0) }; error = String(localized: "Your image couldn’t be saved. Please try again."); return
+                savedImages.forEach { CardImageStore.deleteImage(named: $0) }; error = AppLocalization.string("Your image couldn’t be saved. Please try again."); return
             }
             savedImages.append(name); final[key, default: .init()].image = name
         }
@@ -382,7 +382,7 @@ struct CreateCardView: View {
             else {
                 (card.question, card.correctAnswer, card.options, card.hint, card.matchingLeftItems, card.matchingRightItems, card.fieldMedia, card.correctOptionIndex, card.section) = old
             }
-            savedImages.forEach { CardImageStore.deleteImage(named: $0) }; self.error = String(localized: "Your card couldn’t be saved. Please try again."); return
+            savedImages.forEach { CardImageStore.deleteImage(named: $0) }; self.error = AppLocalization.string("Your card couldn’t be saved. Please try again."); return
         }
         draftAudio.names.subtract(final.values.compactMap(\.audio))
         CardAttachmentCleanup.removeUnreferenced(old.6, context: context)
@@ -492,7 +492,7 @@ private struct CardEditorMediaField: View {
     }
     private var photoButton: some View {
         PhotosPicker(selection: $photo, matching: .images) {
-            Group { if imageOnly { Label(image == nil ? String(localized: "Upload image") : String(localized: "Change image"), systemImage: "photo.badge.plus") } else { Image(systemName: "photo.badge.plus").frame(width: 44, height: 44) } }
+            Group { if imageOnly { Label(image == nil ? AppLocalization.string("Upload image") : AppLocalization.string("Change image"), systemImage: "photo.badge.plus") } else { Image(systemName: "photo.badge.plus").frame(width: 44, height: 44) } }
         }.accessibilityLabel("Attach image")
     }
 }

@@ -10,8 +10,8 @@ public nonisolated enum AnkiStudyPresentation: String, CaseIterable, Identifiabl
 
     public var title: String {
         switch self {
-        case .revealBelow: String(localized: "Reveal below")
-        case .tapToFlip: String(localized: "Tap to flip")
+        case .revealBelow: AppLocalization.string("Reveal below")
+        case .tapToFlip: AppLocalization.string("Tap to flip")
         }
     }
 

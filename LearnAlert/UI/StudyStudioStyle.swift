@@ -96,7 +96,7 @@ struct StudyDestinationCard: View {
     let badge: String
     var symbol: String? = nil
     let color: Color
-    var actionTitle = String(localized: "Explore")
+    var actionTitle = AppLocalization.string("Explore")
     let action: () -> Void
 
     var body: some View {

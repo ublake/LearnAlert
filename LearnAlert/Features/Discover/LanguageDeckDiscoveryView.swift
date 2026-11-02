@@ -16,16 +16,16 @@ struct LanguageDeckDiscoveryView: View {
     private var course: CourseDefinition { catalog.course(for: originalCourse.id) ?? originalCourse }
     private var languageTitle: String {
         switch course.language.lowercased() {
-        case "spanish": String(localized: "Spanish")
-        case "korean": String(localized: "Korean")
-        case "english": String(localized: "English")
-        case "french": String(localized: "French")
-        case "german": String(localized: "German")
-        case "italian": String(localized: "Italian")
-        case "portuguese": String(localized: "Portuguese")
-        case "japanese": String(localized: "Japanese")
-        case "chinese": String(localized: "Chinese")
-        case "arabic": String(localized: "Arabic")
+        case "spanish": AppLocalization.string("Spanish")
+        case "korean": AppLocalization.string("Korean")
+        case "english": AppLocalization.string("English")
+        case "french": AppLocalization.string("French")
+        case "german": AppLocalization.string("German")
+        case "italian": AppLocalization.string("Italian")
+        case "portuguese": AppLocalization.string("Portuguese")
+        case "japanese": AppLocalization.string("Japanese")
+        case "chinese": AppLocalization.string("Chinese")
+        case "arabic": AppLocalization.string("Arabic")
         default: course.language
         }
     }
@@ -47,10 +47,10 @@ struct LanguageDeckDiscoveryView: View {
             guard !members.isEmpty else { continue }
             assigned.formUnion(members.map(\.id))
             let title = unit.title.replacingOccurrences(of: #"^(?:Unit|Level)\s+\d+\s*[:·.—-]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
-            groups.append(TopicGroup(id: unit.id, title: title.localizedCaseInsensitiveContains("start here") ? String(localized: "Introduction & basics") : title, topics: members))
+            groups.append(TopicGroup(id: unit.id, title: title.localizedCaseInsensitiveContains("start here") ? AppLocalization.string("Introduction & basics") : title, topics: members))
         }
         let remaining = topics.filter { !assigned.contains($0.id) }
-        if !remaining.isEmpty { groups.append(TopicGroup(id: "more", title: String(localized: "More decks"), topics: remaining)) }
+        if !remaining.isEmpty { groups.append(TopicGroup(id: "more", title: AppLocalization.string("More decks"), topics: remaining)) }
         return groups
     }
 
@@ -64,7 +64,7 @@ struct LanguageDeckDiscoveryView: View {
                         ContentUnavailableView("No decks available", systemImage: "rectangle.stack", description: Text("Check back for new \(languageTitle) decks."))
                             .padding(.horizontal, 20)
                     } else {
-                        deckRow(title: String(localized: "Recommended decks"), members: recommended, cardWidth: cardWidth)
+                        deckRow(title: AppLocalization.string("Recommended decks"), members: recommended, cardWidth: cardWidth)
                         if !moreGroups.isEmpty {
                             Text("More to explore")
                                 .font(StudyStudioStyle.title(23))
@@ -90,12 +90,12 @@ struct LanguageDeckDiscoveryView: View {
         .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
             Button("Done", role: .cancel) { }
         } message: {
-            Text("\(addedDeckName ?? String(localized: "This deck")) is ready to study in your library.")
+            Text("\(addedDeckName ?? AppLocalization.string("This deck")) is ready to study in your library.")
         }
         .alert("Deck couldn’t be added", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(failure ?? String(localized: "Please try again."))
+            Text(failure ?? AppLocalization.string("Please try again."))
         }
     }
 
@@ -149,7 +149,7 @@ struct LanguageDeckDiscoveryView: View {
             HapticFeedback.success()
             addedDeckName = topic.title
         } catch {
-            failure = String(localized: "This deck couldn’t be saved. Please try again.")
+            failure = AppLocalization.string("This deck couldn’t be saved. Please try again.")
         }
     }
 }

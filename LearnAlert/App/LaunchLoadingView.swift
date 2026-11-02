@@ -66,7 +66,7 @@ private struct LaunchLoadingView: UIViewRepresentable {
         view.overrideUserInterfaceStyle = interfaceStyle
         view.backgroundColor = UIColor(named: "LaunchBackground") ?? .systemBackground
         view.isAccessibilityElement = true
-        view.accessibilityLabel = String(localized: "LearnAlert is loading")
+        view.accessibilityLabel = AppLocalization.string("LearnAlert is loading")
 
         let logo = UIImageView(image: UIImage(named: "LearnAlertLogo"))
         logo.contentMode = .scaleAspectFit

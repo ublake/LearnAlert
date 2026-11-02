@@ -73,7 +73,7 @@ struct GeneratedQuizImportView: View {
     private let sourceCharacterLimit = 10_000
 
     @State private var sourceText = ""
-    @State private var sourceName = String(localized: "Pasted Notes")
+    @State private var sourceName = AppLocalization.string("Pasted Notes")
     @State private var pendingUpload: PendingSourceUpload?
     @State private var activeUpload: PendingSourceUpload?
     private let defaultMaxCards = 50
@@ -155,7 +155,7 @@ struct GeneratedQuizImportView: View {
         chatHistory = []
         chatInput = ""
         sourceText = ""
-        sourceName = String(localized: "Pasted Notes")
+        sourceName = AppLocalization.string("Pasted Notes")
         pendingUpload = nil
         activeUpload = nil
         generatedDeck = nil
@@ -244,13 +244,13 @@ struct GeneratedQuizImportView: View {
                     )
                 }
             }
-            .navigationTitle(isReviewing ? String(localized: "Review Deck") : String(localized: "Generate Deck"))
+            .navigationTitle(isReviewing ? AppLocalization.string("Review Deck") : AppLocalization.string("Generate Deck"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if isReviewing {
                         if savedDeck != nil {
-                            Button(String(localized: "Done")) {
+                            Button(AppLocalization.string("Done")) {
                                 dismiss()
                             }
                             .font(.custom("Poppins-SemiBold", size: 15))
@@ -275,7 +275,7 @@ struct GeneratedQuizImportView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: savedDeck != nil ? "checkmark.circle.fill" : "rectangle.stack.badge.plus")
                                     .font(.system(size: 16, weight: .bold))
-                                Text(savedDeck != nil ? String(localized: "Deck Added to Library") : (selectedCardIDs.count == 1 ? String(localized: "Add Deck with 1 Card") : String(localized: "Add Deck with \(selectedCardIDs.count) Cards")))
+                                Text(savedDeck != nil ? AppLocalization.string("Deck Added to Library") : (selectedCardIDs.count == 1 ? AppLocalization.string("Add Deck with 1 Card") : AppLocalization.string("Add Deck with \(selectedCardIDs.count) Cards")))
                                     .font(.custom("Poppins-SemiBold", size: 15))
                             }
                             .frame(maxWidth: .infinity)
@@ -454,7 +454,7 @@ struct GeneratedQuizImportView: View {
         // Spam cooldown check
         if let cooldown = spamCooldownUntil, Date() < cooldown {
             let remaining = max(1, Int(ceil(cooldown.timeIntervalSinceNow)))
-            showSpamNotice(String(localized: "Taking a quick breather! 😊 Please wait \(remaining)s."))
+            showSpamNotice(AppLocalization.string("Taking a quick breather! 😊 Please wait \(remaining)s."))
             return
         }
 
@@ -462,7 +462,7 @@ struct GeneratedQuizImportView: View {
         let check = spamDetector.evaluate(message: chatInput)
         if case .spam(let cooldownSeconds, _) = check {
             spamCooldownUntil = Date().addingTimeInterval(TimeInterval(cooldownSeconds))
-            showSpamNotice(String(localized: "Taking a quick breather! 😊 Please wait a few seconds."))
+            showSpamNotice(AppLocalization.string("Taking a quick breather! 😊 Please wait a few seconds."))
             return
         }
 
@@ -513,7 +513,7 @@ struct GeneratedQuizImportView: View {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 chatHistory.append(DeckChatMessage(
                     role: "assistant",
-                    content: String(localized: "Please paste notes or attach a document or photo first.")
+                    content: AppLocalization.string("Please paste notes or attach a document or photo first.")
                 ))
             }
             return
@@ -562,7 +562,7 @@ struct GeneratedQuizImportView: View {
                     )
                 } else {
                     sourceText = String((sourceText.isEmpty ? message : sourceText).prefix(10_000))
-                    sourceName = String(localized: "Pasted Notes")
+                    sourceName = AppLocalization.string("Pasted Notes")
                     result = try await LearnAlertAPI().generateDeck(
                         text: sourceText,
                         sourceName: sourceName,
@@ -708,11 +708,11 @@ struct GeneratedQuizImportView: View {
                 httpStatusCode: nil,
                 httpStatusText: "File Selection Error",
                 errorCode: "FILE_IMPORT_ERROR",
-                userFriendlySummary: String(localized: "The document could not be opened from the system file picker."),
+                userFriendlySummary: AppLocalization.string("The document could not be opened from the system file picker."),
                 technicalError: "Security-scoped URL access failed or file selection was cancelled.",
-                suggestedFix: String(localized: "Ensure the file exists in iCloud Drive or on device and is a supported PDF, TXT, or image.")
+                suggestedFix: AppLocalization.string("Ensure the file exists in iCloud Drive or on device and is a supported PDF, TXT, or image.")
             )
-            chatHistory.append(DeckChatMessage(role: "assistant", content: String(localized: "⚠️ The selected file couldn’t be opened."), diagnosticReport: diag))
+            chatHistory.append(DeckChatMessage(role: "assistant", content: AppLocalization.string("⚠️ The selected file couldn’t be opened."), diagnosticReport: diag))
             return
         }
         if hasProcessedDocument {
@@ -773,7 +773,7 @@ struct GeneratedQuizImportView: View {
                         }
                     } catch {
                         try? FileManager.default.removeItem(at: tempURL)
-                        let msg = (error as? LocalizedError)?.errorDescription ?? String(localized: "The selected PDF couldn't be analyzed.")
+                        let msg = (error as? LocalizedError)?.errorDescription ?? AppLocalization.string("The selected PDF couldn't be analyzed.")
                         let diag = AIDiagnosticReport(
                             endpoint: "PDF Analysis",
                             requestMethod: "LOCAL",
@@ -782,7 +782,7 @@ struct GeneratedQuizImportView: View {
                             errorCode: "PDF_ERROR",
                             userFriendlySummary: msg,
                             technicalError: error.localizedDescription,
-                            suggestedFix: String(localized: "Ensure the PDF is not encrypted or password-protected, and has readable pages.")
+                            suggestedFix: AppLocalization.string("Ensure the PDF is not encrypted or password-protected, and has readable pages.")
                         )
                         chatHistory.append(DeckChatMessage(role: "assistant", content: "⚠️ \(msg)", diagnosticReport: diag))
                     }
@@ -795,16 +795,16 @@ struct GeneratedQuizImportView: View {
                     sourceName = url.lastPathComponent
                 }
             } catch {
-                let msg = (error as? LocalizedError)?.errorDescription ?? String(localized: "The selected document couldn’t be read.")
+                let msg = (error as? LocalizedError)?.errorDescription ?? AppLocalization.string("The selected document couldn’t be read.")
                 let diag = AIDiagnosticReport(
                     endpoint: "Local File Reading",
                     requestMethod: "LOCAL",
                     httpStatusCode: nil,
                     httpStatusText: "File Read Failure",
                     errorCode: "FILE_READ_ERROR",
-                    userFriendlySummary: String(localized: "The system could not read the binary data of the selected file."),
+                    userFriendlySummary: AppLocalization.string("The system could not read the binary data of the selected file."),
                     technicalError: error.localizedDescription,
-                    suggestedFix: String(localized: "Ensure the file is downloaded locally and not offloaded to iCloud.")
+                    suggestedFix: AppLocalization.string("Ensure the file is downloaded locally and not offloaded to iCloud.")
                 )
                 chatHistory.append(DeckChatMessage(role: "assistant", content: "⚠️ \(msg)", diagnosticReport: diag))
             }
@@ -847,16 +847,16 @@ struct GeneratedQuizImportView: View {
                     sourceName = pendingUpload?.name ?? originalName
                 }
             } catch {
-                let msg = (error as? LocalizedError)?.errorDescription ?? String(localized: "Text couldn’t be read from that photo.")
+                let msg = (error as? LocalizedError)?.errorDescription ?? AppLocalization.string("Text couldn’t be read from that photo.")
                 let diag = AIDiagnosticReport(
                     endpoint: "Photo Import",
                     requestMethod: "LOCAL",
                     httpStatusCode: nil,
                     httpStatusText: "Photo Processing Failure",
                     errorCode: "PHOTO_READ_ERROR",
-                    userFriendlySummary: String(localized: "Unable to process the selected image from Photos library."),
+                    userFriendlySummary: AppLocalization.string("Unable to process the selected image from Photos library."),
                     technicalError: error.localizedDescription,
-                    suggestedFix: String(localized: "Try selecting a standard JPEG or PNG image.")
+                    suggestedFix: AppLocalization.string("Try selecting a standard JPEG or PNG image.")
                 )
                 chatHistory.append(DeckChatMessage(role: "assistant", content: "⚠️ \(msg)", diagnosticReport: diag))
             }
@@ -930,7 +930,7 @@ struct GeneratedQuizImportView: View {
             showsSavedDeck = true
         } catch {
             context.delete(deck)
-            errorMessage = String(localized: "The generated deck couldn’t be saved. Please try again.")
+            errorMessage = AppLocalization.string("The generated deck couldn’t be saved. Please try again.")
         }
     }
 }
@@ -939,7 +939,7 @@ private enum SourceImportError: LocalizedError {
     case unsupportedImage
 
     var errorDescription: String? {
-        String(localized: "That photo format couldn’t be prepared for upload.")
+        AppLocalization.string("That photo format couldn’t be prepared for upload.")
     }
 }
 
@@ -1773,7 +1773,7 @@ private struct GeneratedDeckReadyBubble: View {
 
                 Spacer()
 
-                Button(isEditingTitle ? String(localized: "Done") : String(localized: "Edit")) {
+                Button(isEditingTitle ? AppLocalization.string("Done") : AppLocalization.string("Edit")) {
                     isEditingTitle.toggle()
                 }
                 .font(.custom("Poppins-Medium", size: 12))
@@ -1948,12 +1948,12 @@ private struct GeneratedDeckReadyBubble: View {
 
     private func cardTypeTitle(for type: GeneratedCardType) -> String {
         switch type {
-        case .vocabulary: return String(localized: "Vocabulary")
-        case .matching: return String(localized: "Matching Pairs")
-        case .tapReveal: return String(localized: "Tap Reveal")
-        case .fillBlank: return String(localized: "Fill in the Blank")
-        case .multipleChoice: return String(localized: "Multiple Choice")
-        case .dragAnswer: return String(localized: "Drag to Answer")
+        case .vocabulary: return AppLocalization.string("Vocabulary")
+        case .matching: return AppLocalization.string("Matching Pairs")
+        case .tapReveal: return AppLocalization.string("Tap Reveal")
+        case .fillBlank: return AppLocalization.string("Fill in the Blank")
+        case .multipleChoice: return AppLocalization.string("Multiple Choice")
+        case .dragAnswer: return AppLocalization.string("Drag to Answer")
         }
     }
 }
@@ -2056,7 +2056,7 @@ private struct SourceComposer: View {
                 TextField(
                     "",
                     text: $messageText,
-                    prompt: Text(hasGeneratedDeck ? String(localized: "Ask a question or refine deck...") : String(localized: "What are you studying?"))
+                    prompt: Text(hasGeneratedDeck ? AppLocalization.string("Ask a question or refine deck...") : AppLocalization.string("What are you studying?"))
                         .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.45) : Color.white.opacity(0.55)),
                     axis: .vertical
                 )
@@ -2203,12 +2203,12 @@ private struct GeneratedCardReviewRow: View {
 
     private var cardTypeTitle: String {
         switch card.type {
-        case .vocabulary: return String(localized: "Vocabulary")
-        case .matching: return String(localized: "Matching Pairs")
-        case .tapReveal: return String(localized: "Tap Reveal")
-        case .fillBlank: return String(localized: "Fill in the Blank")
-        case .multipleChoice: return String(localized: "Multiple Choice")
-        case .dragAnswer: return String(localized: "Drag to Answer")
+        case .vocabulary: return AppLocalization.string("Vocabulary")
+        case .matching: return AppLocalization.string("Matching Pairs")
+        case .tapReveal: return AppLocalization.string("Tap Reveal")
+        case .fillBlank: return AppLocalization.string("Fill in the Blank")
+        case .multipleChoice: return AppLocalization.string("Multiple Choice")
+        case .dragAnswer: return AppLocalization.string("Drag to Answer")
         }
     }
 
@@ -2237,7 +2237,7 @@ private struct GeneratedCardReviewRow: View {
                     .font(.caption.bold())
                     .foregroundStyle(card.type == .matching ? Color.purple : LearnAlertStyle.textSecondary)
                 Spacer()
-                Button(isEditing ? String(localized: "Done") : String(localized: "Edit")) {
+                Button(isEditing ? AppLocalization.string("Done") : AppLocalization.string("Edit")) {
                     withAnimation(.snappy) { isEditing.toggle() }
                 }
                 .font(.subheadline.bold())

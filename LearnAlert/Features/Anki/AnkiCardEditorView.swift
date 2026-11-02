@@ -31,7 +31,7 @@ struct AnkiCardEditorView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { preview.toggle() } label: { Image(systemName: preview ? "chevron.left.forwardslash.chevron.right" : "eye") }.accessibilityLabel(preview ? String(localized: "Edit HTML") : String(localized: "Preview"))
+                        Button { preview.toggle() } label: { Image(systemName: preview ? "chevron.left.forwardslash.chevron.right" : "eye") }.accessibilityLabel(preview ? AppLocalization.string("Edit HTML") : AppLocalization.string("Preview"))
                         Button("Save") { save() }
                     }
                 }

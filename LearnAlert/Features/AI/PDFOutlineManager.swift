@@ -13,12 +13,12 @@ public enum PDFSectionKind: String, Codable, Sendable, CaseIterable {
 
     public var displayTitle: String {
         switch self {
-        case .module: return String(localized: "Module")
-        case .chapter: return String(localized: "Chapter")
-        case .section: return String(localized: "Section")
-        case .frontMatter: return String(localized: "Front Matter")
-        case .backMatter: return String(localized: "Back Matter")
-        case .other: return String(localized: "Topic")
+        case .module: return AppLocalization.string("Module")
+        case .chapter: return AppLocalization.string("Chapter")
+        case .section: return AppLocalization.string("Section")
+        case .frontMatter: return AppLocalization.string("Front Matter")
+        case .backMatter: return AppLocalization.string("Back Matter")
+        case .other: return AppLocalization.string("Topic")
         }
     }
 
@@ -75,16 +75,16 @@ public enum PDFOutlineError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .corruptOrEncrypted:
-            return String(localized: "The selected PDF couldn't be read or is corrupted.")
+            return AppLocalization.string("The selected PDF couldn't be read or is corrupted.")
         case .encrypted:
-            return String(localized: "This PDF is password-protected or encrypted. Please provide an unlocked PDF.")
+            return AppLocalization.string("This PDF is password-protected or encrypted. Please provide an unlocked PDF.")
         case .emptyDocument:
-            return String(localized: "This PDF contains no pages.")
+            return AppLocalization.string("This PDF contains no pages.")
         case .scanWithoutText:
-            return String(localized: "This scanned PDF contains no readable text layer.")
+            return AppLocalization.string("This scanned PDF contains no readable text layer.")
         case .sizeExceeded(let bytes):
             let mb = Double(bytes) / (1024 * 1024)
-            return String(format: String(localized: "Selected pages are %.1f MB. The maximum upload size is 8 MB. Please select fewer sections."), locale: .current, mb)
+            return String(format: AppLocalization.string("Selected pages are %.1f MB. The maximum upload size is 8 MB. Please select fewer sections."), locale: .current, mb)
         }
     }
 }
@@ -109,10 +109,10 @@ public enum PDFOutlineManager {
 
         public var displayTitle: String {
             switch self {
-            case .outline: String(localized: "Document Bookmarks")
-            case .regex: String(localized: "Heading Detection")
-            case .api: String(localized: "AI Structure Analysis")
-            case .none: String(localized: "Manual Selection")
+            case .outline: AppLocalization.string("Document Bookmarks")
+            case .regex: AppLocalization.string("Heading Detection")
+            case .api: AppLocalization.string("AI Structure Analysis")
+            case .none: AppLocalization.string("Manual Selection")
             }
         }
     }

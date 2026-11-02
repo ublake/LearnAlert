@@ -31,7 +31,7 @@ struct AIDiagnosticReport: Codable, Identifiable, Sendable, Equatable {
 
     var prettyPrintedPayload: String {
         guard let rawPayloadSnippet, !rawPayloadSnippet.isEmpty else {
-            return String(localized: "(No server response payload captured)")
+            return AppLocalization.string("(No server response payload captured)")
         }
         guard let data = rawPayloadSnippet.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data),
@@ -114,8 +114,8 @@ struct AIDiagnosticReport: Codable, Identifiable, Sendable, Equatable {
             httpStatusText: isDecodeIssue ? "OK (Decoding Failure)" : "Internal Error",
             errorCode: isDecodeIssue ? "SCHEMA_DECODING_FAILURE" : "SERVER_ERROR",
             userFriendlySummary: isDecodeIssue
-                ? String(localized: "The AI server returned a 200 OK response, but the JSON format differed slightly from the expected card structure (e.g. unexpected key type or missing optional field).")
-                : String(localized: "The AI request could not be completed at this time."),
+                ? AppLocalization.string("The AI server returned a 200 OK response, but the JSON format differed slightly from the expected card structure (e.g. unexpected key type or missing optional field).")
+                : AppLocalization.string("The AI request could not be completed at this time."),
             technicalError: messageContent,
             decodingPath: isDecodeIssue ? "source.mimeType / cards" : nil,
             decodingExpectedType: nil,
@@ -123,8 +123,8 @@ struct AIDiagnosticReport: Codable, Identifiable, Sendable, Equatable {
             requestPayloadSnippet: nil,
             modelUsed: "LearnAlert AI Engine",
             suggestedFix: isDecodeIssue
-                ? String(localized: "The app's resilient decoder now auto-adapts to this response. Rephrase your request or tap retry to re-run generation.")
-                : String(localized: "Check your internet connection and retry with a more specific instruction.")
+                ? AppLocalization.string("The app's resilient decoder now auto-adapts to this response. Rephrase your request or tap retry to re-run generation.")
+                : AppLocalization.string("Check your internet connection and retry with a more specific instruction.")
         )
     }
 }
@@ -144,9 +144,9 @@ struct AIDiagnosticInspectorSheet: View {
 
         var title: String {
             switch self {
-            case .overview: String(localized: "Overview")
-            case .technical: String(localized: "Technical")
-            case .payload: String(localized: "Raw JSON")
+            case .overview: AppLocalization.string("Overview")
+            case .technical: AppLocalization.string("Technical")
+            case .payload: AppLocalization.string("Raw JSON")
             }
         }
 
@@ -282,13 +282,13 @@ struct AIDiagnosticInspectorSheet: View {
 
     private var statusTitle: String {
         if report.isSuccessStatusWithDecodingError {
-            return String(localized: "Payload Schema Mismatch")
+            return AppLocalization.string("Payload Schema Mismatch")
         } else if report.httpStatusCode == 401 {
-            return String(localized: "Update Required (401)")
+            return AppLocalization.string("Update Required (401)")
         } else if let code = report.httpStatusCode {
-            return String(localized: "Server Error (\(code))")
+            return AppLocalization.string("Server Error (\(code))")
         } else {
-            return String(localized: "Request Diagnostics")
+            return AppLocalization.string("Request Diagnostics")
         }
     }
 
@@ -296,7 +296,7 @@ struct AIDiagnosticInspectorSheet: View {
     private var overviewSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             diagnosticCard(
-                title: String(localized: "What Happened"),
+                title: AppLocalization.string("What Happened"),
                 icon: "info.circle.fill",
                 accent: LearnAlertStyle.indigo
             ) {
@@ -308,7 +308,7 @@ struct AIDiagnosticInspectorSheet: View {
 
             if let suggestedFix = report.suggestedFix {
                 diagnosticCard(
-                    title: String(localized: "Recommended Solution"),
+                    title: AppLocalization.string("Recommended Solution"),
                     icon: "lightbulb.fill",
                     accent: LearnAlertStyle.aqua
                 ) {
@@ -320,18 +320,18 @@ struct AIDiagnosticInspectorSheet: View {
             }
 
             diagnosticCard(
-                title: String(localized: "Endpoint & AI Model"),
+                title: AppLocalization.string("Endpoint & AI Model"),
                 icon: "network",
                 accent: LearnAlertStyle.blue
             ) {
                 VStack(spacing: 8) {
-                    keyValueRow(label: String(localized: "Endpoint"), value: "\(report.requestMethod) \(report.endpoint)")
-                    keyValueRow(label: String(localized: "Model"), value: report.modelUsed)
+                    keyValueRow(label: AppLocalization.string("Endpoint"), value: "\(report.requestMethod) \(report.endpoint)")
+                    keyValueRow(label: AppLocalization.string("Model"), value: report.modelUsed)
                     if let code = report.httpStatusCode {
-                        keyValueRow(label: String(localized: "Status"), value: "\(code) \(report.httpStatusText ?? "")")
+                        keyValueRow(label: AppLocalization.string("Status"), value: "\(code) \(report.httpStatusText ?? "")")
                     }
                     if let reqId = report.requestId {
-                        keyValueRow(label: String(localized: "Request ID"), value: reqId)
+                        keyValueRow(label: AppLocalization.string("Request ID"), value: reqId)
                     }
                 }
             }
@@ -342,7 +342,7 @@ struct AIDiagnosticInspectorSheet: View {
     private var technicalSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             diagnosticCard(
-                title: String(localized: "Error Stack & Diagnostics"),
+                title: AppLocalization.string("Error Stack & Diagnostics"),
                 icon: "wrench.and.screwdriver.fill",
                 accent: Color.orange
             ) {
@@ -394,15 +394,15 @@ struct AIDiagnosticInspectorSheet: View {
             }
 
             diagnosticCard(
-                title: String(localized: "Environment Metadata"),
+                title: AppLocalization.string("Environment Metadata"),
                 icon: "laptopcomputer.and.iphone",
                 accent: LearnAlertStyle.periwinkle
             ) {
                 VStack(spacing: 8) {
-                    keyValueRow(label: String(localized: "App Version"), value: report.clientAppVersion)
-                    keyValueRow(label: String(localized: "Platform"), value: report.deviceOS)
+                    keyValueRow(label: AppLocalization.string("App Version"), value: report.clientAppVersion)
+                    keyValueRow(label: AppLocalization.string("Platform"), value: report.deviceOS)
                     if let code = report.errorCode {
-                        keyValueRow(label: String(localized: "Internal Code"), value: code)
+                        keyValueRow(label: AppLocalization.string("Internal Code"), value: code)
                     }
                 }
             }
@@ -428,7 +428,7 @@ struct AIDiagnosticInspectorSheet: View {
                     HStack(spacing: 4) {
                         Image(systemName: hasCopied ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 11, weight: .bold))
-                        Text(hasCopied ? String(localized: "Copied") : String(localized: "Copy JSON"))
+                        Text(hasCopied ? AppLocalization.string("Copied") : AppLocalization.string("Copy JSON"))
                             .font(.custom("Poppins-Medium", size: 11))
                     }
                     .foregroundStyle(hasCopied ? LearnAlertStyle.aqua : Color.white.opacity(0.80))
@@ -470,7 +470,7 @@ struct AIDiagnosticInspectorSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: hasCopied ? "checkmark.circle.fill" : "doc.on.clipboard")
                         .font(.system(size: 15, weight: .semibold))
-                    Text(hasCopied ? String(localized: "Copied Diagnostic Report!") : String(localized: "Copy Full Diagnostic Report"))
+                    Text(hasCopied ? AppLocalization.string("Copied Diagnostic Report!") : AppLocalization.string("Copy Full Diagnostic Report"))
                         .font(.custom("Poppins-SemiBold", size: 14))
                 }
                 .foregroundStyle(.white)
@@ -547,6 +547,7 @@ struct AIDiagnosticInspectorSheet: View {
 
     private func formattedTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
+        formatter.locale = AppLocalization.locale
         formatter.dateStyle = .medium
         formatter.timeStyle = .medium
         return formatter.string(from: date)

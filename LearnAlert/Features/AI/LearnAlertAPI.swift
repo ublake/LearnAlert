@@ -451,19 +451,19 @@ enum LearnAlertAPIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyStudyMaterial:
-            String(localized: "Add notes or select a file before generating a deck.")
+            AppLocalization.string("Add notes or select a file before generating a deck.")
         case .invalidMaximumCards:
-            String(localized: "Card count must be between 1 and 500.")
+            AppLocalization.string("Card count must be between 1 and 500.")
         case .unauthorized:
-            String(localized: "This version of the app is out of date — please update.")
+            AppLocalization.string("This version of the app is out of date — please update.")
         case .unavailable:
-            String(localized: "LearnAlert’s AI service is unavailable right now. Please try again shortly.")
+            AppLocalization.string("LearnAlert’s AI service is unavailable right now. Please try again shortly.")
         case .serverError(let message, _):
-            message ?? String(localized: "The server couldn’t complete this request. Please try again.")
+            message ?? AppLocalization.string("The server couldn’t complete this request. Please try again.")
         case .generationFailed(let message, _):
-            message ?? String(localized: "AI deck generation failed. Please try again with different study material.")
+            message ?? AppLocalization.string("AI deck generation failed. Please try again with different study material.")
         case .invalidResponse:
-            String(localized: "The generated deck couldn’t be read. Please try generating it again.")
+            AppLocalization.string("The generated deck couldn’t be read. Please try generating it again.")
         }
     }
 
@@ -752,13 +752,13 @@ struct LearnAlertAPI: Sendable {
                 httpStatusCode: nil,
                 httpStatusText: "Network Request Failed",
                 errorCode: (error as? URLError)?.code.rawValue.description ?? "NETWORK_ERROR",
-                userFriendlySummary: String(localized: "The network request could not reach LearnAlert's AI service. The device may be offline or the connection timed out."),
+                userFriendlySummary: AppLocalization.string("The network request could not reach LearnAlert's AI service. The device may be offline or the connection timed out."),
                 technicalError: error.localizedDescription,
                 decodingPath: nil,
                 decodingExpectedType: nil,
                 rawPayloadSnippet: nil,
                 requestPayloadSnippet: requestBodySnippet.map { String($0.prefix(1200)) },
-                suggestedFix: String(localized: "Check your Wi-Fi or cellular network connection and try again.")
+                suggestedFix: AppLocalization.string("Check your Wi-Fi or cellular network connection and try again.")
             )
             throw LearnAlertAPIError.unavailable(diagnostic: diag)
         }
@@ -770,12 +770,12 @@ struct LearnAlertAPI: Sendable {
                 httpStatusCode: nil,
                 httpStatusText: "Non-HTTP Protocol",
                 errorCode: "INVALID_PROTOCOL",
-                userFriendlySummary: String(localized: "An unexpected response protocol was returned by the network layer."),
+                userFriendlySummary: AppLocalization.string("An unexpected response protocol was returned by the network layer."),
                 technicalError: "Expected HTTPURLResponse but received \(type(of: response)).",
                 decodingPath: nil,
                 decodingExpectedType: nil,
                 rawPayloadSnippet: nil,
-                suggestedFix: String(localized: "Ensure your network or VPN is not proxying HTTPS requests.")
+                suggestedFix: AppLocalization.string("Ensure your network or VPN is not proxying HTTPS requests.")
             )
             throw LearnAlertAPIError.invalidResponse(reason: "Invalid protocol", diagnostic: diag)
         }
@@ -864,13 +864,13 @@ struct LearnAlertAPI: Sendable {
                     httpStatusCode: 401,
                     httpStatusText: "Unauthorized",
                     errorCode: (serverCode.isEmpty || serverCode == "HTTP_401") ? "UNAUTHORIZED" : serverCode,
-                    userFriendlySummary: String(localized: "This version of the app is out of date — please update."),
+                    userFriendlySummary: AppLocalization.string("This version of the app is out of date — please update."),
                     technicalError: serverMsg,
                     decodingPath: nil,
                     decodingExpectedType: nil,
                     rawPayloadSnippet: rawPayloadStr,
                     requestPayloadSnippet: requestBodySnippet.map { String($0.prefix(1200)) },
-                    suggestedFix: String(localized: "Please update LearnAlert from the App Store."),
+                    suggestedFix: AppLocalization.string("Please update LearnAlert from the App Store."),
                     requestId: extractedRequestId,
                     errorDetails: extractedDetails
                 )
@@ -883,15 +883,15 @@ struct LearnAlertAPI: Sendable {
                 httpStatusCode: httpResponse.statusCode,
                 httpStatusText: HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode),
                 errorCode: serverCode,
-                userFriendlySummary: String(localized: "The AI service responded with HTTP \(httpResponse.statusCode): \(serverMsg)"),
+                userFriendlySummary: AppLocalization.string("The AI service responded with HTTP \(httpResponse.statusCode): \(serverMsg)"),
                 technicalError: serverMsg,
                 decodingPath: nil,
                 decodingExpectedType: nil,
                 rawPayloadSnippet: rawPayloadStr,
                 requestPayloadSnippet: requestBodySnippet.map { String($0.prefix(1200)) },
                 suggestedFix: (httpResponse.statusCode == 400)
-                    ? String(localized: "The request was rejected by the server. Check your prompt or source material.")
-                    : String(localized: "The AI server encountered an error processing the request. Check your prompt or try a smaller section."),
+                    ? AppLocalization.string("The request was rejected by the server. Check your prompt or source material.")
+                    : AppLocalization.string("The AI server encountered an error processing the request. Check your prompt or try a smaller section."),
                 requestId: extractedRequestId,
                 errorDetails: extractedDetails
             )
@@ -905,13 +905,13 @@ struct LearnAlertAPI: Sendable {
                 httpStatusCode: httpResponse.statusCode,
                 httpStatusText: HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode),
                 errorCode: "DECODING_FAILURE",
-                userFriendlySummary: String(localized: "The AI response was received with HTTP 200 OK, but could not be parsed into the expected deck schema."),
+                userFriendlySummary: AppLocalization.string("The AI response was received with HTTP 200 OK, but could not be parsed into the expected deck schema."),
                 technicalError: decodingErrorDetail ?? "Unknown JSON decoding error.",
                 decodingPath: decodingPathStr,
                 decodingExpectedType: decodingExpectedTypeStr,
                 rawPayloadSnippet: rawPayloadStr,
                 requestPayloadSnippet: requestBodySnippet.map { String($0.prefix(1200)) },
-                suggestedFix: String(localized: "A required field was missing or formatted unexpectedly in the JSON response.")
+                suggestedFix: AppLocalization.string("A required field was missing or formatted unexpectedly in the JSON response.")
             )
             throw LearnAlertAPIError.invalidResponse(
                 reason: decodingErrorDetail,
@@ -950,7 +950,7 @@ struct LearnAlertAPI: Sendable {
 
         return GeneratedDeckResult(
             action: resolvedAction,
-            assistantMessage: payload.assistantMessage ?? (resolvedAction == "chat" ? String(localized: "How can I help you study?") : String(localized: "Your deck is ready.")),
+            assistantMessage: payload.assistantMessage ?? (resolvedAction == "chat" ? AppLocalization.string("How can I help you study?") : AppLocalization.string("Your deck is ready.")),
             deck: finalDeck
         )
     }

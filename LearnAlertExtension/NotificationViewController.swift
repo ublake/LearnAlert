@@ -217,9 +217,9 @@ struct FlashcardNotificationView: View {
     private var isDayComplete: Bool { dailyAnsweredCount >= NotificationLearningBudget.goal }
     private var presentationCardType: String { sessionFinished ? "completed_batch" : activeCardType }
     private var nextCardActionTitle: String {
-        if isSyntheticSession { return String(localized: "Next Card") }
-        if isDayComplete { return String(localized: "Finish for today") }
-        return batchConsumedCount >= batchQuestionLimit ? String(localized: "Finish batch") : String(localized: "Next Card")
+        if isSyntheticSession { return AppLocalization.string("Next Card") }
+        if isDayComplete { return AppLocalization.string("Finish for today") }
+        return batchConsumedCount >= batchQuestionLimit ? AppLocalization.string("Finish batch") : AppLocalization.string("Next Card")
     }
 
     // MARK: - Appearance & Customization Dynamics
@@ -417,7 +417,7 @@ struct FlashcardNotificationView: View {
                                 .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
                                 .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, tint: Color.orange.opacity(0.12), isLight: isLight)
                         }
-                        .accessibilityLabel(showingHint ? String(localized: "Hide hint") : String(localized: "Show hint"))
+                        .accessibilityLabel(showingHint ? AppLocalization.string("Hide hint") : AppLocalization.string("Show hint"))
                     }
 
                     Button {
@@ -431,8 +431,8 @@ struct FlashcardNotificationView: View {
                     }
                     .disabled(controlsUnavailable)
                     .opacity(controlsUnavailable ? 0.45 : 1)
-                    .accessibilityLabel(showingControls && !controlsUnavailable ? String(localized: "Close controls") : String(localized: "Study controls"))
-                    .accessibilityHint(isCustomizationTest ? String(localized: "Unavailable in a test alert") : isTutorial ? String(localized: "Unavailable in a tutorial alert") : "")
+                    .accessibilityLabel(showingControls && !controlsUnavailable ? AppLocalization.string("Close controls") : AppLocalization.string("Study controls"))
+                    .accessibilityHint(isCustomizationTest ? AppLocalization.string("Unavailable in a test alert") : isTutorial ? AppLocalization.string("Unavailable in a tutorial alert") : "")
                 }
             }
 
@@ -464,7 +464,7 @@ struct FlashcardNotificationView: View {
             Spacer()
 
             if !cardProgressionText.isEmpty {
-                Text(isSyntheticSession ? cardProgressionText : String(localized: "\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) today"))
+                Text(isSyntheticSession ? cardProgressionText : AppLocalization.string("\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) today"))
                     .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(textColorSecondary)
             }
@@ -488,9 +488,9 @@ struct FlashcardNotificationView: View {
     private var notificationPostAnswer: some View {
         VStack(spacing: 14) {
             HStack(spacing: 10) {
-                NotificationStat(title: String(localized: "Unlearned"), value: unlearnedCount, icon: "sparkles", isLight: isLight)
-                NotificationStat(title: String(localized: "Learning"), value: learningCount, icon: "brain.head.profile", isLight: isLight)
-                NotificationStat(title: String(localized: "Mastered"), value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
+                NotificationStat(title: AppLocalization.string("Unlearned"), value: unlearnedCount, icon: "sparkles", isLight: isLight)
+                NotificationStat(title: AppLocalization.string("Learning"), value: learningCount, icon: "brain.head.profile", isLight: isLight)
+                NotificationStat(title: AppLocalization.string("Mastered"), value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
             }
 
             if isOnboardingTutorial {
@@ -528,15 +528,15 @@ struct FlashcardNotificationView: View {
                 .foregroundStyle(isDayComplete ? Color.green : Color(red: 0.38, green: 0.68, blue: 0.93))
                 .symbolEffect(.bounce, value: sessionFinished)
                 .accessibilityHidden(true)
-            Text(isDayComplete ? String(localized: "You’re done for today!") : caughtUp ? String(localized: "You’re caught up") : String(localized: "This batch is complete"))
+            Text(isDayComplete ? AppLocalization.string("You’re done for today!") : caughtUp ? AppLocalization.string("You’re caught up") : AppLocalization.string("This batch is complete"))
                 .font(.title3.weight(.bold))
                 .foregroundStyle(textColorPrimary)
                 .multilineTextAlignment(.center)
             Text(isDayComplete
-                ? String(localized: "\(NotificationLearningBudget.goal)/\(NotificationLearningBudget.goal) questions answered across your library. Your alerts will return on the next scheduled day.")
+                ? AppLocalization.string("\(NotificationLearningBudget.goal)/\(NotificationLearningBudget.goal) questions answered across your library. Your alerts will return on the next scheduled day.")
                 : caughtUp
-                    ? String(localized: "There’s nothing else to review in this deck right now.")
-                    : String(localized: "A little progress, nicely done. Your next alert will arrive on schedule."))
+                    ? AppLocalization.string("There’s nothing else to review in this deck right now.")
+                    : AppLocalization.string("A little progress, nicely done. Your next alert will arrive on schedule."))
                 .font(.subheadline)
                 .foregroundStyle(textColorSecondary)
                 .multilineTextAlignment(.center)
@@ -634,7 +634,7 @@ struct FlashcardNotificationView: View {
 
                 if let pendingGrade {
                     VStack(spacing: 8) {
-                        Text(statusMessage ?? String(localized: "Review couldn’t be saved."))
+                        Text(statusMessage ?? AppLocalization.string("Review couldn’t be saved."))
                             .font(.caption).foregroundStyle(textColorSecondary)
                         Button("Retry review") {
                             gradeCard(isCorrect: pendingGrade.correct, playFeedback: pendingGrade.playFeedback, ankiRating: pendingGrade.rating)
@@ -758,7 +758,7 @@ struct FlashcardNotificationView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: lastAnswerWasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
-                                Text(lastAnswerWasCorrect == true ? String(localized: "Correct!") : String(localized: "Correct answer: \(activeCorrectAnswer)"))
+                                Text(lastAnswerWasCorrect == true ? AppLocalization.string("Correct!") : AppLocalization.string("Correct answer: \(activeCorrectAnswer)"))
                                     .font(.subheadline.bold())
                                     .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
                             }
@@ -1185,7 +1185,7 @@ struct FlashcardNotificationView: View {
             cards = try AnkiNotificationSelection.ordinaryCards(deckID: deckId, sectionID: sectionID, in: context)
             candidates = try AnkiNotificationSelection.candidates(deckID: deckId, sectionID: sectionID, in: context)
         } catch {
-            statusMessage = String(localized: "This deck couldn’t be loaded. Please reopen the alert.")
+            statusMessage = AppLocalization.string("This deck couldn’t be loaded. Please reopen the alert.")
             return
         }
         let eligible = cards.filter { !handled.contains($0.id.uuidString) }
@@ -1216,10 +1216,10 @@ struct FlashcardNotificationView: View {
             }
             if let next = candidates.map(\.due).min() {
                 waitingForAnki = .init(deckID: deck.id, due: next)
-                statusMessage = String(localized: "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow))).")
+                statusMessage = AppLocalization.string("You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow))).")
             } else {
                 waitingForAnki = nil
-                statusMessage = String(localized: "This deck has no cards.")
+                statusMessage = AppLocalization.string("This deck has no cards.")
             }
             return
         }
@@ -1281,7 +1281,7 @@ struct FlashcardNotificationView: View {
         let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
         sharedDefaults?.set(true, forKey: "extensionDidStopAlerts")
         sharedDefaults?.set("", forKey: "extensionActiveDeckName")
-        statusMessage = String(localized: "Scheduled notifications stopped.")
+        statusMessage = AppLocalization.string("Scheduled notifications stopped.")
     }
 
     private func gradeReveal(correct: Bool) {
@@ -1352,7 +1352,7 @@ struct FlashcardNotificationView: View {
                 NotificationLearningBudget.rollbackAnswer(requestID: notificationRequestID, batchOrdinal: ordinal)
                 refreshBatchCounts()
                 pendingGrade = .init(correct: isCorrect, playFeedback: playFeedback, rating: ankiRating)
-                statusMessage = String(localized: "Review couldn't be saved. Please try again.")
+                statusMessage = AppLocalization.string("Review couldn't be saved. Please try again.")
                 return
             }
             pendingGrade = nil
@@ -1708,6 +1708,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     func didReceive(_ notification: UNNotification) {
+        // Extension processes can be reused across alerts. Read the app group's
+        // latest choice before creating this alert's UI and Foundation labels.
+        AppLanguageSettings.shared.reload()
         CardAudioPlayer.stopActive()
         AlertTimelineStore.shared.delivered(notification)
         let content = notification.request.content
@@ -1859,7 +1862,9 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
     }
 
     private func show(_ root: AnyView) {
-        let wrapped = AnyView(NotificationViewportRoot(content: root).ignoresSafeArea(.container))
+        let wrapped = AnyView(NotificationViewportRoot(content: root)
+            .ignoresSafeArea(.container)
+            .appLanguageEnvironment())
         if let existing = hostingController { existing.rootView = wrapped; return }
         let hosting = UIHostingController(rootView: wrapped)
         // The system already positions the notification; phone status/home insets

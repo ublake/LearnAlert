@@ -74,6 +74,10 @@ struct LearnAlertApp: App {
                         CommunitySession.shared.appleCredentialRevoked()
                     }
             }
+            .appLanguageEnvironment()
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { AppLanguageSettings.shared.reload() }
+            }
         }
     }
 

@@ -39,11 +39,11 @@ struct AnkiImportView: View {
                 .transition(session.phase == .saving ? .identity : .opacity.combined(with: .offset(y: reduceMotion ? 0 : 12)))
             }
             .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: session.phase)
-            .navigationTitle(session.isBusy ? "" : String(localized: "Import Anki"))
+            .navigationTitle(session.isBusy ? "" : AppLocalization.string("Import Anki"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(session.phase == .complete ? String(localized: "Done") : String(localized: "Close")) { session.cancel(); dismiss() }
+                    Button(session.phase == .complete ? AppLocalization.string("Done") : AppLocalization.string("Close")) { session.cancel(); dismiss() }
                         .disabled(session.phase == .saving)
                 }
             }
@@ -69,7 +69,7 @@ struct AnkiImportView: View {
             .onChange(of: initialURL) { _, url in
                 guard let url else { return }
                 guard session.phase != .saving else {
-                    session.error = String(localized: "Finish saving this deck before opening another Anki file.")
+                    session.error = AppLocalization.string("Finish saving this deck before opening another Anki file.")
                     return
                 }
                 openedInitialURL = true
@@ -143,7 +143,7 @@ struct AnkiImportView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if let package = session.package {
                     HStack {
-                        Text(package.decks.count == 1 ? String(localized: "Your deck") : String(localized: "Your decks"))
+                        Text(package.decks.count == 1 ? AppLocalization.string("Your deck") : AppLocalization.string("Your decks"))
                             .font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
                         Spacer()
                         Button { showingDeckNames = true } label: {
@@ -152,9 +152,9 @@ struct AnkiImportView: View {
                         }
                     }
                     HStack(spacing: 10) {
-                        summary("\(session.selectedCardCount)", label: String(localized: "cards"), icon: "rectangle.on.rectangle")
-                        summary("\(package.mediaCount)", label: String(localized: "media"), icon: "photo.on.rectangle")
-                        summary(ByteCountFormatter.string(fromByteCount: Int64(package.mediaBytes), countStyle: .file), label: String(localized: "media size"), icon: "internaldrive")
+                        summary("\(session.selectedCardCount)", label: AppLocalization.string("cards"), icon: "rectangle.on.rectangle")
+                        summary("\(package.mediaCount)", label: AppLocalization.string("media"), icon: "photo.on.rectangle")
+                        summary(ByteCountFormatter.string(fromByteCount: Int64(package.mediaBytes), countStyle: .file), label: AppLocalization.string("media size"), icon: "internaldrive")
                     }
                     VStack(spacing: 0) {
                         ForEach(package.decks) { deck in
@@ -191,7 +191,7 @@ struct AnkiImportView: View {
                         DisclosureGroup {
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(package.warnings, id: \.self) { warning in
-                                    Text(NSLocalizedString(warning, comment: "Anki import compatibility warning")).font(.footnote).foregroundStyle(LearnAlertStyle.textSecondary)
+                                    Text(warning).font(.footnote).foregroundStyle(LearnAlertStyle.textSecondary)
                                 }
                             }.padding(.top, 10)
                         } label: {
@@ -218,7 +218,7 @@ struct AnkiImportView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(session.selectedDecks.count == 1 ? String(localized: "Give your deck a name before adding it to your library.") : String(localized: "Give your decks names before adding them to your library."))
+                    Text(session.selectedDecks.count == 1 ? AppLocalization.string("Give your deck a name before adding it to your library.") : AppLocalization.string("Give your decks names before adding them to your library."))
                         .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                     if let package = session.package {
                         ForEach(package.decks.filter { session.selectedDecks.contains($0.id) }) { deck in
@@ -243,7 +243,7 @@ struct AnkiImportView: View {
                 }.padding(20)
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-            .navigationTitle(session.selectedDecks.count == 1 ? String(localized: "Name your deck") : String(localized: "Name your decks"))
+            .navigationTitle(session.selectedDecks.count == 1 ? AppLocalization.string("Name your deck") : AppLocalization.string("Name your decks"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -291,7 +291,7 @@ struct AnkiImportView: View {
             Text("Added to your library")
                 .font(.title.weight(.bold))
             if let result = session.result {
-                Text(result.added > 0 ? String(localized: "\(result.added) cards added") : String(localized: "These cards are already in your library."))
+                Text(result.added > 0 ? AppLocalization.string("\(result.added) cards added") : AppLocalization.string("These cards are already in your library."))
                     .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
             }
             Button("Go to library") { onFinish(); dismiss() }
@@ -387,7 +387,7 @@ private struct AnkiPreviewView: View {
                 }
             }.background(LearnAlertStyle.courseCanvas)
                 .navigationTitle("Preview").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(String(localized: "Done")) { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(AppLocalization.string("Done")) { dismiss() } } }
         }
     }
 }

@@ -159,8 +159,8 @@ struct AnkiCardView: View {
     nonisolated private static func nativeThemeScript(dark: Bool) -> String {
         """
         (() => {
-          const listenLabel=\(scriptString(String(localized: "Listen")));
-          const playAudioLabel=\(scriptString(String(localized: "Play audio")));
+          const listenLabel=\(scriptString(AppLocalization.string("Listen")));
+          const playAudioLabel=\(scriptString(AppLocalization.string("Play audio")));
           const dark=\(dark ? "true" : "false"), ink=dark?[242,245,250]:[25,33,61];
           const backdrop=dark?[25,29,40]:[238,241,248];
           const originals=new WeakMap();
@@ -388,8 +388,8 @@ struct AnkiStudyCardView: View {
                     .clipShape(shape)
                     .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.55)
                     .accessibilityElement(children: .contain)
-                    .accessibilityHint(showingBack ? String(localized: "Tap the card background to return to the front.") : String(localized: "Tap the card background to show the answer."))
-                    .accessibilityAction(named: showingBack ? String(localized: "Flip to front") : String(localized: "Flip to answer")) { flip() }
+                    .accessibilityHint(showingBack ? AppLocalization.string("Tap the card background to return to the front.") : AppLocalization.string("Tap the card background to show the answer."))
+                    .accessibilityAction(named: showingBack ? AppLocalization.string("Flip to front") : AppLocalization.string("Flip to answer")) { flip() }
             } else {
                 AnkiCardView(content: content, showingBack: showingBack, mediaDirectory: mediaDirectory,
                     compact: compact, centered: centered, animatedReveal: true, renderer: renderer,
@@ -513,7 +513,7 @@ nonisolated struct AnkiRenderConfiguration: Equatable, Sendable {
         webView.allowsBackForwardNavigationGestures = false
         coordinator.loadCompleted = { [weak self] error in
             self?.coordinator.documentReady = error == nil
-            self?.error = error == nil ? nil : String(localized: "This card couldn’t load. Try again.")
+            self?.error = error == nil ? nil : AppLocalization.string("This card couldn’t load. Try again.")
             self?.isLoading = false
         }
     }

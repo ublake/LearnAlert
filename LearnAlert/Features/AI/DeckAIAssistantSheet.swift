@@ -220,7 +220,7 @@ struct DeckAIAssistantSheet: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LearnAlertStyle.indigo)
 
-                Text(deck.sourceName ?? String(localized: "Source Material"))
+                Text(deck.sourceName ?? AppLocalization.string("Source Material"))
                     .font(.custom("Poppins-SemiBold", size: 13))
                     .foregroundStyle(Color.white)
                     .lineLimit(1)
@@ -246,7 +246,7 @@ struct DeckAIAssistantSheet: View {
                         withAnimation(.snappy) { showingCoverageDetails.toggle() }
                     } label: {
                         HStack(spacing: 3) {
-                            Text(showingCoverageDetails ? String(localized: "Hide Coverage") : String(localized: "View Coverage"))
+                            Text(showingCoverageDetails ? AppLocalization.string("Hide Coverage") : AppLocalization.string("View Coverage"))
                                 .font(.custom("Poppins-Medium", size: 11))
                             Image(systemName: showingCoverageDetails ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .bold))
@@ -320,16 +320,16 @@ struct DeckAIAssistantSheet: View {
     private var quickActionChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                quickChip(title: String(localized: "Add hints"), icon: "lightbulb") {
+                quickChip(title: AppLocalization.string("Add hints"), icon: "lightbulb") {
                     handleSuggestion("Add helpful, memorable hints to cards that need them")
                 }
-                quickChip(title: String(localized: "Simplify cards"), icon: "text.badge.minus") {
+                quickChip(title: AppLocalization.string("Simplify cards"), icon: "text.badge.minus") {
                     handleSuggestion("Simplify and clarify card questions and answers to make them easier to remember")
                 }
-                quickChip(title: String(localized: "Fix confusing phrasing"), icon: "pencil.and.outline") {
+                quickChip(title: AppLocalization.string("Fix confusing phrasing"), icon: "pencil.and.outline") {
                     handleSuggestion("Review the deck and polish any awkwardly phrased questions or answer options")
                 }
-                quickChip(title: String(localized: "Explain hardest concept"), icon: "graduationcap") {
+                quickChip(title: AppLocalization.string("Explain hardest concept"), icon: "graduationcap") {
                     handleSuggestion("Which concept in this deck is easiest to confuse, and can you explain it simply?")
                 }
             }
@@ -586,11 +586,11 @@ struct DeckAIAssistantSheet: View {
                         deck.documentCoverageSummary = result.assistantMessage
                         try? context.save()
                         if updatedCount > 0 && addedCount > 0 {
-                            showToast(String(localized: "Updated \(updatedCount) cards, added \(addedCount) cards!"))
+                            showToast(AppLocalization.string("Updated \(updatedCount) cards, added \(addedCount) cards!"))
                         } else if updatedCount > 0 {
-                            showToast(String(localized: "Updated \(updatedCount) cards!"))
+                            showToast(AppLocalization.string("Updated \(updatedCount) cards!"))
                         } else {
-                            showToast(String(localized: "Added \(addedCount) new cards!"))
+                            showToast(AppLocalization.string("Added \(addedCount) new cards!"))
                         }
                     }
                 }
@@ -602,7 +602,7 @@ struct DeckAIAssistantSheet: View {
                     pendingUserMessage = nil
                 }
                 messageInput = originalInput
-                let desc = (error as? LocalizedError)?.errorDescription ?? String(localized: "Failed to complete request.")
+                let desc = (error as? LocalizedError)?.errorDescription ?? AppLocalization.string("Failed to complete request.")
                 let diag = (error as? LearnAlertAPIError)?.diagnosticReport
                 failedErrorMessage = desc
                 failedDiagnosticReport = diag
@@ -802,9 +802,9 @@ private struct AIChatBackground: View {
 /// intact for the existing refinement request and its intent detection.
 private func assistantSuggestionTitle(_ suggestion: String) -> String {
     switch suggestion {
-    case "Simplify cards": String(localized: "Simplify cards")
-    case "Add hints to cards": String(localized: "Add hints to cards")
-    case "Explain difficult concepts": String(localized: "Explain difficult concepts")
+    case "Simplify cards": AppLocalization.string("Simplify cards")
+    case "Add hints to cards": AppLocalization.string("Add hints to cards")
+    case "Explain difficult concepts": AppLocalization.string("Explain difficult concepts")
     default: suggestion
     }
 }

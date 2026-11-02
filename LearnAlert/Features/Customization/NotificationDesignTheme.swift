@@ -13,12 +13,12 @@ public nonisolated enum NotificationDesignTheme: String, CaseIterable, Identifia
 
     public var title: String {
         switch self {
-        case .liquidGlass: String(localized: "Liquid Glass")
-        case .soft: String(localized: "Soft")
-        case .outline: String(localized: "Outline")
-        case .paper: String(localized: "Paper")
-        case .arcade: String(localized: "Arcade")
-        case .minimal: String(localized: "Minimal")
+        case .liquidGlass: AppLocalization.string("Liquid Glass")
+        case .soft: AppLocalization.string("Soft")
+        case .outline: AppLocalization.string("Outline")
+        case .paper: AppLocalization.string("Paper")
+        case .arcade: AppLocalization.string("Arcade")
+        case .minimal: AppLocalization.string("Minimal")
         }
     }
 

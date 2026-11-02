@@ -20,65 +20,28 @@ nonisolated struct DeckPreviewSummary: Sendable {
     var sectionCounts: [UUID: Int] = [:]
     var uncategorizedCount = 0
     var cardIDs: [UUID] = []
-}
-
-nonisolated struct HomeDeckStudyMetadata: Sendable {
-    var cardCount = 0
-    var dueCount = 0
     var lastStudiedAt: Date?
-    var nextDueAt: Date?
 }
 
 /// Constructed in a detached task so database scans and bulk changes never run
 /// on the UI executor. Only counts and IDs cross back to the view's context.
 @ModelActor
 actor LibraryDataWorker {
-    /// Home needs only learning dates and counts, never card text, media or HTML.
-    func homeMetadata(deckID: UUID, now: Date = Date()) throws -> HomeDeckStudyMetadata {
-        var descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.deck?.id == deckID })
-        descriptor.propertiesToFetch = [\.cardTypeRaw, \.ankiReviewStateData, \.ankiPracticeReviewStateData,
-            \.reviewCount, \.masteryScore, \.lastReviewedDate]
-        var metadata = HomeDeckStudyMetadata()
-        try modelContext.enumerate(descriptor, batchSize: 256) { card in
-            try Task.checkCancellation()
-            metadata.cardCount += 1
-            let due: Date
-            if card.cardType.usesSpacedReview {
-                let state = card.ankiReviewState
-                due = state.dueDate
-                if let date = state.lastReviewedDate {
-                    metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
-                }
-            } else {
-                due = card.nextReviewDate
-            }
-            if due <= now { metadata.dueCount += 1 }
-            else { metadata.nextDueAt = min(metadata.nextDueAt ?? due, due) }
-            if let date = card.lastReviewedDate {
-                metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
-            }
-            if let date = card.ankiPracticeReviewState.lastReviewedDate {
-                metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
-            }
-        }
-        return metadata
-    }
-
     func deleteAll(progress: @Sendable (LibraryDeletionProgress) async -> Void) async throws -> LibraryDeletionResult {
         modelContext.autosaveEnabled = false
         let cards = try modelContext.fetchCount(FetchDescriptor<Flashcard>())
         let decks = try modelContext.fetchCount(FetchDescriptor<Deck>())
-        await progress(.init(fraction: 0.1, message: String(localized: "Removing cards"), cards: cards, decks: decks))
+        await progress(.init(fraction: 0.1, message: AppLocalization.string("Removing cards"), cards: cards, decks: decks))
         do {
             // Store-level deletes avoid loading card HTML, media and relationship
             // arrays, as well as thousands of individual observation updates.
             try modelContext.delete(model: Flashcard.self)
-            await progress(.init(fraction: 0.7, message: String(localized: "Removing folders and decks"), cards: cards, decks: decks))
+            await progress(.init(fraction: 0.7, message: AppLocalization.string("Removing folders and decks"), cards: cards, decks: decks))
             try modelContext.delete(model: DeckSection.self)
             try modelContext.delete(model: Deck.self)
-            await progress(.init(fraction: 0.9, message: String(localized: "Saving your library"), cards: cards, decks: decks))
+            await progress(.init(fraction: 0.9, message: AppLocalization.string("Saving your library"), cards: cards, decks: decks))
             try modelContext.save()
-            await progress(.init(fraction: 1, message: String(localized: "Done"), cards: cards, decks: decks))
+            await progress(.init(fraction: 1, message: AppLocalization.string("Done"), cards: cards, decks: decks))
             return .init(cards: cards, decks: decks)
         } catch {
             modelContext.rollback()
@@ -93,7 +56,7 @@ actor LibraryDataWorker {
         // cards or locate a search result. Visible rows request that separately.
         descriptor.propertiesToFetch = [\.id, \.orderIndex, \.section, \.question, \.correctAnswer,
             \.hint, \.optionsData, \.matchingPairsData, \.cardTypeRaw, \.ankiReviewStateData,
-            \.reviewCount, \.masteryScore, \.lastReviewedDate]
+            \.ankiPracticeReviewStateData, \.reviewCount, \.masteryScore, \.lastReviewedDate]
         var summary = DeckPreviewSummary()
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let sectionID = UUID(uuidString: section)
@@ -106,9 +69,20 @@ actor LibraryDataWorker {
                 let state = card.ankiReviewState
                 if state.dueDate <= now { summary.dueCount += 1 }
                 if state.interval >= 7 * AnkiReviewScheduling.day { summary.masteredCount += 1 }
+                if let date = state.lastReviewedDate {
+                    summary.lastStudiedAt = max(summary.lastStudiedAt ?? date, date)
+                }
             } else {
                 if card.nextReviewDate <= now { summary.dueCount += 1 }
                 if card.interval >= 7 { summary.masteredCount += 1 }
+            }
+            // Collect real review history in this existing background pass,
+            // before filtering, without touching HTML/media or checkpoints.
+            if let date = card.lastReviewedDate {
+                summary.lastStudiedAt = max(summary.lastStudiedAt ?? date, date)
+            }
+            if let date = card.ankiPracticeReviewState.lastReviewedDate {
+                summary.lastStudiedAt = max(summary.lastStudiedAt ?? date, date)
             }
             if section == "NONE", card.section != nil { return }
             if let sectionID, card.section?.id != sectionID { return }

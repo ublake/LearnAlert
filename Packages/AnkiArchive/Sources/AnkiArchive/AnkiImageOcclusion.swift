@@ -5,7 +5,7 @@ import Foundation
 enum AnkiImageOcclusion {
     static func render(fields: [String: String], ordinal: Int) throws -> AnkiTemplateRenderer.Result {
         guard let source = fields["Occlusion"], let image = fields["Image"], !image.isEmpty else {
-            throw AnkiImportError.invalid(String(localized: "The image-occlusion card is missing its image or masks."))
+            throw AnkiImportError.invalid(AnkiLocalization.string("The image-occlusion card is missing its image or masks."))
         }
         let regex = try NSRegularExpression(pattern: #"\{\{c(\d+)::(rect|ellipse|polygon|text):([\s\S]*?)\}\}"#)
         let text = source as NSString
@@ -19,7 +19,7 @@ enum AnkiImageOcclusion {
             }
             shapes.append(shape)
         }
-        guard !shapes.isEmpty, shapes.count <= 2_000 else { throw AnkiImportError.invalid(String(localized: "The image-occlusion masks couldn't be converted.")) }
+        guard !shapes.isEmpty, shapes.count <= 2_000 else { throw AnkiImportError.invalid(AnkiLocalization.string("The image-occlusion masks couldn't be converted.")) }
         let json = String(data: try JSONSerialization.data(withJSONObject: shapes, options: [.sortedKeys]), encoding: .utf8)!
             .replacingOccurrences(of: "<", with: "\\u003c")
         func side(answer: Bool) -> String {

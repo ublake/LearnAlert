@@ -138,7 +138,7 @@ struct DeckStudyView: View {
         .onChange(of: practiceSessions.errorMessage) { _, message in if let message { reviewError = message } }
         .alert("Practice progress", isPresented: Binding(get: { reviewError != nil }, set: { if !$0 { reviewError = nil } })) {
             Button("OK") { reviewError = nil }
-        } message: { Text(reviewError ?? String(localized: "Please try again.")) }
+        } message: { Text(reviewError ?? AppLocalization.string("Please try again.")) }
     }
 
     private func preparePractice() async {
@@ -148,7 +148,7 @@ struct DeckStudyView: View {
         do { try migratePracticeStates() }
         catch {
             loadingFailed = true
-            reviewError = String(localized: "Your previous practice ratings couldn’t be saved. Try again before starting a new session.")
+            reviewError = AppLocalization.string("Your previous practice ratings couldn’t be saved. Try again before starting a new session.")
             return
         }
         loadingFailed = false; didApplyInitialState = true
@@ -383,7 +383,7 @@ struct DeckStudyView: View {
             try context.save()
         } catch {
             context.rollback()
-            reviewError = String(localized: "Your rating couldn’t be saved. Please try that rating again.")
+            reviewError = AppLocalization.string("Your rating couldn’t be saved. Please try that rating again.")
             return
         }
         localAnkiStates[card.id] = card.ankiPracticeReviewStateData
@@ -479,7 +479,7 @@ private struct PracticeSessionPicker: View {
                                     .font(.caption).foregroundStyle(QuizTheme.inkSecondary)
                             }
                             Spacer(minLength: 8)
-                            Text(session.isComplete ? String(localized: "Results") : String(localized: "Resume"))
+                            Text(session.isComplete ? AppLocalization.string("Results") : AppLocalization.string("Resume"))
                                 .font(.subheadline.weight(.semibold)).foregroundStyle(QuizTheme.ink)
                         }
                         .padding(16).background(QuizTheme.surface, in: RoundedRectangle(cornerRadius: 16))
@@ -542,7 +542,7 @@ private struct AnkiStudySummaryView: View {
             Spacer()
             Image(systemName: "checkmark.rectangle.stack.fill")
                 .font(.system(size: 58, weight: .light)).foregroundStyle(.teal)
-            Text(reviews == 0 ? String(localized: "You're caught up") : String(localized: "Nice work today"))
+            Text(reviews == 0 ? AppLocalization.string("You're caught up") : AppLocalization.string("Nice work today"))
                 .font(.title2.bold()).foregroundStyle(QuizTheme.ink)
             if reviews > 0 {
                 Text("\(reviews) reviews · \(cardCount) cards")
@@ -910,7 +910,7 @@ private struct QuizFillBlankCard: View {
                 HStack(spacing: 8) {
                     Image(systemName: wasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(wasCorrect == true ? QuizTheme.green : LearnAlertStyle.coral)
-                    Text(wasCorrect == true ? String(localized: "Correct!") : String(localized: "Answer: \(answer)"))
+                    Text(wasCorrect == true ? AppLocalization.string("Correct!") : AppLocalization.string("Answer: \(answer)"))
                         .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .subheadline))
                         .foregroundStyle(wasCorrect == true ? QuizTheme.green : LearnAlertStyle.coral)
                 }
@@ -947,7 +947,7 @@ private struct QuizUtilityControls: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     if media.hasContent(hint) {
-                        Button(showingHint ? String(localized: "HIDE HINT") : String(localized: "HINT"), action: onToggleHint)
+                        Button(showingHint ? AppLocalization.string("HIDE HINT") : AppLocalization.string("HINT"), action: onToggleHint)
                     }
                     Button("SKIP", action: onSkip)
                 }

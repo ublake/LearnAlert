@@ -68,10 +68,10 @@ struct ProgressDashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Study").font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ProgressMetric(title: "Reviews", value: summary.reviewCount.formatted(), icon: "arrow.clockwise")
-                ProgressMetric(title: "Cards reviewed", value: summary.reviewedCardCount.formatted(), icon: "rectangle.stack")
-                ProgressMetric(title: "Mastered", value: summary.masteredCardCount.formatted(), icon: "checkmark.seal")
-                ProgressMetric(title: "Quiz accuracy", value: summary.quizAccuracy?.formatted(.percent.precision(.fractionLength(0))) ?? "—", icon: "scope")
+                ProgressMetric(title: "Reviews", value: summary.reviewCount.formatted(.number.locale(AppLocalization.locale)), icon: "arrow.clockwise")
+                ProgressMetric(title: "Cards reviewed", value: summary.reviewedCardCount.formatted(.number.locale(AppLocalization.locale)), icon: "rectangle.stack")
+                ProgressMetric(title: "Mastered", value: summary.masteredCardCount.formatted(.number.locale(AppLocalization.locale)), icon: "checkmark.seal")
+                ProgressMetric(title: "Quiz accuracy", value: summary.quizAccuracy?.formatted(.percent.precision(.fractionLength(0)).locale(AppLocalization.locale)) ?? "—", icon: "scope")
                     .accessibilityHint("Multiple-choice, matching, and fill-in cards in your decks")
             }
             masteryStrip(summary)
@@ -103,18 +103,18 @@ struct ProgressDashboardView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 5, height: 5).accessibilityHidden(true)
-                Text(count.formatted()).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(LearnAlertStyle.textPrimary)
+                Text(count.formatted(.number.locale(AppLocalization.locale))).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(LearnAlertStyle.textPrimary)
             }
-            Text(title).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+            Text(AppLocalization.string(title)).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
         }
         .accessibilityElement(children: .combine)
     }
 
     private func sectionHeader(_ title: LocalizedStringResource, count: Int) -> some View {
         HStack {
-            Text(title).font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
+            Text(AppLocalization.string(title)).font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
             Spacer()
-            Text(count.formatted()).font(.subheadline).monospacedDigit().foregroundStyle(LearnAlertStyle.textSecondary)
+            Text(count.formatted(.number.locale(AppLocalization.locale))).font(.subheadline).monospacedDigit().foregroundStyle(LearnAlertStyle.textSecondary)
         }
     }
 
@@ -125,7 +125,7 @@ struct ProgressDashboardView: View {
                     .font(.subheadline.weight(.medium)).foregroundStyle(Color(hex: deck.colorHex))
                     .frame(width: 32, height: 32)
                     .background(Color(hex: deck.colorHex).opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityLabel(deck.isCommunity ? String(localized: "Shared deck") : String(localized: "Deck"))
+                    .accessibilityLabel(deck.isCommunity ? AppLocalization.string("Shared deck") : AppLocalization.string("Deck"))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(deck.name).font(.subheadline.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary).lineLimit(2)
                     Text("\(deck.reviewedCardCount) of \(deck.cardCount) cards reviewed").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
@@ -166,7 +166,7 @@ struct ProgressDashboardView: View {
                             Image(systemName: "heart.fill").foregroundStyle(.pink)
                             Text("Likes received").font(.subheadline.weight(.semibold))
                             Spacer()
-                            Text(stats.receivedLikeCount.formatted()).font(.subheadline).monospacedDigit()
+                            Text(stats.receivedLikeCount.formatted(.number.locale(AppLocalization.locale))).font(.subheadline).monospacedDigit()
                             Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                         }
                         .foregroundStyle(LearnAlertStyle.textPrimary).padding(16).appCardSurface(cornerRadius: 16)
@@ -207,7 +207,7 @@ private struct ProgressMetric: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(value).font(.title2.weight(.semibold)).monospacedDigit().foregroundStyle(LearnAlertStyle.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                Text(title).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                Text(AppLocalization.string(title)).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
             }
             Spacer(minLength: 0)
         }

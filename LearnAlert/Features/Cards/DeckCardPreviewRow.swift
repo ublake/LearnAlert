@@ -27,8 +27,8 @@ struct DeckCardPreviewRow: View {
                 ankiPreview(preparedAnki?.content)
             } else if card.cardType == .images {
                 HStack(alignment: .top, spacing: 14) {
-                    field("prompt", title: fields["answer"] == nil ? String(localized: "Image") : String(localized: "Front"), text: "")
-                    if fields["answer"] != nil { field("answer", title: String(localized: "Back side"), text: "") }
+                    field("prompt", title: fields["answer"] == nil ? AppLocalization.string("Image") : AppLocalization.string("Front"), text: "")
+                    if fields["answer"] != nil { field("answer", title: AppLocalization.string("Back side"), text: "") }
                 }
             } else {
                 field("prompt", title: nil, text: card.studyQuestion, emphasized: true)
@@ -72,7 +72,7 @@ struct DeckCardPreviewRow: View {
                         }
                     }
                 default:
-                    field("answer", title: card.cardType == .vocabulary ? String(localized: "Definition") : String(localized: "Answer"), text: card.correctAnswer)
+                    field("answer", title: card.cardType == .vocabulary ? AppLocalization.string("Definition") : AppLocalization.string("Answer"), text: card.correctAnswer)
                 }
                 if (fields["hint"] ?? .init()).hasContent(card.hint) {
                     DisclosureGroup { field("hint", title: nil, text: card.hint) } label: {
@@ -102,7 +102,7 @@ struct DeckCardPreviewRow: View {
                     if let image = CardImageStore.loadImage(named: name) {
                         Image(uiImage: image).resizable().scaledToFit().frame(width: 68, height: 52)
                             .background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 7))
-                            .clipShape(RoundedRectangle(cornerRadius: 7)).accessibilityLabel("\(title ?? String(localized: "Card")) image")
+                            .clipShape(RoundedRectangle(cornerRadius: 7)).accessibilityLabel("\(title ?? AppLocalization.string("Card")) image")
                     } else { Image(systemName: "photo.badge.exclamationmark").accessibilityLabel("Image unavailable") }
                 }
                 if !text.isEmpty {

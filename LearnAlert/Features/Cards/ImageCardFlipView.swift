@@ -49,8 +49,8 @@ struct ImageCardFlipView<Front: View, Back: View>: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled || isTurning)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isShowingBack ? String(localized: "Back image") : String(localized: "Front image"))
-        .accessibilityHint(isShowingBack ? String(localized: "Flip to the front image") : String(localized: "Flip to the back image"))
+        .accessibilityLabel(isShowingBack ? AppLocalization.string("Back image") : AppLocalization.string("Front image"))
+        .accessibilityHint(isShowingBack ? AppLocalization.string("Flip to the front image") : AppLocalization.string("Flip to the back image"))
         .accessibilityAddTraits(.isImage)
         .onAppear {
             isTurning = false

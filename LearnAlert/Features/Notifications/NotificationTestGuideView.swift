@@ -67,12 +67,12 @@ struct NotificationTestGuideView: View {
                 .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(gesture == .hold ? String(localized: "Hold, then answer") : String(localized: "Swipe left, then View"))
+                    Text(gesture == .hold ? AppLocalization.string("Hold, then answer") : AppLocalization.string("Swipe left, then View"))
                         .font(.headline)
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                     Text(gesture == .hold
-                        ? String(localized: "On iPhone, touch and hold the notification until the question opens. Answer right there.")
-                        : String(localized: "Swipe down from the top to find the alert. Swipe left on it, then tap View. This works in the simulator, too."))
+                        ? AppLocalization.string("On iPhone, touch and hold the notification until the question opens. Answer right there.")
+                        : AppLocalization.string("Swipe down from the top to find the alert. Swipe left on it, then tap View. This works in the simulator, too."))
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -105,7 +105,7 @@ struct NotificationTestGuideView: View {
 private enum AlertPreviewGesture: String, CaseIterable, Identifiable {
     case hold, swipe
     var id: Self { self }
-    var title: String { self == .hold ? String(localized: "Touch & hold") : String(localized: "Swipe & View") }
+    var title: String { self == .hold ? AppLocalization.string("Touch & hold") : AppLocalization.string("Swipe & View") }
 }
 
 private struct AlertGestureIllustration: View {
@@ -140,7 +140,7 @@ private struct AlertGestureIllustration: View {
                             .foregroundStyle(LearnAlertStyle.appAccentForeground)
                     }
                 }
-                Text(expanded ? String(localized: "Your question opens here") : String(localized: "Your study alert"))
+                Text(expanded ? AppLocalization.string("Your question opens here") : AppLocalization.string("Your study alert"))
                     .font(.subheadline)
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                 if expanded {

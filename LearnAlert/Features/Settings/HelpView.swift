@@ -57,7 +57,7 @@ struct HelpView: View {
         .alert("Couldn’t send test alert", isPresented: Binding(
             get: { testNotificationError != nil }, set: { if !$0 { testNotificationError = nil } }
         )) { Button("OK", role: .cancel) { testNotificationError = nil } }
-        message: { Text(testNotificationError ?? String(localized: "Please try again.")) }
+        message: { Text(testNotificationError ?? AppLocalization.string("Please try again.")) }
     }
 
     private func testNotification() {
@@ -100,11 +100,11 @@ struct HelpView: View {
             !card.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let options = card.options.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         NotificationManager.shared.scheduleTutorialAlert(
-            deckTitle: card.deck?.name ?? String(localized: "Example"),
-            question: hasText ? card.studyQuestion : String(localized: "Where can you answer a LearnAlert notification?"),
-            options: hasText ? (options.count >= 2 ? options : []) : [String(localized: "Inside the expanded alert"), String(localized: "Only in the app")],
-            correctAnswer: hasText ? card.correctAnswer : String(localized: "Inside the expanded alert"),
-            hint: hasText ? card.hint : String(localized: "Press and hold an alert to expand it."),
+            deckTitle: card.deck?.name ?? AppLocalization.string("Example"),
+            question: hasText ? card.studyQuestion : AppLocalization.string("Where can you answer a LearnAlert notification?"),
+            options: hasText ? (options.count >= 2 ? options : []) : [AppLocalization.string("Inside the expanded alert"), AppLocalization.string("Only in the app")],
+            correctAnswer: hasText ? card.correctAnswer : AppLocalization.string("Inside the expanded alert"),
+            hint: hasText ? card.hint : AppLocalization.string("Press and hold an alert to expand it."),
             delay: 3, isCustomizationTest: true
         ) { error in
             Task { @MainActor in
@@ -285,7 +285,7 @@ private struct NotificationTestSection: View {
     let testNotification: () -> Void
 
     private var selectedDeckName: String {
-        decks.first { $0.id.uuidString == selectedDeckId }?.name ?? String(localized: "Select a Deck")
+        decks.first { $0.id.uuidString == selectedDeckId }?.name ?? AppLocalization.string("Select a Deck")
     }
 
     var body: some View {

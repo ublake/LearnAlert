@@ -99,7 +99,7 @@ struct CardDragAnswerPanel: View {
 
             if isGraded {
                 let correct = CardDragAnswerEvaluation.isCorrect(response: response, options: options, fields: fields)
-                Label(correct ? String(localized: "Correct") : String(localized: "Correct order"), systemImage: correct ? "checkmark.circle.fill" : "arrow.right")
+                Label(correct ? AppLocalization.string("Correct") : AppLocalization.string("Correct order"), systemImage: correct ? "checkmark.circle.fill" : "arrow.right")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(correct ? Color.green : Color.secondary)
                 if !correct {
                     CardSentenceLayout(spacing: 6) {
@@ -107,7 +107,7 @@ struct CardDragAnswerPanel: View {
                     }
                 }
             } else {
-                Button(submittedResponse == nil ? String(localized: "Submit answer") : String(localized: "Submitting…")) {
+                Button(submittedResponse == nil ? AppLocalization.string("Submit answer") : AppLocalization.string("Submitting…")) {
                     guard !locked, validCard, selected.count == options.count else { return }
                     submittedResponse = response
                     onGrade(CardDragAnswerEvaluation.isCorrect(response: response, options: options, fields: fields))
@@ -177,7 +177,7 @@ struct CardDragAnswerPanel: View {
         let content = HStack(spacing: 6) {
             if isSolution {
                 tileLabel(id, media: media, showsRemove: false)
-                    .accessibilityLabel(options[id].isEmpty ? String(localized: "Tile \(id + 1)") : options[id])
+                    .accessibilityLabel(options[id].isEmpty ? AppLocalization.string("Tile \(id + 1)") : options[id])
             } else {
                 Button {
                     guard !locked else { return }
@@ -187,8 +187,8 @@ struct CardDragAnswerPanel: View {
                     tileLabel(id, media: media, showsRemove: inAnswer && !locked)
                 }
                 .buttonStyle(.plain).disabled(locked)
-                .accessibilityLabel(options[id].isEmpty ? String(localized: "Tile \(id + 1)") : options[id])
-                .accessibilityHint(locked ? "" : inAnswer ? String(localized: "Tap to return this tile. Drag to change its position.") : String(localized: "Tap or drag to add this tile to your answer."))
+                .accessibilityLabel(options[id].isEmpty ? AppLocalization.string("Tile \(id + 1)") : options[id])
+                .accessibilityHint(locked ? "" : inAnswer ? AppLocalization.string("Tap to return this tile. Drag to change its position.") : AppLocalization.string("Tap or drag to add this tile to your answer."))
             }
             if let audio = media.audio { CardAudioPlaybackButton(name: audio, compact: true).padding(.trailing, 6) }
         }
@@ -309,7 +309,7 @@ struct CardQuestionContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if isListeningCard {
-                Text(listening ? String(localized: "LISTENING") : String(localized: "READING")).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                Text(listening ? AppLocalization.string("LISTENING") : AppLocalization.string("READING")).font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             }
             CardFieldContent(text: isListeningCard && !listening ? readingPrompt ?? question : question,
                              media: .init(image: media.image), imageHeight: imageHeight)
@@ -318,7 +318,7 @@ struct CardQuestionContent: View {
                 Button {
                     withAnimation(.snappy) { reading.toggle() }
                 } label: {
-                    Text(listening ? String(localized: "I can’t listen right now") : String(localized: "Back to listening"))
+                    Text(listening ? AppLocalization.string("I can’t listen right now") : AppLocalization.string("Back to listening"))
                         .font(.caption.weight(.semibold))
                         .modifier(NotificationReadingToggleSurface())
                 }.buttonStyle(.plain)
@@ -362,7 +362,7 @@ struct CardMediaChoiceList: View {
                 }.padding(.horizontal, 12).padding(.vertical, notificationDesign?.verticalPadding(12) ?? 12)
                     .frame(maxWidth: media.audio != nil && options[index].isEmpty && media.image == nil ? 48 : .infinity, minHeight: picturesOnly ? 104 : 48, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(isGraded || selection != nil)
-                .accessibilityLabel(options[index].isEmpty ? String(localized: "Select choice \(index + 1)") : String(localized: "Select \(options[index])"))
+                .accessibilityLabel(options[index].isEmpty ? AppLocalization.string("Select choice \(index + 1)") : AppLocalization.string("Select \(options[index])"))
             if let audio = media.audio { CardAudioPlaybackButton(name: audio, compact: picturesOnly).padding(.trailing, 8) }
         }.modifier(NotificationMediaSurface(cornerRadius: 14,
             fill: color.opacity(selected || (isGraded && correctIndex == index) ? 0.16 : 0.05),
@@ -429,7 +429,7 @@ struct CardMediaMatchingBoard: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Text(state.mistakeLeft == nil ? String(localized: "Tap two that belong together") : String(localized: "Try another pair"))
+                Text(state.mistakeLeft == nil ? AppLocalization.string("Tap two that belong together") : AppLocalization.string("Try another pair"))
                 Spacer()
                 Text("\(state.matched.count)/\(state.pairCount)").monospacedDigit()
             }.font(.caption).foregroundStyle(.secondary)
@@ -458,8 +458,8 @@ struct CardMediaMatchingBoard: View {
                         border: Color.primary.opacity(selected ? 0.7 : 0.18), borderWidth: selected ? 2 : 1,
                         emphasized: selected, insetBorder: true))
             }.buttonStyle(.plain).disabled(isGraded || matched).opacity(matched ? 0.4 : 1)
-                .accessibilityLabel((leftSide ? left : right)[index].isEmpty ? (leftSide ? String(localized: "Left item \(index + 1)") : String(localized: "Right item \(index + 1)")) : (leftSide ? left : right)[index])
-                .accessibilityValue(matched ? String(localized: "Matched") : selected ? String(localized: "Selected") : "")
+                .accessibilityLabel((leftSide ? left : right)[index].isEmpty ? (leftSide ? AppLocalization.string("Left item \(index + 1)") : AppLocalization.string("Right item \(index + 1)")) : (leftSide ? left : right)[index])
+                .accessibilityValue(matched ? AppLocalization.string("Matched") : selected ? AppLocalization.string("Selected") : "")
             if let audio = media.audio { CardAudioPlaybackButton(name: audio, compact: true) }
         }
     }
@@ -502,14 +502,14 @@ struct CardBlankChoicePanel: View {
                                     let media = fields["option:\(selected)"] ?? .init()
                                     if let image = CardImageStore.loadImage(named: media.image) {
                                         Image(uiImage: image).resizable().scaledToFit().frame(width: 60, height: 44)
-                                    } else { Text(options[selected].isEmpty ? String(localized: "Audio") : options[selected]) }
+                                    } else { Text(options[selected].isEmpty ? AppLocalization.string("Audio") : options[selected]) }
                                     if !isGraded { Image(systemName: "xmark").font(.caption2) }
                                 } else { Text("        ") }
                             }.padding(.horizontal, 10).frame(minWidth: 72, minHeight: 44)
                                 .modifier(NotificationMediaSurface(cornerRadius: 9, fill: Color.primary.opacity(0.08),
                                     border: Color.primary.opacity(0.35), emphasized: state.selected != nil, insetBorder: true))
                         }.buttonStyle(.plain).disabled(isGraded || state.selected == nil)
-                            .accessibilityLabel(state.selected.map { String(localized: "Remove \(options[$0]) from blank") } ?? String(localized: "Empty blank"))
+                            .accessibilityLabel(state.selected.map { AppLocalization.string("Remove \(options[$0]) from blank") } ?? AppLocalization.string("Empty blank"))
                     } else { Text(word).font(.title3.weight(.semibold)) }
                 }
             }
@@ -527,7 +527,7 @@ struct CardBlankChoicePanel: View {
                     .accessibilityAddTraits(state.selected == index ? .isSelected : [])
             }
             if isGraded {
-                Label(correct == true ? String(localized: "Correct") : String(localized: "Answer: \(answerIndex.flatMap { options.indices.contains($0) ? options[$0] : nil } ?? "")"), systemImage: correct == true ? "checkmark.circle" : "arrow.counterclockwise")
+                Label(correct == true ? AppLocalization.string("Correct") : AppLocalization.string("Answer: \(answerIndex.flatMap { options.indices.contains($0) ? options[$0] : nil } ?? "")"), systemImage: correct == true ? "checkmark.circle" : "arrow.counterclockwise")
                     .font(.subheadline).foregroundStyle(.secondary)
             } else {
                 Button("Check answer") { let result = state.isCorrect(answerIndex: answerIndex); correct = result; onGrade(result) }

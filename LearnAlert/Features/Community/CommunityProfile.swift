@@ -33,9 +33,9 @@ struct CommunityAvatar: Codable, Equatable {
         skinTone = try values.decodeIfPresent(Int.self, forKey: .skinTone) ?? 3
     }
 
-    static let hairNames = [String(localized: "Bedhead"), String(localized: "Noodle"), String(localized: "Sprout"), String(localized: "Side swoop"), String(localized: "Tiny crown"), String(localized: "Bald-ish"), String(localized: "Short crop"), String(localized: "Bob"), String(localized: "Space buns"), String(localized: "Cloud curls"), String(localized: "Ponytail"), String(localized: "Mohawk"), String(localized: "Braids"), String(localized: "Beanie"), String(localized: "Baseball cap"), String(localized: "Big bow")]
-    static let eyeNames = [String(localized: "Wide awake"), String(localized: "Sleepy"), String(localized: "Side-eye"), String(localized: "Tiny dots"), String(localized: "Wink"), String(localized: "Dizzy"), String(localized: "Heart eyes"), String(localized: "Starry"), String(localized: "Sunglasses"), String(localized: "Round glasses"), String(localized: "Delighted"), String(localized: "Curious"), String(localized: "Lashes"), String(localized: "Sparkly"), String(localized: "Monocle"), String(localized: "Focused")]
-    static let mouthNames = [String(localized: "Big grin"), String(localized: "Oops"), String(localized: "Smirk"), String(localized: "Tiny fangs"), String(localized: "Mustache"), String(localized: "Bubblegum"), String(localized: "Tongue out"), String(localized: "Whistle"), String(localized: "Wobbly"), String(localized: "Little smile"), String(localized: "Poker face"), String(localized: "Kiss"), String(localized: "Goatee"), String(localized: "One tooth"), String(localized: "Lopsided"), String(localized: "Cat smile")]
+    static var hairNames: [String] { [AppLocalization.string("Bedhead"), AppLocalization.string("Noodle"), AppLocalization.string("Sprout"), AppLocalization.string("Side swoop"), AppLocalization.string("Tiny crown"), AppLocalization.string("Bald-ish"), AppLocalization.string("Short crop"), AppLocalization.string("Bob"), AppLocalization.string("Space buns"), AppLocalization.string("Cloud curls"), AppLocalization.string("Ponytail"), AppLocalization.string("Mohawk"), AppLocalization.string("Braids"), AppLocalization.string("Beanie"), AppLocalization.string("Baseball cap"), AppLocalization.string("Big bow")] }
+    static var eyeNames: [String] { [AppLocalization.string("Wide awake"), AppLocalization.string("Sleepy"), AppLocalization.string("Side-eye"), AppLocalization.string("Tiny dots"), AppLocalization.string("Wink"), AppLocalization.string("Dizzy"), AppLocalization.string("Heart eyes"), AppLocalization.string("Starry"), AppLocalization.string("Sunglasses"), AppLocalization.string("Round glasses"), AppLocalization.string("Delighted"), AppLocalization.string("Curious"), AppLocalization.string("Lashes"), AppLocalization.string("Sparkly"), AppLocalization.string("Monocle"), AppLocalization.string("Focused")] }
+    static var mouthNames: [String] { [AppLocalization.string("Big grin"), AppLocalization.string("Oops"), AppLocalization.string("Smirk"), AppLocalization.string("Tiny fangs"), AppLocalization.string("Mustache"), AppLocalization.string("Bubblegum"), AppLocalization.string("Tongue out"), AppLocalization.string("Whistle"), AppLocalization.string("Wobbly"), AppLocalization.string("Little smile"), AppLocalization.string("Poker face"), AppLocalization.string("Kiss"), AppLocalization.string("Goatee"), AppLocalization.string("One tooth"), AppLocalization.string("Lopsided"), AppLocalization.string("Cat smile")] }
 }
 
 struct CommunityProfile: Codable, Equatable {
@@ -291,7 +291,7 @@ struct CommunitySignInButton: View {
             case .success(let authorization):
                 guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                       let data = credential.identityToken, let token = String(data: data, encoding: .utf8) else {
-                    session.errorMessage = String(localized: "Apple did not provide a sign-in token. Please try again.")
+                    session.errorMessage = AppLocalization.string("Apple did not provide a sign-in token. Please try again.")
                     return
                 }
                 let signInNonce = nonce
@@ -317,9 +317,9 @@ struct CommunitySignInButton: View {
             "Apple authorization failed: \(detail.domain, privacy: .public) code \(detail.code, privacy: .public); underlying \(underlying?.domain ?? "none", privacy: .public) code \(underlying?.code ?? 0, privacy: .public)"
         )
         #if targetEnvironment(simulator)
-        session.errorMessage = String(localized: "Apple sign-in couldn’t finish in the simulator. If retrying fails, try the app on your iPhone.")
+        session.errorMessage = AppLocalization.string("Apple sign-in couldn’t finish in the simulator. If retrying fails, try the app on your iPhone.")
         #else
-        session.errorMessage = String(localized: "Apple sign-in could not finish. Please try again.")
+        session.errorMessage = AppLocalization.string("Apple sign-in could not finish. Please try again.")
         #endif
     }
 }
@@ -337,7 +337,7 @@ struct SettingsProfileCard: View {
                             CommunityAvatarView(avatar: session.profile.avatar).frame(width: 68, height: 68)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(session.needsProfileSetup ? String(localized: "Finish your profile") : session.handle).font(.headline)
+                            Text(session.needsProfileSetup ? AppLocalization.string("Finish your profile") : session.handle).font(.headline)
                             Text("Your community profile").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                         }
                         Spacer(minLength: 0)
@@ -369,7 +369,7 @@ struct SettingsProfileCard: View {
 }
 
 struct CommunityProfileSheet: View {
-    var saveTitle = String(localized: "Save profile")
+    var saveTitle = AppLocalization.string("Save profile")
     var onSave: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -411,16 +411,16 @@ struct CommunityProfileSheet: View {
                                 }
                             }
                             .font(.body.weight(.medium)).padding(16).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                            Text(session.profile.isComplete ? String(localized: "Your username is permanent.") : String(localized: "3–24 letters, numbers or underscores. Permanent once saved.")).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            Text(session.profile.isComplete ? AppLocalization.string("Your username is permanent.") : AppLocalization.string("3–24 letters, numbers or underscores. Permanent once saved.")).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                         }
                         VStack(spacing: 0) {
                             skinTonePicker
                             Divider().padding(.horizontal, 16)
-                            partPicker(String(localized: "Hair"), selection: $avatar.hair, names: CommunityAvatar.hairNames)
+                            partPicker(AppLocalization.string("Hair"), selection: $avatar.hair, names: CommunityAvatar.hairNames)
                             Divider().padding(.horizontal, 16)
-                            partPicker(String(localized: "Eyes"), selection: $avatar.eyes, names: CommunityAvatar.eyeNames)
+                            partPicker(AppLocalization.string("Eyes"), selection: $avatar.eyes, names: CommunityAvatar.eyeNames)
                             Divider().padding(.horizontal, 16)
-                            partPicker(String(localized: "Mouth"), selection: $avatar.mouth, names: CommunityAvatar.mouthNames)
+                            partPicker(AppLocalization.string("Mouth"), selection: $avatar.mouth, names: CommunityAvatar.mouthNames)
                         }
                         .appCardSurface(cornerRadius: 20)
                         Button { Task { await save() } } label: {
@@ -565,7 +565,7 @@ struct CommunityProfileSheet: View {
     @MainActor private func deleteAccount(reauthentication: CommunityAPI.AppleReauthentication, appleUserID: String) async throws {
         guard let token = session.token else { return }
         if let expectedID = session.credentials?.appleUserID, expectedID != appleUserID {
-            throw CommunityAPIError(status: 403, message: String(localized: "Use the Apple account you signed in with to delete this community account."))
+            throw CommunityAPIError(status: 403, message: AppLocalization.string("Use the Apple account you signed in with to delete this community account."))
         }
         deletingAccount = true; message = nil
         defer { deletingAccount = false }
@@ -609,7 +609,7 @@ private struct CommunityAccountDeletionSheet: View {
                               let identity = String(data: identityData, encoding: .utf8),
                               let codeData = credential.authorizationCode,
                               let code = String(data: codeData, encoding: .utf8) else {
-                            errorMessage = String(localized: "Apple did not provide confirmation. Please try again.")
+                            errorMessage = AppLocalization.string("Apple did not provide confirmation. Please try again.")
                             return
                         }
                         let confirmation = CommunityAPI.AppleReauthentication(identityToken: identity, authorizationCode: code, nonce: nonce)
@@ -620,7 +620,7 @@ private struct CommunityAccountDeletionSheet: View {
                             catch { errorMessage = error.localizedDescription }
                         }
                     case .failure(let error):
-                        if (error as? ASAuthorizationError)?.code != .canceled { errorMessage = String(localized: "Apple confirmation could not finish. Please try again.") }
+                        if (error as? ASAuthorizationError)?.code != .canceled { errorMessage = AppLocalization.string("Apple confirmation could not finish. Please try again.") }
                     }
                 }
                 .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)

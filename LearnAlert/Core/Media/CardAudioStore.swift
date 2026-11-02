@@ -40,7 +40,7 @@ enum CardAudioStore {
         case "mp3": return "audio/mpeg"
         case "m4a": return "audio/mp4"
         case "wav": return "audio/wav"
-        default: throw CardAudioError(message: String(localized: "Choose an MP3, M4A, or WAV audio file."))
+        default: throw CardAudioError(message: AppLocalization.string("Choose an MP3, M4A, or WAV audio file."))
         }
     }
 
@@ -49,7 +49,7 @@ enum CardAudioStore {
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         _ = try contentType(for: source.lastPathComponent)
         let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= maximumBytes else { throw CardAudioError(message: String(localized: "Choose an audio clip under 20 MB.")) }
+        guard size > 0, size <= maximumBytes else { throw CardAudioError(message: AppLocalization.string("Choose an audio clip under 20 MB.")) }
         let data = try Data(contentsOf: source)
         return try save(data, extension: source.pathExtension.lowercased())
     }
@@ -64,10 +64,10 @@ enum CardAudioStore {
     }
 
     private static func save(_ data: Data, extension ext: String) throws -> String {
-        guard !data.isEmpty, data.count <= maximumBytes else { throw CardAudioError(message: String(localized: "Choose an audio clip under 20 MB.")) }
+        guard !data.isEmpty, data.count <= maximumBytes else { throw CardAudioError(message: AppLocalization.string("Choose an audio clip under 20 MB.")) }
         // Reject corrupt files before attaching them to a card.
         let player = try AVAudioPlayer(data: data)
-        guard player.duration > 0 else { throw CardAudioError(message: String(localized: "This audio file could not be played.")) }
+        guard player.duration > 0 else { throw CardAudioError(message: AppLocalization.string("This audio file could not be played.")) }
         let name = "\(UUID().uuidString).\(ext)"
         try data.write(to: url(named: name), options: .atomic)
         return name
@@ -99,7 +99,7 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
             let source = localURL ?? CardAudioStore.url(named: name)
-            guard source.isFileURL else { throw CardAudioError(message: String(localized: "A stored recording is required.")) }
+            guard source.isFileURL else { throw CardAudioError(message: AppLocalization.string("A stored recording is required.")) }
             let player = try AVAudioPlayer(contentsOf: source)
             player.delegate = self
             player.prepareToPlay()
@@ -109,11 +109,11 @@ final class CardAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
                 Self.playbackChanges.send(true)
             } else {
                 stop()
-                errorMessage = String(localized: "This audio clip could not be played.")
+                errorMessage = AppLocalization.string("This audio clip could not be played.")
             }
         } catch {
             stop()
-            errorMessage = String(localized: "This audio clip could not be played. Try attaching it again.")
+            errorMessage = AppLocalization.string("This audio clip could not be played. Try attaching it again.")
         }
     }
 
@@ -147,14 +147,14 @@ struct CardAudioPlaybackButton: View {
         Button { player.toggle(name: name, localURL: localURL) } label: {
             HStack(spacing: 5) {
                 Image(systemName: player.isPlaying ? "stop.fill" : "play.fill")
-                if !compact { Text(player.isPlaying ? String(localized: "Stop audio") : String(localized: "Play audio")) }
+                if !compact { Text(player.isPlaying ? AppLocalization.string("Stop audio") : AppLocalization.string("Play audio")) }
                 else { Image(systemName: "waveform").font(.caption2) }
             }.font(compact ? .caption.weight(.semibold) : .body.weight(.medium))
                 .frame(minWidth: 44, minHeight: 44)
                 .modifier(NotificationAudioSurface(compact: compact))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(player.isPlaying ? String(localized: "Stop audio") : String(localized: "Play audio"))
+        .accessibilityLabel(player.isPlaying ? AppLocalization.string("Stop audio") : AppLocalization.string("Play audio"))
 
         .tint(Color.accentColor)
         .onDisappear { player.stop() }

@@ -87,8 +87,8 @@ public struct PDFSectionPickerSheet: View {
 
                     // Mode switch: Sections vs Pages
                     Picker("Mode", selection: $selectedTab) {
-                        Text(String(localized: "Sections")).tag(PickerTab.sections)
-                        Text(String(localized: "Pages")).tag(PickerTab.pages)
+                        Text(AppLocalization.string("Sections")).tag(PickerTab.sections)
+                        Text(AppLocalization.string("Pages")).tag(PickerTab.pages)
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal, 16)
@@ -263,7 +263,7 @@ public struct PDFSectionPickerSheet: View {
                                 .font(.system(size: 8))
                                 .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.3) : Color.white.opacity(0.3))
 
-                            Text(String(localized: "\(section.pageCount) pages"))
+                            Text(AppLocalization.string("\(section.pageCount) pages"))
                                 .font(.custom("Poppins-Medium", size: 11))
                                 .foregroundStyle(pageCountColor)
                         }
@@ -318,7 +318,7 @@ public struct PDFSectionPickerSheet: View {
                         .font(.custom("Poppins-Medium", size: 13))
                         .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.85) : Color.white.opacity(0.8))
 
-                    Text(String(localized: "(\(frontMatterSections.count) sections)"))
+                    Text(AppLocalization.string("(\(frontMatterSections.count) sections)"))
                         .font(.custom("Poppins-Regular", size: 11))
                         .foregroundStyle(colorScheme == .light ? Color.black.opacity(0.45) : Color.white.opacity(0.45))
 
@@ -593,7 +593,7 @@ public struct PDFSectionPickerSheet: View {
                         } else {
                             Image(systemName: "doc.badge.plus")
                                 .font(.system(size: 13, weight: .bold))
-                            Text(selectedPageIndices.isEmpty ? String(localized: "Select Pages") : String(localized: "Use \(selectedPageIndices.count) pages"))
+                            Text(selectedPageIndices.isEmpty ? AppLocalization.string("Select Pages") : AppLocalization.string("Use \(selectedPageIndices.count) pages"))
                                 .font(.custom("Poppins-SemiBold", size: 13))
                         }
                     }
@@ -642,7 +642,7 @@ public struct PDFSectionPickerSheet: View {
         } else {
             let wouldSelect = selectedPageIndices.union(pageRange)
             if wouldSelect.count > maxPageLimit {
-                errorMessage = String(localized: "Maximum \(maxPageLimit) pages allowed per deck (selecting this would reach \(wouldSelect.count) pages). Please deselect other sections first.")
+                errorMessage = AppLocalization.string("Maximum \(maxPageLimit) pages allowed per deck (selecting this would reach \(wouldSelect.count) pages). Please deselect other sections first.")
                 return
             }
             selectedSectionIDs.insert(section.id)
@@ -659,7 +659,7 @@ public struct PDFSectionPickerSheet: View {
         let clampedEnd = max(clampedStart, min(end, document.pageCount))
         let count = clampedEnd - clampedStart + 1
         if count > maxPageLimit {
-            errorMessage = String(localized: "Maximum \(maxPageLimit) pages allowed. Clamped to \(maxPageLimit) pages.")
+            errorMessage = AppLocalization.string("Maximum \(maxPageLimit) pages allowed. Clamped to \(maxPageLimit) pages.")
             let finalEnd = clampedStart + maxPageLimit - 1
             selectedPageIndices = Set((clampedStart - 1)...(finalEnd - 1))
         } else {
@@ -675,7 +675,7 @@ public struct PDFSectionPickerSheet: View {
             selectedPageIndices.remove(pageIndex)
         } else {
             if selectedPageIndices.count >= maxPageLimit {
-                errorMessage = String(localized: "Maximum \(maxPageLimit) pages allowed per deck generation.")
+                errorMessage = AppLocalization.string("Maximum \(maxPageLimit) pages allowed per deck generation.")
                 return
             }
             selectedPageIndices.insert(pageIndex)

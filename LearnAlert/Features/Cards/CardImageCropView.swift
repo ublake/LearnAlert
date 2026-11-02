@@ -6,7 +6,7 @@ enum CardImageCropPreset: String, CaseIterable, Identifiable {
     case horizontal, vertical
 
     var id: String { rawValue }
-    var title: String { self == .horizontal ? String(localized: "Horizontal") : String(localized: "Vertical") }
+    var title: String { self == .horizontal ? AppLocalization.string("Horizontal") : AppLocalization.string("Vertical") }
     var aspectRatio: CGFloat { self == .horizontal ? 3 / 2 : 2 / 3 }
 
     func fittedSize(in available: CGSize) -> CGSize {

@@ -239,7 +239,7 @@ private enum HomeAlertTarget {
     case deck(Deck)
     var selectionId: String { switch self { case .deck(let deck): deck.id.uuidString } }
     var name: String { switch self { case .deck(let deck): deck.name } }
-    var detail: String { switch self { case .deck(let deck): String(localized: "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards") } }
+    var detail: String { switch self { case .deck(let deck): AppLocalization.string("\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards") } }
     var canSchedule: Bool { switch self { case .deck(let deck): ((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) >= 2 } }
 }
 
@@ -294,13 +294,13 @@ struct HomeLibraryView: View {
 
     private var tutorialCoachSteps: [TutorialCoachStep] {
         if homeTutorialStep == 1 {
-            return [TutorialCoachStep(target: .firstDeck, title: String(localized: "Your first deck"),
-                message: String(localized: "Tap your deck to see its cards, make changes, and start studying."))]
+            return [TutorialCoachStep(target: .firstDeck, title: AppLocalization.string("Your first deck"),
+                message: AppLocalization.string("Tap your deck to see its cards, make changes, and start studying."))]
         }
         guard homeTutorialStep == 3 else { return [] }
         return [
-            TutorialCoachStep(target: .homeSchedule, title: String(localized: "Your library & alerts"),
-                message: String(localized: "All your decks live on Home. Choose a deck and schedule its alerts here. Try a test alert to see how it works."))
+            TutorialCoachStep(target: .homeSchedule, title: AppLocalization.string("Your library & alerts"),
+                message: AppLocalization.string("All your decks live on Home. Choose a deck and schedule its alerts here. Try a test alert to see how it works."))
         ]
     }
 
@@ -350,7 +350,7 @@ struct HomeLibraryView: View {
                 Text("Storage Notice")
                     .font(.custom("Poppins-SemiBold", size: 13))
                     .foregroundStyle(.white)
-                Text(sharedDB.storageErrorMessage ?? String(localized: "Running in temporary memory mode. Flashcards may not persist between app restarts."))
+                Text(sharedDB.storageErrorMessage ?? AppLocalization.string("Running in temporary memory mode. Flashcards may not persist between app restarts."))
                     .font(.custom("Poppins-Regular", size: 11))
                     .foregroundStyle(.white.opacity(0.8))
             }
@@ -383,7 +383,7 @@ struct HomeLibraryView: View {
                             homeTutorialStep = 0
                         }
                     } label: {
-                        Text(homeTutorialStep == 3 ? String(localized: "Skip") : String(localized: "Skip Tour"))
+                        Text(homeTutorialStep == 3 ? AppLocalization.string("Skip") : AppLocalization.string("Skip Tour"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .opacity(homeTutorialStep == 3 ? 0.6 : 1)
@@ -432,7 +432,7 @@ struct HomeLibraryView: View {
                             .frame(width: 44, height: 44)
                             .appCardSurface(cornerRadius: 14)
                     }
-                    .accessibilityLabel(isSearchExpanded ? String(localized: "Close deck search") : String(localized: "Search decks"))
+                    .accessibilityLabel(isSearchExpanded ? AppLocalization.string("Close deck search") : AppLocalization.string("Search decks"))
                 }
             }
             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize || isSearchExpanded ? .infinity : nil, alignment: .trailing)
@@ -625,7 +625,7 @@ struct HomeLibraryView: View {
 
         if showingNotificationPermissionPrompt {
             NotificationPermissionPromptModal(
-                targetDeckName: pendingTargetToSchedule?.name ?? String(localized: "your deck"),
+                targetDeckName: pendingTargetToSchedule?.name ?? AppLocalization.string("your deck"),
                 onAllow: {
                     withAnimation(.snappy) {
                         showingNotificationPermissionPrompt = false
@@ -733,7 +733,7 @@ struct HomeLibraryView: View {
             GeneratedQuizImportView()
         }
         .confirmationDialog(
-            "Delete \(deckPendingDeletion?.name ?? String(localized: "this deck"))?",
+            "Delete \(deckPendingDeletion?.name ?? AppLocalization.string("this deck"))?",
             isPresented: Binding(
                 get: { deckPendingDeletion != nil },
                 set: { if !$0 { deckPendingDeletion = nil } }
@@ -799,7 +799,7 @@ struct HomeLibraryView: View {
         guard !isSchedulingAlerts else { return }
         guard target.canSchedule else {
             HapticFeedback.warning()
-            homeAlertMessage = String(localized: "Add at least two cards before scheduling this deck.")
+            homeAlertMessage = AppLocalization.string("Add at least two cards before scheduling this deck.")
             return
         }
         isSchedulingAlerts = true
@@ -861,7 +861,7 @@ struct HomeLibraryView: View {
     @MainActor
     private func openAIComposerIfAvailable() async {
         guard await AIConnectivityCheck.isAvailable() else {
-            homeAlertMessage = String(localized: "AI features need an internet connection. You can still create decks manually, study, and schedule notifications offline.")
+            homeAlertMessage = AppLocalization.string("AI features need an internet connection. You can still create decks manually, study, and schedule notifications offline.")
             return
         }
         showingAIComposer = true
@@ -889,11 +889,11 @@ private struct EmptyLibraryCard: View {
                 .padding(.top, 4)
 
             VStack(spacing: 5) {
-                Text(isSearching ? String(localized: "No matching decks") : String(localized: "No decks created yet"))
+                Text(isSearching ? AppLocalization.string("No matching decks") : AppLocalization.string("No decks created yet"))
                     .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
                     .foregroundStyle(LearnAlertStyle.textPrimary)
 
-                Text(isSearching ? String(localized: "Try searching with a different keyword.") : String(localized: "Create your first flashcard deck or explore Discover to start learning."))
+                Text(isSearching ? AppLocalization.string("Try searching with a different keyword.") : AppLocalization.string("Create your first flashcard deck or explore Discover to start learning."))
                     .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .multilineTextAlignment(.center)
@@ -1239,7 +1239,7 @@ private struct HomeAlertSetupCard: View {
                     guard let selectedTarget else { return }
                     schedule(selectedTarget)
                 } label: {
-                    Label(isScheduling ? String(localized: "Scheduling…") : homeTutorialStep == 3 ? String(localized: "Try Test Alert") : String(localized: "Schedule Alerts"), systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
+                    Label(isScheduling ? AppLocalization.string("Scheduling…") : homeTutorialStep == 3 ? AppLocalization.string("Try Test Alert") : AppLocalization.string("Schedule Alerts"), systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
@@ -1334,7 +1334,7 @@ private struct HomeAlertSetupCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: progress.isComplete ? "checkmark.seal.fill" : "sparkles")
                         .foregroundStyle(progress.isComplete ? Color.green : LearnAlertStyle.appAccentForeground)
-                    Text(progress.isComplete ? String(localized: "Done for today") : String(localized: "Questions answered today"))
+                    Text(progress.isComplete ? AppLocalization.string("Done for today") : AppLocalization.string("Questions answered today"))
                     Spacer(minLength: 8)
                     Text("\(progress.completedCount)/\(NotificationLearningBudget.goal)").monospacedDigit()
                 }
@@ -1352,12 +1352,12 @@ private struct AlertTargetPickerLabel: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedTarget?.name ?? String(localized: "Choose a deck"))
+                Text(selectedTarget?.name ?? AppLocalization.string("Choose a deck"))
                     .font(.subheadline.weight(.medium))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(selectedTarget?.detail ?? String(localized: "Nothing selected"))
+                Text(selectedTarget?.detail ?? AppLocalization.string("Nothing selected"))
                     .font(.caption)
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -1391,7 +1391,7 @@ private struct ScheduleStatusDot: View {
             }
             .frame(width: 12, height: 12)
             .shadow(color: isActive ? Color.green.opacity(0.45) : Color.clear, radius: 5)
-            .accessibilityLabel(isActive ? String(localized: "Schedule active") : String(localized: "No active schedule"))
+            .accessibilityLabel(isActive ? AppLocalization.string("Schedule active") : AppLocalization.string("No active schedule"))
     }
 }
 
@@ -1580,13 +1580,6 @@ private struct HomeStudyCard: View {
     let shuffleAppearance: () -> Void
     let delete: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.modelContext) private var context
-    @Environment(\.scenePhase) private var scenePhase
-    @ObservedObject private var practiceActivity = PracticeStudyActivity.shared
-    @State private var studyMetadata: HomeDeckStudyMetadata?
-    @State private var metadataRevision = 0
-    @State private var metadataVisible = false
-    @State private var metadataUnavailable = false
     @State private var lockedSwipeAxis: SwipeState.Axis?
     @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var swipe = SwipeState()
 
@@ -1624,7 +1617,7 @@ private struct HomeStudyCard: View {
                 .opacity(cardOffset < 0 ? 1 : 0)
                 .allowsHitTesting(isScheduleRevealed && canSwipe)
                 .accessibilityHidden(!isScheduleRevealed || !canSwipe)
-                .accessibilityLabel(isTargeted ? String(localized: "Deck alerts active") : String(localized: "Quick schedule \(deck.name)"))
+                .accessibilityLabel(isTargeted ? AppLocalization.string("Deck alerts active") : AppLocalization.string("Quick schedule \(deck.name)"))
 
                 cardFace(cardCount: cardCount)
                     .overlay {
@@ -1652,7 +1645,7 @@ private struct HomeStudyCard: View {
                 if !isTutorialActive {
                     if let togglePin {
                         Button(action: togglePin) {
-                            Label(isPinned ? String(localized: "Unpin Deck") : String(localized: "Pin Deck"), systemImage: isPinned ? "pin.slash" : "pin")
+                            Label(isPinned ? AppLocalization.string("Unpin Deck") : AppLocalization.string("Pin Deck"), systemImage: isPinned ? "pin.slash" : "pin")
                         }
                     }
                     Button(action: shuffleAppearance) {
@@ -1662,21 +1655,6 @@ private struct HomeStudyCard: View {
                 }
             }
         }
-        .task(id: metadataRevision) { await loadStudyMetadata() }
-        .task(id: studyMetadata?.nextDueAt) {
-            guard let date = studyMetadata?.nextDueAt else { return }
-            do { try await Task.sleep(for: .seconds(min(3600, max(0, date.timeIntervalSinceNow)))) }
-            catch { return }
-            guard !Task.isCancelled, metadataVisible, scenePhase == .active else { return }
-            metadataRevision &+= 1
-        }
-        .onAppear { metadataVisible = true }
-        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in
-            if metadataVisible { metadataRevision &+= 1 }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active && metadataVisible { metadataRevision &+= 1 }
-        }
         .onChange(of: canSwipe) { _, allowed in
             if !allowed { lockedSwipeAxis = nil; closeSchedule() }
         }
@@ -1684,7 +1662,6 @@ private struct HomeStudyCard: View {
             if axis == nil { lockedSwipeAxis = nil }
         }
         .onDisappear {
-            metadataVisible = false
             if isScheduleRevealed { revealedScheduleDeckID = nil }
         }
         .transaction { if reduceMotion { $0.animation = nil } }
@@ -1706,15 +1683,14 @@ private struct HomeStudyCard: View {
                     Text("\(deck.localizedDeckType) · \(cardCount) cards")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
-                    studyStatus
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
                 .padding(.trailing, isPinned ? 12 : 0)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topTrailing) {
                 if isPinned {
@@ -1732,7 +1708,6 @@ private struct HomeStudyCard: View {
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
         .accessibilityLabel("Open \(deck.name), \(cardCount) cards")
-        .accessibilityValue("\(studyMetadata.map { String(localized: "\($0.dueCount) cards due") } ?? (metadataUnavailable ? String(localized: "Due count unavailable") : String(localized: "Loading due count"))). \(lastStudiedLabel(at: .now))")
         .appCardSurface(shadow: false)
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1740,52 +1715,6 @@ private struct HomeStudyCard: View {
                     lineWidth: isTutorialHighlighted ? 2.5 : 0.9)
                 .shadow(color: isTutorialHighlighted ? LearnAlertStyle.appAccent.opacity(0.75) : Color.clear, radius: 10)
                 .allowsHitTesting(false)
-        }
-    }
-
-    private var studyStatus: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { timeline in
-            HStack(spacing: 5) {
-                Image(systemName: "clock.arrow.circlepath")
-                Text(studyMetadata.map { String(localized: "\($0.dueCount) due") } ?? (metadataUnavailable ? String(localized: "— due") : String(localized: "… due")))
-                    .monospacedDigit()
-                    .foregroundStyle((studyMetadata?.dueCount ?? 0) > 0 ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
-                Text("·").foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.5))
-                Text(lastStudiedLabel(at: timeline.date))
-            }
-            .font(.caption2)
-            .foregroundStyle(LearnAlertStyle.textSecondary)
-            .lineLimit(1).minimumScaleFactor(0.85)
-        }
-    }
-
-    private func lastStudiedLabel(at now: Date) -> String {
-        let date = [studyMetadata?.lastStudiedAt, practiceActivity.lastStudied(deckID: deck.id)].compactMap { $0 }.max()
-        guard let date else { return String(localized: "Last studied —") }
-        let calendar = Calendar.current
-        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Studied today") }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return String(localized: "Studied yesterday")
-        }
-        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
-            return String(localized: "Studied \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
-        }
-        return String(localized: "Studied \(date.formatted(.dateTime.month(.abbreviated).day()))")
-    }
-
-    private func loadStudyMetadata() async {
-        let container = context.container, deckID = deck.id
-        let worker = Task.detached(priority: .utility) {
-            try await LibraryDataWorker(modelContainer: container).homeMetadata(deckID: deckID)
-        }
-        do {
-            let metadata = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
-            try Task.checkCancellation()
-            studyMetadata = metadata; metadataUnavailable = false
-        } catch is CancellationError { }
-        catch {
-            guard !Task.isCancelled else { return }
-            metadataUnavailable = true
         }
     }
 
@@ -1867,11 +1796,11 @@ private struct TutorialStepTopBanner: View {
                     .buttonStyle(.plain)
                 }
 
-                Text(title)
+                Text(AppLocalization.string(title))
                     .font(.custom("Poppins-SemiBold", size: 13))
                     .foregroundStyle(LearnAlertStyle.textPrimary)
 
-                Text(subtitle)
+                Text(AppLocalization.string(subtitle))
                     .font(.custom("Poppins-Regular", size: 11))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -2045,7 +1974,7 @@ private struct AlertsInfoControl: View {
                             .frame(width: 48, height: 48)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(isExpanded ? String(localized: "Close alert information") : String(localized: "About alert delivery"))
+                    .accessibilityLabel(isExpanded ? AppLocalization.string("Close alert information") : AppLocalization.string("About alert delivery"))
 
                     if isExpanded {
                         Text("Alerts appear while your device is locked or on the Home Screen—not while you’re using LearnAlert.")
@@ -2095,9 +2024,9 @@ struct ActiveAlertsView: View {
 
     private var nextAlertText: String {
         guard let nextDate = engine.scheduledDates.filter({ $0 > Date() }).min() else {
-            return String(localized: "Wrapping up")
+            return AppLocalization.string("Wrapping up")
         }
-        return nextDate.formatted(date: .omitted, time: .shortened)
+        return AppLocalization.date(nextDate, date: .omitted, time: .shortened)
     }
 
     var body: some View {
@@ -2168,7 +2097,7 @@ private struct LearningMetric: View {
                 .foregroundStyle(LearnAlertStyle.sky)
             Text(value)
                 .font(.title3.bold().monospacedDigit())
-            Text(title)
+            Text(AppLocalization.string(title))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(LearnAlertStyle.textSecondary)
                 .lineLimit(1)
@@ -2215,9 +2144,9 @@ struct SetupAlertsView: View {
     private var selectedDeck: Deck? { decks.first { $0.id.uuidString == draft.targetId } }
     private var localizedStopCondition: String {
         switch draft.settings.stopCondition {
-        case "Until Deck Learnt": String(localized: "Until Deck Learnt")
-        case "Until Day Ends": String(localized: "Until Day Ends")
-        default: String(localized: "Until I say so")
+        case "Until Deck Learnt": AppLocalization.string("Until Deck Learnt")
+        case "Until Day Ends": AppLocalization.string("Until Day Ends")
+        default: AppLocalization.string("Until I say so")
         }
     }
     private var hasChanges: Bool { original.map { $0 != draft } ?? false }
@@ -2244,7 +2173,7 @@ struct SetupAlertsView: View {
                     }
                 } label: {
                     HStack {
-                        Text(selectedDeck?.name ?? String(localized: "All Active Decks"))
+                        Text(selectedDeck?.name ?? AppLocalization.string("All Active Decks"))
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
@@ -2335,7 +2264,7 @@ struct SetupAlertsView: View {
             Button(action: save) {
                 HStack(spacing: 10) {
                     if saving { ProgressView().tint(LearnAlertStyle.appAccentInk) }
-                    Text(editingActiveSchedule ? String(localized: "Save and reschedule alerts") : String(localized: "Save alert settings"))
+                    Text(editingActiveSchedule ? AppLocalization.string("Save and reschedule alerts") : AppLocalization.string("Save alert settings"))
                         .font(.subheadline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 52)
@@ -2362,7 +2291,7 @@ struct SetupAlertsView: View {
         }
         .alert("Couldn’t update alerts", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? String(localized: "Please try again.")) }
+        } message: { Text(errorMessage ?? AppLocalization.string("Please try again.")) }
     }
 
     private func load() {
@@ -2401,11 +2330,11 @@ struct SetupAlertsView: View {
                         if let oldDeck { _ = try await engine.startAlerts(for: oldDeck, section: oldSection) }
                     } catch {
                         engine.stopAlerts()
-                        errorMessage = String(localized: "\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again.")
+                        errorMessage = AppLocalization.string("\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again.")
                         return
                     }
                 }
-                errorMessage = String(localized: "\(schedulingError) Your changes weren’t saved.")
+                errorMessage = AppLocalization.string("\(schedulingError) Your changes weren’t saved.")
             }
         }
     }
@@ -2481,7 +2410,7 @@ struct DeckGridItem: View {
                         .frame(maxHeight: .infinity)
                         .background(Color.black.opacity(0.16))
                 }
-                .accessibilityLabel(isTargeted ? String(localized: "Deck alerts active") : String(localized: "Quick schedule \(deck.name)"))
+                .accessibilityLabel(isTargeted ? AppLocalization.string("Deck alerts active") : AppLocalization.string("Quick schedule \(deck.name)"))
             }
             .background(
                 LinearGradient(
@@ -2585,7 +2514,7 @@ private enum DeckFileImport {
             )
         }
         guard !cards.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-        return ParsedDeckFile(name: fallbackName.isEmpty ? String(localized: "Imported Deck") : fallbackName, colorHex: "#5568C9", cards: cards)
+        return ParsedDeckFile(name: fallbackName.isEmpty ? AppLocalization.string("Imported Deck") : fallbackName, colorHex: "#5568C9", cards: cards)
     }
 
     private static func normalizedOptions(correct: String, options: [String]) -> [String] {
@@ -2610,7 +2539,7 @@ struct AppSettingsView: View {
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage("deckCreaturesHaveFaces") private var deckCreaturesHaveFaces = false
 
-    private let availableSounds = AlertSoundOption.allSounds
+    private var availableSounds: [AlertSoundOption] { AlertSoundOption.allSounds }
     
     @ObservedObject private var communitySession = CommunitySession.shared
 
@@ -2767,41 +2696,41 @@ private struct SystemCheckView: View {
         let requests = await center.pendingNotificationRequests()
         let authorizationText: String
         switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: authorizationText = String(localized: "Notifications are allowed")
-        case .denied: authorizationText = String(localized: "Notifications are disabled in System Settings")
-        case .notDetermined: authorizationText = String(localized: "Notification permission has not been requested")
-        @unknown default: authorizationText = String(localized: "Notification authorization is unknown")
+        case .authorized, .provisional, .ephemeral: authorizationText = AppLocalization.string("Notifications are allowed")
+        case .denied: authorizationText = AppLocalization.string("Notifications are disabled in System Settings")
+        case .notDetermined: authorizationText = AppLocalization.string("Notification permission has not been requested")
+        @unknown default: authorizationText = AppLocalization.string("Notification authorization is unknown")
         }
 
         items.append(SystemCheckItem(
-            title: String(localized: "Notification permission"),
+            title: AppLocalization.string("Notification permission"),
             detail: authorizationText,
             state: settings.authorizationStatus == .denied ? .warning : .good
         ))
         items.append(SystemCheckItem(
-            title: String(localized: "Scheduled notifications"),
-            detail: requests.isEmpty ? String(localized: "No notifications are currently pending") : String(localized: "\(requests.count) notifications are pending delivery"),
+            title: AppLocalization.string("Scheduled notifications"),
+            detail: requests.isEmpty ? AppLocalization.string("No notifications are currently pending") : AppLocalization.string("\(requests.count) notifications are pending delivery"),
             state: requests.isEmpty ? .warning : .good
         ))
 
         let cardCount = decks.reduce(0) { $0 + $1.cardCount }
         let reviewedCount = decks.flatMap(\.cards).filter { $0.reviewCount > 0 }.count
         items.append(SystemCheckItem(
-            title: String(localized: "Local library"),
-            detail: String(localized: "\(decks.count) decks · \(cardCount) cards · \(reviewedCount) cards studied"),
+            title: AppLocalization.string("Local library"),
+            detail: AppLocalization.string("\(decks.count) decks · \(cardCount) cards · \(reviewedCount) cards studied"),
             state: decks.isEmpty ? .warning : .good
         ))
         items.append(SystemCheckItem(
-            title: String(localized: "Storage & Sync"),
-            detail: String(localized: "SwiftData local database with background iCloud sync"),
+            title: AppLocalization.string("Storage & Sync"),
+            detail: AppLocalization.string("SwiftData local database with background iCloud sync"),
             state: .good
         ))
 
         let endpointResults = await checkAPIEndpoints()
         let reachableCount = endpointResults.filter(\.reachable).count
         items.append(SystemCheckItem(
-            title: String(localized: "LearnAlert API"),
-            detail: String(localized: "\(reachableCount) of \(endpointResults.count) routes reachable"),
+            title: AppLocalization.string("LearnAlert API"),
+            detail: AppLocalization.string("\(reachableCount) of \(endpointResults.count) routes reachable"),
             state: reachableCount == endpointResults.count ? .good : .warning
         ))
         for endpoint in endpointResults {
@@ -2812,10 +2741,10 @@ private struct SystemCheckView: View {
             ))
         }
 
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? String(localized: "Unknown")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? AppLocalization.string("Unknown")
         items.append(SystemCheckItem(
-            title: String(localized: "App environment"),
-            detail: String(localized: "LearnAlert \(version) · iOS \(UIDevice.current.systemVersion) · \(ProcessInfo.processInfo.isLowPowerModeEnabled ? String(localized: "Low Power Mode on") : String(localized: "Low Power Mode off"))"),
+            title: AppLocalization.string("App environment"),
+            detail: AppLocalization.string("LearnAlert \(version) · iOS \(UIDevice.current.systemVersion) · \(ProcessInfo.processInfo.isLowPowerModeEnabled ? AppLocalization.string("Low Power Mode on") : AppLocalization.string("Low Power Mode off"))"),
             state: .good
         ))
         isRunning = false
@@ -2823,9 +2752,9 @@ private struct SystemCheckView: View {
 
     private func checkAPIEndpoints() async -> [(name: String, detail: String, reachable: Bool)] {
         let endpoints = [
-            (String(localized: "API host"), ""),
-            (String(localized: "Generate deck endpoint"), "v1/decks/generate"),
-            (String(localized: "Refine deck endpoint"), "v1/decks/refine")
+            (AppLocalization.string("API host"), ""),
+            (AppLocalization.string("Generate deck endpoint"), "v1/decks/generate"),
+            (AppLocalization.string("Refine deck endpoint"), "v1/decks/refine")
         ]
         let apiKey = LearnAlertAPI.apiKey
         return await withTaskGroup(of: (Int, String, String, Bool).self) { group in
@@ -2842,7 +2771,7 @@ private struct SystemCheckView: View {
                         let (_, response) = try await URLSession.shared.data(for: request)
                         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                         let reachable = (200..<500).contains(status)
-                        return (index, endpoint.0, String(localized: "HTTP \(status) · host responded"), reachable)
+                        return (index, endpoint.0, AppLocalization.string("HTTP \(status) · host responded"), reachable)
                     } catch {
                         return (index, endpoint.0, error.localizedDescription, false)
                     }

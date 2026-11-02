@@ -297,12 +297,12 @@ private struct AppearanceSelectionPage: View {
                             // Texts
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(theme.title)
+                                    Text(AppLocalization.string(theme.title))
                                         .font(.custom("Poppins-SemiBold", size: 15))
                                         .foregroundStyle(LearnAlertStyle.textPrimary)
 
                                     if let badge = theme.badge {
-                                        Text(badge)
+                                        Text(AppLocalization.string(badge))
                                             .font(.custom("Poppins-SemiBold", size: 9))
                                             .foregroundStyle(LearnAlertStyle.indigo)
                                             .padding(.horizontal, 6)
@@ -311,7 +311,7 @@ private struct AppearanceSelectionPage: View {
                                     }
                                 }
 
-                                Text(theme.subtitle)
+                                Text(AppLocalization.string(theme.subtitle))
                                     .font(.custom("Poppins-Regular", size: 12))
                                     .foregroundStyle(LearnAlertStyle.textSecondary)
                                     .lineLimit(2)

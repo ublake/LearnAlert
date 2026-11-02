@@ -23,14 +23,14 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .vocabulary: String(localized: "Vocabulary")
-        case .multipleChoice: String(localized: "Quiz Style")
-        case .tapReveal: String(localized: "Tap to Reveal")
-        case .matching: String(localized: "Match Pairs")
-        case .fillBlank: String(localized: "Fill in the Blank")
-        case .dragAnswer: String(localized: "Drag to Answer")
-        case .images: String(localized: "Images")
-        case .anki: String(localized: "Anki")
+        case .vocabulary: AppLocalization.string("Vocabulary")
+        case .multipleChoice: AppLocalization.string("Quiz Style")
+        case .tapReveal: AppLocalization.string("Tap to Reveal")
+        case .matching: AppLocalization.string("Match Pairs")
+        case .fillBlank: AppLocalization.string("Fill in the Blank")
+        case .dragAnswer: AppLocalization.string("Drag to Answer")
+        case .images: AppLocalization.string("Images")
+        case .anki: AppLocalization.string("Anki")
         }
     }
     var icon: String {
@@ -48,14 +48,14 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .multipleChoice: String(localized: "Practice with 4 options and immediate feedback")
-        case .tapReveal: String(localized: "Front-and-back flip with self assessment")
-        case .vocabulary: String(localized: "Word, pronunciation, and dictionary definition")
-        case .fillBlank: String(localized: "Fill a sentence by typing or choosing an answer")
-        case .dragAnswer: String(localized: "Tap or drag shuffled tiles into the right order")
-        case .matching: String(localized: "Connect paired terms and definitions")
-        case .images: String(localized: "Review one picture or reveal an image on the back")
-        case .anki: String(localized: "Imported Anki templates, formatting, and media")
+        case .multipleChoice: AppLocalization.string("Practice with 4 options and immediate feedback")
+        case .tapReveal: AppLocalization.string("Front-and-back flip with self assessment")
+        case .vocabulary: AppLocalization.string("Word, pronunciation, and dictionary definition")
+        case .fillBlank: AppLocalization.string("Fill a sentence by typing or choosing an answer")
+        case .dragAnswer: AppLocalization.string("Tap or drag shuffled tiles into the right order")
+        case .matching: AppLocalization.string("Connect paired terms and definitions")
+        case .images: AppLocalization.string("Review one picture or reveal an image on the back")
+        case .anki: AppLocalization.string("Imported Anki templates, formatting, and media")
         }
     }
 
@@ -145,11 +145,11 @@ class Deck {
     /// Display copy is translated independently of the persisted deck kind.
     var localizedDeckType: String {
         switch deckType {
-        case "Quiz", "Quiz Style": String(localized: "Quiz")
-        case "Vocabulary": String(localized: "Vocabulary")
-        case "True / False", "True/False": String(localized: "True / False")
-        case "Mixed": String(localized: "Mixed")
-        case "Images": String(localized: "Images")
+        case "Quiz", "Quiz Style": AppLocalization.string("Quiz")
+        case "Vocabulary": AppLocalization.string("Vocabulary")
+        case "True / False", "True/False": AppLocalization.string("True / False")
+        case "Mixed": AppLocalization.string("Mixed")
+        case "Images": AppLocalization.string("Images")
         case "Anki": "Anki"
         default: deckType
         }
@@ -662,12 +662,12 @@ struct AlertSoundOption: Identifiable, Hashable {
     let id: String
     let name: String
 
-    static let allSounds: [AlertSoundOption] = [
-        AlertSoundOption(id: AlertSoundCatalog.systemDefault, name: String(localized: "System default"))
-    ] + AlertSoundCatalog.ringtones.map { AlertSoundOption(id: $0.filename, name: $0.title) }
+    static var allSounds: [AlertSoundOption] { [
+        AlertSoundOption(id: AlertSoundCatalog.systemDefault, name: AppLocalization.string("System default"))
+    ] + AlertSoundCatalog.ringtones.map { AlertSoundOption(id: $0.filename, name: $0.title) } }
 
     static func displayName(for id: String) -> String {
-        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? String(localized: "Drops")
+        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? AppLocalization.string("Comet")
     }
 }
 
@@ -803,23 +803,23 @@ public enum NotificationTheme: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .defaultTheme: String(localized: "Luminous")
-        case .midnight: String(localized: "Midnight OLED")
-        case .aurora: String(localized: "Emerald Aurora")
-        case .sunset: String(localized: "Sunset Glow")
-        case .slate: String(localized: "Minimal Slate")
-        case .light: String(localized: "Pure Light")
+        case .defaultTheme: AppLocalization.string("Luminous")
+        case .midnight: AppLocalization.string("Midnight OLED")
+        case .aurora: AppLocalization.string("Emerald Aurora")
+        case .sunset: AppLocalization.string("Sunset Glow")
+        case .slate: AppLocalization.string("Minimal Slate")
+        case .light: AppLocalization.string("Pure Light")
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .defaultTheme: String(localized: "Cosmic indigo & radiant ambient orbs")
-        case .midnight: String(localized: "True deep black with midnight accents")
-        case .aurora: String(localized: "Electric emerald & mint aura")
-        case .sunset: String(localized: "Warm twilight plum & coral glow")
-        case .slate: String(localized: "Understated frosted titanium")
-        case .light: String(localized: "Clean alabaster light surface")
+        case .defaultTheme: AppLocalization.string("Cosmic indigo & radiant ambient orbs")
+        case .midnight: AppLocalization.string("True deep black with midnight accents")
+        case .aurora: AppLocalization.string("Electric emerald & mint aura")
+        case .sunset: AppLocalization.string("Warm twilight plum & coral glow")
+        case .slate: AppLocalization.string("Understated frosted titanium")
+        case .light: AppLocalization.string("Clean alabaster light surface")
         }
     }
 
@@ -910,15 +910,15 @@ public enum NotificationLayoutMode: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .automatic: String(localized: "Automatic")
-        case .compact: String(localized: "Compact")
+        case .automatic: AppLocalization.string("Automatic")
+        case .compact: AppLocalization.string("Compact")
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .automatic: String(localized: "Adaptive standard layout with spacious padding")
-        case .compact: String(localized: "Reduced padding for fast, focused study")
+        case .automatic: AppLocalization.string("Adaptive standard layout with spacious padding")
+        case .compact: AppLocalization.string("Reduced padding for fast, focused study")
         }
     }
 }

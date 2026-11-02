@@ -78,7 +78,7 @@ struct PremadeDecksView: View {
         .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
             Button("Done", role: .cancel) { }
         } message: {
-            Text("\(addedDeckName ?? String(localized: "This deck")) is now ready to study and editable in your library.")
+            Text("\(addedDeckName ?? AppLocalization.string("This deck")) is now ready to study and editable in your library.")
         }
     }
 
@@ -114,8 +114,8 @@ struct PremadeDecksView: View {
                         .disabled(course == nil)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(choice.displayName)
-                        .accessibilityValue(course == nil ? String(localized: "Not available yet") : String(localized: "Available"))
-                        .accessibilityHint(course == nil ? "" : String(localized: "Opens \(choice.displayName) decks"))
+                        .accessibilityValue(course == nil ? AppLocalization.string("Not available yet") : AppLocalization.string("Available"))
+                        .accessibilityHint(course == nil ? "" : AppLocalization.string("Opens \(choice.displayName) decks"))
                     }
                 }
             }
@@ -141,13 +141,13 @@ struct PremadeDecksView: View {
             Text("Languages & decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
-                    searchRow(title: course.title, subtitle: String(localized: "Language decks"), symbol: "character.book.closed", action: String(localized: "Open"))
+                    searchRow(title: course.title, subtitle: AppLocalization.string("Language decks"), symbol: "character.book.closed", action: AppLocalization.string("Open"))
                 }.buttonStyle(.plain)
             }
             ForEach(decks) { deck in
                 let added = deck.isInLibrary(libraryDecks)
                 Button { add(deck) } label: {
-                    searchRow(title: deck.name, subtitle: String(localized: "\(CommunityFeedView.categoryTitle(deck.category)) · \(deck.cards.count) cards"), symbol: "rectangle.stack", action: added ? String(localized: "Added") : String(localized: "Add"))
+                    searchRow(title: deck.name, subtitle: AppLocalization.string("\(CommunityFeedView.categoryTitle(deck.category)) · \(deck.cards.count) cards"), symbol: "rectangle.stack", action: added ? AppLocalization.string("Added") : AppLocalization.string("Add"))
                 }.buttonStyle(.plain).disabled(added)
             }
             if courses.isEmpty && decks.isEmpty {
@@ -217,16 +217,16 @@ private struct DiscoverLanguageChoice: Identifiable {
     var id: String { name }
     var displayName: String {
         switch name {
-        case "Spanish": String(localized: "Spanish")
-        case "Korean": String(localized: "Korean")
-        case "French": String(localized: "French")
-        case "Japanese": String(localized: "Japanese")
-        case "English": String(localized: "English")
-        case "German": String(localized: "German")
-        case "Italian": String(localized: "Italian")
-        case "Portuguese": String(localized: "Portuguese")
-        case "Chinese": String(localized: "Chinese")
-        case "Arabic": String(localized: "Arabic")
+        case "Spanish": AppLocalization.string("Spanish")
+        case "Korean": AppLocalization.string("Korean")
+        case "French": AppLocalization.string("French")
+        case "Japanese": AppLocalization.string("Japanese")
+        case "English": AppLocalization.string("English")
+        case "German": AppLocalization.string("German")
+        case "Italian": AppLocalization.string("Italian")
+        case "Portuguese": AppLocalization.string("Portuguese")
+        case "Chinese": AppLocalization.string("Chinese")
+        case "Arabic": AppLocalization.string("Arabic")
         default: name
         }
     }

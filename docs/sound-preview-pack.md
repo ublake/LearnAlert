@@ -22,7 +22,8 @@ suppress feedback, and **App sound effects** in Preferences can mute effects in
 both the app and expanded alerts. This does not mute notification ringtones or
 intentional sound previews. Effects use the ambient session and honor Silent mode.
 
-All ten ringtones are selectable in Alert Sound. Drops is the default.
+All ten ringtones are selectable in Alert Sound. Comet is the initial selection when no sound preference has been saved.
+The System default option and previously saved sound choices are unchanged.
 The November 2 revision recomposes each ringtone as a two- or three-note cue
 lasting 0.58–0.82 seconds, retaining its pitch and timbre with shorter note
 releases and room reflections. Display names are one word and translated into

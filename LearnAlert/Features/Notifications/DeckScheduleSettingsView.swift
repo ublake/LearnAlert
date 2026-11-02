@@ -51,7 +51,7 @@ struct DeckScheduleSettingsView: View {
             .tint(LearnAlertStyle.appAccentForeground)
             .alert("Couldn’t update schedule", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("OK", role: .cancel) { errorMessage = nil }
-            } message: { Text(errorMessage ?? String(localized: "Please try again.")) }
+            } message: { Text(errorMessage ?? AppLocalization.string("Please try again.")) }
         }
     }
 
