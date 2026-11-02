@@ -22,7 +22,7 @@ enum DiscoverCategoryStyle: String, CaseIterable, Identifiable {
         case .quietLinks: "One quiet line of language and topic links."
         case .flagShelf: "Tiny flags above a thin line of topics."
         case .miniIndex: "A compact, two-row directory."
-        case .pocketMenus: "Languages and topics tucked into two menus."
+        case .pocketMenus: "Languages and topics open in a compact inline strip."
         case .browseSwitch: "Switch between a language strip and a topic strip."
         }
     }
@@ -77,6 +77,9 @@ struct DiscoverCategoryBrowser: View {
     @Binding var language: CommunityDeckLanguage
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingLanguages = true
+    @State private var pocketPage: PocketPage?
+
+    private enum PocketPage { case languages, topics }
 
     var body: some View {
         Group {
@@ -93,6 +96,7 @@ struct DiscoverCategoryBrowser: View {
         .tint(LearnAlertStyle.appAccentForeground)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Browse shared deck categories")
+        .onChange(of: style) { _, _ in pocketPage = nil }
     }
 
     private var quietLinks: some View {
@@ -144,12 +148,26 @@ struct DiscoverCategoryBrowser: View {
     }
 
     private var pocketMenus: some View {
+        ZStack(alignment: .leading) {
+            if let pocketPage {
+                pocketChoices(pocketPage)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                pocketOverview
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .clipped()
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: pocketPage)
+    }
+
+    private var pocketOverview: some View {
         HStack(spacing: 18) {
             link(.all)
-            Menu {
-                Picker("Language", selection: $language) {
-                    ForEach(CommunityDeckLanguage.allCases) { language in Text(language.title).tag(language) }
-                }
+            Button {
+                HapticFeedback.selection()
+                pocketPage = .languages
             } label: {
                 HStack(spacing: 5) {
                     if let asset = language.discoverFlagAsset { flag(asset) }
@@ -163,10 +181,9 @@ struct DiscoverCategoryBrowser: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Choose a language")
             .accessibilityValue(language.title)
-            Menu {
-                Picker("Topic", selection: $category) {
-                    ForEach(CommunityFeedView.categories, id: \.self) { topic in Text(topic == "All" ? "All topics" : topic).tag(topic) }
-                }
+            Button {
+                HapticFeedback.selection()
+                pocketPage = .topics
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "square.grid.2x2").font(.caption)
@@ -182,6 +199,53 @@ struct DiscoverCategoryBrowser: View {
             Spacer(minLength: 0)
         }
         .lineLimit(1)
+    }
+
+    private func pocketChoices(_ page: PocketPage) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                HapticFeedback.selection()
+                pocketPage = nil
+            } label: {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                    .frame(width: 30, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back to categories")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    pocketAllChoice(page)
+                    ForEach(page == .languages ? DiscoverCategoryChoice.languages : DiscoverCategoryChoice.topics) { choice in
+                        link(choice, flagOnly: page == .languages)
+                    }
+                }
+            }
+            .id(page)
+        }
+    }
+
+    private func pocketAllChoice(_ page: PocketPage) -> some View {
+        let isSelected = page == .languages ? language == .all : category == "All"
+        return Button {
+            HapticFeedback.selection()
+            if page == .languages { language = .all }
+            else { category = "All" }
+        } label: {
+            Text("All")
+                .foregroundStyle(isSelected ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
+                .frame(minHeight: 36)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(isSelected ? LearnAlertStyle.appAccentForeground.opacity(0.75) : .clear).frame(height: 1.5)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(page == .languages ? "All languages" : "All topics")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var browseSwitch: some View {
