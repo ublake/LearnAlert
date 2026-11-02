@@ -17,7 +17,6 @@ struct PremadeDecksView: View {
     @State private var showingShareSheet = false
     @State private var searchedCourse: CourseDefinition?
 
-    @State private var discoverSearch = ""
     @State private var showingSearch = false
     @FocusState private var searchFocused: Bool
 
@@ -29,12 +28,12 @@ struct PremadeDecksView: View {
                 if showingSearch {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(StudyStudioStyle.secondary)
-                        TextField("Search decks & languages", text: $discoverSearch)
+                        TextField("Search shared decks", text: $communityFeed.search)
                             .font(.subheadline).textInputAutocapitalization(.never)
                             .autocorrectionDisabled().submitLabel(.search)
                             .focused($searchFocused)
-                        if !discoverSearch.isEmpty {
-                            Button { discoverSearch = "" } label: {
+                        if !communityFeed.search.isEmpty {
+                            Button { communityFeed.search = "" } label: {
                                 Image(systemName: "xmark.circle.fill").frame(width: 44, height: 44)
                             }.accessibilityLabel("Clear search")
                         }
@@ -43,11 +42,6 @@ struct PremadeDecksView: View {
                     .background(StudyStudioStyle.field, in: RoundedRectangle(cornerRadius: 14))
                     .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(StudyStudioStyle.hairline, lineWidth: 1) }
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-                }
-
-
-                if !discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    searchResults
                 }
 
                 CommunityFeedView(store: communityFeed, libraryDecks: libraryDecks,
@@ -65,18 +59,12 @@ struct PremadeDecksView: View {
             await managedCatalog.refresh(force: true)
             await communityFeed.load()
         }
-        .onChange(of: discoverSearch) { _, query in
-            if communityFeed.search != query { communityFeed.search = query }
-        }
-        .onChange(of: communityFeed.search) { _, query in
-            if discoverSearch != query { discoverSearch = query }
-        }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
         .tint(StudyStudioStyle.violet)
         .navigationDestination(isPresented: $showingAllCommunity) {
             AllCommunityDecksView(
                 libraryDecks: libraryDecks,
-                initialSearch: discoverSearch,
+                initialSearch: communityFeed.search,
                 onAddDeck: { add($0) },
                 onOpenShareModal: { showingShareSheet = true }
             )
@@ -97,7 +85,7 @@ struct PremadeDecksView: View {
     private func toggleSearch() {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { showingSearch.toggle() }
         searchFocused = showingSearch
-        if !showingSearch { discoverSearch = "" }
+        if !showingSearch { communityFeed.search = "" }
     }
 
     private var languageRail: some View {
@@ -140,7 +128,7 @@ struct PremadeDecksView: View {
     }
 
     private var searchResults: some View {
-        let query = discoverSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = communityFeed.search.trimmingCharacters(in: .whitespacesAndNewlines)
         let courses = CourseCurriculumCatalog.courses.filter {
             !LanguageDeckProjection.topics($0).isEmpty &&
                 ($0.title.localizedCaseInsensitiveContains(query) || $0.language.localizedCaseInsensitiveContains(query))
