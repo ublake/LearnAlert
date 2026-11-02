@@ -72,9 +72,7 @@ struct PremadeDecksView: View {
         .navigationDestination(item: $searchedCourse) { course in
             LanguageDeckDiscoveryView(course: course)
         }
-        .sheet(isPresented: $showingShareSheet) {
-            ShareDeckToCommunitySheet(libraryDecks: libraryDecks)
-        }
+        .communitySharingSheet(isPresented: $showingShareSheet, libraryDecks: libraryDecks)
         .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
             Button("Done", role: .cancel) { }
         } message: {

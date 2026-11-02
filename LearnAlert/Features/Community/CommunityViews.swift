@@ -199,6 +199,7 @@ struct CommunityFeedView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .offset(y: -10)
                     .accessibilityLabel("Upload a deck")
                     .accessibilityHint("Submit a deck to Shared decks for review")
                 }
@@ -563,6 +564,11 @@ struct CommunityDeckPreviewSheet: View {
                         Spacer(minLength: 4)
                         if !isOwnDeck { likeButton }
                     }
+                    VStack(spacing: 8) {
+                        if isDownloading { ProgressView(progress).font(.caption) }
+                        Button(action: download) { Label(isAdded ? AppLocalization.string("In your library") : AppLocalization.string("Add to library"), systemImage: isAdded ? "checkmark" : "arrow.down").frame(maxWidth: .infinity, minHeight: 48) }
+                            .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk).disabled(isAdded || isDownloading)
+                    }
                     if let error {
                         Text(error).foregroundStyle(LearnAlertStyle.destructiveRed)
                         Button("Try again") { Task { await load() } }.frame(minHeight: 44)
@@ -585,13 +591,6 @@ struct CommunityDeckPreviewSheet: View {
                 Button("OK", role: .cancel) { actionMessage = nil }
             } message: { Text(actionMessage ?? "") }
             .sheet(item: $authorProfile) { author in CommunityPublicProfileView(authorID: author.id) }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 8) {
-                    if isDownloading { ProgressView(progress).font(.caption) }
-                    Button(action: download) { Label(isAdded ? AppLocalization.string("In your library") : AppLocalization.string("Add to library"), systemImage: isAdded ? "checkmark" : "arrow.down").frame(maxWidth: .infinity, minHeight: 48) }
-                        .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk).disabled(isAdded || isDownloading)
-                }.padding(16).background(LearnAlertStyle.courseSurface)
-            }
             .task(id: session.token) { await load() }
         }
     }
@@ -822,6 +821,7 @@ struct ShareDeckToCommunitySheet: View {
     var initialDeckID: UUID? = nil
     @ObservedObject private var session = CommunitySession.shared
     @State private var selectedDeckID: UUID?
+    @State private var didInitializeSelection = false
     @State private var category = "General"
     @State private var deckDescription = ""
     @State private var isPublishing = false
@@ -970,8 +970,16 @@ struct ShareDeckToCommunitySheet: View {
                     publisherHandle = listing.authorHandle
                 }
             }
-            .onAppear { if selectedDeckID == nil { selectedDeckID = availableDecks.first(where: { $0.id == initialDeckID })?.id ?? availableDecks.first?.id; loadMetadata() } }
+            .onAppear {
+                guard !didInitializeSelection else { return }
+                didInitializeSelection = true
+                selectedDeckID = availableDecks.first(where: { $0.id == initialDeckID })?.id
+                loadMetadata()
+            }
             .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
+            .onChange(of: session.isSignedIn) { _, isSignedIn in
+                if !isSignedIn { dismiss() }
+            }
             .onChange(of: category) { _, _ in isSubmitted = false }
             .onChange(of: deckDescription) { _, _ in isSubmitted = false }
             .onChange(of: publisherHandle) { _, _ in isSubmitted = false }

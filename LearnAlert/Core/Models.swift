@@ -700,9 +700,9 @@ enum DeckColorPalette {
 import UIKit
 
 public enum CardImageStore {
-    public static let appGroupIdentifier = "group.com.learnalert.shared"
+    public nonisolated static let appGroupIdentifier = "group.com.learnalert.shared"
 
-    public static var imagesDirectoryURL: URL {
+    public nonisolated static var imagesDirectoryURL: URL {
         let baseURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupIdentifier
         ) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -713,7 +713,7 @@ public enum CardImageStore {
         return dir
     }
 
-    public static func saveImage(_ image: UIImage, name: String? = nil) -> String? {
+    public nonisolated static func saveImage(_ image: UIImage, name: String? = nil) -> String? {
         // Editing a bundled picture creates a private copy instead of shadowing shared course art.
         let filename = name.flatMap { $0.hasPrefix("course-vocab-") || $0.hasPrefix("catalog:") ? nil : $0 } ?? "\(UUID().uuidString).jpg"
         let fileURL = imagesDirectoryURL.appendingPathComponent(filename)

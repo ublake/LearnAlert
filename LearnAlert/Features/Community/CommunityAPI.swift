@@ -172,7 +172,7 @@ extension Deck {
     var canPresentCommunitySharing: Bool { provenanceSharingRestriction(allowAnkiUploads: false) == nil }
 }
 
-struct CommunityAPIError: LocalizedError {
+nonisolated struct CommunityAPIError: LocalizedError {
     let status: Int
     let message: String
     var code: String? = nil
@@ -848,65 +848,78 @@ enum CommunityDeckTransfer {
 
     static func download(_ summary: CommunityDeckPayload, api: CommunityAPI? = nil, token: String? = nil, progress: @escaping (String) -> Void) async throws -> PremadeDeck {
         let api = api ?? CommunityAPI()
+        try Task.checkCancellation()
         let detail = try await api.detail(deckID: summary.id, token: token)
         guard let cards = detail.cards else { throw URLError(.cannotParseResponse) }
-        var images: [String: String] = [:]
-        var audio: [String: String] = [:]
-        var savedFiles: [URL] = []
-        var savedAnkiFolders: [URL] = []
-        var ankiFolders: [String: String] = [:]
-        func imageName(_ id: String?) async throws -> String? {
-            guard let id else { return nil }
-            if let name = images[id] { return name }
-            let data = try await api.media(id: id, maximumBytes: 10 * 1024 * 1024, token: token)
-            guard let image = UIImage(data: data), let name = CardImageStore.saveImage(image) else {
-                throw CommunityAPIError(status: 400, message: AppLocalization.string("A deck image could not be downloaded."))
+        try Task.checkCancellation()
+        // Plan every reference before starting requests. Legacy columns, field
+        // media and Anki filenames can all refer to the same remote attachment.
+        var attachments: [String: CommunityDownloadAttachment] = [:]
+        func addImage(_ id: String?) {
+            guard let id else { return }
+            attachments[id, default: .init(id: id)].image = true
+        }
+        func addAudio(_ id: String?) {
+            guard let id else { return }
+            attachments[id, default: .init(id: id)].audio = true
+        }
+        var ankiGroups = Set((detail.ankiMedia ?? [:]).keys)
+        for card in cards {
+            addImage(card.promptImageID)
+            addImage(card.answerImageID)
+            for id in card.optionImageIDs { addImage(id) }
+            addAudio(card.promptAudioID)
+            for attachment in (card.fieldMedia ?? [:]).values {
+                addImage(attachment.imageID)
+                addAudio(attachment.audioID)
             }
-            images[id] = name
-            savedFiles.append(CardImageStore.imagesDirectoryURL.appendingPathComponent(name))
-            return name
+            if let content = card.ankiContent { ankiGroups.insert(content.mediaFolder) }
         }
-        func audioName(_ id: String?) async throws -> String? {
-            guard let id else { return nil }
-            if let name = audio[id] { return name }
-            let data = try await api.media(id: id, maximumBytes: CardAudioStore.maximumBytes, token: token)
-            let name = try CardAudioStore.saveDownloaded(data)
-            audio[id] = name
-            savedFiles.append(CardAudioStore.url(named: name))
-            return name
+        for (group, files) in detail.ankiMedia ?? [:] {
+            for (name, id) in files {
+                guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\\"), !name.unicodeScalars.contains(where: { $0.value < 32 }) else { throw URLError(.cannotParseResponse) }
+                attachments[id, default: .init(id: id)].ankiFiles.append(.init(group: group, name: name))
+            }
         }
+        let storage = CommunityDownloadStorage()
         do {
-            var ankiBytes = 0
-            for (group, files) in detail.ankiMedia ?? [:] {
-                let folder = UUID().uuidString
-                let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder, isDirectory: true)
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                savedAnkiFolders.append(directory)
-                var index: [String: String] = [:]
-                for (name, id) in files {
-                    guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\\"), !name.unicodeScalars.contains(where: { $0.value < 32 }) else { throw URLError(.cannotParseResponse) }
-                    let data = try await api.media(id: id, maximumBytes: 20 * 1024 * 1024, token: token)
-                    ankiBytes += data.count
-                    guard ankiBytes <= 100 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
-                    let filename = UUID().uuidString + "." + URL(fileURLWithPath: name).pathExtension
-                    try data.write(to: directory.appendingPathComponent(filename), options: .atomic)
-                    index[name] = filename
+            try await storage.prepareAnkiGroups(ankiGroups)
+            let requests = Array(attachments.values)
+            // Bound both responses in memory and work in flight. A completed
+            // request is replaced immediately instead of waiting for a batch.
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                var next = 0
+                func enqueue() {
+                    let attachment = requests[next]
+                    next += 1
+                    group.addTask {
+                        try Task.checkCancellation()
+                        let data = try await api.media(id: attachment.id, maximumBytes: attachment.maximumBytes, token: token)
+                        try await storage.save(data, attachment: attachment)
+                    }
                 }
-                try JSONEncoder().encode(index).write(to: directory.appendingPathComponent(".learnalert-media.json"), options: .atomic)
-                ankiFolders[group] = folder
+                for _ in 0..<min(4, requests.count) { enqueue() }
+                var completed = 0
+                while try await group.next() != nil {
+                    try Task.checkCancellation()
+                    completed += 1
+                    progress(AppLocalization.string("Downloading deck…") + " \(completed.formatted(.number.locale(AppLocalization.locale)))/\(requests.count.formatted(.number.locale(AppLocalization.locale)))")
+                    if next < requests.count { enqueue() }
+                }
             }
+            let media = try await storage.finish()
             var imported: [PremadeCard] = []
+            imported.reserveCapacity(cards.count)
             for (index, card) in cards.enumerated() {
                 try Task.checkCancellation()
                 progress(AppLocalization.string("Downloading card \(index + 1) of \(cards.count)…"))
-                let prompt = try await imageName(card.promptImageID)
-                let answer = try await imageName(card.answerImageID)
-                var options: [String] = []
-                for id in card.optionImageIDs { options.append(try await imageName(id) ?? "") }
-                let clip = try await audioName(card.promptAudioID)
+                let prompt = card.promptImageID.flatMap { media.images[$0] }
+                let answer = card.answerImageID.flatMap { media.images[$0] }
+                let options = card.optionImageIDs.map { $0.flatMap { media.images[$0] } ?? "" }
+                let clip = card.promptAudioID.flatMap { media.audio[$0] }
                 var fields: [String: CardFieldMedia] = [:]
                 for (key, attachment) in card.fieldMedia ?? [:] {
-                    fields[key] = .init(image: try await imageName(attachment.imageID), audio: try await audioName(attachment.audioID))
+                    fields[key] = .init(image: attachment.imageID.flatMap { media.images[$0] }, audio: attachment.audioID.flatMap { media.audio[$0] })
                 }
                 // Older public decks have only the original attachment columns.
                 fields["prompt"] = fields["prompt"] ?? .init(image: prompt, audio: clip)
@@ -915,13 +928,8 @@ enum CommunityDeckTransfer {
 
                 var ankiContent = card.ankiContent
                 if var content = ankiContent {
-                    if let folder = ankiFolders[content.mediaFolder] { content.mediaFolder = folder }
-                    else {
-                        let folder = UUID().uuidString
-                        let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder, isDirectory: true)
-                        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                        savedAnkiFolders.append(directory); content.mediaFolder = folder
-                    }
+                    guard let folder = media.ankiFolders[content.mediaFolder] else { throw URLError(.cannotParseResponse) }
+                    content.mediaFolder = folder
                     ankiContent = content
                 }
                 imported.append(PremadeCard(id: card.id, question: card.question, options: card.options,
@@ -930,11 +938,95 @@ enum CommunityDeckTransfer {
                     matchingLeftItems: card.matchingLeftItems, matchingRightItems: card.matchingRightItems,
                     promptImageName: prompt, answerImageName: answer, optionImageNames: options, promptAudioName: clip, fieldMedia: fields, correctOptionIndex: card.correctOptionIndex, sectionName: card.sectionName, ankiContent: ankiContent))
             }
+            try Task.checkCancellation()
             return PremadeDeck(id: detail.id, name: detail.name, category: detail.categoryTag, subcategory: detail.categoryTag,
                 description: detail.description, colorHex: detail.colorHex, deckType: detail.deckType, cards: imported, communitySourceID: detail.id)
         } catch {
-            for file in savedFiles + savedAnkiFolders { try? FileManager.default.removeItem(at: file) }
+            // A throwing task group waits for its cancelled children before
+            // reaching this ledger, including files saved by an unconsumed result.
+            await storage.removeAll()
             throw error
         }
+    }
+}
+
+private nonisolated struct CommunityDownloadAttachment: Sendable {
+    struct AnkiFile: Sendable {
+        let group: String
+        let name: String
+    }
+    let id: String
+    var image = false
+    var audio = false
+    var ankiFiles: [AnkiFile] = []
+    var maximumBytes: Int { image ? 10 * 1024 * 1024 : CardAudioStore.maximumBytes }
+}
+
+private nonisolated struct CommunityDownloadedMedia: Sendable {
+    var images: [String: String] = [:]
+    var audio: [String: String] = [:]
+    var ankiFolders: [String: String] = [:]
+}
+
+/// Keep image rendering, audio validation and filesystem work off the UI actor.
+/// The ledger owns every new file until the complete deck can be returned.
+private actor CommunityDownloadStorage {
+    private var media = CommunityDownloadedMedia()
+    private var files: [URL] = []
+    private var directories: [String: URL] = [:]
+    private var indexes: [String: [String: String]] = [:]
+    private var ankiBytes = 0
+
+    func prepareAnkiGroups(_ groups: Set<String>) throws {
+        for group in groups {
+            try Task.checkCancellation()
+            let folder = UUID().uuidString
+            let directory = AnkiCardContent.mediaRoot.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            directories[group] = directory
+            indexes[group] = [:]
+            media.ankiFolders[group] = folder
+        }
+    }
+
+    func save(_ data: Data, attachment: CommunityDownloadAttachment) throws {
+        try Task.checkCancellation()
+        ankiBytes += data.count * attachment.ankiFiles.count
+        guard ankiBytes <= 100 * 1024 * 1024 else {
+            throw URLError(.dataLengthExceedsMaximum)
+        }
+        if attachment.image {
+            guard let image = UIImage(data: data), let name = CardImageStore.saveImage(image) else {
+                throw CommunityAPIError(status: 400, message: AppLocalization.string("A deck image could not be downloaded."))
+            }
+            files.append(CardImageStore.imagesDirectoryURL.appendingPathComponent(name))
+            media.images[attachment.id] = name
+        }
+        if attachment.audio {
+            let name = try CardAudioStore.saveDownloaded(data)
+            files.append(CardAudioStore.directory.appendingPathComponent(name))
+            media.audio[attachment.id] = name
+        }
+        for target in attachment.ankiFiles {
+            try Task.checkCancellation()
+            guard let directory = directories[target.group] else { throw URLError(.cannotParseResponse) }
+            let filename = UUID().uuidString + "." + URL(fileURLWithPath: target.name).pathExtension
+            try data.write(to: directory.appendingPathComponent(filename), options: .atomic)
+            indexes[target.group, default: [:]][target.name] = filename
+        }
+        try Task.checkCancellation()
+    }
+
+    func finish() throws -> CommunityDownloadedMedia {
+        for (group, directory) in directories {
+            try Task.checkCancellation()
+            try JSONEncoder().encode(indexes[group] ?? [:])
+                .write(to: directory.appendingPathComponent(".learnalert-media.json"), options: .atomic)
+        }
+        return media
+    }
+
+    func removeAll() {
+        for url in files + Array(directories.values) { try? FileManager.default.removeItem(at: url) }
     }
 }

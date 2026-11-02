@@ -366,9 +366,7 @@ struct DeckDetailView: View {
         .sheet(isPresented: $showingCreateCard) {
             CreateCardView(deck: deck)
         }
-        .sheet(isPresented: $showingCommunityShare) {
-            ShareDeckToCommunitySheet(libraryDecks: [deck], initialDeckID: deck.id)
-        }
+        .communitySharingSheet(isPresented: $showingCommunityShare, libraryDecks: [deck], initialDeckID: deck.id)
         .sheet(isPresented: $showingCreateCategory) {
             CreateCategoryView(deck: deck)
         }

@@ -3,14 +3,14 @@ import AVFoundation
 import SwiftUI
 import Combine
 
-struct CardAudioError: LocalizedError {
+nonisolated struct CardAudioError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
 
 enum CardAudioStore {
-    static let maximumBytes = 20 * 1024 * 1024
-    static var directory: URL {
+    nonisolated static let maximumBytes = 20 * 1024 * 1024
+    nonisolated static var directory: URL {
         let base = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: CardImageStore.appGroupIdentifier)
             ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let directory = base.appendingPathComponent("CardAudio", isDirectory: true)
@@ -54,7 +54,7 @@ enum CardAudioStore {
         return try save(data, extension: source.pathExtension.lowercased())
     }
 
-    static func saveDownloaded(_ data: Data) throws -> String {
+    nonisolated static func saveDownloaded(_ data: Data) throws -> String {
         let bytes = [UInt8](data.prefix(12))
         let ext: String
         if bytes.count >= 12, String(bytes: bytes[4..<8], encoding: .ascii) == "ftyp" { ext = "m4a" }
@@ -63,13 +63,13 @@ enum CardAudioStore {
         return try save(data, extension: ext)
     }
 
-    private static func save(_ data: Data, extension ext: String) throws -> String {
+    nonisolated private static func save(_ data: Data, extension ext: String) throws -> String {
         guard !data.isEmpty, data.count <= maximumBytes else { throw CardAudioError(message: AppLocalization.string("Choose an audio clip under 20 MB.")) }
         // Reject corrupt files before attaching them to a card.
         let player = try AVAudioPlayer(data: data)
         guard player.duration > 0 else { throw CardAudioError(message: AppLocalization.string("This audio file could not be played.")) }
         let name = "\(UUID().uuidString).\(ext)"
-        try data.write(to: url(named: name), options: .atomic)
+        try data.write(to: directory.appendingPathComponent(name), options: .atomic)
         return name
     }
 

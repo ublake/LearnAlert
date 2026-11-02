@@ -709,3 +709,52 @@ struct CommunityBlockedAuthorsSheet: View {
         } catch { session.handle(error); message = error.localizedDescription }
     }
 }
+
+/// Sharing opens only after Apple authentication. Use the existing profile flow
+/// first when signed out, then present the requested deck picker after dismissal.
+private struct CommunitySharingSheetModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let libraryDecks: [Deck]
+    let initialDeckID: UUID?
+    @ObservedObject private var session = CommunitySession.shared
+    @State private var showingSignIn = false
+    @State private var continueSharing = false
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isPresented, initial: true) { _, requested in
+                guard requested, !session.isSignedIn else { return }
+                isPresented = false
+                continueSharing = false
+                showingSignIn = true
+            }
+            .onChange(of: session.isSignedIn) { _, signedIn in
+                if !signedIn {
+                    isPresented = false
+                    continueSharing = false
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { isPresented && session.isSignedIn },
+                set: { isPresented = $0 }
+            )) {
+                ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: initialDeckID)
+            }
+            .sheet(isPresented: $showingSignIn, onDismiss: {
+                let shouldOpen = continueSharing && session.isSignedIn
+                continueSharing = false
+                if shouldOpen { isPresented = true }
+            }) {
+                CommunityProfileSheet(saveTitle: AppLocalization.string("Continue"), onSave: {
+                    continueSharing = true
+                })
+            }
+    }
+}
+
+extension View {
+    func communitySharingSheet(isPresented: Binding<Bool>, libraryDecks: [Deck], initialDeckID: UUID? = nil) -> some View {
+        modifier(CommunitySharingSheetModifier(isPresented: isPresented,
+            libraryDecks: libraryDecks, initialDeckID: initialDeckID))
+    }
+}
