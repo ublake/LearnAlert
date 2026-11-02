@@ -59514,6 +59514,47 @@
         }
       }
     },
+    "Your daily 20 is shared by notifications and in-app study. Your progress is saved—come back tomorrow to continue.": {
+      "comment": "Shared daily study allowance. LearnAlert/Features/Study/DeckStudyView.swift",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El límite diario de 20 preguntas se comparte entre las notificaciones y el estudio en la app. Tu progreso está guardado; vuelve mañana para continuar."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O limite diário de 20 perguntas é compartilhado entre as notificações e o estudo no app. Seu progresso está salvo; volte amanhã para continuar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les 20 questions quotidiennes sont partagées entre les notifications et l’étude dans l’app. Votre progression est enregistrée ; revenez demain pour continuer."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Tageslimit von 20 Fragen gilt gemeinsam für Benachrichtigungen und das Lernen in der App. Dein Fortschritt ist gespeichert. Morgen kannst du weitermachen."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1日20問の上限は、通知とアプリ内学習で共通です。進捗は保存されています。続きは明日学習できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "하루 20문제 한도는 알림과 앱 내 학습에 함께 적용됩니다. 진행 상황은 저장되었어요. 내일 이어서 학습하세요."
+          }
+        }
+      }
+    },
     "Your deck": {
       "comment": "Interface copy. LearnAlert/AnkiImportView.swift",
       "localizations": {

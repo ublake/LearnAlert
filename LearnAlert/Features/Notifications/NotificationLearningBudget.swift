@@ -38,15 +38,25 @@ enum NotificationLearningBudget {
         let limit: Int
         var events: [Event] = []
     }
+    private struct PracticeEvent: Codable, Equatable {
+        let id: UUID
+        let cardID: UUID
+        let date: Date
+        var committed: Bool
+        let previousPracticeReviewCount: Int?
+    }
     private struct Journal: Codable, Equatable {
         var reservations: [Reservation] = []
         var batches: [Batch] = []
+        // Optional so journals written before in-app answers joined this budget decode safely.
+        var practiceEvents: [PracticeEvent]?
         var dailyNotificationLimit = 20
         var revision = 0
         mutating func prune(now: Date) {
             let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: now) ?? now.addingTimeInterval(-14 * 86_400)
             reservations.removeAll { $0.date < cutoff }
             batches.removeAll { ($0.events.last?.date ?? $0.createdAt) < cutoff }
+            practiceEvents?.removeAll { $0.date < cutoff }
         }
     }
     private static var directory: URL {
@@ -57,9 +67,10 @@ enum NotificationLearningBudget {
 
     private static func sameDay(_ lhs: Date, _ rhs: Date) -> Bool { Calendar.current.isDate(lhs, inSameDayAs: rhs) }
     private static func completed(in journal: Journal, on day: Date) -> Int {
-        journal.batches.reduce(0) { count, batch in
+        let notificationCount = journal.batches.reduce(0) { count, batch in
             count + batch.events.filter { $0.answered && sameDay($0.date, day) }.count
         }
+        return notificationCount + (journal.practiceEvents?.filter { sameDay($0.date, day) }.count ?? 0)
     }
 
     static func today(now: Date = Date()) -> NotificationLearningDaySnapshot {
@@ -137,6 +148,44 @@ enum NotificationLearningBudget {
                   let event = journal.batches[index].events.firstIndex(where: { $0.ordinal == batchOrdinal && $0.answered && !$0.committed }) else { return }
             journal.batches[index].events.remove(at: event)
             for position in journal.batches[index].events.indices { journal.batches[index].events[position].ordinal = position }
+        }
+    }
+
+    /// Practice shares the daily allowance, while its review history stays on its own state.
+    /// A repeated event ID acknowledges the original reservation without counting it twice.
+    @discardableResult
+    static func reservePracticeAnswer(eventID: UUID, cardID: UUID, previousPracticeReviewCount: Int? = nil, now: Date = Date()) -> Bool {
+        (try? transaction(write: true, now: now) { journal in
+            if let event = journal.practiceEvents?.first(where: { $0.id == eventID }) {
+                return event.cardID == cardID && event.previousPracticeReviewCount == previousPracticeReviewCount
+            }
+            if let previous = previousPracticeReviewCount {
+                // A retry still seeing the same durable review count replaces a claim
+                // interrupted before its save. Older saved ratings have a lower count.
+                journal.practiceEvents?.removeAll {
+                    !$0.committed && $0.cardID == cardID && $0.previousPracticeReviewCount == previous
+                }
+            }
+            guard completed(in: journal, on: now) < goal else { return false }
+            if journal.practiceEvents == nil { journal.practiceEvents = [] }
+            journal.practiceEvents?.append(.init(id: eventID, cardID: cardID, date: now,
+                committed: previousPracticeReviewCount == nil, previousPracticeReviewCount: previousPracticeReviewCount))
+            return true
+        }) ?? false
+    }
+
+    @discardableResult
+    static func commitPracticeAnswer(eventID: UUID) -> Bool {
+        (try? transaction(write: true) { journal in
+            guard let index = journal.practiceEvents?.firstIndex(where: { $0.id == eventID }) else { return false }
+            journal.practiceEvents?[index].committed = true
+            return true
+        }) ?? false
+    }
+
+    static func rollbackPracticeAnswer(eventID: UUID) {
+        try? transaction(write: true) { journal in
+            journal.practiceEvents?.removeAll { $0.id == eventID && !$0.committed }
         }
     }
 
@@ -257,12 +306,25 @@ enum NotificationLearningBudget {
         AlertTimelineStore.shared.reconcile(pending: await center.pendingNotificationRequests())
     }
 
+    /// Settle outstanding claims while durable review counts still exist. Resetting
+    /// first could make a saved answer look like an interrupted, unsaved attempt.
+    static func settleAnswers(beforeResetting cardIDs: Set<UUID>, now: Date = Date()) {
+        guard !cardIDs.isEmpty else { return }
+        recoverInterruptedAnswers(now: now, cardIDs: cardIDs, minimumAge: 0)
+    }
+
     /// A process can be terminated between reserving its answer and saving its
     /// review. After a grace period, verify SwiftData before keeping that claim.
-    private static func recoverInterruptedAnswers(now: Date) {
+    private static func recoverInterruptedAnswers(now: Date, cardIDs: Set<UUID>? = nil, minimumAge: TimeInterval = 120) {
+        recoverInterruptedPracticeAnswers(now: now, cardIDs: cardIDs, minimumAge: minimumAge)
+        let requestedIDs = cardIDs.map { Set($0.map(\.uuidString)) }
         let pending = (try? transaction { journal in
             journal.batches.flatMap { batch in
-                batch.events.filter { $0.answered && !$0.committed && now.timeIntervalSince($0.date) >= 120 }
+                batch.events.filter {
+                    $0.answered && !$0.committed
+                        && (minimumAge <= 0 || now.timeIntervalSince($0.date) >= minimumAge)
+                        && (requestedIDs?.contains($0.cardID) ?? true)
+                }
                     .map { (batch.id, $0) }
             }
         }) ?? []
@@ -285,6 +347,33 @@ enum NotificationLearningBudget {
                     journal.batches[batch].events.remove(at: position)
                     for index in journal.batches[batch].events.indices { journal.batches[batch].events[index].ordinal = index }
                 }
+            }
+        }
+    }
+
+    private static func recoverInterruptedPracticeAnswers(now: Date, cardIDs: Set<UUID>?, minimumAge: TimeInterval) {
+        let pending = (try? transaction { journal in
+            journal.practiceEvents?.filter {
+                !$0.committed && (minimumAge <= 0 || now.timeIntervalSince($0.date) >= minimumAge)
+                    && (cardIDs?.contains($0.cardID) ?? true)
+            } ?? []
+        }) ?? []
+        guard !pending.isEmpty else { return }
+        let context = ModelContext(SharedDatabase.shared.container)
+        for event in pending {
+            let cardID = event.cardID
+            let cards: [Flashcard]
+            do { cards = try context.fetch(FetchDescriptor<Flashcard>(predicate: #Predicate { $0.id == cardID })) }
+            catch { continue }
+            let saved = cards.first.map { card in
+                guard let previous = event.previousPracticeReviewCount else { return true }
+                let state = card.ankiPracticeReviewState
+                return state.reviewCount > previous && (state.lastReviewedDate ?? .distantPast) >= event.date.addingTimeInterval(-1)
+            } ?? true
+            try? transaction(write: true, now: now) { journal in
+                guard let index = journal.practiceEvents?.firstIndex(where: { $0.id == event.id && !$0.committed }) else { return }
+                if saved { journal.practiceEvents?[index].committed = true }
+                else { journal.practiceEvents?.remove(at: index) }
             }
         }
     }

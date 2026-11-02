@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import SwiftData
 
 struct DeckStudyView: View {
@@ -37,6 +38,7 @@ struct DeckStudyView: View {
     @State private var choosingSession = false
     @State private var activeSession: PracticeSessionSnapshot?
     @State private var isComplete = false
+    @State private var dailyBudget = NotificationLearningDaySnapshot(completedCount: 0)
 
     let initialCardId: UUID?
     let initialSelectedAnswer: String?
@@ -73,6 +75,13 @@ struct DeckStudyView: View {
         return practiceSessions.sessions.filter { $0.originalCardIDs.contains(where: ids.contains) }
     }
 
+    private var dailyQuestionNumber: Int {
+        min(NotificationLearningBudget.goal, dailyBudget.completedCount + (isGraded ? 0 : 1))
+    }
+    private var showsDailyCompletion: Bool {
+        dailyBudget.isComplete && (!isGraded || isComplete || waitingForReview || activeSession == nil)
+    }
+
     var body: some View {
         ZStack {
             QuizTheme.canvas.ignoresSafeArea()
@@ -89,6 +98,8 @@ struct DeckStudyView: View {
                 ProgressView("Loading deck…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if allCards.isEmpty {
                 QuizEmptyState(onClose: closePractice)
+            } else if showsDailyCompletion {
+                DailyStudyCompletionView(completedCount: dailyBudget.completedCount, onClose: closePractice)
             } else if choosingSession {
                 PracticeSessionPicker(deckName: deck.name, sessions: resumableSessions,
                     onResume: resume, onNew: { startNewSession() }, onClose: closePractice)
@@ -115,8 +126,8 @@ struct DeckStudyView: View {
                     ankiContent: card.ankiContent, ankiRenderer: card.cardType == .anki ? ankiCache.renderer(for: card.id) : nil,
                     ankiReviewOptions: card.cardType.usesSpacedReview ? AnkiReviewScheduling.options(for: localState(for: card), at: Date()) : [],
                     ankiPresentation: ankiPresentation, fieldMedia: card.fieldMedia, correctOptionIndex: card.resolvedCorrectOptionIndex,
-                    cardNumber: min(allCards.count, reviewedCardIDs.count + (reviewedCardIDs.contains(card.id) ? 0 : 1)),
-                    cardCount: allCards.count, correctCount: correctCount, selectedAnswer: selectedAnswer,
+                    cardNumber: dailyQuestionNumber,
+                    cardCount: NotificationLearningBudget.goal, correctCount: correctCount, selectedAnswer: selectedAnswer,
                     typedAnswer: $typedAnswer, isRevealed: $isRevealed, hasViewedImageBack: hasViewedImageBack, isGraded: isGraded,
                     showingHint: showingHint, onSelect: { selectOption($0, for: card) },
                     onReveal: { withAnimation(.snappy) { isRevealed = true }; checkpoint() },
@@ -132,7 +143,18 @@ struct DeckStudyView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { await Task.yield(); await preparePractice() }
         .onDisappear { checkpoint(immediately: true); ankiCache.clear() }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { checkpoint(immediately: true) } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshDailyBudget() }
+            else { checkpoint(immediately: true) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in refreshDailyBudget() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in refreshDailyBudget() }
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                if scenePhase == .active { refreshDailyBudget() }
+            }
+        }
         .onChange(of: isRevealed) { _, _ in checkpoint() }
         .onChange(of: typedAnswer) { _, _ in checkpoint() }
         .onChange(of: practiceSessions.errorMessage) { _, message in if let message { reviewError = message } }
@@ -143,6 +165,7 @@ struct DeckStudyView: View {
 
     private func preparePractice() async {
         guard !didApplyInitialState || loadingFailed else { return }
+        refreshDailyBudget()
         allCards = deck.cards
         guard await practiceSessions.load(deckID: deck.id), !Task.isCancelled else { loadingFailed = true; return }
         do { try migratePracticeStates() }
@@ -152,6 +175,8 @@ struct DeckStudyView: View {
             return
         }
         loadingFailed = false; didApplyInitialState = true
+        // Do not create a blank bookmark or rotate existing sessions at the cap.
+        guard !dailyBudget.isComplete else { return }
         if initialCardId != nil || notificationRequestID != nil { startNewSession(applyHandoff: true) }
         else if !resumableSessions.isEmpty { choosingSession = true }
         else { startNewSession() }
@@ -174,6 +199,8 @@ struct DeckStudyView: View {
     }
 
     private func startNewSession(applyHandoff: Bool = false) {
+        refreshDailyBudget()
+        guard !dailyBudget.isComplete else { choosingSession = false; return }
         ankiCache.clear()
         allCards = deck.cards.sorted {
             $0.orderIndex == $1.orderIndex ? $0.id.uuidString < $1.id.uuidString : $0.orderIndex < $1.orderIndex
@@ -230,6 +257,8 @@ struct DeckStudyView: View {
     }
 
     private func resume(_ saved: PracticeSessionSnapshot) {
+        refreshDailyBudget()
+        guard !dailyBudget.isComplete else { choosingSession = false; return }
         ankiCache.clear()
         let lookup = Dictionary(deck.cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let validIDs = Set(lookup.keys)
@@ -317,6 +346,32 @@ struct DeckStudyView: View {
         practiceSessions.save(session, immediately: immediately)
     }
 
+    private func refreshDailyBudget(now: Date = Date()) {
+        let wasComplete = dailyBudget.isComplete
+        let snapshot = NotificationLearningBudget.today(now: now)
+        if dailyBudget != snapshot { dailyBudget = snapshot }
+        if snapshot.isComplete && !wasComplete {
+            // Keep tomorrow's plan; remove only alerts the exhausted day cannot answer.
+            Task { await NotificationLearningBudget.reconcilePending() }
+        } else if wasComplete && !snapshot.isComplete && didApplyInitialState && activeSession == nil && !allCards.isEmpty {
+            if !resumableSessions.isEmpty { choosingSession = true }
+            else { startNewSession() }
+        }
+    }
+
+    private func reservePracticeAnswer(for card: Flashcard, previousReviewCount: Int? = nil, at now: Date = Date()) -> UUID? {
+        refreshDailyBudget(now: now)
+        guard !dailyBudget.isComplete else { checkpoint(immediately: true); return nil }
+        let id = UUID()
+        guard NotificationLearningBudget.reservePracticeAnswer(eventID: id, cardID: card.id,
+            previousPracticeReviewCount: previousReviewCount, now: now) else {
+            refreshDailyBudget(now: now)
+            if !dailyBudget.isComplete { reviewError = AppLocalization.string("Review couldn’t be saved.") }
+            return nil
+        }
+        return id
+    }
+
     private func closePractice() { checkpoint(immediately: true); dismiss() }
     private func localState(for card: Flashcard) -> AnkiReviewState {
         card.ankiPracticeReviewState
@@ -334,8 +389,10 @@ struct DeckStudyView: View {
 
     private func selectOption(_ option: String, for card: Flashcard) {
         guard !isGraded && selectedAnswer == nil else { return }
-        selectedAnswer = option
-        grade(card, isCorrect: CardChoiceIdentity.index(option, options: card.options) == card.resolvedCorrectOptionIndex)
+        if grade(card, isCorrect: CardChoiceIdentity.index(option, options: card.options) == card.resolvedCorrectOptionIndex) {
+            selectedAnswer = option
+            checkpoint()
+        }
     }
     private func toggleHint() {
         hasRecordedHint = true
@@ -343,6 +400,8 @@ struct DeckStudyView: View {
         checkpoint()
     }
     private func skip(_ card: Flashcard) {
+        refreshDailyBudget()
+        guard !dailyBudget.isComplete else { return }
         InteractionSoundPlayer.shared.play(.skip)
         requeue(card); advance()
     }
@@ -357,14 +416,18 @@ struct DeckStudyView: View {
         PracticeStudyActivity.shared.recordAnswer(deckID: deck.id)
         reviewedCardIDs.insert(card.id); answerCount += 1
         if correct { correctCount += 1 }
+        refreshDailyBudget()
     }
-    private func grade(_ card: Flashcard, isCorrect: Bool) {
-        guard !isGraded, !card.cardType.usesSpacedReview else { return }
+    @discardableResult
+    private func grade(_ card: Flashcard, isCorrect: Bool) -> Bool {
+        guard !isGraded, !card.cardType.usesSpacedReview,
+              reservePracticeAnswer(for: card) != nil else { return false }
         InteractionSoundPlayer.shared.play(isCorrect ? .correct : .incorrect)
         recordPracticeAnswer(card, correct: isCorrect)
         if !isCorrect && card.cardType != .dragAnswer { requeue(card) }
         isGraded = true
         checkpoint()
+        return true
     }
     private func rateAnki(_ card: Flashcard, rating: AnkiReviewRating) {
         guard card.cardType.usesSpacedReview, currentCard?.id == card.id,
@@ -377,15 +440,21 @@ struct DeckStudyView: View {
         } else {
             guard isRevealed else { return }
         }
+        let now = Date()
+        guard let eventID = reservePracticeAnswer(for: card,
+            previousReviewCount: card.ankiPracticeReviewState.reviewCount, at: now) else { return }
         let option: AnkiReviewOption
         do {
-            option = try card.recordAnkiPracticeReview(rating: rating)
+            option = try card.recordAnkiPracticeReview(rating: rating, at: now)
             try context.save()
         } catch {
             context.rollback()
+            NotificationLearningBudget.rollbackPracticeAnswer(eventID: eventID)
+            refreshDailyBudget()
             reviewError = AppLocalization.string("Your rating couldn’t be saved. Please try that rating again.")
             return
         }
+        NotificationLearningBudget.commitPracticeAnswer(eventID: eventID)
         localAnkiStates[card.id] = card.ankiPracticeReviewStateData
         shortReviews.schedule(card.id, due: option.nextReviewDate, repeatsInSession: option.shouldRepeatInSession)
         ratingCounts[rating, default: 0] += 1; reviewedAnkiIDs.insert(card.id)
@@ -403,7 +472,10 @@ struct DeckStudyView: View {
             advance(); return
         }
         if card.cardType.isReviewOnly {
-            if !isGraded { recordPracticeAnswer(card, correct: true); isGraded = true; checkpoint() }
+            if !isGraded {
+                guard reservePracticeAnswer(for: card) != nil else { return }
+                recordPracticeAnswer(card, correct: true); isGraded = true; checkpoint()
+            }
             advance(); return
         }
         guard isGraded else { return }
@@ -438,13 +510,39 @@ struct DeckStudyView: View {
         studyQueue.insert(contentsOf: cards, at: index); queueIDs.insert(contentsOf: cards.map(\.id), at: index)
     }
     private func resumeLearning(early: Bool = false) {
-        guard waitingForReview else { return }
+        refreshDailyBudget()
+        guard waitingForReview, !dailyBudget.isComplete else { return }
         let oldCount = studyQueue.count
         enqueueReadyReviews(early: early)
         guard studyQueue.count > oldCount else { return }
         waitingForReview = false
         // Ready cards were inserted after the currently completed card.
         advance()
+    }
+}
+
+private struct DailyStudyCompletionView: View {
+    let completedCount: Int
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 54, weight: .light)).foregroundStyle(QuizTheme.green)
+                .accessibilityHidden(true)
+            Text("You’re done for today!")
+                .font(.title2.bold()).foregroundStyle(QuizTheme.ink)
+            Text("\(min(completedCount, NotificationLearningBudget.goal))/\(NotificationLearningBudget.goal) questions answered today")
+                .font(.headline.monospacedDigit()).foregroundStyle(QuizTheme.ink)
+            Text("Your daily 20 is shared by notifications and in-app study. Your progress is saved—come back tomorrow to continue.")
+                .font(.subheadline).foregroundStyle(QuizTheme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Done", action: onClose).buttonStyle(QuizActionButtonStyle())
+        }
+        .multilineTextAlignment(.center).padding(24)
+        .frame(maxWidth: 560).frame(maxWidth: .infinity)
     }
 }
 
@@ -834,7 +932,7 @@ private struct QuizProgress: View {
                 .tint(QuizTheme.green)
                 .scaleEffect(x: 1, y: 2)
 
-            Text("\(cardNumber)/\(cardCount)")
+            Text("\(cardNumber)/\(cardCount) today")
                 .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .subheadline))
                 .foregroundStyle(QuizTheme.inkSecondary)
                 .monospacedDigit()

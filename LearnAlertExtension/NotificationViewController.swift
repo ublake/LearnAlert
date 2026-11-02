@@ -143,6 +143,7 @@ struct FlashcardNotificationView: View {
     var appearance = NotificationAppearance.saved()
     var openApp: () -> Void = { }
     var openDeck: ((String) -> Void)? = nil
+    var dismissNotification: () -> Void = { }
     var onContentHeightChange: ((CGFloat) -> Void)? = nil
     var onPresentationCardTypeChange: ((String) -> Void)? = nil
 
@@ -515,20 +516,23 @@ struct FlashcardNotificationView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
             } else {
-                Button {
-                    advanceToNextCard()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                        Text(nextCardActionTitle)
-                            .font(.system(size: 15, weight: .bold))
+                HStack(spacing: 10) {
+                    Button {
+                        advanceToNextCard()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.right.circle.fill")
+                                .font(.system(size: 16, weight: .bold))
+                            Text(nextCardActionTitle)
+                                .font(.system(size: 15, weight: .bold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, appearance.design.verticalPadding(14))
+                        .notificationPrimaryAction(isLight: isLight)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, appearance.design.verticalPadding(14))
-                    .notificationPrimaryAction(isLight: isLight)
+                    .buttonStyle(.plain)
+                    if !isSyntheticSession { notificationDoneButton }
                 }
-                .buttonStyle(.plain)
             }
         }
         .transition(.opacity)
@@ -559,19 +563,34 @@ struct FlashcardNotificationView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(textColorSecondary)
             }
-            Button(action: openPracticeApp) {
-                Label("Open app to practice", systemImage: "arrow.up.right")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .notificationPrimaryAction(isLight: isLight)
+            HStack(spacing: 10) {
+                notificationDoneButton
+                Button(action: openPracticeApp) {
+                    Label("Open app to practice", systemImage: "arrow.up.right")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .notificationPrimaryAction(isLight: isLight)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             Text("In-app practice keeps its own progress.")
                 .font(.caption)
                 .foregroundStyle(textColorSecondary)
         }
         .padding(.vertical, 18)
         .frame(maxWidth: .infinity)
+    }
+
+    private var notificationDoneButton: some View {
+        Button(action: dismissCurrentNotification) {
+            Text("Done")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(textColorPrimary)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 44)
+                .notificationLiquidGlass(cornerRadius: 12, isLight: isLight)
+        }
+        .buttonStyle(.plain)
     }
 
     private var ankiReviewFooter: some View {
@@ -1113,10 +1132,20 @@ struct FlashcardNotificationView: View {
               defaults.string(forKey: "handoffNotificationRequestID") == requestID else { return }
         for key in ["handoffDeckId", "handoffCardId", "handoffNotificationRequestID", "handoffSelectedAnswer", "handoffTypedAnswer",
                     "handoffWasCorrect", "handoffWasGraded", "handoffWasRevealed", "handoffImageBackViewed",
-                    "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp"] {
+                    "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp", "handoffPracticeDeckId"] {
             defaults.removeObject(forKey: key)
         }
         defaults.synchronize()
+    }
+
+    private func dismissCurrentNotification() {
+        guard !isSyntheticSession, let requestID = notificationRequestID, !requestID.isEmpty else { return }
+        isAnswerFieldFocused = false
+        CardAudioPlayer.stopActive()
+        clearNotificationHandoff()
+        AlertTimelineStore.shared.dismissed(requestID)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+        dismissNotification()
     }
 
     private func openPracticeApp() {
@@ -1461,8 +1490,10 @@ struct FlashcardNotificationView: View {
         defaults.set(isRevealed, forKey: "handoffWasRevealed")
         defaults.set(hasViewedImageBack, forKey: "handoffImageBackViewed")
         defaults.set(showingHint, forKey: "handoffHintVisible")
-        // Mark handoff originated from notification UI
-        defaults.set(true, forKey: "handoffFromNotificationUI")
+        // Saving the expanded UI does not request navigation. The host consumes
+        // this snapshot only after an explicit response for this notification.
+        defaults.removeObject(forKey: "handoffFromNotificationUI")
+        defaults.removeObject(forKey: "handoffPracticeDeckId")
         defaults.set(Date().timeIntervalSince1970, forKey: "handoffTimestamp")
         defaults.synchronize()
     }
@@ -1880,9 +1911,14 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
             isCustomizationTest: isCustomizationTest,
             appearance: .resolve(userInfo: userInfo),
             openApp: { [weak self] in
-                self?.openHostApp(deckId: snapshot.deckId)
+                self?.openHostApp()
             },
-            openDeck: { [weak self] deckID in self?.openHostApp(deckId: deckID) },
+            openDeck: { [weak self] deckID in
+                self?.openHostApp(practiceDeckID: deckID, requestID: notification.request.identifier)
+            },
+            dismissNotification: { [weak self] in
+                self?.extensionContext?.dismissNotificationContentExtension()
+            },
             onContentHeightChange: { [weak self] newHeight in
                 self?.fitContent(newHeight)
             },
@@ -1920,18 +1956,20 @@ class NotificationViewController: UIViewController, UNNotificationContentExtensi
         hostingController = hosting
     }
 
-    private func openHostApp(deckId: String) {
-        if let url = URL(string: "learnalert://deck/\(deckId)") {
-            var responder: UIResponder? = self
-            while responder != nil {
-                if let application = responder as? UIApplication {
-                    application.open(url, options: [:], completionHandler: nil)
-                    return
-                }
-                responder = responder?.next
-            }
-            extensionContext?.performNotificationDefaultAction()
+    private func openHostApp(practiceDeckID: String? = nil, requestID: String? = nil) {
+        if let practiceDeckID {
+            guard UUID(uuidString: practiceDeckID) != nil,
+                  let requestID, !requestID.isEmpty,
+                  let defaults = UserDefaults(suiteName: "group.com.learnalert.shared") else { return }
+            // This intent is written only by the explicit practice button. The
+            // host still requires the response for this exact request to use it.
+            defaults.set(practiceDeckID, forKey: "handoffPracticeDeckId")
+            defaults.set(requestID, forKey: "handoffNotificationRequestID")
+            defaults.synchronize()
         }
+        // The system delivers an explicit default response to the host, which
+        // authorizes navigation and identifies the snapshot to restore.
+        extensionContext?.performNotificationDefaultAction()
     }
 }
 

@@ -14,7 +14,7 @@ import SwiftData
 
 struct StudyHandoff: Identifiable, Hashable {
     let deckId: UUID
-    let cardId: UUID
+    let cardId: UUID?
     let selectedAnswer: String?
     let wasCorrect: Bool?
     let wasGraded: Bool
@@ -24,7 +24,7 @@ struct StudyHandoff: Identifiable, Hashable {
     var notificationRequestID: String? = nil
     var typedAnswer: String? = nil
 
-    var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")-\(typedAnswer ?? "")-\(notificationRequestID ?? "session")" }
+    var id: String { "\(deckId.uuidString)-\(cardId?.uuidString ?? "practice")-\(selectedAnswer ?? "reveal")-\(typedAnswer ?? "")-\(notificationRequestID ?? "session")" }
 }
 
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -327,6 +327,14 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             }
             if response.actionIdentifier == UNNotificationDismissActionIdentifier {
                 AlertTimelineStore.shared.dismissed(requestID)
+                self.clearStoredStudyHandoff(for: requestID,
+                    content: response.notification.request.content,
+                    defaults: UserDefaults(suiteName: "group.com.learnalert.shared"))
+                completionHandler()
+                return
+            }
+            guard response.actionIdentifier == "CONTINUE_IN_APP" ||
+                    response.actionIdentifier == UNNotificationDefaultActionIdentifier else {
                 completionHandler()
                 return
             }
@@ -340,53 +348,24 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
                 }
             }
             let defaults = UserDefaults(suiteName: "group.com.learnalert.shared")
-            let fromNotificationUI = defaults?.bool(forKey: "handoffFromNotificationUI") ?? false
-            let hasHandoffDeck = defaults?.string(forKey: "handoffDeckId") != nil
-            if defaults?.string(forKey: "handoffDeckId") == userInfo["deckId"] as? String {
-                defaults?.set(requestID, forKey: "handoffNotificationRequestID")
-            }
-
-            if response.actionIdentifier == "CONTINUE_IN_APP" {
-                if hasHandoffDeck {
-                    defaults?.removeObject(forKey: "handoffFromNotificationUI")
-                    self.consumePendingStudyHandoff()
-                } else if let deckString = userInfo["deckId"] as? String,
-                          let cardString = userInfo["cardId"] as? String,
-                          let deckId = UUID(uuidString: deckString),
-                          let cardId = UUID(uuidString: cardString) {
-                    self.pendingStudyHandoff = StudyHandoff(
-                        deckId: deckId,
-                        cardId: cardId,
-                        selectedAnswer: nil,
-                        wasCorrect: nil,
-                        wasGraded: false,
-                        wasHintVisible: false, notificationRequestID: requestID
-                    )
-                } else {
-                    self.consumePendingStudyHandoff()
-                }
-            } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                if fromNotificationUI || hasHandoffDeck {
-                    defaults?.removeObject(forKey: "handoffFromNotificationUI")
-                    self.consumePendingStudyHandoff()
-                } else if let deckString = userInfo["deckId"] as? String,
-                          let cardString = userInfo["cardId"] as? String,
-                          let deckId = UUID(uuidString: deckString),
-                          let cardId = UUID(uuidString: cardString) {
-                    // Direct tap on the unexpanded banner
-                    self.pendingStudyHandoff = StudyHandoff(
-                        deckId: deckId,
-                        cardId: cardId,
-                        selectedAnswer: nil,
-                        wasCorrect: nil,
-                        wasGraded: false,
-                        wasHintVisible: false, notificationRequestID: requestID
-                    )
-                } else {
-                    self.consumePendingStudyHandoff()
-                }
-            } else {
-                self.consumePendingStudyHandoff()
+            let openedPractice = response.actionIdentifier == UNNotificationDefaultActionIdentifier &&
+                self.consumePendingPracticeHandoff(defaults: defaults, notificationRequestID: requestID)
+            if !openedPractice,
+               !self.consumePendingStudyHandoff(defaults: defaults, notificationRequestID: requestID),
+               let deckString = userInfo["deckId"] as? String,
+               let cardString = userInfo["cardId"] as? String,
+               let deckId = UUID(uuidString: deckString),
+               let cardId = UUID(uuidString: cardString) {
+                // A direct tap may have no expanded UI state. Never substitute a
+                // different notification's cached card or grading for its payload.
+                self.pendingStudyHandoff = StudyHandoff(
+                    deckId: deckId,
+                    cardId: cardId,
+                    selectedAnswer: nil,
+                    wasCorrect: nil,
+                    wasGraded: false,
+                    wasHintVisible: false, notificationRequestID: requestID
+                )
             }
             completionHandler()
         }
@@ -405,10 +384,11 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
 
         // Older extensions wrote preview handoffs on appearance. Remove only this alert's
         // synthetic IDs, leaving any unrelated real study handoff untouched.
-        if defaults?.string(forKey: "handoffDeckId") == content.userInfo["deckId"] as? String,
-           defaults?.string(forKey: "handoffCardId") == content.userInfo["cardId"] as? String {
-            ["handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffTypedAnswer", "handoffWasCorrect",
-             "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffFromNotificationUI", "handoffTimestamp"]
+        if let deckID = content.userInfo["deckId"] as? String,
+           let cardID = content.userInfo["cardId"] as? String,
+           defaults?.string(forKey: "handoffDeckId") == deckID,
+           defaults?.string(forKey: "handoffCardId") == cardID {
+            Self.storedStudyHandoffKeys
                 .forEach { defaults?.removeObject(forKey: $0) }
         }
         if pendingStudyHandoff?.deckId.uuidString == content.userInfo["deckId"] as? String {
@@ -419,31 +399,20 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
     }
 
     @MainActor
+    @discardableResult
     func consumePendingStudyHandoff(
-        defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared")
-    ) {
-        guard let defaults else { return }
-        // Most launches have no handoff. Loading every course's progress here
-        // makes an ordinary launch pay for notification-only routing work.
-        if let id = defaults.string(forKey: "handoffCourseId") {
-            let context = ModelContext(SharedDatabase.shared.container)
-            // This old route identified a collection, not a particular answer.
-            // Never transfer stale grading from another alert to its fallback.
-            ["handoffSelectedAnswer", "handoffTypedAnswer", "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible",
-             "handoffWasRevealed", "handoffImageBackViewed"].forEach { defaults.removeObject(forKey: $0) }
-            if let card = LanguageDeckMigration.legacyCard(deckID: defaults.string(forKey: "handoffDeckId"), courseID: id, in: context), let deck = card.deck {
-                defaults.set(deck.id.uuidString, forKey: "handoffDeckId")
-                defaults.set(card.id.uuidString, forKey: "handoffCardId")
-            } else {
-                defaults.removeObject(forKey: "handoffDeckId")
-                defaults.removeObject(forKey: "handoffCardId")
-            }
-            ["handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath"].forEach { defaults.removeObject(forKey: $0) }
-        }
+        defaults: UserDefaults? = UserDefaults(suiteName: "group.com.learnalert.shared"),
+        notificationRequestID: String? = nil
+    ) -> Bool {
+        // These defaults are a snapshot of the expanded notification, not a
+        // request to navigate. Only an explicit notification response may consume
+        // it; ordinary launch/foreground calls and old saved snapshots cannot.
+        guard let defaults, let notificationRequestID, !notificationRequestID.isEmpty,
+              defaults.string(forKey: "handoffNotificationRequestID") == notificationRequestID else { return false }
         guard let deckString = defaults.string(forKey: "handoffDeckId"),
               let cardString = defaults.string(forKey: "handoffCardId"),
               let deckId = UUID(uuidString: deckString),
-              let cardId = UUID(uuidString: cardString) else { return }
+              let cardId = UUID(uuidString: cardString) else { return false }
 
         pendingStudyHandoff = StudyHandoff(
             deckId: deckId,
@@ -454,15 +423,51 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             wasHintVisible: defaults.bool(forKey: "handoffHintVisible"),
             wasRevealed: defaults.bool(forKey: "handoffWasRevealed"),
             wasImageBackViewed: defaults.bool(forKey: "handoffImageBackViewed"),
-            notificationRequestID: defaults.string(forKey: "handoffNotificationRequestID"),
+            notificationRequestID: notificationRequestID,
             typedAnswer: defaults.string(forKey: "handoffTypedAnswer")
         )
 
-        [
-            "handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffTypedAnswer",
-            "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffImageBackViewed",
-            "handoffFromNotificationUI", "handoffTimestamp", "handoffNotificationRequestID"
-        ].forEach(defaults.removeObject(forKey:))
+        Self.storedStudyHandoffKeys.forEach(defaults.removeObject(forKey:))
+        return true
+    }
+
+    @MainActor
+    private func consumePendingPracticeHandoff(defaults: UserDefaults?, notificationRequestID: String) -> Bool {
+        guard let defaults,
+              defaults.string(forKey: "handoffNotificationRequestID") == notificationRequestID,
+              let deckString = defaults.string(forKey: "handoffPracticeDeckId"),
+              let deckID = UUID(uuidString: deckString) else { return false }
+        // This button starts the selected deck's normal practice flow. Carry no
+        // answered card, grading, or notification batch into that new session.
+        pendingStudyHandoff = StudyHandoff(deckId: deckID, cardId: nil,
+            selectedAnswer: nil, wasCorrect: nil, wasGraded: false, wasHintVisible: false)
+        Self.storedStudyHandoffKeys.forEach(defaults.removeObject(forKey:))
+        return true
+    }
+
+    private static let storedStudyHandoffKeys = [
+        "handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffTypedAnswer",
+        "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffImageBackViewed",
+        "handoffFromNotificationUI", "handoffTimestamp", "handoffNotificationRequestID",
+        "handoffCourseId", "handoffCourseSectionId", "handoffCourseOpenPath", "handoffPracticeDeckId"
+    ]
+
+    @MainActor
+    private func clearStoredStudyHandoff(for requestID: String, content: UNNotificationContent,
+        defaults: UserDefaults?) {
+        guard let defaults else { return }
+        let storedRequestID = defaults.string(forKey: "handoffNotificationRequestID")
+        let matchesLegacyCard: Bool
+        if storedRequestID == nil,
+           let deckID = content.userInfo["deckId"] as? String,
+           let cardID = content.userInfo["cardId"] as? String {
+            matchesLegacyCard = defaults.string(forKey: "handoffDeckId") == deckID &&
+                defaults.string(forKey: "handoffCardId") == cardID
+        } else {
+            matchesLegacyCard = false
+        }
+        guard storedRequestID == requestID || matchesLegacyCard else { return }
+        Self.storedStudyHandoffKeys.forEach(defaults.removeObject(forKey:))
     }
 
     @MainActor
