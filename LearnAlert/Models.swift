@@ -16,6 +16,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     case tapReveal = "tap_reveal"
     case matching = "matching"
     case fillBlank = "fill_blank"
+    case dragAnswer = "drag_answer"
     case images = "images"
     case anki = "anki"
 
@@ -27,6 +28,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
         case .tapReveal: "Tap to Reveal"
         case .matching: "Match Pairs"
         case .fillBlank: "Fill in the Blank"
+        case .dragAnswer: "Drag to Answer"
         case .images: "Images"
         case .anki: "Anki"
         }
@@ -38,6 +40,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
         case .tapReveal: "rectangle.on.rectangle"
         case .matching: "arrow.left.arrow.right"
         case .fillBlank: "text.cursor"
+        case .dragAnswer: "text.line.first.and.arrowtriangle.forward"
         case .images: "photo.on.rectangle"
         case .anki: "rectangle.stack.badge.play"
         }
@@ -49,6 +52,7 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
         case .tapReveal: "Front-and-back flip with self assessment"
         case .vocabulary: "Word, pronunciation, and dictionary definition"
         case .fillBlank: "Fill a sentence by typing or choosing an answer"
+        case .dragAnswer: "Tap or drag shuffled tiles into the right order"
         case .matching: "Connect paired terms and definitions"
         case .images: "Review one picture or reveal an image on the back"
         case .anki: "Imported Anki templates, formatting, and media"
@@ -275,6 +279,13 @@ class Flashcard {
         return LanguageQuestionText.concise(question, hasPromptImage: promptImageName?.isEmpty == false)
     }
 
+    /// Text-only AI editing cannot preserve the identity/order of media tiles.
+    var supportsTextAIRefinement: Bool {
+        cardType != .images && !(cardType == .dragAnswer && fieldMedia.contains {
+            $0.key.hasPrefix("option:") && !$0.value.isEmpty
+        })
+    }
+
     var ankiContent: AnkiCardContent? {
         get { ankiContentData.flatMap { try? JSONDecoder().decode(AnkiCardContent.self, from: $0) } }
         set { ankiContentData = newValue.flatMap { try? JSONEncoder().encode($0) } }
@@ -344,6 +355,7 @@ class Flashcard {
     }
 
     var resolvedCorrectOptionIndex: Int? {
+        guard cardType != .dragAnswer else { return nil }
         if let correctOptionIndex, options.indices.contains(correctOptionIndex) { return correctOptionIndex }
         return options.firstIndex(of: correctAnswer)
     }
@@ -906,6 +918,7 @@ enum LanguageTopicStore {
         case "vocabulary": return .vocabulary
         case "tapReveal", "tap_reveal": return .tapReveal
         case "images": return .images
+        case "dragAnswer", "drag_answer": return .dragAnswer
         default: return .multipleChoice
         }
     }

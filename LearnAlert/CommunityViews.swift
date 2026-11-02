@@ -735,11 +735,20 @@ struct CommunitySampleCardView: View {
             if !isImageCard {
                 if let name = localCard?.promptAudioName { CommunityPreviewAudio(localName: name) }
                 else if let id = card.promptAudioID { CommunityPreviewAudio(mediaID: id) }
-                ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
-                    fieldPreview("option:\(index)", text: option)
+                if card.cardType != "drag_answer" {
+                    ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
+                        fieldPreview("option:\(index)", text: option)
+                    }
                 }
-                DisclosureGroup("Show answer") {
-                    if card.cardType == "matching" {
+                DisclosureGroup(card.cardType == "drag_answer" ? "Show correct order" : "Show answer") {
+                    if card.cardType == "drag_answer" {
+                        ForEach(card.options.indices, id: \.self) { index in
+                            HStack(spacing: 8) {
+                                Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
+                                fieldPreview("option:\(index)", text: card.options[index])
+                            }
+                        }
+                    } else if card.cardType == "matching" {
                         ForEach(Array(card.matchingLeftItems.enumerated()), id: \.offset) { index, item in
                             HStack { fieldPreview("left:\(index)", text: item); Image(systemName: "arrow.right"); fieldPreview("right:\(index)", text: card.matchingRightItems.indices.contains(index) ? card.matchingRightItems[index] : "") }
                         }

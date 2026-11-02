@@ -518,15 +518,18 @@ struct DeckAIAssistantSheet: View {
                 if let returnedDeck = result.deck, !returnedDeck.cards.isEmpty {
                     var updatedCount = 0
                     var addedCount = 0
-                    let textCards = deck.cards.filter { $0.cardType != .images }
+                    let textCards = deck.cards.filter(\.supportsTextAIRefinement)
 
                     for (index, card) in returnedDeck.cards.enumerated() {
                         let cleanPrompt = card.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleanPrompt.isEmpty else { continue }
-                        let options = card.type == .multipleChoice ? card.options : []
+                        guard card.type != .dragAnswer || card.hasValidOrderedTokens else { continue }
+                        let options = card.type == .multipleChoice || card.type == .dragAnswer ? card.options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } : []
                         let correctAnswer: String
                         if card.type == .multipleChoice, options.indices.contains(card.correctAnswerIndex) {
                             correctAnswer = options[card.correctAnswerIndex]
+                        } else if card.type == .dragAnswer {
+                            correctAnswer = options.joined(separator: " ")
                         } else {
                             correctAnswer = card.answer
                         }
@@ -535,6 +538,7 @@ struct DeckAIAssistantSheet: View {
 
                         if let existing = textCards.first(where: { $0.id.uuidString == card.id })
                             ?? textCards.first(where: { $0.question.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == cleanPrompt.lowercased() }) {
+                            guard !(existing.cardType == .dragAnswer || card.type == .dragAnswer) || existing.cardType.rawValue == card.type.rawValue else { continue }
                             var changed = false
                             if !cleanHint.isEmpty && existing.hint != cleanHint {
                                 existing.hint = cleanHint
@@ -551,6 +555,7 @@ struct DeckAIAssistantSheet: View {
                             if changed { updatedCount += 1 }
                         } else if returnedDeck.cards.count == textCards.count && index < textCards.count {
                             let existing = textCards[index]
+                            guard !(existing.cardType == .dragAnswer || card.type == .dragAnswer) || existing.cardType.rawValue == card.type.rawValue else { continue }
                             existing.question = cleanPrompt
                             existing.correctAnswer = cleanAnswer
                             existing.options = options

@@ -22,8 +22,9 @@ struct StudyHandoff: Identifiable, Hashable {
     var wasRevealed: Bool = false
     var wasImageBackViewed: Bool = false
     var notificationRequestID: String? = nil
+    var typedAnswer: String? = nil
 
-    var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")-\(notificationRequestID ?? "session")" }
+    var id: String { "\(deckId.uuidString)-\(cardId.uuidString)-\(selectedAnswer ?? "reveal")-\(typedAnswer ?? "")-\(notificationRequestID ?? "session")" }
 }
 
 class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -406,7 +407,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
         // synthetic IDs, leaving any unrelated real study handoff untouched.
         if defaults?.string(forKey: "handoffDeckId") == content.userInfo["deckId"] as? String,
            defaults?.string(forKey: "handoffCardId") == content.userInfo["cardId"] as? String {
-            ["handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffWasCorrect",
+            ["handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffTypedAnswer", "handoffWasCorrect",
              "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffFromNotificationUI", "handoffTimestamp"]
                 .forEach { defaults?.removeObject(forKey: $0) }
         }
@@ -428,7 +429,7 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             let context = ModelContext(SharedDatabase.shared.container)
             // This old route identified a collection, not a particular answer.
             // Never transfer stale grading from another alert to its fallback.
-            ["handoffSelectedAnswer", "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible",
+            ["handoffSelectedAnswer", "handoffTypedAnswer", "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible",
              "handoffWasRevealed", "handoffImageBackViewed"].forEach { defaults.removeObject(forKey: $0) }
             if let card = LanguageDeckMigration.legacyCard(deckID: defaults.string(forKey: "handoffDeckId"), courseID: id, in: context), let deck = card.deck {
                 defaults.set(deck.id.uuidString, forKey: "handoffDeckId")
@@ -453,11 +454,12 @@ class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterD
             wasHintVisible: defaults.bool(forKey: "handoffHintVisible"),
             wasRevealed: defaults.bool(forKey: "handoffWasRevealed"),
             wasImageBackViewed: defaults.bool(forKey: "handoffImageBackViewed"),
-            notificationRequestID: defaults.string(forKey: "handoffNotificationRequestID")
+            notificationRequestID: defaults.string(forKey: "handoffNotificationRequestID"),
+            typedAnswer: defaults.string(forKey: "handoffTypedAnswer")
         )
 
         [
-            "handoffDeckId", "handoffCardId", "handoffSelectedAnswer",
+            "handoffDeckId", "handoffCardId", "handoffSelectedAnswer", "handoffTypedAnswer",
             "handoffWasCorrect", "handoffWasGraded", "handoffHintVisible", "handoffWasRevealed", "handoffImageBackViewed",
             "handoffFromNotificationUI", "handoffTimestamp", "handoffNotificationRequestID"
         ].forEach(defaults.removeObject(forKey:))

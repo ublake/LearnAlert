@@ -370,6 +370,7 @@ private struct NotificationSimulatedContainer: View {
     @State private var isGraded = false
     @State private var showingHint = false
     @State private var typedBlank = ""
+    @State private var orderedResponse = ""
     @State private var selectedMatchingLeft: String? = nil
     @State private var matchingAssignments: [String: String] = [:]
     @State private var matchingResults: [String: Bool] = [:]
@@ -394,6 +395,8 @@ private struct NotificationSimulatedContainer: View {
             return "Match each learning strategy to its core concept:"
         case .fillBlank:
             return "Photosynthesis converts light into chemical _______ in plants."
+        case .dragAnswer:
+            return "She is a lawyer."
         }
     }
 
@@ -428,6 +431,8 @@ private struct NotificationSimulatedContainer: View {
             return "Connect cognitive techniques to their core definitions."
         case .fillBlank:
             return "Begins with the letter 'e'."
+        case .dragAnswer:
+            return "Build the Spanish sentence."
         }
     }
 
@@ -525,6 +530,13 @@ private struct NotificationSimulatedContainer: View {
                             matchingPreview
                         case .fillBlank:
                             fillBlankPreview
+                        case .dragAnswer:
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text(questionText).font(.headline).foregroundStyle(textColorPrimary)
+                                CardDragAnswerPanel(options: ["Ella", "es", "abogada"], fields: [:],
+                                    isGraded: isGraded, response: $orderedResponse,
+                                    onGrade: { _ in withAnimation(.snappy) { isGraded = true } })
+                            }
                         }
                     }
 
@@ -552,7 +564,7 @@ private struct NotificationSimulatedContainer: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "arrow.right.circle.fill")
-                                Text("Try again")
+                                Text(cardType == .dragAnswer ? "Next card" : "Try again")
                             }
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(design == .liquidGlass ? Color.white : textColorPrimary)
@@ -586,6 +598,7 @@ private struct NotificationSimulatedContainer: View {
         isGraded = false
         showingHint = false
         typedBlank = ""
+        orderedResponse = ""
         selectedMatchingLeft = nil
         matchingAssignments.removeAll()
         matchingResults.removeAll()

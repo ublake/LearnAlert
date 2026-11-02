@@ -524,7 +524,7 @@ public struct CourseLessonCard: Identifiable, Codable, Hashable {
         case "vocabulary", "tapReveal": return 1
         case "matching": return 3
         case "listening": return 4
-        case "fillBlank": return 5
+        case "fillBlank", "dragAnswer", "drag_answer": return 5
         case "listeningWrite": return 6
         default: return 2
         }
@@ -943,7 +943,18 @@ enum LanguageDeckProjection {
                 default: return nil
                 }
             } else if card.activity?.kind == .teach || card.id.hasSuffix("-guide") { return nil }
-            if type == "matching" || card.activity?.kind == .matchPairs { type = "matching" }
+            if ["dragAnswer", "drag_answer"].contains(type) {
+                guard (2...30).contains(options.count), options.enumerated().allSatisfy({ offset, value in
+                    value.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 160 &&
+                    (media["option:\(offset)"] ?? .init()).hasContent(value)
+                }) else { return nil }
+                type = "drag_answer"; index = nil
+                answer = options.enumerated().map { offset, value in
+                    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return text.isEmpty ? (media["option:\(offset)"]?.image != nil ? "Image" : "Audio") : text
+                }.joined(separator: " ")
+            }
+            else if type == "matching" || card.activity?.kind == .matchPairs { type = "matching" }
             else if ["fillBlank", "fill_blank", "listeningWrite"].contains(type) {
                 if options.count < 2 { options = distractors(answer) }
                 guard options.count >= 2 else { return nil }
@@ -954,7 +965,7 @@ enum LanguageDeckProjection {
                 guard answer.count < 90, !answer.isEmpty else { return nil }
                 options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice"
             } else { options = distractors(answer); guard options.count >= 2 else { return nil }; index = 0; type = "multipleChoice" }
-            guard type == "matching" ? !left.isEmpty && left.count == right.count : index != nil else { return nil }
+            guard type == "drag_answer" || (type == "matching" ? !left.isEmpty && left.count == right.count : index != nil) else { return nil }
             return CourseLessonCard(id: card.id, question: LanguageQuestionText.concise(question, hasPromptImage: media["prompt"]?.image != nil), options: options, correctAnswer: answer,
                 cardType: type, matchingLeftItems: left, matchingRightItems: right,
                 fieldMedia: media, correctOptionIndex: index,

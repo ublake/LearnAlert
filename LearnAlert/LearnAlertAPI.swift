@@ -7,6 +7,7 @@ enum GeneratedCardType: String, Codable, CaseIterable, Sendable {
     case multipleChoice = "multiple_choice"
     case matching = "matching"
     case fillBlank = "fill_blank"
+    case dragAnswer = "drag_answer"
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -26,6 +27,8 @@ enum GeneratedCardType: String, Codable, CaseIterable, Sendable {
             self = .matching
         case "fill_blank", "fillblank", "fill_in_the_blank", "cloze":
             self = .fillBlank
+        case "drag_answer", "draganswer", "word_order", "word_ordering", "put_in_order":
+            self = .dragAnswer
         default:
             self = .tapReveal
         }
@@ -105,6 +108,13 @@ struct GeneratedCard: Codable, Identifiable, Sendable, Equatable {
     var sourceExcerpt: String
     var sourceLocator: String
     var matchingPairs: [GeneratedMatchingPair]? = nil
+
+    var hasValidOrderedTokens: Bool {
+        (2...30).contains(options.count) && options.allSatisfy {
+            let text = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !text.isEmpty && text.utf16.count <= 160
+        }
+    }
 
     init(
         id: String,
@@ -525,7 +535,7 @@ struct LearnAlertAPI: Sendable {
             mode: mode,
             difficulty: "auto",
             languageDirection: "auto",
-            preferredCardTypes: [.tapReveal, .multipleChoice, .matching, .fillBlank],
+            preferredCardTypes: [.tapReveal, .multipleChoice, .matching, .fillBlank, .dragAnswer],
             userInstruction: userInstruction,
             chatHistory: backendHistory
         )
@@ -568,7 +578,7 @@ struct LearnAlertAPI: Sendable {
             "mode": mode,
             "difficulty": "auto",
             "languageDirection": "auto",
-            "preferredCardTypes": "[\"tap_reveal\",\"multiple_choice\",\"matching\",\"fill_blank\"]",
+            "preferredCardTypes": "[\"tap_reveal\",\"multiple_choice\",\"matching\",\"fill_blank\",\"drag_answer\"]",
             "userInstruction": userInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? "Create comprehensive study flashcards from this material. Name the deck with a concise, topic-focused title describing the subject matter (do not name it after the file)."
                 : userInstruction.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -987,6 +997,12 @@ struct LearnAlertAPI: Sendable {
             case .fillBlank:
                 guard !c.answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
                 return c
+            case .dragAnswer:
+                guard c.hasValidOrderedTokens else { return nil }
+                c.options = c.options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                c.answer = c.options.joined(separator: " ")
+                c.correctAnswerIndex = -1
+                return c
             case .matching:
                 guard let pairs = c.matchingPairs, pairs.count >= 2 else { return nil }
                 let validPairs = pairs.filter {
@@ -1018,11 +1034,11 @@ extension Deck {
     func toGeneratedDeck() -> GeneratedDeck {
         // Image-only review cards have no text to refine. Keep their media local
         // instead of coercing them into empty multiple-choice cards.
-        let genCards = cards.filter { $0.cardType != .images }.map { card in
+        let genCards = cards.filter(\.supportsTextAIRefinement).map { card in
             let pairs: [GeneratedMatchingPair]? = (card.cardType == .matching && !card.matchingLeftItems.isEmpty)
                 ? zip(card.matchingLeftItems, card.matchingRightItems).map { GeneratedMatchingPair(left: $0, right: $1) }
                 : nil
-            let options = card.cardType == .multipleChoice ? card.options : []
+            let options = card.cardType == .multipleChoice || card.cardType == .dragAnswer ? card.options : []
             let correctIdx = card.cardType == .multipleChoice ? (options.firstIndex(of: card.correctAnswer) ?? 0) : 0
             return GeneratedCard(
                 id: card.id.uuidString,

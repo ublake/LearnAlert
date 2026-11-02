@@ -51,6 +51,16 @@ struct DeckCardPreviewRow: View {
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(correct ? Color.green.opacity(0.35) : Color.clear, lineWidth: 0.8))
                         }
                     }
+                case .dragAnswer:
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Correct order").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
+                        ForEach(card.options.indices, id: \.self) { index in
+                            HStack(spacing: 8) {
+                                Text("\(index + 1)").font(.caption2.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary).frame(width: 18)
+                                field("option:\(index)", title: nil, text: card.options[index])
+                            }
+                        }
+                    }
                 case .matching:
                     VStack(spacing: 6) {
                         ForEach(card.matchingLeftItems.indices, id: \.self) { index in

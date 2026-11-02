@@ -17,6 +17,8 @@ struct CreateCardView: View {
     @State private var options = ["", "", "", ""]
     @State private var correctOptionIndex = 0
     @State private var visibleOptionCount = 4
+    @State private var orderedTokens = Array(repeating: "", count: 30)
+    @State private var visibleTokenCount = 2
     @State private var matchingLeft = Array(repeating: "", count: 20)
     @State private var matchingRight = Array(repeating: "", count: 20)
     @State private var visiblePairCount = 2
@@ -48,6 +50,12 @@ struct CreateCardView: View {
         case .multipleChoice:
             return hasContent("prompt", question) && correctOptionIndex < visibleOptionCount &&
                 (0..<visibleOptionCount).allSatisfy { hasContent("option:\($0)", options[$0]) }
+        case .dragAnswer:
+            return hasContent("prompt", question) && (2...30).contains(visibleTokenCount) &&
+                (0..<visibleTokenCount).allSatisfy {
+                    orderedTokens[$0].trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 160 &&
+                    hasContent("option:\($0)", orderedTokens[$0])
+                }
         case .matching:
             return (0..<visiblePairCount).allSatisfy { hasContent("left:\($0)", matchingLeft[$0]) && hasContent("right:\($0)", matchingRight[$0]) }
         case .images:
@@ -121,6 +129,7 @@ struct CreateCardView: View {
                 case .images: imagesEditor
                 case .multipleChoice: multipleChoiceEditor
                 case .matching: matchingEditor
+                case .dragAnswer: dragAnswerEditor
                 default: frontBackEditor
                 }
                 if selectedType != .images {
@@ -205,6 +214,77 @@ struct CreateCardView: View {
             }
         }.padding(12).editorSurface()
     }
+    private var dragAnswerEditor: some View {
+        VStack(spacing: 12) {
+            mediaField("prompt", title: "", placeholder: "Prompt", text: $question, minimumHeight: 56)
+            HStack {
+                Text("CORRECT ORDER").font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary)
+                Spacer()
+                Text("\(visibleTokenCount)/30").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
+            }
+            Text("Add words or chunks in answer order. They’ll be shuffled when studying.")
+                .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(0..<visibleTokenCount, id: \.self) { index in
+                HStack(alignment: .center, spacing: 6) {
+                    Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary).frame(width: 18)
+                    mediaField("option:\(index)", title: "", placeholder: "Word or chunk \(index + 1)", text: $orderedTokens[index])
+                    VStack(spacing: 0) {
+                        Button { moveToken(index, by: -1) } label: { Image(systemName: "chevron.up").frame(width: 28, height: 24) }
+                            .disabled(index == 0).accessibilityLabel("Move tile \(index + 1) earlier")
+                        Button { moveToken(index, by: 1) } label: { Image(systemName: "chevron.down").frame(width: 28, height: 24) }
+                            .disabled(index + 1 == visibleTokenCount).accessibilityLabel("Move tile \(index + 1) later")
+                    }.font(.caption)
+                    Button { removeToken(index) } label: { Image(systemName: "minus.circle").frame(width: 28, height: 44) }
+                        .disabled(visibleTokenCount <= 2).accessibilityLabel("Remove tile \(index + 1)")
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingImage || pendingImageCrop != nil || showingAudioImporter)
+            Button {
+                guard visibleTokenCount < 30 else { return }
+                orderedTokens[visibleTokenCount] = ""
+                fields.removeValue(forKey: "option:\(visibleTokenCount)")
+                images.removeValue(forKey: "option:\(visibleTokenCount)")
+                visibleTokenCount += 1
+            } label: {
+                Label("Add tile", systemImage: "plus.circle").font(.subheadline).frame(maxWidth: .infinity, minHeight: 36)
+            }.buttonStyle(.plain).disabled(visibleTokenCount == 30 || isLoadingImage)
+            if orderedTokens.prefix(visibleTokenCount).contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count > 160 }) {
+                Text("Keep each tile to 160 characters or fewer.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed)
+            }
+        }.padding(12).editorSurface()
+    }
+
+    private func moveToken(_ index: Int, by offset: Int) {
+        let destination = index + offset
+        guard (0..<visibleTokenCount).contains(index), (0..<visibleTokenCount).contains(destination) else { return }
+        var order = Array(0..<visibleTokenCount)
+        order.swapAt(index, destination)
+        reorderTokens(order)
+    }
+
+    private func removeToken(_ index: Int) {
+        guard visibleTokenCount > 2 else { return }
+        reorderTokens(Array(0..<visibleTokenCount).filter { $0 != index })
+    }
+
+    private func reorderTokens(_ order: [Int]) {
+        let previous = orderedTokens
+        let previousFields = fields
+        let previousImages = images
+        for index in 0..<30 {
+            let key = "option:\(index)"
+            fields.removeValue(forKey: key); images.removeValue(forKey: key)
+            orderedTokens[index] = ""
+        }
+        for (index, previousIndex) in order.enumerated() {
+            orderedTokens[index] = previous[previousIndex]
+            fields["option:\(index)"] = previousFields["option:\(previousIndex)"]
+            images["option:\(index)"] = previousImages["option:\(previousIndex)"]
+        }
+        visibleTokenCount = order.count
+    }
     private var imagesEditor: some View {
         VStack(spacing: 12) {
             Picker("Image layout", selection: $imageCardLayout) {
@@ -259,6 +339,10 @@ struct CreateCardView: View {
         selectedSectionId = card.section?.id.uuidString ?? "NONE"
         imageCardLayout = card.answerImageName == nil ? .single : .frontAndBack
         for (i, text) in card.options.prefix(4).enumerated() { options[i] = text }
+        if card.cardType == .dragAnswer {
+            visibleTokenCount = min(30, max(2, card.options.count))
+            for (index, value) in card.options.prefix(30).enumerated() { orderedTokens[index] = value }
+        }
         visibleOptionCount = min(4, max(2, card.options.count)); correctOptionIndex = card.resolvedCorrectOptionIndex ?? 0
         for (i, text) in card.matchingLeftItems.prefix(20).enumerated() { matchingLeft[i] = text }
         for (i, text) in card.matchingRightItems.prefix(20).enumerated() { matchingRight[i] = text }
@@ -268,7 +352,7 @@ struct CreateCardView: View {
         guard let type = selectedType, isFormValid else { return }
         var final = fields
         var savedImages: [String] = []
-        let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : hasChoiceAnswers ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
+        let allowed = Set(["prompt"] + (type == .matching ? (0..<visiblePairCount).flatMap { ["left:\($0)", "right:\($0)"] } : type == .dragAnswer ? (0..<visibleTokenCount).map { "option:\($0)" } : hasChoiceAnswers ? (0..<visibleOptionCount).map { "option:\($0)" } : type == .images && imageCardLayout == .single ? [] : ["answer"]) + (hintEnabled && type != .images ? ["hint"] : []))
         for (key, image) in images where allowed.contains(key) {
             guard let name = CardImageStore.saveImage(image) else {
                 savedImages.forEach { CardImageStore.deleteImage(named: $0) }; error = "Your image couldn’t be saved. Please try again."; return
@@ -281,8 +365,10 @@ struct CreateCardView: View {
         let card = cardToEdit ?? Flashcard(question: "", cardType: type)
         let old = (card.question, card.correctAnswer, card.options, card.hint, card.matchingLeftItems, card.matchingRightItems, card.fieldMedia, card.correctOptionIndex, card.section)
         card.question = type == .images ? "" : trim(question)
-        card.options = hasChoiceAnswers ? options.prefix(visibleOptionCount).map(trim) : []
-        card.correctAnswer = hasChoiceAnswers ? trim(options[correctOptionIndex]) : type == .matching || type == .images ? "" : trim(answer)
+        card.options = type == .dragAnswer ? orderedTokens.prefix(visibleTokenCount).map(trim) : hasChoiceAnswers ? options.prefix(visibleOptionCount).map(trim) : []
+        card.correctAnswer = type == .dragAnswer ? card.options.enumerated().map { index, value in
+            value.isEmpty ? (final["option:\(index)"]?.image != nil ? "Image" : "Audio") : value
+        }.joined(separator: " ") : hasChoiceAnswers ? trim(options[correctOptionIndex]) : type == .matching || type == .images ? "" : trim(answer)
         card.correctOptionIndex = hasChoiceAnswers ? correctOptionIndex : nil
         card.hint = hintEnabled && type != .images ? trim(hint) : ""
         card.matchingLeftItems = type == .matching ? matchingLeft.prefix(visiblePairCount).map(trim) : []

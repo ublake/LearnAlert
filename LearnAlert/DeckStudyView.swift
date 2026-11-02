@@ -40,6 +40,7 @@ struct DeckStudyView: View {
 
     let initialCardId: UUID?
     let initialSelectedAnswer: String?
+    let initialTypedAnswer: String?
     let initialWasCorrect: Bool?
     let initialWasGraded: Bool
     let initialHintVisible: Bool
@@ -48,11 +49,13 @@ struct DeckStudyView: View {
     let notificationRequestID: String?
 
     init(deck: Deck, initialCardId: UUID? = nil, initialSelectedAnswer: String? = nil,
+         initialTypedAnswer: String? = nil,
          initialWasCorrect: Bool? = nil, initialWasGraded: Bool = false,
          initialHintVisible: Bool = false, initialWasRevealed: Bool = false,
          initialImageBackViewed: Bool = false, notificationRequestID: String? = nil) {
         self.deck = deck; self.initialCardId = initialCardId
         self.initialSelectedAnswer = initialSelectedAnswer; self.initialWasCorrect = initialWasCorrect
+        self.initialTypedAnswer = initialTypedAnswer
         self.initialWasGraded = initialWasGraded; self.initialHintVisible = initialHintVisible
         self.initialWasRevealed = initialWasRevealed; self.initialImageBackViewed = initialImageBackViewed
         self.notificationRequestID = notificationRequestID
@@ -212,6 +215,7 @@ struct DeckStudyView: View {
             queueIDs.removeAll { $0 == id }; queueIDs.insert(id, at: 0)
             cardIndex = 0; waitingForReview = false; isComplete = false
             selectedAnswer = initialSelectedAnswer; isGraded = initialWasGraded
+            typedAnswer = initialTypedAnswer ?? ""
             isRevealed = initialWasRevealed || (initialWasGraded && initialSelectedAnswer == nil)
             hasViewedImageBack = initialImageBackViewed || initialWasRevealed || initialWasGraded
             showingHint = initialHintVisible; hasRecordedHint = initialHintVisible
@@ -357,7 +361,7 @@ struct DeckStudyView: View {
         guard !isGraded, !card.cardType.usesSpacedReview else { return }
         InteractionSoundPlayer.shared.play(isCorrect ? .correct : .incorrect)
         recordPracticeAnswer(card, correct: isCorrect)
-        if !isCorrect { requeue(card) }
+        if !isCorrect && card.cardType != .dragAnswer { requeue(card) }
         isGraded = true
         checkpoint()
     }
@@ -725,6 +729,9 @@ private struct QuizSessionView: View {
                             }
                         case .matching:
                             CardMediaMatchingBoard(left: matchingLeftItems, right: matchingRightItems, fields: fieldMedia, isGraded: isGraded, onGrade: onGrade)
+                        case .dragAnswer:
+                            CardDragAnswerPanel(options: options, fields: fieldMedia, isGraded: isGraded,
+                                response: $typedAnswer, onGrade: onGrade)
                         }
 
                         if !cardType.isReviewOnly || (fieldMedia["hint"] ?? .init()).hasContent(hint) {

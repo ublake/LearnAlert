@@ -155,6 +155,7 @@ struct ContentView: View {
                         deck: deck,
                         initialCardId: handoff.cardId,
                         initialSelectedAnswer: handoff.selectedAnswer,
+                        initialTypedAnswer: handoff.typedAnswer,
                         initialWasCorrect: handoff.wasCorrect,
                         initialWasGraded: handoff.wasGraded,
                         initialHintVisible: handoff.wasHintVisible,
@@ -1233,12 +1234,6 @@ private struct HomeAlertSetupCard: View {
             }
             .overlay { DeckSelectionHintBorder(isVisible: hasStudyMaterial && selectedTarget == nil) }
 
-            if case .deck(let deck)? = selectedTarget {
-                HomeMasteryBars(summary: deck.librarySummary)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .allowsHitTesting(false)
-            }
-
             HStack(spacing: 10) {
                 Button {
                     guard let selectedTarget else { return }
@@ -1304,13 +1299,6 @@ private struct HomeAlertSetupCard: View {
                 Spacer(minLength: 28)
             }
             .foregroundStyle(LearnAlertStyle.textPrimary)
-
-            if let activeDeckId = engine.activeDeckId,
-               let deck = decks.first(where: { $0.id == activeDeckId }) {
-                HomeMasteryBars(summary: deck.librarySummary)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .allowsHitTesting(false)
-            }
 
             HStack(spacing: 10) {
                 Button(action: showSettings) {

@@ -725,6 +725,16 @@ struct CardInteractivePreviewSheet: View {
                             CardMediaChoiceList(options: card.options, fields: card.fieldMedia,
                                 correctIndex: card.resolvedCorrectOptionIndex, selection: selectedAnswer,
                                 isGraded: selectedAnswer != nil) { selectedAnswer = $0 }
+                        } else if card.cardType == .dragAnswer {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Correct order").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                                ForEach(card.options.indices, id: \.self) { index in
+                                    HStack(spacing: 8) {
+                                        Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
+                                        CardFieldContent(text: card.options[index], media: card.fieldMedia["option:\(index)"] ?? .init(), imageHeight: 80)
+                                    }
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                         } else if card.cardType == .matching {
                             CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
                                 fields: card.fieldMedia, isGraded: matchingGraded) { _ in matchingGraded = true }

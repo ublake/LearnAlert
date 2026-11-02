@@ -1,7 +1,253 @@
 import SwiftUI
 
+/// Positions identify tiles, so repeated words remain separate draggable items.
+nonisolated enum CardDragAnswerEvaluation {
+    static func selection(in response: String, count: Int) -> [Int] {
+        guard let data = response.data(using: .utf8),
+              let values = try? JSONDecoder().decode([Int].self, from: data) else { return [] }
+        var seen = Set<Int>()
+        return values.filter { (0..<count).contains($0) && seen.insert($0).inserted }
+    }
+
+    static func response(for selection: [Int]) -> String {
+        (try? JSONEncoder().encode(selection)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    static func isCorrect(response: String, options: [String], fields: [String: CardFieldMedia]) -> Bool {
+        guard let data = response.data(using: .utf8),
+              let selected = try? JSONDecoder().decode([Int].self, from: data),
+              (2...30).contains(options.count), selected.count == options.count,
+              Set(selected).count == options.count, selected.allSatisfy(options.indices.contains) else { return false }
+        func identity(_ index: Int) -> String {
+            let word = options[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Identical visible words can trade places. Empty media tiles must
+            // retain their actual media identity instead of comparing as "".
+            if !word.isEmpty { return "text:\(word)" }
+            let media = fields["option:\(index)"] ?? .init()
+            return "image:\(media.image ?? "")|audio:\(media.audio ?? "")"
+        }
+        guard options.indices.allSatisfy({ (fields["option:\($0)"] ?? .init()).hasContent(options[$0]) }) else { return false }
+        return selected.map(identity) == options.indices.map(identity)
+    }
+}
+
+/// One submission per presentation. Tapping is always available alongside the
+/// system drag interaction, including inside an expanded notification.
+struct CardDragAnswerPanel: View {
+    let options: [String]
+    let fields: [String: CardFieldMedia]
+    let isGraded: Bool
+    @Binding var response: String
+    let onGrade: (Bool) -> Void
+    @State private var bankOrder: [Int]
+    @State private var submittedResponse: String?
+    @State private var dragScope = UUID().uuidString
+    @State private var targetID: Int?
+    @State private var bankTargeted = false
+    @State private var answerTargeted = false
+    @State private var tileWidths: [Int: CGFloat] = [:]
+
+    init(options: [String], fields: [String: CardFieldMedia], isGraded: Bool,
+         response: Binding<String>, onGrade: @escaping (Bool) -> Void) {
+        self.options = options; self.fields = fields; self.isGraded = isGraded
+        _response = response; self.onGrade = onGrade
+        var order = Array(options.indices).shuffled()
+        if order.count > 1 && order == Array(options.indices) { order.append(order.removeFirst()) }
+        _bankOrder = State(initialValue: order)
+    }
+
+    private var selected: [Int] { CardDragAnswerEvaluation.selection(in: response, count: options.count) }
+    private var remaining: [Int] { bankOrder.filter { !selected.contains($0) } }
+    private var locked: Bool { isGraded || submittedResponse != nil }
+    private var validCard: Bool {
+        (2...30).contains(options.count) && options.indices.allSatisfy {
+            (fields["option:\($0)"] ?? .init()).hasContent(options[$0])
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Your answer").font(.caption.weight(.semibold))
+                Spacer()
+                Text("\(selected.count)/\(options.count)").font(.caption.monospacedDigit())
+            }.foregroundStyle(.secondary)
+
+            answerArea
+
+            if !isGraded {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Tiles").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    CardSentenceLayout(spacing: 6) {
+                        ForEach(remaining, id: \.self) { id in tile(id, inAnswer: false) }
+                        if remaining.isEmpty {
+                            Text("Drag a tile here to return it")
+                                .font(.caption).foregroundStyle(.secondary).frame(minHeight: 36)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(8)
+                    .modifier(NotificationMediaSurface(cornerRadius: 12,
+                        fill: Color.primary.opacity(bankTargeted ? 0.08 : 0.025),
+                        border: Color.primary.opacity(bankTargeted ? 0.45 : 0.12)))
+                    .dropDestination(for: String.self) { items, _ in
+                        guard let id = droppedID(items), selected.contains(id) else { return false }
+                        update(selected.filter { $0 != id }); return true
+                    } isTargeted: { bankTargeted = $0 && !locked }
+                }
+            }
+
+            if isGraded {
+                let correct = CardDragAnswerEvaluation.isCorrect(response: response, options: options, fields: fields)
+                Label(correct ? "Correct" : "Correct order", systemImage: correct ? "checkmark.circle.fill" : "arrow.right")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(correct ? Color.green : Color.secondary)
+                if !correct {
+                    CardSentenceLayout(spacing: 6) {
+                        ForEach(Array(options.indices), id: \.self) { id in tileContent(id, inAnswer: false, isSolution: true) }
+                    }
+                }
+            } else {
+                Button(submittedResponse == nil ? "Submit answer" : "Submitting…") {
+                    guard !locked, validCard, selected.count == options.count else { return }
+                    submittedResponse = response
+                    onGrade(CardDragAnswerEvaluation.isCorrect(response: response, options: options, fields: fields))
+                }
+                .notificationPrimaryActionStyle()
+                .disabled(locked || !validCard || selected.count != options.count)
+            }
+        }
+        .onChange(of: options) { _, _ in
+            bankOrder = Array(options.indices).shuffled()
+            submittedResponse = nil; response = ""; dragScope = UUID().uuidString
+        }
+        .onChange(of: isGraded) { wasGraded, graded in
+            if wasGraded && !graded {
+                // A preview or synthetic alert can advance without changing its
+                // sample card ID. This is a new presentation, not a second submit.
+                bankOrder = Array(options.indices).shuffled()
+                submittedResponse = nil; dragScope = UUID().uuidString
+            }
+        }
+    }
+
+    private var answerArea: some View {
+        CardSentenceLayout(spacing: 6) {
+            if selected.isEmpty {
+                Text("Tap or drag tiles here")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 54)
+                    .dropDestination(for: String.self) { items, _ in insert(items, at: 0) }
+                        isTargeted: { answerTargeted = $0 && !locked }
+            } else {
+                ForEach(Array(selected.enumerated()), id: \.element) { position, id in
+                    tile(id, inAnswer: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tileWidths[id] = $0 }
+                        .dropDestination(for: String.self) { items, point in
+                            let after = point.x > tileWidths[id, default: 80] / 2
+                            return insert(items, at: position + (after ? 1 : 0))
+                        } isTargeted: { targeted in
+                            if targeted && !locked { targetID = id }
+                            else if targetID == id { targetID = nil }
+                        }
+                }
+                if !locked {
+                    Image(systemName: "plus").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                        .dropDestination(for: String.self) { items, _ in insert(items, at: selected.count) }
+                            isTargeted: { answerTargeted = $0 && !locked }
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .padding(10)
+        .modifier(NotificationMediaSurface(cornerRadius: 14,
+            fill: Color.accentColor.opacity(answerTargeted ? 0.12 : 0.045),
+            border: Color.accentColor.opacity(answerTargeted ? 0.6 : 0.22)))
+    }
+
+    @ViewBuilder private func tile(_ id: Int, inAnswer: Bool) -> some View {
+        if locked { tileContent(id, inAnswer: inAnswer) }
+        else { tileContent(id, inAnswer: inAnswer).draggable(payload(id)) }
+    }
+
+    @ViewBuilder private func tileContent(_ id: Int, inAnswer: Bool, isSolution: Bool = false) -> some View {
+        let media = fields["option:\(id)"] ?? .init()
+        let content = HStack(spacing: 6) {
+            if isSolution {
+                tileLabel(id, media: media, showsRemove: false)
+                    .accessibilityLabel(options[id].isEmpty ? "Tile \(id + 1)" : options[id])
+            } else {
+                Button {
+                    guard !locked else { return }
+                    if inAnswer { update(selected.filter { $0 != id }) }
+                    else { update(selected + [id]) }
+                } label: {
+                    tileLabel(id, media: media, showsRemove: inAnswer && !locked)
+                }
+                .buttonStyle(.plain).disabled(locked)
+                .accessibilityLabel(options[id].isEmpty ? "Tile \(id + 1)" : options[id])
+                .accessibilityHint(locked ? "" : inAnswer ? "Tap to return this tile. Drag to change its position." : "Tap or drag to add this tile to your answer.")
+            }
+            if let audio = media.audio { CardAudioPlaybackButton(name: audio, compact: true).padding(.trailing, 6) }
+        }
+        .modifier(NotificationMediaSurface(cornerRadius: 10,
+            fill: inAnswer ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.04),
+            border: targetID == id ? Color.accentColor : Color.primary.opacity(0.18),
+            emphasized: targetID == id))
+        if inAnswer && !locked {
+            content.accessibilityAction(named: "Move earlier") { move(id, by: -1) }
+                .accessibilityAction(named: "Move later") { move(id, by: 1) }
+        } else { content }
+    }
+
+    private func tileLabel(_ id: Int, media: CardFieldMedia, showsRemove: Bool) -> some View {
+        HStack(spacing: 5) {
+            if options[id].isEmpty && media.image == nil { Label("Audio", systemImage: "waveform") }
+            else { CardFieldContent(text: options[id], media: .init(image: media.image), imageHeight: 64) }
+            if showsRemove { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary) }
+        }
+        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+        .padding(.horizontal, 10).frame(minHeight: 44)
+        .frame(maxWidth: 190)
+        .contentShape(Rectangle())
+    }
+
+    private func payload(_ id: Int) -> String { "learnalert-order:\(dragScope):\(id)" }
+    private func droppedID(_ items: [String]) -> Int? {
+        guard !locked, items.count == 1 else { return nil }
+        let prefix = "learnalert-order:\(dragScope):"
+        guard items[0].hasPrefix(prefix), let id = Int(items[0].dropFirst(prefix.count)), options.indices.contains(id) else { return nil }
+        return id
+    }
+    private func insert(_ items: [String], at destination: Int) -> Bool {
+        guard let id = droppedID(items) else { return false }
+        var answer = selected
+        var target = min(max(0, destination), answer.count)
+        if let old = answer.firstIndex(of: id) {
+            answer.remove(at: old)
+            if old < target { target -= 1 }
+        }
+        answer.insert(id, at: min(target, answer.count)); update(answer); return true
+    }
+    private func move(_ id: Int, by amount: Int) {
+        guard !locked, let position = selected.firstIndex(of: id) else { return }
+        var answer = selected
+        let target = min(max(0, position + amount), answer.count - 1)
+        guard target != position else { return }
+        answer.swapAt(position, target); update(answer)
+    }
+    private func update(_ selection: [Int]) {
+        guard !locked else { return }
+        let encoded = CardDragAnswerEvaluation.response(for: selection)
+        guard response != encoded else { return }
+        withAnimation(.snappy(duration: 0.22)) { response = encoded }
+    }
+}
+
 /// Stable field keys keep attachments aligned even when their text is empty or duplicated.
-public struct CardFieldMedia: Codable, Hashable, Sendable {
+public nonisolated struct CardFieldMedia: Codable, Hashable, Sendable {
     var image: String? = nil
     var audio: String? = nil
     var isEmpty: Bool { image?.isEmpty != false && audio?.isEmpty != false }
@@ -9,13 +255,13 @@ public struct CardFieldMedia: Codable, Hashable, Sendable {
 }
 
 extension CardFieldMedia {
-    private enum CodingKeys: String, CodingKey { case image, audio, imageID, audioID }
-    public init(from decoder: Decoder) throws {
+    private nonisolated enum CodingKeys: String, CodingKey { case image, audio, imageID, audioID }
+    public nonisolated init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         self.init(image: try values.decodeIfPresent(String.self, forKey: .image) ?? values.decodeIfPresent(String.self, forKey: .imageID),
             audio: try values.decodeIfPresent(String.self, forKey: .audio) ?? values.decodeIfPresent(String.self, forKey: .audioID))
     }
-    public func encode(to encoder: Encoder) throws {
+    public nonisolated func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encodeIfPresent(image, forKey: .image)
         try values.encodeIfPresent(audio, forKey: .audio)

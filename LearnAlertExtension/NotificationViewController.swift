@@ -714,6 +714,13 @@ struct FlashcardNotificationView: View {
                 }
 
                 // Card Type Presentation: Fill in the Blank
+                else if activeCardType == "drag_answer" {
+                    CardDragAnswerPanel(options: activeOptions, fields: activeMedia, isGraded: isGraded,
+                        response: $typedAnswer, onGrade: { gradeCard(isCorrect: $0) })
+                        .id(activeCardId)
+                        .environment(\.colorScheme, isLight ? .light : .dark)
+                }
+
                 else if activeCardType == "fill_blank" && !activeOptions.isEmpty {
                     VStack(spacing: 12) {
                         if let prompt = activeMedia["prompt"], !prompt.isEmpty { CardFieldContent(media: prompt, imageHeight: 120) }
@@ -906,6 +913,7 @@ struct FlashcardNotificationView: View {
             if !sessionFinished { loadAnkiReviewOptions() }
             if !isSyntheticSession && !sessionFinished {
                 loadAvailableDecks()
+                restoreTypedHandoff()
                 persistStudyHandoff()
             }
         }
@@ -931,6 +939,9 @@ struct FlashcardNotificationView: View {
             onPresentationCardTypeChange?(type)
         }
         .onChange(of: selectedAnswer) { _, _ in
+            if !isSyntheticSession { persistStudyHandoff() }
+        }
+        .onChange(of: typedAnswer) { _, _ in
             if !isSyntheticSession { persistStudyHandoff() }
         }
         .onChange(of: isGraded) { _, _ in
@@ -1064,7 +1075,7 @@ struct FlashcardNotificationView: View {
         guard let requestID = notificationRequestID, !requestID.isEmpty,
               let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
               defaults.string(forKey: "handoffNotificationRequestID") == requestID else { return }
-        for key in ["handoffDeckId", "handoffCardId", "handoffNotificationRequestID", "handoffSelectedAnswer",
+        for key in ["handoffDeckId", "handoffCardId", "handoffNotificationRequestID", "handoffSelectedAnswer", "handoffTypedAnswer",
                     "handoffWasCorrect", "handoffWasGraded", "handoffWasRevealed", "handoffImageBackViewed",
                     "handoffHintVisible", "handoffFromNotificationUI", "handoffTimestamp"] {
             defaults.removeObject(forKey: key)
@@ -1390,6 +1401,15 @@ struct FlashcardNotificationView: View {
         }
     }
 
+    private func restoreTypedHandoff() {
+        guard typedAnswer.isEmpty, !isGraded,
+              let requestID = notificationRequestID, !requestID.isEmpty,
+              let defaults = UserDefaults(suiteName: "group.com.learnalert.shared"),
+              defaults.string(forKey: "handoffNotificationRequestID") == requestID,
+              defaults.string(forKey: "handoffCardId") == activeCardId else { return }
+        typedAnswer = defaults.string(forKey: "handoffTypedAnswer") ?? ""
+    }
+
     private func persistStudyHandoff() {
         guard !isSyntheticSession else { return }
         if sessionFinished { clearNotificationHandoff(); return }
@@ -1399,6 +1419,7 @@ struct FlashcardNotificationView: View {
         defaults.set(activeCardId, forKey: "handoffCardId")
         defaults.set(notificationRequestID, forKey: "handoffNotificationRequestID")
         defaults.set(selectedAnswer, forKey: "handoffSelectedAnswer")
+        defaults.set(typedAnswer, forKey: "handoffTypedAnswer")
         defaults.set(lastAnswerWasCorrect, forKey: "handoffWasCorrect")
         defaults.set(isGraded, forKey: "handoffWasGraded")
         defaults.set(isRevealed, forKey: "handoffWasRevealed")

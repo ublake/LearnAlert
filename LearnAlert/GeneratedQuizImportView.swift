@@ -79,6 +79,9 @@ struct GeneratedQuizImportView: View {
     private let defaultMaxCards = 50
     @State private var generatedDeck: GeneratedDeck?
     @State private var selectedCardIDs: Set<String> = []
+    private var hasInvalidSelectedOrderingCards: Bool {
+        generatedDeck?.cards.contains { selectedCardIDs.contains($0.id) && $0.type == .dragAnswer && !$0.hasValidOrderedTokens } == true
+    }
     @State private var assistantMessage = ""
     @State private var chatHistory: [DeckChatMessage] = []
     @State private var chatInput = ""
@@ -294,7 +297,7 @@ struct GeneratedQuizImportView: View {
                                 y: 3
                             )
                         }
-                        .disabled(selectedCardIDs.isEmpty || showsSavedDeck || isRefining || savedDeck != nil)
+                        .disabled(selectedCardIDs.isEmpty || hasInvalidSelectedOrderingCards || showsSavedDeck || isRefining || savedDeck != nil)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
                         .padding(.bottom, 6)
@@ -877,7 +880,7 @@ struct GeneratedQuizImportView: View {
             showingAlreadyCreatedAlert = true
             return
         }
-        guard let generatedDeck, !selectedCardIDs.isEmpty else { return }
+        guard let generatedDeck, !selectedCardIDs.isEmpty, !hasInvalidSelectedOrderingCards else { return }
         let color = DeckColorPalette.takeNextColor(existingColors: decks.map(\.colorHex))
         let deck = Deck(
             name: generatedDeck.title,
@@ -893,10 +896,12 @@ struct GeneratedQuizImportView: View {
         context.insert(deck)
 
         for card in generatedDeck.cards where selectedCardIDs.contains(card.id) {
-            let options = card.type == .multipleChoice ? card.options : []
+            let options = card.type == .multipleChoice || card.type == .dragAnswer ? card.options.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } : []
             let correctAnswer: String
             if card.type == .multipleChoice, options.indices.contains(card.correctAnswerIndex) {
                 correctAnswer = options[card.correctAnswerIndex]
+            } else if card.type == .dragAnswer {
+                correctAnswer = options.joined(separator: " ")
             } else {
                 correctAnswer = card.answer
             }
@@ -1948,6 +1953,7 @@ private struct GeneratedDeckReadyBubble: View {
         case .tapReveal: return "Tap Reveal"
         case .fillBlank: return "Fill in the Blank"
         case .multipleChoice: return "Multiple Choice"
+        case .dragAnswer: return "Drag to Answer"
         }
     }
 }
@@ -2202,6 +2208,7 @@ private struct GeneratedCardReviewRow: View {
         case .tapReveal: return "Tap Reveal"
         case .fillBlank: return "Fill in the Blank"
         case .multipleChoice: return "Multiple Choice"
+        case .dragAnswer: return "Drag to Answer"
         }
     }
 
@@ -2212,6 +2219,7 @@ private struct GeneratedCardReviewRow: View {
         case .tapReveal: return "hand.tap"
         case .fillBlank: return "character.cursor.ibeam"
         case .multipleChoice: return "list.bullet"
+        case .dragAnswer: return "text.line.first.and.arrowtriangle.forward"
         }
     }
 
@@ -2262,6 +2270,16 @@ private struct GeneratedCardPreview: View {
                     Label(option, systemImage: index == card.correctAnswerIndex ? "checkmark.circle.fill" : "circle")
                         .font(.subheadline)
                         .foregroundStyle(index == card.correctAnswerIndex ? LearnAlertStyle.green : LearnAlertStyle.textPrimary)
+                }
+            } else if card.type == .dragAnswer {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Correct order").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                    ForEach(card.options.indices, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(LearnAlertStyle.textSecondary)
+                            Text(card.options[index]).font(.subheadline).foregroundStyle(LearnAlertStyle.textPrimary)
+                        }
+                    }
                 }
             } else if card.type == .matching, let pairs = card.matchingPairs, !pairs.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -2332,6 +2350,29 @@ private struct GeneratedCardEditor: View {
                         TextField("Option \(index + 1)", text: $card.options[index])
                     }
                 }
+            } else if card.type == .dragAnswer {
+                Text("Correct order · shuffled when studying").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                ForEach(card.options.indices, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        Text("\(index + 1)").font(.caption.monospacedDigit())
+                        TextField("Word or chunk", text: Binding(
+                            get: { card.options.indices.contains(index) ? card.options[index] : "" },
+                            set: { if card.options.indices.contains(index) { card.options[index] = $0 } }
+                        ))
+                        Button { moveToken(index, by: -1) } label: { Image(systemName: "chevron.up").frame(width: 24, height: 32) }
+                            .disabled(index == 0).accessibilityLabel("Move tile earlier")
+                        Button { moveToken(index, by: 1) } label: { Image(systemName: "chevron.down").frame(width: 24, height: 32) }
+                            .disabled(index + 1 == card.options.count).accessibilityLabel("Move tile later")
+                        Button { removeToken(index) } label: { Image(systemName: "minus.circle").frame(width: 24, height: 32) }
+                            .disabled(card.options.count <= 2).accessibilityLabel("Remove tile")
+                    }.buttonStyle(.plain)
+                }
+                Button { if card.options.count < 30 { card.options.append("") } } label: { Label("Add tile", systemImage: "plus.circle") }
+                    .disabled(card.options.count >= 30)
+                if !card.hasValidOrderedTokens {
+                    Text("Use 2–30 nonempty tiles, up to 160 characters each.")
+                        .font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed)
+                }
             } else if card.type == .matching {
                 if let pairs = card.matchingPairs {
                     ForEach(pairs.indices, id: \.self) { index in
@@ -2362,6 +2403,17 @@ private struct GeneratedCardEditor: View {
         }
         .foregroundStyle(LearnAlertStyle.textPrimary)
         .textFieldStyle(.roundedBorder)
+    }
+
+    private func moveToken(_ index: Int, by offset: Int) {
+        let destination = index + offset
+        guard card.options.indices.contains(index), card.options.indices.contains(destination) else { return }
+        card.options.swapAt(index, destination)
+    }
+
+    private func removeToken(_ index: Int) {
+        guard card.options.count > 2, card.options.indices.contains(index) else { return }
+        card.options.remove(at: index)
     }
 }
 
