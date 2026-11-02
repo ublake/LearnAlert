@@ -815,6 +815,7 @@ struct CommunitySampleCardView: View {
 }
 
 struct ShareDeckToCommunitySheet: View {
+    private static let descriptionLimit = 2000
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let libraryDecks: [Deck]
@@ -852,7 +853,7 @@ struct ShareDeckToCommunitySheet: View {
               (1...500).contains(deck.cardCount),
               !deck.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, deck.name.utf16.count <= 120,
               !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, category.utf16.count <= 60,
-              !trimmedDescription.isEmpty, trimmedDescription.utf16.count <= 2000,
+              !trimmedDescription.isEmpty, trimmedDescription.utf16.count <= Self.descriptionLimit,
               acceptedRules else { return false }
         return !session.isDeveloper || publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 80
     }
@@ -904,7 +905,13 @@ struct ShareDeckToCommunitySheet: View {
                                     .accessibilityValue(CommunityFeedView.categoryTitle(category))
                                 }
                                 Divider()
-                                Text("Description").font(.subheadline.weight(.medium))
+                                HStack {
+                                    Text("Description").font(.subheadline.weight(.medium))
+                                    Spacer(minLength: 8)
+                                    Text(verbatim: "\(deckDescription.utf16.count.formatted(.number.locale(AppLocalization.locale))) / \(Self.descriptionLimit.formatted(.number.locale(AppLocalization.locale)))")
+                                        .font(.caption).monospacedDigit()
+                                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                                }
                                 TextEditor(text: $deckDescription)
                                     .font(.body).textInputAutocapitalization(.sentences)
                                     .scrollContentBackground(.hidden)
@@ -925,9 +932,6 @@ struct ShareDeckToCommunitySheet: View {
                                     }
                                     .accessibilityLabel("Description")
                                     .accessibilityHint("What will people learn?")
-                                if trimmedDescription.utf16.count > 2000 {
-                                    Text("Keep the description to 2,000 characters or fewer.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed)
-                                }
                             }.padding(14).appCardSurface(cornerRadius: 16).disabled(isPublishing)
                             sharingConsent
                             if deck.cardCount == 0 { Text("Add at least one card before sharing.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
@@ -981,7 +985,11 @@ struct ShareDeckToCommunitySheet: View {
                 if !isSignedIn { dismiss() }
             }
             .onChange(of: category) { _, _ in isSubmitted = false }
-            .onChange(of: deckDescription) { _, _ in isSubmitted = false }
+            .onChange(of: deckDescription) { _, text in
+                let limitedText = limitedDescription(text)
+                if text != limitedText { deckDescription = limitedText }
+                isSubmitted = false
+            }
             .onChange(of: publisherHandle) { _, _ in isSubmitted = false }
             .sheet(isPresented: $showingProfile) {
                 CommunityProfileSheet(saveTitle: AppLocalization.string("Save & submit"), onSave: {
@@ -1017,8 +1025,20 @@ struct ShareDeckToCommunitySheet: View {
                 })
         }.frame(maxWidth: .infinity, alignment: .leading).disabled(isPublishing)
     }
+    private func limitedDescription(_ text: String) -> String {
+        guard text.utf16.count > Self.descriptionLimit else { return text }
+        var length = 0
+        var endIndex = text.startIndex
+        for character in text {
+            let characterLength = String(character).utf16.count
+            guard length + characterLength <= Self.descriptionLimit else { break }
+            length += characterLength
+            endIndex = text.index(after: endIndex)
+        }
+        return String(text[..<endIndex])
+    }
     private func loadMetadata() {
-        category = selectedDeck?.communityCategory ?? "General"; deckDescription = selectedDeck?.communityDescription ?? ""
+        category = selectedDeck?.communityCategory ?? "General"; deckDescription = limitedDescription(selectedDeck?.communityDescription ?? "")
         isSubmitted = false; publishError = nil; publisherHandle = ""; acceptedRules = false
     }
     private func beginPublish() {

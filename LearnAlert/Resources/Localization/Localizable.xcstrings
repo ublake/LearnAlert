@@ -7320,6 +7320,47 @@
         }
       }
     },
+    "Added 4 new card types!": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¡Añadimos 4 nuevos tipos de tarjetas!"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionamos 4 novos tipos de cartões!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4 nouveaux types de cartes !"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4 neue Kartentypen hinzugefügt!"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4種類の新しいカードを追加！"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로운 카드 유형 4가지가 추가되었어요!"
+          }
+        }
+      }
+    },
     "Added to Library": {
       "comment": "Interface copy. LearnAlert/LanguageDeckDiscoveryView.swift, LearnAlert/PremadeDecksView.swift",
       "localizations": {
@@ -11465,6 +11506,47 @@
         }
       }
     },
+    "Brazilian Portuguese": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portugués de Brasil"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Português do Brasil"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portugais du Brésil"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brasilianisches Portugiesisch"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブラジルポルトガル語"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라질 포르투갈어"
+          }
+        }
+      }
+    },
     "Bring your .apkg decks into LearnAlert with images, audio, and custom card layouts.": {
       "comment": "Interface copy. LearnAlert/SettingsSections.swift",
       "localizations": {
@@ -13881,6 +13963,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "작성자 이름은 80자 이내로 정해 주세요."
+          }
+        }
+      }
+    },
+    "Choose a daily time range for your alerts. You can change it anytime in Alert Settings.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle ein tägliches Zeitfenster für deine Benachrichtigungen. Du kannst es jederzeit in den Benachrichtigungseinstellungen ändern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un horario diario para tus alertas. Puedes cambiarlo cuando quieras en Ajustes de alertas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez une plage horaire quotidienne pour vos alertes. Vous pouvez la modifier à tout moment dans les paramètres des alertes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎日の通知を受け取る時間帯を選んでください。「通知設定」でいつでも変更できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매일 알림을 받을 시간대를 선택하세요. 알림 설정에서 언제든지 변경할 수 있어요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha um intervalo diário para seus alertas. Você pode alterá-lo a qualquer momento em Configurações de alertas."
           }
         }
       }
@@ -20117,6 +20240,47 @@
         }
       }
     },
+    "Discover and share decks, customize your avatar, and like your favorite decks.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descubre y comparte mazos, personaliza tu avatar y da me gusta a tus mazos favoritos."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descubra e compartilhe baralhos, personalize seu avatar e curta seus baralhos favoritos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Découvrez et partagez des paquets, personnalisez votre avatar et aimez vos paquets préférés."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entdecke und teile Stapel, gestalte deinen Avatar und gib deinen Lieblingsstapeln ein Herz."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デッキを探して共有したり、アバターをカスタマイズしたり、お気に入りのデッキにいいねを付けたりできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "덱을 찾고 공유하고, 아바타를 꾸미고, 마음에 드는 덱에 좋아요를 눌러보세요."
+          }
+        }
+      }
+    },
     "Discover categories": {
       "comment": "Interface copy. LearnAlert/SettingsPreviewGroup.swift",
       "localizations": {
@@ -21917,6 +22081,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "엔드포인트를 찾을 수 없어요."
+          }
+        }
+      }
+    },
+    "Ends the next day": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endet am nächsten Tag"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina al día siguiente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se termine le lendemain"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了は翌日です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 날 종료"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina no dia seguinte"
           }
         }
       }
@@ -27071,6 +27276,47 @@
         }
       }
     },
+    "Import your Anki decks.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importa tus mazos de Anki."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importe seus baralhos do Anki."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importez vos paquets Anki."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importiere deine Anki-Stapel."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ankiデッキをインポートできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anki 덱을 가져오세요."
+          }
+        }
+      }
+    },
     "Imported Anki templates, formatting, and media": {
       "comment": "Interface copy. LearnAlert/Models.swift",
       "localizations": {
@@ -27272,6 +27518,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "내 라이브러리에 있음"
+          }
+        }
+      }
+    },
+    "In-app and notification reviews keep separate histories, with one shared daily allowance of 20 questions.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los repasos en la app y en las notificaciones mantienen historiales separados y comparten un único límite diario de 20 preguntas."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As revisões no app e nas notificações mantêm históricos separados e compartilham um único limite diário de 20 perguntas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les révisions dans l’app et dans les notifications gardent des historiques séparés et partagent une limite quotidienne de 20 questions."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiederholungen in der App und in Mitteilungen haben getrennte Verläufe und teilen sich ein Tageslimit von 20 Fragen."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ内と通知での復習履歴は別々に保存され、1日20問の上限は共通です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 내 복습과 알림 복습은 이력이 각각 저장되며, 하루 총 20문제 한도를 함께 사용해요."
           }
         }
       }
@@ -29822,6 +30109,47 @@
         }
       }
     },
+    "Learning just got a whole lot better!": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¡Aprender ahora es mucho mejor!"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprender ficou muito melhor!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apprendre devient encore plus agréable !"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lernen ist jetzt noch viel besser!"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習がもっと快適になりました！"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "학습이 훨씬 더 좋아졌어요!"
+          }
+        }
+      }
+    },
     "Left %lld": {
       "comment": "Interface copy. LearnAlert/CreateCardView.swift",
       "localizations": {
@@ -32344,6 +32672,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "더 많은 언어가 추가될 예정이에요"
+          }
+        }
+      }
+    },
+    "More scheduling & customization": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más opciones de horarios y personalización"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mais opções de agendamento e personalização"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus d’options de planification et de personnalisation"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehr Zeitplan- und Anpassungsoptionen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールとカスタマイズが充実"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 다양한 일정 및 맞춤 설정"
           }
         }
       }
@@ -35542,6 +35911,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "지금"
+          }
+        }
+      }
+    },
+    "Now in 6 more languages!": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¡Ahora en 6 idiomas más!"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agora em mais 6 idiomas!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désormais dans 6 langues supplémentaires !"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jetzt in 6 weiteren Sprachen!"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新たに6言語に対応！"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 6개 언어가 더 지원돼요!"
           }
         }
       }
@@ -40118,6 +40528,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "정답 보기"
+          }
+        }
+      }
+    },
+    "Rate reveal, image, and Anki cards with Again, Hard, Good, or Easy.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evalúa las tarjetas de Tocar para mostrar, Imágenes y Anki con los botones Otra vez, Difícil, Bien o Fácil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avalie os cartões de Tocar para revelar, Imagens e Anki com De novo, Difícil, Bom ou Fácil."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Évaluez les cartes Toucher pour révéler, Images et Anki avec À revoir, Difficile, Bien ou Facile."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bewerte Karten vom Typ „Antippen zum Aufdecken“, „Bilder“ und „Anki“ mit „Nochmal“, „Schwer“, „Gut“ oder „Einfach“."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「タップで答えを見る」「画像」「Anki」のカードを「もう一度」「難しい」「普通」「簡単」で評価できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘탭해서 정답 보기’, ‘이미지’, ‘Anki’ 카드를 ‘다시’, ‘어려움’, ‘보통’, ‘쉬움’으로 평가하세요."
           }
         }
       }
@@ -44961,6 +45412,47 @@
         }
       }
     },
+    "Set a schedule for each deck, choose daily times, and personalize alert sounds and styles.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configura horarios para cada mazo, elige las horas del día y personaliza los sonidos y estilos de las alertas."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Defina um agendamento para cada baralho, escolha os horários diários e personalize os sons e estilos dos alertas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planifiez chaque paquet, choisissez vos horaires quotidiens et personnalisez les sons et les styles des alertes."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lege für jeden Stapel einen Zeitplan und tägliche Uhrzeiten fest und passe Erinnerungstöne und Stile an."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デッキごとにスケジュールを設定し、毎日の時刻や通知音、スタイルをカスタマイズできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "덱별 일정을 설정하고, 매일 알림을 받을 시간과 알림음, 스타일을 선택하세요."
+          }
+        }
+      }
+    },
     "Set a specific time (optional)": {
       "comment": "Interface copy. LearnAlert/DeckScheduleSettingsView.swift",
       "localizations": {
@@ -45408,6 +45900,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "공유 덱"
+          }
+        }
+      }
+    },
+    "Shared decks & Apple profiles": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mazos compartidos y perfiles con Apple"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baralhos compartilhados e perfis com Apple"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paquets partagés et profils via Apple"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geteilte Stapel und Profile mit Apple"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有デッキとApple連携プロフィール"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공유 덱과 Apple 연동 프로필"
           }
         }
       }
@@ -46802,6 +47335,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "스마트 복습"
+          }
+        }
+      }
+    },
+    "Smarter learning": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprendizaje más inteligente"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprendizado mais inteligente"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un apprentissage plus intelligent"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Intelligenter lernen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もっとスマートに学習"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 스마트한 학습"
           }
         }
       }
@@ -57826,6 +58400,47 @@
         }
       }
     },
+    "Vocabulary, Drag to Answer, Images, and Anki.": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocabulario, Ordenar respuesta, Imágenes y Anki."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocabulário, Ordenar resposta, Imagens e Anki."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocabulaire, Glisser pour répondre, Images et Anki."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vokabeln, Antwort anordnen, Bilder und Anki."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単語、並べて答える、画像、Anki。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "어휘, 끌어서 답하기, 이미지, Anki."
+          }
+        }
+      }
+    },
     "Vocabulary, grammar and everyday conversations. Pick a deck and learn at your own pace.": {
       "comment": "Interface copy. LearnAlert/LanguageDeckDiscoveryView.swift",
       "localizations": {
@@ -58191,6 +58806,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "새로운 기능"
+          }
+        }
+      }
+    },
+    "When are you available?": {
+      "comment": "Interface copy. Home notification setup and version1.1.0 release notes.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wann hast du Zeit?"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Cuándo tienes tiempo?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quand êtes-vous disponible ?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "都合のよい時間は？"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언제 시간이 괜찮으세요?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quando você está disponível?"
           }
         }
       }

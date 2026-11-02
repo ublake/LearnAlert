@@ -1,0 +1,11 @@
+# Home, notification setup and1.1.0 release notes
+
+- Enforce the existing2000 UTF-16-unit shared description ceiling while preserving whole graphemes. Show a compact counter in the selected interface locale; preserve description/consent/publish validation.
+- Move the whole Home content up20 points by reducing top padding22→2, retaining safe-area protection and existing features.
+- Restyle notification permission to existing adaptive surfaces and baby-blue controls. Grant transitions to a time-range step inside the same card, including after returning from iOS Settings. Fit naturally in portrait with a scrolling fallback for short scenes.
+- Save writes the same defaultDeckAlertSettings JSON consumed by Alert Settings and app restarts; update only an existing selected deck override's times too so scheduling uses the displayed range. Preserve pace, spacing, batch and learning order; replace a previous specific-time override with this range. Save persists before schedule retry and survives later scheduling failure.
+- Explicit Study In-App opens the pending selected deck page at its existing Study button. Skip/backdrop only dismiss; retain tutorial completion behavior on the explicit study fallback.
+- Rewrite1.1.0 notes as major features with dashed details, without language learning bundles. Anki import is one line. Verify four added card types against release commit a732fc5 (four baseline types, eight current), and six added UI translations from AppLanguage.
+- Preserve unrelated catalog edits, stage only new strings, build/install/launch simulator, and leave app UI testing to the user.
+
+Verification: app and extension Debug simulator build passed with Xcode27.1, with only the existing App Intents metadata warning. All16 new keys are bundled in six translations; compiler extraction has no missing text. Source review confirmed save-before-schedule ordering, default JSON reload, deck override rollback, explicit Study routing and unchanged tutorial test-alert branch. The local build copy contains byte-identical changed files and avoids the Desktop file coordination stall. No app UI tests were run. Only new catalog entries are staged; unrelated catalog edits remain local.

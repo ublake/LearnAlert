@@ -49,6 +49,31 @@ class StudyEngine: ObservableObject {
     var automaticDailyCount: Int { 20 }
     var globalSettings: DeckAlertSettings { defaultSettings }
 
+    /// Permission setup saves the same persistent preferences edited by Alert
+    /// Settings. Existing deck overrides keep their pace/order but use this range.
+    func saveNotificationAvailability(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int,
+                                      for deck: Deck?) throws {
+        func updating(_ value: DeckAlertSettings) -> DeckAlertSettings {
+            var result = value
+            result.startHour = min(23, max(0, startHour))
+            result.startMinute = min(59, max(0, startMinute))
+            result.endHour = min(23, max(0, endHour))
+            result.endMinute = min(59, max(0, endMinute))
+            // This screen chooses a range, rather than a previous single-time override.
+            result.useSpecificTime = false
+            return result
+        }
+        let updatedDefaults = updating(defaultSettings)
+        let encodedDefaults = try JSONEncoder().encode(updatedDefaults)
+        if let deck, let previous = deck.alertSettings {
+            deck.alertSettings = updating(previous)
+            do { try deck.modelContext?.save() }
+            catch { deck.alertSettings = previous; throw error }
+        }
+        defaultSettings = updatedDefaults
+        UserDefaults.standard.set(encodedDefaults, forKey: "defaultDeckAlertSettings")
+    }
+
     /// Called only after an explicit save. Failed scheduling restores the preferences.
     func saveAlertSettings(_ preferences: DeckAlertSettings, sound: String, for deck: Deck?,
         reschedule: () async throws -> Void) async throws {

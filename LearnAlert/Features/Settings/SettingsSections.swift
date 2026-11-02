@@ -818,15 +818,28 @@ struct WhatsNewView: View {
 
                     ReleaseNotesEntry(
                         version: "1.1.0",
+                        title: "Learning just got a whole lot better!",
                         badgeText: "Current Version",
                         badgeColor: LearnAlertStyle.appAccentForeground,
                         isCurrent: true,
                         highlights: [
-                            .init(title: "Shared decks & profiles", detail: "Discover and share decks, create a character avatar, and show creators some love."),
-                            .init(title: "Language decks", detail: "Explore Spanish and Korean vocabulary, grammar, and everyday conversations. Add independent topic decks to your library."),
-                            .init(title: "Import from Anki", detail: "Bring your .apkg decks into LearnAlert with images, audio, and custom card layouts."),
-                            .init(title: "More ways to make flashcards", detail: "Create image-only cards, animated front-and-back cards, and audio or image answer choices."),
-                            .init(title: "Smarter study alerts", detail: "Schedule your decks with individual settings, specific daily times, and improved expandable notification cards.")
+                            .init(title: "Shared decks & Apple profiles", details: [
+                                "Discover and share decks, customize your avatar, and like your favorite decks."
+                            ]),
+                            .init(title: "Import your Anki decks."),
+                            .init(title: "Added 4 new card types!", details: [
+                                "Vocabulary, Drag to Answer, Images, and Anki."
+                            ]),
+                            .init(title: "More scheduling & customization", details: [
+                                "Set a schedule for each deck, choose daily times, and personalize alert sounds and styles."
+                            ]),
+                            .init(title: "Smarter learning", details: [
+                                "Rate reveal, image, and Anki cards with Again, Hard, Good, or Easy.",
+                                "In-app and notification reviews keep separate histories, with one shared daily allowance of 20 questions."
+                            ]),
+                            .init(title: "Now in 6 more languages!", details: [
+                                "Spanish", "Brazilian Portuguese", "French", "German", "Japanese", "Korean"
+                            ])
                         ]
                     )
 
@@ -847,7 +860,7 @@ struct WhatsNewView: View {
 
 private struct ReleaseNotesHighlight {
     let title: LocalizedStringResource
-    let detail: LocalizedStringResource
+    var details: [LocalizedStringResource] = []
 }
 
 private struct ReleaseNotesEntry: View {
@@ -879,8 +892,9 @@ private struct ReleaseNotesEntry: View {
 
             if let title {
                 Text(AppLocalization.string(title))
-                    .font(.custom("Poppins-Medium", size: 13))
-                    .foregroundStyle(LearnAlertStyle.textSecondary)
+                    .font(.custom(isCurrent ? "Poppins-SemiBold" : "Poppins-Medium", size: isCurrent ? 15 : 13))
+                    .foregroundStyle(isCurrent ? LearnAlertStyle.textPrimary : LearnAlertStyle.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let detail, !detail.key.isEmpty {
@@ -891,15 +905,21 @@ private struct ReleaseNotesEntry: View {
             }
 
             if !highlights.isEmpty {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(highlights.indices, id: \.self) { index in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(AppLocalization.string(highlights[index].title))
                                 .font(.custom("Poppins-Medium", size: 13))
-                            Text(AppLocalization.string(highlights[index].detail))
+                            ForEach(highlights[index].details.indices, id: \.self) { detailIndex in
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(verbatim: "-")
+                                        .accessibilityHidden(true)
+                                    Text(AppLocalization.string(highlights[index].details[detailIndex]))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                                 .font(.custom("Poppins-Regular", size: 12))
                                 .foregroundStyle(LearnAlertStyle.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
                 }

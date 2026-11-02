@@ -263,6 +263,7 @@ struct HomeLibraryView: View {
     @State private var showingDeckRequirementAlert = false
     @State private var showingNotificationPermissionPrompt = false
     @State private var pendingTargetToSchedule: HomeAlertTarget?
+    @State private var permissionStudyDeck: Deck?
     @State private var isSchedulingAlerts = false
     @State private var pendingFromDeckCard = false
     @State private var scheduleCelebrationEvent: CelebrationEvent?
@@ -626,31 +627,42 @@ struct HomeLibraryView: View {
         if showingNotificationPermissionPrompt {
             NotificationPermissionPromptModal(
                 targetDeckName: pendingTargetToSchedule?.name ?? AppLocalization.string("your deck"),
-                onAllow: {
-                    withAnimation(.snappy) {
-                        showingNotificationPermissionPrompt = false
+                initialSettings: pendingTargetToSchedule.map { target in
+                    switch target { case .deck(let deck): deck.alertSettings ?? engine.globalSettings }
+                } ?? engine.globalSettings,
+                onSaveAvailability: { startHour, startMinute, endHour, endMinute in
+                    guard let target = pendingTargetToSchedule else { dismissPermissionPrompt(); return }
+                    let deck: Deck
+                    switch target { case .deck(let selected): deck = selected }
+                    do {
+                        try engine.saveNotificationAvailability(startHour: startHour, startMinute: startMinute,
+                            endHour: endHour, endMinute: endMinute, for: deck)
+                    } catch {
+                        homeAlertMessage = error.localizedDescription
+                        return
                     }
-                    if let target = pendingTargetToSchedule {
-                        pendingTargetToSchedule = nil
-                        quickSchedule(target, fromDeckCard: pendingFromDeckCard)
-                    }
+                    let fromDeckCard = pendingFromDeckCard
+                    dismissPermissionPrompt()
+                    quickSchedule(target, fromDeckCard: fromDeckCard)
                 },
                 onStudyInAppOnly: {
-                    withAnimation(.snappy) {
-                        showingNotificationPermissionPrompt = false
+                    let selectedDeck: Deck?
+                    switch pendingTargetToSchedule {
+                    case .some(.deck(let deck)): selectedDeck = deck
+                    case .none: selectedDeck = nil
                     }
-                    pendingTargetToSchedule = nil
+                    dismissPermissionPrompt()
                     if homeTutorialStep == 3 {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            homeTutorialStep = 0
-                        }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { homeTutorialStep = 0 }
                     }
+                    // The deck page puts its Study button directly in view;
+                    // choosing this fallback does not start notification alerts.
+                    permissionStudyDeck = selectedDeck
                 },
                 onOpenSettings: {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        openURL(url)
-                    }
-                }
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                },
+                onDismiss: dismissPermissionPrompt
             )
             .transition(.opacity)
             .zIndex(40)
@@ -679,7 +691,7 @@ struct HomeLibraryView: View {
 
                     Spacer().frame(height: usesNativeStudyNavigation ? 24 : 210)
                 }
-                .padding(.top, 22)
+                .padding(.top, 2)
             }
             .blur(radius: showingDeckRequirementAlert ? 3 : 0)
             .animation(.easeInOut(duration: 0.25), value: showingDeckRequirementAlert)
@@ -717,6 +729,9 @@ struct HomeLibraryView: View {
                     showingQuickScheduleTipToast = false
                 }
             }
+        }
+        .navigationDestination(item: $permissionStudyDeck) { deck in
+            DeckDetailView(deck: deck)
         }
         .sheet(isPresented: $showingAlertSettings) {
             NavigationStack {
@@ -764,6 +779,12 @@ struct HomeLibraryView: View {
         } message: {
             Text(homeAlertMessage ?? "")
         }
+    }
+
+    private func dismissPermissionPrompt() {
+        withAnimation(.snappy) { showingNotificationPermissionPrompt = false }
+        pendingTargetToSchedule = nil
+        pendingFromDeckCard = false
     }
 
     private func sendTutorialTestAlert() {
