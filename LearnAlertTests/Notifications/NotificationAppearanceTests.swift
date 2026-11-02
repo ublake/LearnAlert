@@ -6,8 +6,8 @@ import UserNotifications
 @MainActor
 @Suite("Notification appearance")
 struct NotificationAppearanceTests {
-    @Test("Ordinary launch and deck handoffs preserve ordinary deck routing")
-    func ordinaryLaunchSkipsCourseReload() throws {
+    @Test("Only an explicit matching notification response consumes a saved card")
+    func handoffRequiresExplicitResponse() throws {
         let suite = "test-handoff-startup-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -18,7 +18,15 @@ struct NotificationAppearanceTests {
         defaults.set(deckID.uuidString, forKey: "handoffDeckId")
         defaults.set(cardID.uuidString, forKey: "handoffCardId")
         defaults.set(true, forKey: "handoffWasRevealed")
-        manager.consumePendingStudyHandoff(defaults: defaults)
+        defaults.set(true, forKey: "handoffFromNotificationUI")
+        defaults.set("request-1", forKey: "handoffNotificationRequestID")
+        // Passive state and legacy markers cannot authorize an ordinary launch.
+        #expect(!manager.consumePendingStudyHandoff(defaults: defaults))
+        #expect(manager.pendingStudyHandoff == nil)
+        #expect(defaults.string(forKey: "handoffCardId") == cardID.uuidString)
+        #expect(!manager.consumePendingStudyHandoff(defaults: defaults, notificationRequestID: "request-2"))
+        #expect(manager.pendingStudyHandoff == nil)
+        #expect(manager.consumePendingStudyHandoff(defaults: defaults, notificationRequestID: "request-1"))
         #expect(manager.pendingStudyHandoff?.deckId == deckID)
         #expect(manager.pendingStudyHandoff?.cardId == cardID)
         #expect(manager.pendingStudyHandoff?.wasRevealed == true)
