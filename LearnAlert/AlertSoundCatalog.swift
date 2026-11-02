@@ -6,16 +6,16 @@ nonisolated enum AlertSoundCatalog {
     static let systemDefault = "Default"
 
     static let ringtones: [(filename: String, title: String)] = [
-        ("la_ring_cloud_drops.wav", String(localized: "Cloud drops")),
-        ("la_ring_woodland.wav", String(localized: "Woodland")),
-        ("la_ring_little_orbit.wav", String(localized: "Little orbit")),
-        ("la_ring_sunbeam.wav", String(localized: "Sunbeam")),
-        ("la_ring_pebble_pool.wav", String(localized: "Pebble pool")),
-        ("la_ring_morning_keys.wav", String(localized: "Morning keys")),
-        ("la_ring_paper_lantern.wav", String(localized: "Paper lantern")),
-        ("la_ring_blue_hour.wav", String(localized: "Blue hour")),
-        ("la_ring_tiny_comet.wav", String(localized: "Tiny comet")),
-        ("la_ring_pocket_garden.wav", String(localized: "Pocket garden"))
+        ("la_ring_cloud_drops.wav", String(localized: "Drops")),
+        ("la_ring_woodland.wav", String(localized: "Wood")),
+        ("la_ring_little_orbit.wav", String(localized: "Orbit")),
+        ("la_ring_sunbeam.wav", String(localized: "Beam")),
+        ("la_ring_pebble_pool.wav", String(localized: "Pebble")),
+        ("la_ring_morning_keys.wav", String(localized: "Keys")),
+        ("la_ring_paper_lantern.wav", String(localized: "Lantern")),
+        ("la_ring_blue_hour.wav", String(localized: "Dusk")),
+        ("la_ring_tiny_comet.wav", String(localized: "Comet")),
+        ("la_ring_pocket_garden.wav", String(localized: "Bloom"))
     ]
 
     // The old files also contain these new tones, so requests already queued by

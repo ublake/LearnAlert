@@ -5,6 +5,7 @@
   "bitsPerSample": 16,
   "created": "2026-11-01",
   "license": "Original LearnAlert procedural sound designs; no third-party samples.",
+  "updated": "2026-11-02",
   "previewOnly": false,
   "sounds": [
     {
@@ -339,113 +340,113 @@
     },
     {
       "id": "ringtone.cloud_drops",
-      "title": "Cloud drops",
+      "title": "Drops",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_cloud_drops.wav",
-      "description": "A short, original glass notification motif with a soft room tail.",
-      "duration": 2.52,
-      "peakDBFS": -11.72,
-      "rmsDBFS": -23.18
+      "description": "A compact, original glass cue with two or three notes and a clean, soft release.",
+      "duration": 0.78,
+      "peakDBFS": -11.82,
+      "rmsDBFS": -23.23
     },
     {
       "id": "ringtone.woodland",
-      "title": "Woodland",
+      "title": "Wood",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_woodland.wav",
-      "description": "A short, original wood notification motif with a soft room tail.",
-      "duration": 2.55,
-      "peakDBFS": -8.93,
-      "rmsDBFS": -25.77
+      "description": "A compact, original wood cue with two or three notes and a clean, soft release.",
+      "duration": 0.58,
+      "peakDBFS": -8.74,
+      "rmsDBFS": -26.14
     },
     {
       "id": "ringtone.little_orbit",
-      "title": "Little orbit",
+      "title": "Orbit",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_little_orbit.wav",
-      "description": "A short, original digital notification motif with a soft room tail.",
-      "duration": 2.46,
-      "peakDBFS": -10.6,
-      "rmsDBFS": -23.33
+      "description": "A compact, original digital cue with two or three notes and a clean, soft release.",
+      "duration": 0.7,
+      "peakDBFS": -10.58,
+      "rmsDBFS": -23.9
     },
     {
       "id": "ringtone.sunbeam",
-      "title": "Sunbeam",
+      "title": "Beam",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_sunbeam.wav",
-      "description": "A short, original bell notification motif with a soft room tail.",
-      "duration": 2.8,
-      "peakDBFS": -8.52,
-      "rmsDBFS": -23.32
+      "description": "A compact, original bell cue with two or three notes and a clean, soft release.",
+      "duration": 0.82,
+      "peakDBFS": -9.14,
+      "rmsDBFS": -25.64
     },
     {
       "id": "ringtone.pebble_pool",
-      "title": "Pebble pool",
+      "title": "Pebble",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_pebble_pool.wav",
-      "description": "A short, original bubble notification motif with a soft room tail.",
-      "duration": 2.55,
-      "peakDBFS": -10.8,
-      "rmsDBFS": -24.45
+      "description": "A compact, original bubble cue with two or three notes and a clean, soft release.",
+      "duration": 0.72,
+      "peakDBFS": -11.32,
+      "rmsDBFS": -23.85
     },
     {
       "id": "ringtone.morning_keys",
-      "title": "Morning keys",
+      "title": "Keys",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_morning_keys.wav",
-      "description": "A short, original marimba notification motif with a soft room tail.",
-      "duration": 2.52,
-      "peakDBFS": -10.24,
-      "rmsDBFS": -24.17
+      "description": "A compact, original marimba cue with two or three notes and a clean, soft release.",
+      "duration": 0.67,
+      "peakDBFS": -9.99,
+      "rmsDBFS": -23.98
     },
     {
       "id": "ringtone.paper_lantern",
-      "title": "Paper lantern",
+      "title": "Lantern",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_paper_lantern.wav",
-      "description": "A short, original pluck notification motif with a soft room tail.",
-      "duration": 2.7,
-      "peakDBFS": -8.41,
-      "rmsDBFS": -23.26
+      "description": "A compact, original pluck cue with two or three notes and a clean, soft release.",
+      "duration": 0.66,
+      "peakDBFS": -10.84,
+      "rmsDBFS": -25.02
     },
     {
       "id": "ringtone.blue_hour",
-      "title": "Blue hour",
+      "title": "Dusk",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_blue_hour.wav",
-      "description": "A short, original warm notification motif with a soft room tail.",
-      "duration": 2.9,
-      "peakDBFS": -10.49,
-      "rmsDBFS": -22.8
+      "description": "A compact, original warm cue with two or three notes and a clean, soft release.",
+      "duration": 0.82,
+      "peakDBFS": -10.68,
+      "rmsDBFS": -23.44
     },
     {
       "id": "ringtone.tiny_comet",
-      "title": "Tiny comet",
+      "title": "Comet",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_tiny_comet.wav",
-      "description": "A short, original sparkle notification motif with a soft room tail.",
-      "duration": 2.45,
-      "peakDBFS": -9.69,
-      "rmsDBFS": -24.63
+      "description": "A compact, original sparkle cue with two or three notes and a clean, soft release.",
+      "duration": 0.61,
+      "peakDBFS": -10.49,
+      "rmsDBFS": -25.2
     },
     {
       "id": "ringtone.pocket_garden",
-      "title": "Pocket garden",
+      "title": "Bloom",
       "category": "ringtone",
       "event": "notification.ringtone",
       "fileName": "la_ring_pocket_garden.wav",
-      "description": "A short, original marimba notification motif with a soft room tail.",
-      "duration": 2.9,
-      "peakDBFS": -9.8,
-      "rmsDBFS": -24.13
+      "description": "A compact, original marimba cue with two or three notes and a clean, soft release.",
+      "duration": 0.8,
+      "peakDBFS": -9.97,
+      "rmsDBFS": -24.58
     },
     {
       "id": "celebration.sky_bloom",

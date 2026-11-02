@@ -667,7 +667,7 @@ struct AlertSoundOption: Identifiable, Hashable {
     ] + AlertSoundCatalog.ringtones.map { AlertSoundOption(id: $0.filename, name: $0.title) }
 
     static func displayName(for id: String) -> String {
-        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? String(localized: "Cloud drops")
+        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? String(localized: "Drops")
     }
 }
 

@@ -8,7 +8,7 @@ Created November 1, 2026. Fifty original, short procedural sound designs:
 | Ringtones | 10 | Short notification-tone options |
 | Schedule celebrations | 10 | A lift, musical bloom and gentle firework sparkles for successful scheduling |
 
-The gallery in Settings lets you audition every sound without changing preferences.
+The Alert Sound menus let you choose and preview the notification ringtones.
 A restrained selection also replaces the old app effects:
 
 - Real quiz answers: Correct · Bloom or Try again · Soft, in-app and in alerts.
@@ -22,7 +22,11 @@ suppress feedback, and **App sound effects** in Preferences can mute effects in
 both the app and expanded alerts. This does not mute notification ringtones or
 intentional sound previews. Effects use the ambient session and honor Silent mode.
 
-All ten ringtones are selectable in Alert Sound. Cloud drops is the default.
+All ten ringtones are selectable in Alert Sound. Drops is the default.
+The November 2 revision recomposes each ringtone as a two- or three-note cue
+lasting 0.58–0.82 seconds, retaining its pitch and timbre with shorter note
+releases and room reflections. Display names are one word and translated into
+all six additional interface languages; the stored sound filenames stay stable.
 The old alert1–5 filenames resolve to matching new tones, and their bundled WAV
 contents are replaced for pending-notification compatibility. Dates, card selection,
 and daily notification limits are not changed. Other manifest event names remain
@@ -33,7 +37,7 @@ suggestions; they do not add sounds to every action.
 `LearnAlert/Sounds/PreviewPack/` contains exactly 50 WAV files and
 `learnalert-sound-pack.json`. Each WAV uses 44,100 Hz, mono, signed 16-bit
 little-endian PCM. Clips range from 0.26 to 3.20 seconds; the complete pack
-contains 75.89 seconds of audio and approximately 6.7 MB of uncompressed WAVs.
+contains 56.70 seconds of audio and approximately 5.0 MB of uncompressed WAVs.
 Every ringtone is shorter than Apple's 30-second notification-sound limit.
 
 The original sound family uses glass and bell synthesis, rounded digital tones,
@@ -59,6 +63,18 @@ This overwrites only the named pack assets and manifest, and writes a playable
 HTML index and a spaced 50-sound sampler to the sibling folder
 `../LearnAlert-Sound-Preview/`. That preview folder is outside the app and Git
 checkout. Use `--no-preview` to skip those extra deliverables.
+
+To rebuild only the ringtones while keeping the 30 effects and 10 celebrations
+byte-for-byte unchanged:
+
+```sh
+python3 scripts/generate_preview_sound_pack.py --ringtones-only --no-preview
+```
+
+Both rebuild modes also refresh the five legacy `alert1–5.wav` copies used by
+already-scheduled alerts. The ringtone-only mode requires the complete existing
+50-sound manifest. The manifest retains its creation date and records the last
+update date separately.
 
 Each recipe is authored separately. Fixed random seeds only control small
 timbre details, air and sparkles. The output is deterministic for a given

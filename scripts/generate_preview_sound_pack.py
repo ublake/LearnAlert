@@ -15,6 +15,7 @@ import math
 import os
 from pathlib import Path
 import random
+import shutil
 import struct
 import wave
 
@@ -184,17 +185,24 @@ UI = [
 ]
 
 RINGTONES = [
-    ("cloud_drops", "Cloud drops", [76, 79, 83, 79, None, 76, 84], "glass", .24, 2.52),
-    ("woodland", "Woodland", [67, 74, 71, None, 67, 76, 74], "wood", .26, 2.55),
-    ("little_orbit", "Little orbit", [72, 79, 84, 79, 74, 81, 86], "digital", .22, 2.46),
-    ("sunbeam", "Sunbeam", [77, 81, 84, None, 79, 84, 89], "bell", .25, 2.8),
-    ("pebble_pool", "Pebble pool", [72, 76, None, 79, 76, None, 84], "bubble", .25, 2.55),
-    ("morning_keys", "Morning keys", [69, 73, 76, 81, None, 76, 73, 69], "marimba", .2, 2.52),
-    ("paper_lantern", "Paper lantern", [74, 78, 81, None, 78, 85, 81], "pluck", .255, 2.7),
-    ("blue_hour", "Blue hour", [67, 74, 78, 81, None, 78, 74], "warm", .25, 2.9),
-    ("tiny_comet", "Tiny comet", [81, 88, 85, None, 83, 90, 88, 85], "sparkle", .19, 2.45),
-    ("pocket_garden", "Pocket garden", [72, 76, 79, 76, None, 74, 77, 81, 84], "marimba", .21, 2.9),
+    ("cloud_drops", "Drops", [76, 83, 79], "glass", .13, .78),
+    ("woodland", "Wood", [67, 74], "wood", .15, .58),
+    ("little_orbit", "Orbit", [72, 79, 84], "digital", .11, .70),
+    ("sunbeam", "Beam", [77, 84], "bell", .17, .82),
+    ("pebble_pool", "Pebble", [72, 79, 76], "bubble", .13, .72),
+    ("morning_keys", "Keys", [69, 73, 76], "marimba", .115, .67),
+    ("paper_lantern", "Lantern", [74, 81], "pluck", .16, .66),
+    ("blue_hour", "Dusk", [67, 74], "warm", .17, .82),
+    ("tiny_comet", "Comet", [81, 88, 85], "sparkle", .09, .61),
+    ("pocket_garden", "Bloom", [72, 76, 84], "marimba", .14, .80),
 ]
+
+# Already-scheduled alerts can still reference these old bundled filenames.
+LEGACY_RINGTONES = {
+    "alert1.wav": "sunbeam", "alert2.wav": "little_orbit",
+    "alert3.wav": "cloud_drops", "alert4.wav": "pebble_pool",
+    "alert5.wav": "morning_keys",
+}
 
 CELEBRATIONS = [
     ("sky_bloom", "Sky bloom", [72, 76, 79, 84], "glass", [60, 64, 67, 72], 2.55),
@@ -304,16 +312,21 @@ def render_ui(index, spec):
 def render_ringtone(index, spec):
     ident, _, notes, voice, step, duration = spec
     c = Canvas(duration, 301 + index)
-    c.motif(notes, .06, step, .62 if voice in ("bell", "warm") else .45, .3, voice)
-    # Each ringtone has a supporting texture rather than a second loud melody.
+    # Recompose a compact cue instead of cutting or speeding up the old melody.
+    # Each note releases before the final fade; these retain the original pitch
+    # and timbre, with only a small room reflection rather than a long reverb.
+    gate = {"glass": .32, "wood": .25, "digital": .30, "bell": .40,
+            "bubble": .28, "marimba": .29, "pluck": .30,
+            "warm": .40, "sparkle": .24}[voice]
+    c.motif(notes, .018, step, gate, .3, voice)
     if ident in ("sunbeam", "blue_hour", "paper_lantern"):
         root = next(note for note in notes if note is not None) - 24
-        c.chord([root, root + 7], .06, duration - .5, .05, "pad", .025)
+        c.chord([root, root + 7], .02, .36, .035, "pad", .012)
     if ident == "pebble_pool":
-        c.air(.05, .4, .035)
+        c.air(.025, .18, .025)
     if ident == "tiny_comet":
-        c.note(72, .01, .8, .07, "glass", 96)
-    return c.finish(duration, roomy=True)
+        c.note(72, .01, .24, .035, "glass", 96)
+    return c.finish(duration, roomy=False)
 
 
 def render_celebration(index, spec):
@@ -378,7 +391,7 @@ def make_preview(entries, rendered):
 body{font:15px system-ui;margin:30px auto;max-width:1000px;padding:0 20px;color:#dfe9f2;background:#131a20}
 header{max-width:720px;margin-bottom:28px}h1{font-size:26px}p,small{color:#a5b9c9}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
 article{padding:16px;border:1px solid #394957;border-radius:14px;background:#1b252e}strong,small{display:block}small{margin:6px 0}audio{width:100%;margin-top:8px}p{font-size:13px;line-height:1.5}
-</style><header><h1>LearnAlert · 50 original sound sketches</h1><p>30 app effects, 10 notification ringtones, and 10 schedule celebrations. Preview only; none of the existing app sounds are replaced. These are original procedural compositions with no third-party samples.</p></header><main>""" + "".join(rows) + "</main>"
+</style><header><h1>LearnAlert · 50 original sounds</h1><p>30 app effects, 10 compact notification ringtones, and 10 schedule celebrations. These are original procedural compositions with no third-party samples. Previewing does not change your sound preferences.</p></header><main>""" + "".join(rows) + "</main>"
     (PREVIEW / "index.html").write_text(page)
     # A spaced montage makes it easy to scan the family without fifty taps.
     sampler = array("d")
@@ -392,10 +405,18 @@ article{padding:16px;border:1px solid #394957;border-radius:14px;background:#1b2
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-preview", action="store_true", help="Skip the HTML index and long sampler.")
+    parser.add_argument("--ringtones-only", action="store_true", help="Rebuild only the ten ringtones and compatibility aliases, preserving other assets.")
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    manifest_path = OUTPUT / "learnalert-sound-pack.json"
+    previous = json.loads(manifest_path.read_text()) if args.ringtones_only else None
+    if previous is not None:
+        ringtone_files = {f"la_ring_{spec[0]}.wav" for spec in RINGTONES}
+        existing = previous["sounds"]
+        if len(existing) != 50 or {s["fileName"] for s in existing if s["category"] == "ringtone"} != ringtone_files:
+            raise ValueError("Ringtone-only rebuild requires the existing complete 50-sound manifest.")
     entries, rendered = [], []
-    for index, spec in enumerate(UI):
+    for index, spec in enumerate([] if args.ringtones_only else UI):
         ident, title, event, _, description = spec
         samples = render_ui(index, spec)
         filename = f"la_ui_{ident}.wav"
@@ -411,10 +432,10 @@ def main():
         write_wav(OUTPUT / filename, samples)
         entries.append({"id": f"ringtone.{ident}", "title": title, "category": "ringtone",
                         "event": "notification.ringtone", "fileName": filename,
-                        "description": f"A short, original {voice} notification motif with a soft room tail.",
+                        "description": f"A compact, original {voice} cue with two or three notes and a clean, soft release.",
                         **measurements(samples)})
         rendered.append(samples)
-    for index, spec in enumerate(CELEBRATIONS):
+    for index, spec in enumerate([] if args.ringtones_only else CELEBRATIONS):
         ident, title, _, _, _, _ = spec
         samples = render_celebration(index, spec)
         filename = f"la_schedule_{ident}.wav"
@@ -424,10 +445,26 @@ def main():
                         "description": "An ascending lift, harmonic bloom and gentle firework sparkles.",
                         **measurements(samples)})
         rendered.append(samples)
+    # Refresh aliases during both full and ringtone-only rebuilds, so old queued
+    # notifications play the same short versions as newly scheduled alerts.
+    for filename, ident in LEGACY_RINGTONES.items():
+        shutil.copyfile(OUTPUT / f"la_ring_{ident}.wav", OUTPUT.parent / filename)
+    if previous is not None:
+        replacements = {entry["fileName"]: entry for entry in entries}
+        entries = [replacements.get(entry["fileName"], entry) for entry in previous["sounds"]]
+        if not args.no_preview:
+            rendered = []
+            for entry in entries:
+                with wave.open(str(OUTPUT / entry["fileName"]), "rb") as stream:
+                    pcm = array("h", stream.readframes(stream.getnframes()))
+                    if struct.pack("=H", 1) != struct.pack("<H", 1):
+                        pcm.byteswap()
+                    rendered.append(array("d", (value / 32768 for value in pcm)))
     manifest = {"version": 1, "sampleRate": RATE, "channels": 1, "bitsPerSample": 16,
                 "created": "2026-11-01", "license": "Original LearnAlert procedural sound designs; no third-party samples.",
+                "updated": "2026-11-02",
                 "previewOnly": False, "sounds": entries}
-    (OUTPUT / "learnalert-sound-pack.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     if not args.no_preview:
         make_preview(entries, rendered)
     print(json.dumps({"files": len(entries), "durations": {"min": min(x["duration"] for x in entries),

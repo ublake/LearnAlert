@@ -10809,6 +10809,47 @@
         }
       }
     },
+    "Beam": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rayo"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raio"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rayon"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strahl"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "光"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "햇살"
+          }
+        }
+      }
+    },
     "Beanie": {
       "comment": "Interface copy. LearnAlert/CommunityProfile.swift",
       "localizations": {
@@ -11137,43 +11178,43 @@
         }
       }
     },
-    "Blue hour": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
+    "Bloom": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hora azul"
+            "value": "Flor"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Hora azul"
+            "value": "Flor"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Heure bleue"
+            "value": "Fleur"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blaue Stunde"
+            "value": "Blüte"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ブルーアワー"
+            "value": "花"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "블루 아워"
+            "value": "꽃"
           }
         }
       }
@@ -15074,47 +15115,6 @@
         }
       }
     },
-    "Cloud drops": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift, LearnAlert/Models.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gotas de nube"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gotas de nuvem"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gouttes de nuage"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wolkentropfen"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "雲のしずく"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "구름 방울"
-          }
-        }
-      }
-    },
     "Coding": {
       "comment": "Interface copy. LearnAlert/CommunityViews.swift",
       "localizations": {
@@ -15275,6 +15275,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "색상"
+          }
+        }
+      }
+    },
+    "Comet": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cometa"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cometa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comète"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Komet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "彗星"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "혜성"
           }
         }
       }
@@ -20486,6 +20527,47 @@
         }
       }
     },
+    "Drops": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift, LearnAlert/Models.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gotas"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gotas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gouttes"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tropfen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しずく"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방울"
+          }
+        }
+      }
+    },
     "Due": {
       "comment": "Interface copy. LearnAlert/DeckDetailView.swift",
       "localizations": {
@@ -20564,6 +20646,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "복습 대기 수 확인 불가"
+          }
+        }
+      }
+    },
+    "Dusk": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocaso"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocaso"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soir"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abend"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夕暮れ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "노을"
           }
         }
       }
@@ -28096,6 +28219,47 @@
         }
       }
     },
+    "Keys": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name. Musical keys, not door keys or keyboard shortcuts.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teclas"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teclas"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touches"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tasten"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鍵盤"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "건반"
+          }
+        }
+      }
+    },
     "Kiss": {
       "comment": "Interface copy. LearnAlert/CommunityProfile.swift",
       "localizations": {
@@ -28543,6 +28707,47 @@
           "stringUnit": {
             "state": "translated",
             "value": "언어와 주제가 간결한 인라인 메뉴로 열려요."
+          }
+        }
+      }
+    },
+    "Lantern": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Farol"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lanterna"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lanterne"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laterne"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ランタン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "등불"
           }
         }
       }
@@ -29736,47 +29941,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "듣기"
-          }
-        }
-      }
-    },
-    "Little orbit": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pequeña órbita"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pequena órbita"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Petite orbite"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kleine Umlaufbahn"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小さな軌道"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작은 궤도"
           }
         }
       }
@@ -31934,47 +32098,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "더 다양해진 플래시카드"
-          }
-        }
-      }
-    },
-    "Morning keys": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Teclas de la mañana"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Teclas da manhã"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Touches du matin"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Morgentasten"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "朝の鍵盤"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아침 건반"
           }
         }
       }
@@ -36309,6 +36432,47 @@
         }
       }
     },
+    "Orbit": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Órbita"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Órbita"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orbite"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orbit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "軌道"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "궤도"
+          }
+        }
+      }
+    },
     "Organizing your decks": {
       "comment": "Interface copy. LearnAlert/AnkiImportSession.swift",
       "localizations": {
@@ -36678,47 +36842,6 @@
         }
       }
     },
-    "Paper lantern": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Farol de papel"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lanterna de papel"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lanterne en papier"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Papierlaterne"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "紙のランタン"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "종이 등불"
-          }
-        }
-      }
-    },
     "Paste notes or attach a supported file in Generate Deck. Review and edit the temporary cards before tapping Add Deck.": {
       "comment": "Interface copy. LearnAlert/HelpView.swift",
       "localizations": {
@@ -36842,43 +36965,43 @@
         }
       }
     },
-    "Pebble pool": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
+    "Pebble": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Estanque de guijarros"
+            "value": "Piedra"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lago de pedrinhas"
+            "value": "Seixo"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bassin de galets"
+            "value": "Galet"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kieselbecken"
+            "value": "Kiesel"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "小石のプール"
+            "value": "小石"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "조약돌 연못"
+            "value": "조약돌"
           }
         }
       }
@@ -37658,47 +37781,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "App Store에서 LearnAlert를 업데이트해 주세요."
-          }
-        }
-      }
-    },
-    "Pocket garden": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jardín de bolsillo"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jardim de bolso"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jardin de poche"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Taschengarten"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ポケットガーデン"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "포켓 정원"
           }
         }
       }
@@ -48334,47 +48416,6 @@
         }
       }
     },
-    "Sunbeam": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rayo de sol"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Raio de sol"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rayon de soleil"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sonnenstrahl"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ひだまり"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "햇살"
-          }
-        }
-      }
-    },
     "Sunglasses": {
       "comment": "Interface copy. LearnAlert/CommunityProfile.swift",
       "localizations": {
@@ -53828,47 +53869,6 @@
         }
       }
     },
-    "Tiny comet": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
-      "localizations": {
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pequeño cometa"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pequeno cometa"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Petite comète"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kleiner Komet"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小さな彗星"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작은 혜성"
-          }
-        }
-      }
-    },
     "Tiny crown": {
       "comment": "Interface copy. LearnAlert/CommunityProfile.swift",
       "localizations": {
@@ -58072,43 +58072,43 @@
         }
       }
     },
-    "Woodland": {
-      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift",
+    "Wood": {
+      "comment": "Interface copy. LearnAlert/AlertSoundCatalog.swift. Short ringtone name.",
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bosque"
+            "value": "Madera"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bosque"
+            "value": "Madeira"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sous-bois"
+            "value": "Bois"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wald"
+            "value": "Holz"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "森"
+            "value": "ウッド"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "숲속"
+            "value": "나무"
           }
         }
       }
