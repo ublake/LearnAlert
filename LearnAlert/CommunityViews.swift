@@ -1019,9 +1019,9 @@ struct MySharedDecksSheet: View {
                 }.refreshable { await load() }
                 .onReceive(NotificationCenter.default.publisher(for: .communityLibraryChanged)) { _ in Task { await load() } }
                 .sheet(item: $editingDeck) { ShareDeckToCommunitySheet(libraryDecks: libraryDecks, initialDeckID: $0.id) }
-                .confirmationDialog("Remove this shared deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
+                .confirmationDialog("Permanently remove this shared deck?", isPresented: Binding(get: { removingDeck != nil }, set: { if !$0 { removingDeck = nil } }), titleVisibility: .visible) {
                     Button("Remove shared deck", role: .destructive) { if let deck = removingDeck { Task { await remove(deck) } } }
-                } message: { Text("Your personal deck and copies already downloaded by other learners remain in their libraries.") }
+                } message: { Text("This permanently deletes the shared submission and its cards. File removal is retried if needed. Your personal deck and other learners’ downloaded copies stay.") }
                 .interactiveDismissDisabled(isRemoving)
         }
     }
