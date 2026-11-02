@@ -1580,6 +1580,13 @@ private struct HomeStudyCard: View {
     let shuffleAppearance: () -> Void
     let delete: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var practiceActivity = PracticeStudyActivity.shared
+    @State private var studyMetadata: HomeDeckStudyMetadata?
+    @State private var metadataRevision = 0
+    @State private var metadataVisible = false
+    @State private var metadataUnavailable = false
     @State private var lockedSwipeAxis: SwipeState.Axis?
     @GestureState(resetTransaction: Transaction(animation: .snappy(duration: 0.25))) private var swipe = SwipeState()
 
@@ -1656,6 +1663,21 @@ private struct HomeStudyCard: View {
                 }
             }
         }
+        .task(id: metadataRevision) { await loadStudyMetadata() }
+        .task(id: studyMetadata?.nextDueAt) {
+            guard let date = studyMetadata?.nextDueAt else { return }
+            do { try await Task.sleep(for: .seconds(min(3600, max(0, date.timeIntervalSinceNow)))) }
+            catch { return }
+            guard !Task.isCancelled, metadataVisible, scenePhase == .active else { return }
+            metadataRevision &+= 1
+        }
+        .onAppear { metadataVisible = true }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in
+            if metadataVisible { metadataRevision &+= 1 }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && metadataVisible { metadataRevision &+= 1 }
+        }
         .onChange(of: canSwipe) { _, allowed in
             if !allowed { lockedSwipeAxis = nil; closeSchedule() }
         }
@@ -1663,6 +1685,7 @@ private struct HomeStudyCard: View {
             if axis == nil { lockedSwipeAxis = nil }
         }
         .onDisappear {
+            metadataVisible = false
             if isScheduleRevealed { revealedScheduleDeckID = nil }
         }
         .transaction { if reduceMotion { $0.animation = nil } }
@@ -1673,7 +1696,7 @@ private struct HomeStudyCard: View {
             HStack(alignment: .bottom, spacing: 16) {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed,
                     cardCount: cardCount, colorHex: deck.colorHex)
-                    .frame(width: 96, height: 88)
+                    .frame(width: 92, height: 84)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(deck.name)
@@ -1684,14 +1707,15 @@ private struct HomeStudyCard: View {
                     Text("\(deck.deckType) · \(cardCount) cards")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
+                    studyStatus
                     Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
                 .padding(.trailing, isPinned ? 12 : 0)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .topTrailing) {
                 if isPinned {
@@ -1709,6 +1733,7 @@ private struct HomeStudyCard: View {
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
         .accessibilityLabel("Open \(deck.name), \(cardCount) cards")
+        .accessibilityValue("\(studyMetadata.map { "\($0.dueCount) cards due" } ?? (metadataUnavailable ? "Due count unavailable" : "Loading due count")). \(lastStudiedLabel(at: .now))")
         .appCardSurface()
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1716,6 +1741,52 @@ private struct HomeStudyCard: View {
                     lineWidth: isTutorialHighlighted ? 2.5 : 0.9)
                 .shadow(color: isTutorialHighlighted ? LearnAlertStyle.appAccent.opacity(0.75) : Color.clear, radius: 10)
                 .allowsHitTesting(false)
+        }
+    }
+
+    private var studyStatus: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { timeline in
+            HStack(spacing: 5) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text(studyMetadata.map { "\($0.dueCount) due" } ?? (metadataUnavailable ? "— due" : "… due"))
+                    .monospacedDigit()
+                    .foregroundStyle((studyMetadata?.dueCount ?? 0) > 0 ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
+                Text("·").foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.5))
+                Text(lastStudiedLabel(at: timeline.date))
+            }
+            .font(.caption2)
+            .foregroundStyle(LearnAlertStyle.textSecondary)
+            .lineLimit(1).minimumScaleFactor(0.85)
+        }
+    }
+
+    private func lastStudiedLabel(at now: Date) -> String {
+        let date = [studyMetadata?.lastStudiedAt, practiceActivity.lastStudied(deckID: deck.id)].compactMap { $0 }.max()
+        guard let date else { return "Last studied —" }
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return "Studied today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Studied yesterday"
+        }
+        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
+            return "Studied \(date.formatted(.dateTime.month(.abbreviated).day().year()))"
+        }
+        return "Studied \(date.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private func loadStudyMetadata() async {
+        let container = context.container, deckID = deck.id
+        let worker = Task.detached(priority: .utility) {
+            try await LibraryDataWorker(modelContainer: container).homeMetadata(deckID: deckID)
+        }
+        do {
+            let metadata = try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+            try Task.checkCancellation()
+            studyMetadata = metadata; metadataUnavailable = false
+        } catch is CancellationError { }
+        catch {
+            guard !Task.isCancelled else { return }
+            metadataUnavailable = true
         }
     }
 

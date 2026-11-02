@@ -1,6 +1,55 @@
 import Foundation
 import Combine
 
+/// Actual in-app answers update this small activity index; opening or resuming
+/// a checkpoint does not. Notification learning continues to live on its cards.
+@MainActor
+final class PracticeStudyActivity: ObservableObject {
+    static let shared = PracticeStudyActivity()
+    @Published private(set) var revision = 0
+    private static let storageKey = "practiceStudyActivity.v1"
+    private let defaults: UserDefaults
+    private var timestamps: [String: Double]
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        var valid: [String: Double] = [:]
+        for (key, value) in defaults.dictionary(forKey: Self.storageKey) ?? [:] {
+            guard let id = UUID(uuidString: key), let number = value as? NSNumber else { continue }
+            let timestamp = number.doubleValue
+            guard timestamp.isFinite, timestamp > 0 else { continue }
+            valid[id.uuidString] = max(valid[id.uuidString] ?? timestamp, timestamp)
+        }
+        timestamps = valid
+    }
+
+    func lastStudied(deckID: UUID) -> Date? {
+        timestamps[deckID.uuidString].map(Date.init(timeIntervalSince1970:))
+    }
+
+    func recordAnswer(deckID: UUID, at date: Date = Date()) {
+        let timestamp = date.timeIntervalSince1970
+        guard timestamp.isFinite, timestamp > 0,
+              timestamp > timestamps[deckID.uuidString, default: 0] else { return }
+        timestamps[deckID.uuidString] = timestamp
+        defaults.set(timestamps, forKey: Self.storageKey)
+        revision &+= 1
+    }
+
+    func clear(deckID: UUID) {
+        guard timestamps.removeValue(forKey: deckID.uuidString) != nil else { return }
+        if timestamps.isEmpty { defaults.removeObject(forKey: Self.storageKey) }
+        else { defaults.set(timestamps, forKey: Self.storageKey) }
+        revision &+= 1
+    }
+
+    func removeAll() {
+        timestamps.removeAll()
+        defaults.removeObject(forKey: Self.storageKey)
+        revision &+= 1
+    }
+}
+
 /// A practice checkpoint contains no notification learning mutations. Large HTML
 /// and media remain on their cards; checkpoints retain only identities and answers.
 nonisolated struct PracticeSessionSnapshot: Codable, Identifiable, Sendable {
@@ -165,6 +214,7 @@ final class PracticeSessionStore: ObservableObject {
     }
 
     func removeAll() async {
+        PracticeStudyActivity.shared.removeAll()
         Self.allGeneration += 1
         Self.deckGenerations.removeAll()
         loadedGeneration = nil; loadedDeckID = nil
@@ -174,6 +224,7 @@ final class PracticeSessionStore: ObservableObject {
     }
 
     func removeSessions(deckID: UUID) async {
+        PracticeStudyActivity.shared.clear(deckID: deckID)
         Self.deckGenerations[deckID, default: 0] += 1
         pendingSave?.cancel(); sessions.removeAll { $0.deckID == deckID }
         do { try await PracticeSessionArchiveIO.shared.removeSessions(deckID: deckID, generation: Self.deckGenerations[deckID, default: 0]) }

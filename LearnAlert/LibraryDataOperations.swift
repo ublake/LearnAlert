@@ -22,10 +22,48 @@ nonisolated struct DeckPreviewSummary: Sendable {
     var cardIDs: [UUID] = []
 }
 
+nonisolated struct HomeDeckStudyMetadata: Sendable {
+    var cardCount = 0
+    var dueCount = 0
+    var lastStudiedAt: Date?
+    var nextDueAt: Date?
+}
+
 /// Constructed in a detached task so database scans and bulk changes never run
 /// on the UI executor. Only counts and IDs cross back to the view's context.
 @ModelActor
 actor LibraryDataWorker {
+    /// Home needs only learning dates and counts, never card text, media or HTML.
+    func homeMetadata(deckID: UUID, now: Date = Date()) throws -> HomeDeckStudyMetadata {
+        var descriptor = FetchDescriptor<Flashcard>(predicate: #Predicate { $0.deck?.id == deckID })
+        descriptor.propertiesToFetch = [\.cardTypeRaw, \.ankiReviewStateData, \.ankiPracticeReviewStateData,
+            \.reviewCount, \.masteryScore, \.lastReviewedDate]
+        var metadata = HomeDeckStudyMetadata()
+        try modelContext.enumerate(descriptor, batchSize: 256) { card in
+            try Task.checkCancellation()
+            metadata.cardCount += 1
+            let due: Date
+            if card.cardType.usesSpacedReview {
+                let state = card.ankiReviewState
+                due = state.dueDate
+                if let date = state.lastReviewedDate {
+                    metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
+                }
+            } else {
+                due = card.nextReviewDate
+            }
+            if due <= now { metadata.dueCount += 1 }
+            else { metadata.nextDueAt = min(metadata.nextDueAt ?? due, due) }
+            if let date = card.lastReviewedDate {
+                metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
+            }
+            if let date = card.ankiPracticeReviewState.lastReviewedDate {
+                metadata.lastStudiedAt = max(metadata.lastStudiedAt ?? date, date)
+            }
+        }
+        return metadata
+    }
+
     func deleteAll(progress: @Sendable (LibraryDeletionProgress) async -> Void) async throws -> LibraryDeletionResult {
         modelContext.autosaveEnabled = false
         let cards = try modelContext.fetchCount(FetchDescriptor<Flashcard>())

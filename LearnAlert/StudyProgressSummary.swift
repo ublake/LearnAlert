@@ -49,7 +49,7 @@ struct StudyProgressSummary {
 
         // Read-through and self-rated cards acknowledge study; they do not
         // provide an objective right/wrong quiz result.
-        let quizCards = ordinaryCards.filter { [.multipleChoice, .matching, .fillBlank].contains($0.cardType) }
+        let quizCards = ordinaryCards.filter { [.multipleChoice, .matching, .fillBlank, .dragAnswer].contains($0.cardType) }
         quizReviewCount = quizCards.reduce(0) { $0 + max(0, $1.reviewCount) }
         quizCorrectCount = quizCards.reduce(0) { $0 + min(max(0, $1.correctCount), max(0, $1.reviewCount)) }
     }

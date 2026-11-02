@@ -354,6 +354,7 @@ struct DeckStudyView: View {
         }
     }
     private func recordPracticeAnswer(_ card: Flashcard, correct: Bool) {
+        PracticeStudyActivity.shared.recordAnswer(deckID: deck.id)
         reviewedCardIDs.insert(card.id); answerCount += 1
         if correct { correctCount += 1 }
     }
