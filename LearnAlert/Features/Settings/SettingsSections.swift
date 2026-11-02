@@ -369,6 +369,31 @@ struct SettingsPreferencesGroup: View {
                 Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
 
                 Menu {
+                    Picker("Appearance", selection: $appearanceMode) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    SettingsPreferenceLabel(title: "Appearance", systemImage: "circle.lefthalf.filled", value: appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
+                }
+                .accessibilityLabel("Appearance")
+                .accessibilityValue(appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
+
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+
+                Button { showingAnkiSettings = true } label: {
+                    SettingsPreferenceLabel(title: "Anki Settings", systemImage: "rectangle.on.rectangle.angled",
+                        value: (AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title,
+                        disclosureSymbol: "chevron.right")
+                }
+                .accessibilityLabel("Anki Settings")
+                .accessibilityValue((AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title)
+
+                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+
+                Menu {
                     Picker("Alert Sound", selection: $alertSound) {
                         ForEach(availableSounds) { sound in
                             Text(sound.name).tag(sound.id)
@@ -398,31 +423,6 @@ struct SettingsPreferencesGroup: View {
                 .onChange(of: soundEffectsEnabled) { _, enabled in
                     if !enabled { InteractionSoundPlayer.shared.stopEffects() }
                 }
-
-                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
-
-                Menu {
-                    Picker("Appearance", selection: $appearanceMode) {
-                        Text("System").tag("system")
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
-                    }
-                    .pickerStyle(.inline)
-                } label: {
-                    SettingsPreferenceLabel(title: "Appearance", systemImage: "circle.lefthalf.filled", value: appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
-                }
-                .accessibilityLabel("Appearance")
-                .accessibilityValue(appearanceMode == "light" ? AppLocalization.string("Light") : appearanceMode == "dark" ? AppLocalization.string("Dark") : AppLocalization.string("System"))
-
-                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
-
-                Button { showingAnkiSettings = true } label: {
-                    SettingsPreferenceLabel(title: "Anki Settings", systemImage: "rectangle.on.rectangle.angled",
-                        value: (AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title,
-                        disclosureSymbol: "chevron.right")
-                }
-                .accessibilityLabel("Anki Settings")
-                .accessibilityValue((AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title)
             }
             .buttonStyle(.plain)
             .settingsGlassSurface(cornerRadius: 20)
