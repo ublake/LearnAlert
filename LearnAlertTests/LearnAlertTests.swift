@@ -419,7 +419,7 @@ struct SmartRepetitionAndLockingTests {
     func deckLibrarySummaryUpdates() {
         let deck = Deck(name: "Changing Deck")
         #expect(deck.cardCount == 0)
-        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0))
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0, masteredCount: 0, learningCount: 0, needToLearnCount: 0))
 
         let card = Flashcard(question: "Q", options: ["A"], correctAnswer: "A")
         deck.cards.append(card)
@@ -427,10 +427,10 @@ struct SmartRepetitionAndLockingTests {
         #expect(deck.librarySummary.cycleProgress == 0)
 
         card.processAnswer(isCorrect: true)
-        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 1, cycleStreak: 1, cycleProgress: 1.0 / 3.0))
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 1, cycleStreak: 1, cycleProgress: 1.0 / 3.0, masteredCount: 0, learningCount: 1, needToLearnCount: 0))
 
         deck.cards.removeAll()
-        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0))
+        #expect(deck.librarySummary == DeckLibrarySummary(cardCount: 0, cycleStreak: 0, cycleProgress: 0, masteredCount: 0, learningCount: 0, needToLearnCount: 0))
     }
 }
 

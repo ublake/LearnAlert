@@ -23,7 +23,7 @@ struct CreateDeckView: View {
     ]
 
     private let nameSuggestions = [
-        "Spanish", "Biology", "History", "Medical", "Formulas", "Vocabulary"
+        String(localized: "Spanish"), String(localized: "Biology"), String(localized: "History"), String(localized: "Medical"), String(localized: "Formulas"), String(localized: "Vocabulary")
     ]
 
     var body: some View {

@@ -1,0 +1,54 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "Photo-library permission explanation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlert uses your selected photos to generate study flashcard decks from notes, diagrams, or study materials."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlert usa las fotos que seleccionas para generar mazos de tarjetas de estudio a partir de apuntes, diagramas o materiales de estudio."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O LearnAlert usa as fotos que você seleciona para gerar baralhos de estudo a partir de anotações, diagramas ou materiais de estudo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlert utilise les photos que vous sélectionnez pour créer des paquets de cartes de révision à partir de notes, de schémas ou de supports de cours."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlert verwendet deine ausgewählten Fotos, um aus Notizen, Diagrammen oder Lernmaterialien Lernkartenstapel zu erstellen."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlertは、選択した写真を使い、ノートや図、学習資料から学習用のカードデッキを作成します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LearnAlert는 선택한 사진을 사용하여 필기, 도표 또는 학습 자료에서 학습 카드 덱을 만듭니다."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

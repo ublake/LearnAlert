@@ -68,10 +68,10 @@ struct LanguageQuestionTextTests {
         #expect(clean == expected && course.units[0].lessons[0].cards[0] == original)
         let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
-        let before = try LanguageTopicStore.open(course: course, topic: .init(id: lesson.id, title: lesson.title, cards: [original]), context: container.mainContext, learningSnapshot: .init())
+        let before = try LanguageTopicStore.open(course: course, topic: .init(id: lesson.id, title: lesson.title, cards: [original]), context: container.mainContext)
         let card = try #require(before.cards.first); card.reviewCount = 7; card.masteryScore = 2
         let id = card.id
-        let after = try LanguageTopicStore.open(course: course, topic: LanguageDeckProjection.topics(course)[0], context: container.mainContext, learningSnapshot: .init())
+        let after = try LanguageTopicStore.open(course: course, topic: LanguageDeckProjection.topics(course)[0], context: container.mainContext)
         #expect(after.id == before.id && after.cards[0].id == id)
         #expect(after.cards[0].question == expected.question && after.cards[0].reviewCount == 7 && after.cards[0].masteryScore == 2)
     }

@@ -78,7 +78,7 @@ struct PremadeDecksView: View {
         .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
             Button("Done", role: .cancel) { }
         } message: {
-            Text("\(addedDeckName ?? "This deck") is now ready to study and editable in your library.")
+            Text("\(addedDeckName ?? String(localized: "This deck")) is now ready to study and editable in your library.")
         }
     }
 
@@ -113,9 +113,9 @@ struct PremadeDecksView: View {
                         .buttonStyle(.plain)
                         .disabled(course == nil)
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(choice.name)
-                        .accessibilityValue(course == nil ? "Not available yet" : "Available")
-                        .accessibilityHint(course == nil ? "" : "Opens \(choice.name) decks")
+                        .accessibilityLabel(choice.displayName)
+                        .accessibilityValue(course == nil ? String(localized: "Not available yet") : String(localized: "Available"))
+                        .accessibilityHint(course == nil ? "" : String(localized: "Opens \(choice.displayName) decks"))
                     }
                 }
             }
@@ -141,13 +141,13 @@ struct PremadeDecksView: View {
             Text("Languages & decks").font(StudyStudioStyle.heading()).foregroundStyle(StudyStudioStyle.ink)
             ForEach(courses) { course in
                 Button { searchedCourse = course } label: {
-                    searchRow(title: course.title, subtitle: "Language decks", symbol: "character.book.closed", action: "Open")
+                    searchRow(title: course.title, subtitle: String(localized: "Language decks"), symbol: "character.book.closed", action: String(localized: "Open"))
                 }.buttonStyle(.plain)
             }
             ForEach(decks) { deck in
                 let added = deck.isInLibrary(libraryDecks)
                 Button { add(deck) } label: {
-                    searchRow(title: deck.name, subtitle: "\(deck.category) · \(deck.cards.count) cards", symbol: "rectangle.stack", action: added ? "Added" : "Add")
+                    searchRow(title: deck.name, subtitle: String(localized: "\(CommunityFeedView.categoryTitle(deck.category)) · \(deck.cards.count) cards"), symbol: "rectangle.stack", action: added ? String(localized: "Added") : String(localized: "Add"))
                 }.buttonStyle(.plain).disabled(added)
             }
             if courses.isEmpty && decks.isEmpty {
@@ -215,6 +215,21 @@ private struct DiscoverLanguageChoice: Identifiable {
     let name: String
     let flagAssetName: String
     var id: String { name }
+    var displayName: String {
+        switch name {
+        case "Spanish": String(localized: "Spanish")
+        case "Korean": String(localized: "Korean")
+        case "French": String(localized: "French")
+        case "Japanese": String(localized: "Japanese")
+        case "English": String(localized: "English")
+        case "German": String(localized: "German")
+        case "Italian": String(localized: "Italian")
+        case "Portuguese": String(localized: "Portuguese")
+        case "Chinese": String(localized: "Chinese")
+        case "Arabic": String(localized: "Arabic")
+        default: name
+        }
+    }
 
     static let choices = [
         Self(name: "Spanish", flagAssetName: "FlagSpain"),

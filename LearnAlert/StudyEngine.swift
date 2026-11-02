@@ -201,7 +201,7 @@ class StudyEngine: ObservableObject {
             throw NSError(
                 domain: "LearnAlert.StudyEngine",
                 code: 200,
-                userInfo: [NSLocalizedDescriptionKey: "All cards in '\(deck.name)' are mastered! No review alerts are due today."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "All cards in '\(deck.name)' are mastered! No review alerts are due today.")]
             )
         }
         
@@ -209,7 +209,7 @@ class StudyEngine: ObservableObject {
             throw NSError(
                 domain: "LearnAlert.StudyEngine",
                 code: 204,
-                userInfo: [NSLocalizedDescriptionKey: "No studyable flashcards found in '\(deck.name)'."]
+                userInfo: [NSLocalizedDescriptionKey: String(localized: "No studyable flashcards found in '\(deck.name)'.")]
             )
         }
         
@@ -247,8 +247,8 @@ class StudyEngine: ObservableObject {
             let complete = NotificationLearningBudget.today().isComplete
             throw NSError(domain: "LearnAlert.StudyEngine", code: 204,
                 userInfo: [NSLocalizedDescriptionKey: complete
-                    ? "You're done for today. Keep alerts running beyond today to continue tomorrow."
-                    : "No spaced alerts fit before this schedule ends. Extend the availability window or keep alerts running beyond today."])
+                    ? String(localized: "You're done for today. Keep alerts running beyond today to continue tomorrow.")
+                    : String(localized: "No spaced alerts fit before this schedule ends. Extend the availability window or keep alerts running beyond today.")])
         }
 
         // Update Live UI

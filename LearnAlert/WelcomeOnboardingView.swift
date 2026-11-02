@@ -205,7 +205,7 @@ private struct AppearanceSelectionPage: View {
     @Binding var appearanceMode: String
     let onContinue: () -> Void
 
-    private let themes: [(id: String, title: String, subtitle: String, icon: String, badge: String?)] = [
+    private let themes: [(id: String, title: LocalizedStringResource, subtitle: LocalizedStringResource, icon: String, badge: LocalizedStringResource?)] = [
         (
             id: "system",
             title: "System Default",

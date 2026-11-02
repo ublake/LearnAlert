@@ -99,7 +99,7 @@ struct ProgressDashboardView: View {
         .padding(14).appCardSurface(cornerRadius: 16)
     }
 
-    private func masteryLabel(_ title: String, count: Int, color: Color) -> some View {
+    private func masteryLabel(_ title: LocalizedStringResource, count: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 5, height: 5).accessibilityHidden(true)
@@ -110,7 +110,7 @@ struct ProgressDashboardView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func sectionHeader(_ title: String, count: Int) -> some View {
+    private func sectionHeader(_ title: LocalizedStringResource, count: Int) -> some View {
         HStack {
             Text(title).font(.title3.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary)
             Spacer()
@@ -125,7 +125,7 @@ struct ProgressDashboardView: View {
                     .font(.subheadline.weight(.medium)).foregroundStyle(Color(hex: deck.colorHex))
                     .frame(width: 32, height: 32)
                     .background(Color(hex: deck.colorHex).opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityLabel(deck.isCommunity ? "Shared deck" : "Deck")
+                    .accessibilityLabel(deck.isCommunity ? String(localized: "Shared deck") : String(localized: "Deck"))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(deck.name).font(.subheadline.weight(.semibold)).foregroundStyle(LearnAlertStyle.textPrimary).lineLimit(2)
                     Text("\(deck.reviewedCardCount) of \(deck.cardCount) cards reviewed").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
@@ -196,7 +196,7 @@ struct ProgressDashboardView: View {
 private struct ProgressProfileDestination: Identifiable { let id: String }
 
 private struct ProgressMetric: View {
-    let title: String
+    let title: LocalizedStringResource
     let value: String
     let icon: String
 

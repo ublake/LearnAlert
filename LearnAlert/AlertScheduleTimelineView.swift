@@ -20,7 +20,7 @@ struct UpcomingAlertsTimeline: View {
                             .foregroundStyle(LearnAlertStyle.appAccentForeground)
                             .symbolEffect(.pulse, options: .repeating, isActive: next != nil && !reduceMotion)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(next == nil ? "Recent" : "Next").font(.system(size: 9, weight: .medium))
+                            Text(next == nil ? String(localized: "Recent") : String(localized: "Next")).font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(LearnAlertStyle.textSecondary)
                             if let next { Text(next.date, format: .dateTime.hour().minute()).font(.caption2.weight(.semibold)).monospacedDigit() }
                             else { Text("Alert trail").font(.caption2.weight(.semibold)) }
@@ -31,7 +31,7 @@ struct UpcomingAlertsTimeline: View {
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(LearnAlertStyle.appAccent.opacity(0.20), lineWidth: 0.75))
                 }.buttonStyle(.plain)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(next.map { "Next notification at \($0.date.formatted(date: .omitted, time: .shortened)). View alert history" } ?? "View recent alert history")
+                    .accessibilityLabel(next.map { String(localized: "Next notification at \($0.date.formatted(date: .omitted, time: .shortened)). View alert history") } ?? String(localized: "View recent alert history"))
             }
         }
         .task(id: deckID) {

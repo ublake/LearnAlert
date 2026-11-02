@@ -188,6 +188,7 @@
 				KoreanLexicon.swift,
 				LanguageDeckMigration.swift,
 				LibraryPreferences.swift,
+				Localizable.xcstrings,
 				ManagedCatalog.swift,
 				Models.swift,
 				NotificationDesignTheme.swift,
@@ -421,6 +422,12 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				es,
+				"pt-BR",
+				fr,
+				de,
+				ja,
+				ko,
 				Base,
 			);
 			mainGroup = 25FF1AE82F477005006D435B;

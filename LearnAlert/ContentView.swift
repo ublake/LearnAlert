@@ -239,7 +239,7 @@ private enum HomeAlertTarget {
     case deck(Deck)
     var selectionId: String { switch self { case .deck(let deck): deck.id.uuidString } }
     var name: String { switch self { case .deck(let deck): deck.name } }
-    var detail: String { switch self { case .deck(let deck): "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards" } }
+    var detail: String { switch self { case .deck(let deck): String(localized: "\((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) cards") } }
     var canSchedule: Bool { switch self { case .deck(let deck): ((try? HomeScheduleDeckCounts.count(for: deck)) ?? deck.cardCount) >= 2 } }
 }
 
@@ -294,13 +294,13 @@ struct HomeLibraryView: View {
 
     private var tutorialCoachSteps: [TutorialCoachStep] {
         if homeTutorialStep == 1 {
-            return [TutorialCoachStep(target: .firstDeck, title: "Your first deck",
-                message: "Tap your deck to see its cards, make changes, and start studying.")]
+            return [TutorialCoachStep(target: .firstDeck, title: String(localized: "Your first deck"),
+                message: String(localized: "Tap your deck to see its cards, make changes, and start studying."))]
         }
         guard homeTutorialStep == 3 else { return [] }
         return [
-            TutorialCoachStep(target: .homeSchedule, title: "Your library & alerts",
-                message: "All your decks live on Home. Choose a deck and schedule its alerts here. Try a test alert to see how it works.")
+            TutorialCoachStep(target: .homeSchedule, title: String(localized: "Your library & alerts"),
+                message: String(localized: "All your decks live on Home. Choose a deck and schedule its alerts here. Try a test alert to see how it works."))
         ]
     }
 
@@ -350,7 +350,7 @@ struct HomeLibraryView: View {
                 Text("Storage Notice")
                     .font(.custom("Poppins-SemiBold", size: 13))
                     .foregroundStyle(.white)
-                Text(sharedDB.storageErrorMessage ?? "Running in temporary memory mode. Flashcards may not persist between app restarts.")
+                Text(sharedDB.storageErrorMessage ?? String(localized: "Running in temporary memory mode. Flashcards may not persist between app restarts."))
                     .font(.custom("Poppins-Regular", size: 11))
                     .foregroundStyle(.white.opacity(0.8))
             }
@@ -383,7 +383,7 @@ struct HomeLibraryView: View {
                             homeTutorialStep = 0
                         }
                     } label: {
-                        Text(homeTutorialStep == 3 ? "Skip" : "Skip Tour")
+                        Text(homeTutorialStep == 3 ? String(localized: "Skip") : String(localized: "Skip Tour"))
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                             .opacity(homeTutorialStep == 3 ? 0.6 : 1)
@@ -432,7 +432,7 @@ struct HomeLibraryView: View {
                             .frame(width: 44, height: 44)
                             .appCardSurface(cornerRadius: 14)
                     }
-                    .accessibilityLabel(isSearchExpanded ? "Close deck search" : "Search decks")
+                    .accessibilityLabel(isSearchExpanded ? String(localized: "Close deck search") : String(localized: "Search decks"))
                 }
             }
             .frame(maxWidth: dynamicTypeSize.isAccessibilitySize || isSearchExpanded ? .infinity : nil, alignment: .trailing)
@@ -520,7 +520,7 @@ struct HomeLibraryView: View {
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                     Spacer()
                     let totalCount = pinnedItems.count + unpinnedDecks.count
-                    Text("\(totalCount) \(totalCount == 1 ? "item" : "items")")
+                    Text("\(totalCount) items")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                 }
@@ -625,7 +625,7 @@ struct HomeLibraryView: View {
 
         if showingNotificationPermissionPrompt {
             NotificationPermissionPromptModal(
-                targetDeckName: pendingTargetToSchedule?.name ?? "your deck",
+                targetDeckName: pendingTargetToSchedule?.name ?? String(localized: "your deck"),
                 onAllow: {
                     withAnimation(.snappy) {
                         showingNotificationPermissionPrompt = false
@@ -733,7 +733,7 @@ struct HomeLibraryView: View {
             GeneratedQuizImportView()
         }
         .confirmationDialog(
-            "Delete \(deckPendingDeletion?.name ?? "this deck")?",
+            "Delete \(deckPendingDeletion?.name ?? String(localized: "this deck"))?",
             isPresented: Binding(
                 get: { deckPendingDeletion != nil },
                 set: { if !$0 { deckPendingDeletion = nil } }
@@ -799,7 +799,7 @@ struct HomeLibraryView: View {
         guard !isSchedulingAlerts else { return }
         guard target.canSchedule else {
             HapticFeedback.warning()
-            homeAlertMessage = "Add at least two cards before scheduling this deck."
+            homeAlertMessage = String(localized: "Add at least two cards before scheduling this deck.")
             return
         }
         isSchedulingAlerts = true
@@ -861,7 +861,7 @@ struct HomeLibraryView: View {
     @MainActor
     private func openAIComposerIfAvailable() async {
         guard await AIConnectivityCheck.isAvailable() else {
-            homeAlertMessage = "AI features need an internet connection. You can still create decks manually, study, and schedule notifications offline."
+            homeAlertMessage = String(localized: "AI features need an internet connection. You can still create decks manually, study, and schedule notifications offline.")
             return
         }
         showingAIComposer = true
@@ -889,11 +889,11 @@ private struct EmptyLibraryCard: View {
                 .padding(.top, 4)
 
             VStack(spacing: 5) {
-                Text(isSearching ? "No matching decks" : "No decks created yet")
+                Text(isSearching ? String(localized: "No matching decks") : String(localized: "No decks created yet"))
                     .font(.custom("Poppins-SemiBold", size: 16, relativeTo: .headline))
                     .foregroundStyle(LearnAlertStyle.textPrimary)
 
-                Text(isSearching ? "Try searching with a different keyword." : "Create your first flashcard deck or explore Discover to start learning.")
+                Text(isSearching ? String(localized: "Try searching with a different keyword.") : String(localized: "Create your first flashcard deck or explore Discover to start learning."))
                     .font(.custom("Poppins-Regular", size: 13, relativeTo: .subheadline))
                     .foregroundStyle(LearnAlertStyle.textSecondary)
                     .multilineTextAlignment(.center)
@@ -1239,7 +1239,7 @@ private struct HomeAlertSetupCard: View {
                     guard let selectedTarget else { return }
                     schedule(selectedTarget)
                 } label: {
-                    Label(isScheduling ? "Scheduling…" : homeTutorialStep == 3 ? "Try Test Alert" : "Schedule Alerts", systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
+                    Label(isScheduling ? String(localized: "Scheduling…") : homeTutorialStep == 3 ? String(localized: "Try Test Alert") : String(localized: "Schedule Alerts"), systemImage: homeTutorialStep == 3 ? "sparkles" : "bell.badge.fill")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 48)
@@ -1334,7 +1334,7 @@ private struct HomeAlertSetupCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: progress.isComplete ? "checkmark.seal.fill" : "sparkles")
                         .foregroundStyle(progress.isComplete ? Color.green : LearnAlertStyle.appAccentForeground)
-                    Text(progress.isComplete ? "Done for today" : "Questions answered today")
+                    Text(progress.isComplete ? String(localized: "Done for today") : String(localized: "Questions answered today"))
                     Spacer(minLength: 8)
                     Text("\(progress.completedCount)/\(NotificationLearningBudget.goal)").monospacedDigit()
                 }
@@ -1352,12 +1352,12 @@ private struct AlertTargetPickerLabel: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(selectedTarget?.name ?? "Choose a deck")
+                Text(selectedTarget?.name ?? String(localized: "Choose a deck"))
                     .font(.subheadline.weight(.medium))
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(selectedTarget?.detail ?? "Nothing selected")
+                Text(selectedTarget?.detail ?? String(localized: "Nothing selected"))
                     .font(.caption)
                     .foregroundStyle(LearnAlertStyle.textSecondary)
             }
@@ -1391,7 +1391,7 @@ private struct ScheduleStatusDot: View {
             }
             .frame(width: 12, height: 12)
             .shadow(color: isActive ? Color.green.opacity(0.45) : Color.clear, radius: 5)
-            .accessibilityLabel(isActive ? "Schedule active" : "No active schedule")
+            .accessibilityLabel(isActive ? String(localized: "Schedule active") : String(localized: "No active schedule"))
     }
 }
 
@@ -1624,7 +1624,7 @@ private struct HomeStudyCard: View {
                 .opacity(cardOffset < 0 ? 1 : 0)
                 .allowsHitTesting(isScheduleRevealed && canSwipe)
                 .accessibilityHidden(!isScheduleRevealed || !canSwipe)
-                .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
+                .accessibilityLabel(isTargeted ? String(localized: "Deck alerts active") : String(localized: "Quick schedule \(deck.name)"))
 
                 cardFace(cardCount: cardCount)
                     .overlay {
@@ -1652,7 +1652,7 @@ private struct HomeStudyCard: View {
                 if !isTutorialActive {
                     if let togglePin {
                         Button(action: togglePin) {
-                            Label(isPinned ? "Unpin Deck" : "Pin Deck", systemImage: isPinned ? "pin.slash" : "pin")
+                            Label(isPinned ? String(localized: "Unpin Deck") : String(localized: "Pin Deck"), systemImage: isPinned ? "pin.slash" : "pin")
                         }
                     }
                     Button(action: shuffleAppearance) {
@@ -1703,7 +1703,7 @@ private struct HomeStudyCard: View {
                         .foregroundStyle(LearnAlertStyle.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    Text("\(deck.deckType) · \(cardCount) cards")
+                    Text("\(deck.localizedDeckType) · \(cardCount) cards")
                         .font(.subheadline)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                     studyStatus
@@ -1732,7 +1732,7 @@ private struct HomeStudyCard: View {
         .buttonStyle(.plain)
         .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
         .accessibilityLabel("Open \(deck.name), \(cardCount) cards")
-        .accessibilityValue("\(studyMetadata.map { "\($0.dueCount) cards due" } ?? (metadataUnavailable ? "Due count unavailable" : "Loading due count")). \(lastStudiedLabel(at: .now))")
+        .accessibilityValue("\(studyMetadata.map { String(localized: "\($0.dueCount) cards due") } ?? (metadataUnavailable ? String(localized: "Due count unavailable") : String(localized: "Loading due count"))). \(lastStudiedLabel(at: .now))")
         .appCardSurface(shadow: false)
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1747,7 +1747,7 @@ private struct HomeStudyCard: View {
         TimelineView(.periodic(from: .now, by: 60)) { timeline in
             HStack(spacing: 5) {
                 Image(systemName: "clock.arrow.circlepath")
-                Text(studyMetadata.map { "\($0.dueCount) due" } ?? (metadataUnavailable ? "— due" : "… due"))
+                Text(studyMetadata.map { String(localized: "\($0.dueCount) due") } ?? (metadataUnavailable ? String(localized: "— due") : String(localized: "… due")))
                     .monospacedDigit()
                     .foregroundStyle((studyMetadata?.dueCount ?? 0) > 0 ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
                 Text("·").foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.5))
@@ -1761,16 +1761,16 @@ private struct HomeStudyCard: View {
 
     private func lastStudiedLabel(at now: Date) -> String {
         let date = [studyMetadata?.lastStudiedAt, practiceActivity.lastStudied(deckID: deck.id)].compactMap { $0 }.max()
-        guard let date else { return "Last studied —" }
+        guard let date else { return String(localized: "Last studied —") }
         let calendar = Calendar.current
-        if calendar.isDate(date, inSameDayAs: now) { return "Studied today" }
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Studied today") }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return "Studied yesterday"
+            return String(localized: "Studied yesterday")
         }
         if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
-            return "Studied \(date.formatted(.dateTime.month(.abbreviated).day().year()))"
+            return String(localized: "Studied \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
         }
-        return "Studied \(date.formatted(.dateTime.month(.abbreviated).day()))"
+        return String(localized: "Studied \(date.formatted(.dateTime.month(.abbreviated).day()))")
     }
 
     private func loadStudyMetadata() async {
@@ -1829,8 +1829,8 @@ private struct HomeStudyCard: View {
 private struct TutorialStepTopBanner: View {
     let stepNumber: Int
     let totalSteps: Int
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringResource
+    let subtitle: LocalizedStringResource
     let icon: String
     let onSkip: () -> Void
 
@@ -2045,7 +2045,7 @@ private struct AlertsInfoControl: View {
                             .frame(width: 48, height: 48)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(isExpanded ? "Close alert information" : "About alert delivery")
+                    .accessibilityLabel(isExpanded ? String(localized: "Close alert information") : String(localized: "About alert delivery"))
 
                     if isExpanded {
                         Text("Alerts appear while your device is locked or on the Home Screen—not while you’re using LearnAlert.")
@@ -2095,7 +2095,7 @@ struct ActiveAlertsView: View {
 
     private var nextAlertText: String {
         guard let nextDate = engine.scheduledDates.filter({ $0 > Date() }).min() else {
-            return "Wrapping up"
+            return String(localized: "Wrapping up")
         }
         return nextDate.formatted(date: .omitted, time: .shortened)
     }
@@ -2157,7 +2157,7 @@ struct ActiveAlertsView: View {
 }
 
 private struct LearningMetric: View {
-    let title: String
+    let title: LocalizedStringResource
     let value: String
     let icon: String
 
@@ -2213,6 +2213,13 @@ struct SetupAlertsView: View {
     @State private var errorMessage: String?
 
     private var selectedDeck: Deck? { decks.first { $0.id.uuidString == draft.targetId } }
+    private var localizedStopCondition: String {
+        switch draft.settings.stopCondition {
+        case "Until Deck Learnt": String(localized: "Until Deck Learnt")
+        case "Until Day Ends": String(localized: "Until Day Ends")
+        default: String(localized: "Until I say so")
+        }
+    }
     private var hasChanges: Bool { original.map { $0 != draft } ?? false }
     private var canSave: Bool {
         hasChanges && !saving && (!editingActiveSchedule || selectedDeck != nil)
@@ -2237,7 +2244,7 @@ struct SetupAlertsView: View {
                     }
                 } label: {
                     HStack {
-                        Text(selectedDeck?.name ?? "All Active Decks")
+                        Text(selectedDeck?.name ?? String(localized: "All Active Decks"))
                             .font(.custom("Poppins-Regular", size: 15, relativeTo: .body))
                         Spacer()
                         Image(systemName: "chevron.up.chevron.down")
@@ -2281,7 +2288,7 @@ struct SetupAlertsView: View {
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(draft.settings.stopCondition).lineLimit(1)
+                                Text(localizedStopCondition).lineLimit(1)
                                 Image(systemName: "chevron.up.chevron.down").font(.caption2)
                             }
                             .font(.custom("Poppins-SemiBold", size: 14, relativeTo: .body))
@@ -2328,7 +2335,7 @@ struct SetupAlertsView: View {
             Button(action: save) {
                 HStack(spacing: 10) {
                     if saving { ProgressView().tint(LearnAlertStyle.appAccentInk) }
-                    Text(editingActiveSchedule ? "Save and reschedule alerts" : "Save alert settings")
+                    Text(editingActiveSchedule ? String(localized: "Save and reschedule alerts") : String(localized: "Save alert settings"))
                         .font(.subheadline.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 52)
@@ -2355,7 +2362,7 @@ struct SetupAlertsView: View {
         }
         .alert("Couldn’t update alerts", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "Please try again.") }
+        } message: { Text(errorMessage ?? String(localized: "Please try again.")) }
     }
 
     private func load() {
@@ -2394,11 +2401,11 @@ struct SetupAlertsView: View {
                         if let oldDeck { _ = try await engine.startAlerts(for: oldDeck, section: oldSection) }
                     } catch {
                         engine.stopAlerts()
-                        errorMessage = "\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again."
+                        errorMessage = String(localized: "\(schedulingError) Your changes weren’t saved. Alerts couldn’t be restored; please schedule them again.")
                         return
                     }
                 }
-                errorMessage = "\(schedulingError) Your changes weren’t saved."
+                errorMessage = String(localized: "\(schedulingError) Your changes weren’t saved.")
             }
         }
     }
@@ -2448,7 +2455,7 @@ struct DeckGridItem: View {
 
                             HStack(spacing: 6) {
                                 Image(systemName: iconForType(deck.deckType))
-                                Text(deck.deckType)
+                                Text(deck.localizedDeckType)
                                 if isTargeted {
                                     Text("• Active")
                                         .foregroundStyle(LearnAlertStyle.sky)
@@ -2474,7 +2481,7 @@ struct DeckGridItem: View {
                         .frame(maxHeight: .infinity)
                         .background(Color.black.opacity(0.16))
                 }
-                .accessibilityLabel(isTargeted ? "Deck alerts active" : "Quick schedule \(deck.name)")
+                .accessibilityLabel(isTargeted ? String(localized: "Deck alerts active") : String(localized: "Quick schedule \(deck.name)"))
             }
             .background(
                 LinearGradient(
@@ -2578,7 +2585,7 @@ private enum DeckFileImport {
             )
         }
         guard !cards.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-        return ParsedDeckFile(name: fallbackName.isEmpty ? "Imported Deck" : fallbackName, colorHex: "#5568C9", cards: cards)
+        return ParsedDeckFile(name: fallbackName.isEmpty ? String(localized: "Imported Deck") : fallbackName, colorHex: "#5568C9", cards: cards)
     }
 
     private static func normalizedOptions(correct: String, options: [String]) -> [String] {
@@ -2760,41 +2767,41 @@ private struct SystemCheckView: View {
         let requests = await center.pendingNotificationRequests()
         let authorizationText: String
         switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: authorizationText = "Notifications are allowed"
-        case .denied: authorizationText = "Notifications are disabled in System Settings"
-        case .notDetermined: authorizationText = "Notification permission has not been requested"
-        @unknown default: authorizationText = "Notification authorization is unknown"
+        case .authorized, .provisional, .ephemeral: authorizationText = String(localized: "Notifications are allowed")
+        case .denied: authorizationText = String(localized: "Notifications are disabled in System Settings")
+        case .notDetermined: authorizationText = String(localized: "Notification permission has not been requested")
+        @unknown default: authorizationText = String(localized: "Notification authorization is unknown")
         }
 
         items.append(SystemCheckItem(
-            title: "Notification permission",
+            title: String(localized: "Notification permission"),
             detail: authorizationText,
             state: settings.authorizationStatus == .denied ? .warning : .good
         ))
         items.append(SystemCheckItem(
-            title: "Scheduled notifications",
-            detail: requests.isEmpty ? "No notifications are currently pending" : "\(requests.count) notifications are pending delivery",
+            title: String(localized: "Scheduled notifications"),
+            detail: requests.isEmpty ? String(localized: "No notifications are currently pending") : String(localized: "\(requests.count) notifications are pending delivery"),
             state: requests.isEmpty ? .warning : .good
         ))
 
         let cardCount = decks.reduce(0) { $0 + $1.cardCount }
         let reviewedCount = decks.flatMap(\.cards).filter { $0.reviewCount > 0 }.count
         items.append(SystemCheckItem(
-            title: "Local library",
-            detail: "\(decks.count) decks · \(cardCount) cards · \(reviewedCount) cards studied",
+            title: String(localized: "Local library"),
+            detail: String(localized: "\(decks.count) decks · \(cardCount) cards · \(reviewedCount) cards studied"),
             state: decks.isEmpty ? .warning : .good
         ))
         items.append(SystemCheckItem(
-            title: "Storage & Sync",
-            detail: "SwiftData local database with background iCloud sync",
+            title: String(localized: "Storage & Sync"),
+            detail: String(localized: "SwiftData local database with background iCloud sync"),
             state: .good
         ))
 
         let endpointResults = await checkAPIEndpoints()
         let reachableCount = endpointResults.filter(\.reachable).count
         items.append(SystemCheckItem(
-            title: "LearnAlert API",
-            detail: "\(reachableCount) of \(endpointResults.count) routes reachable",
+            title: String(localized: "LearnAlert API"),
+            detail: String(localized: "\(reachableCount) of \(endpointResults.count) routes reachable"),
             state: reachableCount == endpointResults.count ? .good : .warning
         ))
         for endpoint in endpointResults {
@@ -2805,10 +2812,10 @@ private struct SystemCheckView: View {
             ))
         }
 
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? String(localized: "Unknown")
         items.append(SystemCheckItem(
-            title: "App environment",
-            detail: "LearnAlert \(version) · iOS \(UIDevice.current.systemVersion) · \(ProcessInfo.processInfo.isLowPowerModeEnabled ? "Low Power Mode on" : "Low Power Mode off")",
+            title: String(localized: "App environment"),
+            detail: String(localized: "LearnAlert \(version) · iOS \(UIDevice.current.systemVersion) · \(ProcessInfo.processInfo.isLowPowerModeEnabled ? String(localized: "Low Power Mode on") : String(localized: "Low Power Mode off"))"),
             state: .good
         ))
         isRunning = false
@@ -2816,9 +2823,9 @@ private struct SystemCheckView: View {
 
     private func checkAPIEndpoints() async -> [(name: String, detail: String, reachable: Bool)] {
         let endpoints = [
-            ("API host", ""),
-            ("Generate deck endpoint", "v1/decks/generate"),
-            ("Refine deck endpoint", "v1/decks/refine")
+            (String(localized: "API host"), ""),
+            (String(localized: "Generate deck endpoint"), "v1/decks/generate"),
+            (String(localized: "Refine deck endpoint"), "v1/decks/refine")
         ]
         let apiKey = LearnAlertAPI.apiKey
         return await withTaskGroup(of: (Int, String, String, Bool).self) { group in
@@ -2835,7 +2842,7 @@ private struct SystemCheckView: View {
                         let (_, response) = try await URLSession.shared.data(for: request)
                         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                         let reachable = (200..<500).contains(status)
-                        return (index, endpoint.0, "HTTP \(status) · host responded", reachable)
+                        return (index, endpoint.0, String(localized: "HTTP \(status) · host responded"), reachable)
                     } catch {
                         return (index, endpoint.0, error.localizedDescription, false)
                     }

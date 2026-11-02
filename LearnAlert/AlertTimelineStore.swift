@@ -6,12 +6,12 @@ nonisolated enum AlertTimelineStatus: String, CaseIterable, Sendable {
     case upcoming, elapsed, delivered, unanswered, opened, answered
     var title: String {
         switch self {
-        case .upcoming: "Upcoming"
-        case .elapsed: "Scheduled time passed"
-        case .delivered: "Delivered"
-        case .unanswered: "No answer yet"
-        case .opened: "Opened in app"
-        case .answered: "Answered"
+        case .upcoming: String(localized: "Upcoming")
+        case .elapsed: String(localized: "Scheduled time passed")
+        case .delivered: String(localized: "Delivered")
+        case .unanswered: String(localized: "No answer yet")
+        case .opened: String(localized: "Opened in app")
+        case .answered: String(localized: "Answered")
         }
     }
 }

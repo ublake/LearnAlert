@@ -8,22 +8,22 @@ enum DiscoverCategoryStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .none: "Off"
-        case .quietLinks: "Quiet links"
-        case .flagShelf: "Flag shelf"
-        case .miniIndex: "Mini index"
-        case .pocketMenus: "Pocket menus"
-        case .browseSwitch: "Browse switch"
+        case .none: String(localized: "Off")
+        case .quietLinks: String(localized: "Quiet links")
+        case .flagShelf: String(localized: "Flag shelf")
+        case .miniIndex: String(localized: "Mini index")
+        case .pocketMenus: String(localized: "Pocket menus")
+        case .browseSwitch: String(localized: "Browse switch")
         }
     }
     var detail: String {
         switch self {
-        case .none: "Keep Discover as it is."
-        case .quietLinks: "One quiet line of language and topic links."
-        case .flagShelf: "Tiny flags above a thin line of topics."
-        case .miniIndex: "A compact, two-row directory."
-        case .pocketMenus: "Languages and topics open in a compact inline strip."
-        case .browseSwitch: "Switch between a language strip and a topic strip."
+        case .none: String(localized: "Keep Discover as it is.")
+        case .quietLinks: String(localized: "One quiet line of language and topic links.")
+        case .flagShelf: String(localized: "Tiny flags above a thin line of topics.")
+        case .miniIndex: String(localized: "A compact, two-row directory.")
+        case .pocketMenus: String(localized: "Languages and topics open in a compact inline strip.")
+        case .browseSwitch: String(localized: "Switch between a language strip and a topic strip.")
         }
     }
 }
@@ -40,9 +40,9 @@ private enum DiscoverCategoryChoice: Identifiable {
     }
     var title: String {
         switch self {
-        case .all: "All"
+        case .all: String(localized: "All")
         case .language(let language): language.title
-        case .topic(let category): category == "Exam Prep" ? "Exams" : category
+        case .topic(let category): category == "Exam Prep" ? String(localized: "Exams") : CommunityFeedView.categoryTitle(category)
         }
     }
     var flagAsset: String? {
@@ -176,7 +176,7 @@ struct DiscoverCategoryBrowser: View {
                 HStack(spacing: 5) {
                     if let asset = language.discoverFlagAsset { flag(asset) }
                     else { Image(systemName: "globe").font(.caption) }
-                    Text(language == .all ? "Languages" : language.title)
+                    Text(language == .all ? String(localized: "Languages") : language.title)
                 }
                 .foregroundStyle(language == .all ? LearnAlertStyle.textSecondary : LearnAlertStyle.appAccentForeground)
                 .frame(minHeight: 36)
@@ -191,7 +191,7 @@ struct DiscoverCategoryBrowser: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "square.grid.2x2").font(.caption)
-                    Text(category == "All" ? "Topics" : category)
+                    Text(category == "All" ? String(localized: "Topics") : CommunityFeedView.categoryTitle(category))
                 }
                 .foregroundStyle(category == "All" ? LearnAlertStyle.textSecondary : LearnAlertStyle.appAccentForeground)
                 .frame(minHeight: 36)
@@ -199,7 +199,7 @@ struct DiscoverCategoryBrowser: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Choose a topic")
-            .accessibilityValue(category == "All" ? "All topics" : category)
+            .accessibilityValue(category == "All" ? String(localized: "All topics") : CommunityFeedView.categoryTitle(category))
             Spacer(minLength: 0)
         }
         .lineLimit(1)
@@ -248,7 +248,7 @@ struct DiscoverCategoryBrowser: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(page == .languages ? "All languages" : "All topics")
+        .accessibilityLabel(page == .languages ? String(localized: "All languages") : String(localized: "All topics"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -282,7 +282,7 @@ struct DiscoverCategoryBrowser: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(languages ? "Browse languages" : "Browse topics")
+        .accessibilityLabel(languages ? String(localized: "Browse languages") : String(localized: "Browse topics"))
         .accessibilityAddTraits(showingLanguages == languages ? .isSelected : [])
     }
 

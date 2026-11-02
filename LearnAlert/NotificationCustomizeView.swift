@@ -94,7 +94,7 @@ struct NotificationCustomizeView: View {
                 }
                 VStack(spacing: 8) {
                     Button(action: sendTestNotification) {
-                        Label(testScheduledSuccess ? "Sent · arrives in 3 seconds" : "Send a test alert",
+                        Label(testScheduledSuccess ? String(localized: "Sent · arrives in 3 seconds") : String(localized: "Send a test alert"),
                             systemImage: testScheduledSuccess ? "checkmark" : "bell")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(StudyStudioStyle.ink)
@@ -119,7 +119,7 @@ struct NotificationCustomizeView: View {
             .alert("Couldn’t send test alert", isPresented: Binding(
                 get: { testSchedulingError != nil }, set: { if !$0 { testSchedulingError = nil } }
             )) { Button("OK", role: .cancel) { testSchedulingError = nil } }
-            message: { Text(testSchedulingError ?? "Please try again.") }
+            message: { Text(testSchedulingError ?? String(localized: "Please try again.")) }
     }
 
     private var themeChoices: some View {
@@ -239,9 +239,9 @@ struct CustomizeStyleControls: View {
 
     private var appearanceTitle: String {
         switch appearanceMode {
-        case "light": "Light"
-        case "dark": "Dark"
-        default: "System"
+        case "light": String(localized: "Light")
+        case "dark": String(localized: "Dark")
+        default: String(localized: "System")
         }
     }
 
@@ -266,9 +266,9 @@ struct CustomizeStyleControls: View {
         selectorLayout {
             Menu {
                 Picker("Appearance", selection: $appearanceMode) {
-                    Label("System", systemImage: "circle.lefthalf.filled").tag("system")
-                    Label("Light", systemImage: "sun.max").tag("light")
-                    Label("Dark", systemImage: "moon").tag("dark")
+                    Label(String(localized: "System"), systemImage: "circle.lefthalf.filled").tag("system")
+                    Label(String(localized: "Light"), systemImage: "sun.max").tag("light")
+                    Label(String(localized: "Dark"), systemImage: "moon").tag("dark")
                 }
             } label: {
                 selectorLabel("Appearance", value: appearanceTitle, symbol: appearanceSymbol)
@@ -300,7 +300,7 @@ struct CustomizeStyleControls: View {
         .onChange(of: layoutRaw) { _, _ in HapticFeedback.selection() }
     }
 
-    private func selectorLabel(_ title: String, value: String, symbol: String) -> some View {
+    private func selectorLabel(_ title: LocalizedStringKey, value: String, symbol: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).font(.body).frame(width: symbolWidth)
             VStack(alignment: .leading, spacing: 4) {
@@ -507,7 +507,7 @@ private struct NotificationSimulatedContainer: View {
                                         .glassCard(cornerRadius: 10, tint: Color.orange.opacity(0.12), isLight: isThemeLight)
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
+                                .accessibilityLabel(showingHint ? String(localized: "Hide hint") : String(localized: "Show hint"))
                             }
 
                         }
@@ -564,7 +564,7 @@ private struct NotificationSimulatedContainer: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "arrow.right.circle.fill")
-                                Text(cardType == .dragAnswer ? "Next card" : "Try again")
+                                Text(cardType == .dragAnswer ? String(localized: "Next card") : String(localized: "Try again"))
                             }
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(design == .liquidGlass ? Color.white : textColorPrimary)
@@ -879,7 +879,7 @@ private struct NotificationSimulatedContainer: View {
                 HStack(spacing: 6) {
                     Image(systemName: typedBlank.lowercased().trimmingCharacters(in: .whitespaces) == "energy" ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(typedBlank.lowercased().trimmingCharacters(in: .whitespaces) == "energy" ? Color.green : Color.red)
-                    Text("Correct answer: energy")
+                    Text("Correct answer: \("energy")")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(textColorPrimary)
                 }

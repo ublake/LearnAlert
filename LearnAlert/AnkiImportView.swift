@@ -39,11 +39,11 @@ struct AnkiImportView: View {
                 .transition(session.phase == .saving ? .identity : .opacity.combined(with: .offset(y: reduceMotion ? 0 : 12)))
             }
             .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.86), value: session.phase)
-            .navigationTitle(session.isBusy ? "" : "Import Anki")
+            .navigationTitle(session.isBusy ? "" : String(localized: "Import Anki"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(session.phase == .complete ? "Done" : "Close") { session.cancel(); dismiss() }
+                    Button(session.phase == .complete ? String(localized: "Done") : String(localized: "Close")) { session.cancel(); dismiss() }
                         .disabled(session.phase == .saving)
                 }
             }
@@ -69,7 +69,7 @@ struct AnkiImportView: View {
             .onChange(of: initialURL) { _, url in
                 guard let url else { return }
                 guard session.phase != .saving else {
-                    session.error = "Finish saving this deck before opening another Anki file."
+                    session.error = String(localized: "Finish saving this deck before opening another Anki file.")
                     return
                 }
                 openedInitialURL = true
@@ -143,7 +143,7 @@ struct AnkiImportView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if let package = session.package {
                     HStack {
-                        Text(package.decks.count == 1 ? "Your deck" : "Your decks")
+                        Text(package.decks.count == 1 ? String(localized: "Your deck") : String(localized: "Your decks"))
                             .font(.headline).foregroundStyle(LearnAlertStyle.textPrimary)
                         Spacer()
                         Button { showingDeckNames = true } label: {
@@ -152,9 +152,9 @@ struct AnkiImportView: View {
                         }
                     }
                     HStack(spacing: 10) {
-                        summary("\(session.selectedCardCount)", label: "cards", icon: "rectangle.on.rectangle")
-                        summary("\(package.mediaCount)", label: "media", icon: "photo.on.rectangle")
-                        summary(ByteCountFormatter.string(fromByteCount: Int64(package.mediaBytes), countStyle: .file), label: "media size", icon: "internaldrive")
+                        summary("\(session.selectedCardCount)", label: String(localized: "cards"), icon: "rectangle.on.rectangle")
+                        summary("\(package.mediaCount)", label: String(localized: "media"), icon: "photo.on.rectangle")
+                        summary(ByteCountFormatter.string(fromByteCount: Int64(package.mediaBytes), countStyle: .file), label: String(localized: "media size"), icon: "internaldrive")
                     }
                     VStack(spacing: 0) {
                         ForEach(package.decks) { deck in
@@ -191,7 +191,7 @@ struct AnkiImportView: View {
                         DisclosureGroup {
                             VStack(alignment: .leading, spacing: 12) {
                                 ForEach(package.warnings, id: \.self) { warning in
-                                    Text(warning).font(.footnote).foregroundStyle(LearnAlertStyle.textSecondary)
+                                    Text(NSLocalizedString(warning, comment: "Anki import compatibility warning")).font(.footnote).foregroundStyle(LearnAlertStyle.textSecondary)
                                 }
                             }.padding(.top, 10)
                         } label: {
@@ -218,7 +218,7 @@ struct AnkiImportView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Give \(session.selectedDecks.count == 1 ? "your deck a name" : "your decks names") before adding \(session.selectedDecks.count == 1 ? "it" : "them") to your library.")
+                    Text(session.selectedDecks.count == 1 ? String(localized: "Give your deck a name before adding it to your library.") : String(localized: "Give your decks names before adding them to your library."))
                         .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                     if let package = session.package {
                         ForEach(package.decks.filter { session.selectedDecks.contains($0.id) }) { deck in
@@ -243,7 +243,7 @@ struct AnkiImportView: View {
                 }.padding(20)
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
-            .navigationTitle(session.selectedDecks.count == 1 ? "Name your deck" : "Name your decks")
+            .navigationTitle(session.selectedDecks.count == 1 ? String(localized: "Name your deck") : String(localized: "Name your decks"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -291,7 +291,7 @@ struct AnkiImportView: View {
             Text("Added to your library")
                 .font(.title.weight(.bold))
             if let result = session.result {
-                Text(result.added > 0 ? "\(result.added.formatted()) cards added" : "These cards are already in your library.")
+                Text(result.added > 0 ? String(localized: "\(result.added) cards added") : String(localized: "These cards are already in your library."))
                     .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
             }
             Button("Go to library") { onFinish(); dismiss() }
@@ -375,7 +375,7 @@ private struct AnkiPreviewView: View {
             VStack(spacing: 16) {
                 if cards.indices.contains(index) {
                     let card = cards[index]
-                    Picker("Side", selection: $showingBack) { Text("Front").tag(false); Text("Back").tag(true) }
+                    Picker("Side", selection: $showingBack) { Text("Front").tag(false); Text("Back side").tag(true) }
                         .pickerStyle(.segmented).padding(.horizontal, 20)
                     AnkiCardView(content: AnkiCardContent(frontHTML: card.front, backHTML: card.back, css: card.css, mediaFolder: "", templateOrdinal: card.templateOrdinal, noteType: card.noteType, tags: card.tags, frontSideRanges: card.frontSideRanges), showingBack: showingBack, mediaDirectory: mediaDirectory)
                         .clipShape(RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 20)
@@ -387,7 +387,7 @@ private struct AnkiPreviewView: View {
                 }
             }.background(LearnAlertStyle.courseCanvas)
                 .navigationTitle("Preview").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(String(localized: "Done")) { dismiss() } } }
         }
     }
 }

@@ -6,21 +6,19 @@ import UserNotifications
 @MainActor
 @Suite("Notification appearance")
 struct NotificationAppearanceTests {
-    @Test("Ordinary launch and deck handoffs do not reload course progress")
+    @Test("Ordinary launch and deck handoffs preserve ordinary deck routing")
     func ordinaryLaunchSkipsCourseReload() throws {
         let suite = "test-handoff-startup-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let manager = NotificationManager(registerForNotifications: false)
-        var reloads = 0
-        manager.consumePendingStudyHandoff(defaults: defaults) { reloads += 1 }
-        #expect(reloads == 0 && manager.pendingStudyHandoff == nil)
+        manager.consumePendingStudyHandoff(defaults: defaults)
+        #expect(manager.pendingStudyHandoff == nil)
         let deckID = UUID(), cardID = UUID()
         defaults.set(deckID.uuidString, forKey: "handoffDeckId")
         defaults.set(cardID.uuidString, forKey: "handoffCardId")
         defaults.set(true, forKey: "handoffWasRevealed")
-        manager.consumePendingStudyHandoff(defaults: defaults) { reloads += 1 }
-        #expect(reloads == 0)
+        manager.consumePendingStudyHandoff(defaults: defaults)
         #expect(manager.pendingStudyHandoff?.deckId == deckID)
         #expect(manager.pendingStudyHandoff?.cardId == cardID)
         #expect(manager.pendingStudyHandoff?.wasRevealed == true)

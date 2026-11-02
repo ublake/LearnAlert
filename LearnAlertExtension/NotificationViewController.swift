@@ -217,9 +217,9 @@ struct FlashcardNotificationView: View {
     private var isDayComplete: Bool { dailyAnsweredCount >= NotificationLearningBudget.goal }
     private var presentationCardType: String { sessionFinished ? "completed_batch" : activeCardType }
     private var nextCardActionTitle: String {
-        if isSyntheticSession { return "Next Card" }
-        if isDayComplete { return "Finish for today" }
-        return batchConsumedCount >= batchQuestionLimit ? "Finish batch" : "Next Card"
+        if isSyntheticSession { return String(localized: "Next Card") }
+        if isDayComplete { return String(localized: "Finish for today") }
+        return batchConsumedCount >= batchQuestionLimit ? String(localized: "Finish batch") : String(localized: "Next Card")
     }
 
     // MARK: - Appearance & Customization Dynamics
@@ -417,7 +417,7 @@ struct FlashcardNotificationView: View {
                                 .frame(width: isCompactLayout ? 32 : 36, height: isCompactLayout ? 32 : 36)
                                 .notificationLiquidGlass(cornerRadius: isCompactLayout ? 16 : 18, tint: Color.orange.opacity(0.12), isLight: isLight)
                         }
-                        .accessibilityLabel(showingHint ? "Hide hint" : "Show hint")
+                        .accessibilityLabel(showingHint ? String(localized: "Hide hint") : String(localized: "Show hint"))
                     }
 
                     Button {
@@ -431,8 +431,8 @@ struct FlashcardNotificationView: View {
                     }
                     .disabled(controlsUnavailable)
                     .opacity(controlsUnavailable ? 0.45 : 1)
-                    .accessibilityLabel(showingControls && !controlsUnavailable ? "Close controls" : "Study controls")
-                    .accessibilityHint(isCustomizationTest ? "Unavailable in a test alert" : isTutorial ? "Unavailable in a tutorial alert" : "")
+                    .accessibilityLabel(showingControls && !controlsUnavailable ? String(localized: "Close controls") : String(localized: "Study controls"))
+                    .accessibilityHint(isCustomizationTest ? String(localized: "Unavailable in a test alert") : isTutorial ? String(localized: "Unavailable in a tutorial alert") : "")
                 }
             }
 
@@ -464,7 +464,7 @@ struct FlashcardNotificationView: View {
             Spacer()
 
             if !cardProgressionText.isEmpty {
-                Text(isSyntheticSession ? cardProgressionText : "\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) today")
+                Text(isSyntheticSession ? cardProgressionText : String(localized: "\(dailyAnsweredCount)/\(NotificationLearningBudget.goal) today"))
                     .font(.system(size: isCompactLayout ? 12 : 13, weight: .semibold, design: .monospaced))
                     .foregroundStyle(textColorSecondary)
             }
@@ -488,9 +488,9 @@ struct FlashcardNotificationView: View {
     private var notificationPostAnswer: some View {
         VStack(spacing: 14) {
             HStack(spacing: 10) {
-                NotificationStat(title: "Unlearned", value: unlearnedCount, icon: "sparkles", isLight: isLight)
-                NotificationStat(title: "Learning", value: learningCount, icon: "brain.head.profile", isLight: isLight)
-                NotificationStat(title: "Mastered", value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
+                NotificationStat(title: String(localized: "Unlearned"), value: unlearnedCount, icon: "sparkles", isLight: isLight)
+                NotificationStat(title: String(localized: "Learning"), value: learningCount, icon: "brain.head.profile", isLight: isLight)
+                NotificationStat(title: String(localized: "Mastered"), value: masteredCount, icon: "checkmark.seal.fill", isLight: isLight)
             }
 
             if isOnboardingTutorial {
@@ -528,15 +528,15 @@ struct FlashcardNotificationView: View {
                 .foregroundStyle(isDayComplete ? Color.green : Color(red: 0.38, green: 0.68, blue: 0.93))
                 .symbolEffect(.bounce, value: sessionFinished)
                 .accessibilityHidden(true)
-            Text(isDayComplete ? "You’re done for today!" : caughtUp ? "You’re caught up" : "This batch is complete")
+            Text(isDayComplete ? String(localized: "You’re done for today!") : caughtUp ? String(localized: "You’re caught up") : String(localized: "This batch is complete"))
                 .font(.title3.weight(.bold))
                 .foregroundStyle(textColorPrimary)
                 .multilineTextAlignment(.center)
             Text(isDayComplete
-                ? "\(NotificationLearningBudget.goal)/\(NotificationLearningBudget.goal) questions answered across your library. Your alerts will return on the next scheduled day."
+                ? String(localized: "\(NotificationLearningBudget.goal)/\(NotificationLearningBudget.goal) questions answered across your library. Your alerts will return on the next scheduled day.")
                 : caughtUp
-                    ? "There’s nothing else to review in this deck right now."
-                    : "A little progress, nicely done. Your next alert will arrive on schedule.")
+                    ? String(localized: "There’s nothing else to review in this deck right now.")
+                    : String(localized: "A little progress, nicely done. Your next alert will arrive on schedule."))
                 .font(.subheadline)
                 .foregroundStyle(textColorSecondary)
                 .multilineTextAlignment(.center)
@@ -634,7 +634,7 @@ struct FlashcardNotificationView: View {
 
                 if let pendingGrade {
                     VStack(spacing: 8) {
-                        Text(statusMessage ?? "Review couldn’t be saved.")
+                        Text(statusMessage ?? String(localized: "Review couldn’t be saved."))
                             .font(.caption).foregroundStyle(textColorSecondary)
                         Button("Retry review") {
                             gradeCard(isCorrect: pendingGrade.correct, playFeedback: pendingGrade.playFeedback, ankiRating: pendingGrade.rating)
@@ -758,7 +758,7 @@ struct FlashcardNotificationView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: lastAnswerWasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
-                                Text(lastAnswerWasCorrect == true ? "Correct!" : "Correct answer: \(activeCorrectAnswer)")
+                                Text(lastAnswerWasCorrect == true ? String(localized: "Correct!") : String(localized: "Correct answer: \(activeCorrectAnswer)"))
                                     .font(.subheadline.bold())
                                     .foregroundStyle(lastAnswerWasCorrect == true ? Color.green : Color.red)
                             }
@@ -1185,7 +1185,7 @@ struct FlashcardNotificationView: View {
             cards = try AnkiNotificationSelection.ordinaryCards(deckID: deckId, sectionID: sectionID, in: context)
             candidates = try AnkiNotificationSelection.candidates(deckID: deckId, sectionID: sectionID, in: context)
         } catch {
-            statusMessage = "This deck couldn’t be loaded. Please reopen the alert."
+            statusMessage = String(localized: "This deck couldn’t be loaded. Please reopen the alert.")
             return
         }
         let eligible = cards.filter { !handled.contains($0.id.uuidString) }
@@ -1216,10 +1216,10 @@ struct FlashcardNotificationView: View {
             }
             if let next = candidates.map(\.due).min() {
                 waitingForAnki = .init(deckID: deck.id, due: next)
-                statusMessage = "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow)))."
+                statusMessage = String(localized: "You're caught up. Next review in \(AnkiReviewScheduling.intervalLabel(max(0, next.timeIntervalSinceNow))).")
             } else {
                 waitingForAnki = nil
-                statusMessage = "This deck has no cards."
+                statusMessage = String(localized: "This deck has no cards.")
             }
             return
         }
@@ -1281,7 +1281,7 @@ struct FlashcardNotificationView: View {
         let sharedDefaults = UserDefaults(suiteName: "group.com.learnalert.shared")
         sharedDefaults?.set(true, forKey: "extensionDidStopAlerts")
         sharedDefaults?.set("", forKey: "extensionActiveDeckName")
-        statusMessage = "Scheduled notifications stopped."
+        statusMessage = String(localized: "Scheduled notifications stopped.")
     }
 
     private func gradeReveal(correct: Bool) {
@@ -1352,7 +1352,7 @@ struct FlashcardNotificationView: View {
                 NotificationLearningBudget.rollbackAnswer(requestID: notificationRequestID, batchOrdinal: ordinal)
                 refreshBatchCounts()
                 pendingGrade = .init(correct: isCorrect, playFeedback: playFeedback, rating: ankiRating)
-                statusMessage = "Review couldn't be saved. Please try again."
+                statusMessage = String(localized: "Review couldn't be saved. Please try again.")
                 return
             }
             pendingGrade = nil

@@ -58,15 +58,15 @@ struct NotificationPermissionPromptModal: View {
 
                     // Header Text
                     VStack(spacing: 6) {
-                        Text(isSettingsDenied ? "Notifications Disabled" : "Enable Notifications")
+                        Text(isSettingsDenied ? String(localized: "Notifications Disabled") : String(localized: "Enable Notifications"))
                             .font(.custom("Poppins-SemiBold", size: 20))
                             .foregroundStyle(Color.white)
                             .multilineTextAlignment(.center)
 
                         Text(
                             isSettingsDenied
-                                ? "Alerts are currently turned off in iOS Settings. You can enable them to receive lock screen cards, or continue studying in-app."
-                                : "Receive spaced repetition flashcards directly on your lock screen throughout the day."
+                                ? String(localized: "Alerts are currently turned off in iOS Settings. You can enable them to receive lock screen cards, or continue studying in-app.")
+                                : String(localized: "Receive spaced repetition flashcards directly on your lock screen throughout the day.")
                         )
                         .font(.custom("Poppins-Regular", size: 13))
                         .foregroundStyle(Color.white.opacity(0.75))

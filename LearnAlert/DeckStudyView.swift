@@ -138,7 +138,7 @@ struct DeckStudyView: View {
         .onChange(of: practiceSessions.errorMessage) { _, message in if let message { reviewError = message } }
         .alert("Practice progress", isPresented: Binding(get: { reviewError != nil }, set: { if !$0 { reviewError = nil } })) {
             Button("OK") { reviewError = nil }
-        } message: { Text(reviewError ?? "Please try again.") }
+        } message: { Text(reviewError ?? String(localized: "Please try again.")) }
     }
 
     private func preparePractice() async {
@@ -148,7 +148,7 @@ struct DeckStudyView: View {
         do { try migratePracticeStates() }
         catch {
             loadingFailed = true
-            reviewError = "Your previous practice ratings couldn’t be saved. Try again before starting a new session."
+            reviewError = String(localized: "Your previous practice ratings couldn’t be saved. Try again before starting a new session.")
             return
         }
         loadingFailed = false; didApplyInitialState = true
@@ -383,7 +383,7 @@ struct DeckStudyView: View {
             try context.save()
         } catch {
             context.rollback()
-            reviewError = "Your rating couldn’t be saved. Please try that rating again."
+            reviewError = String(localized: "Your rating couldn’t be saved. Please try that rating again.")
             return
         }
         localAnkiStates[card.id] = card.ankiPracticeReviewStateData
@@ -479,7 +479,7 @@ private struct PracticeSessionPicker: View {
                                     .font(.caption).foregroundStyle(QuizTheme.inkSecondary)
                             }
                             Spacer(minLength: 8)
-                            Text(session.isComplete ? "Results" : "Resume")
+                            Text(session.isComplete ? String(localized: "Results") : String(localized: "Resume"))
                                 .font(.subheadline.weight(.semibold)).foregroundStyle(QuizTheme.ink)
                         }
                         .padding(16).background(QuizTheme.surface, in: RoundedRectangle(cornerRadius: 16))
@@ -542,7 +542,7 @@ private struct AnkiStudySummaryView: View {
             Spacer()
             Image(systemName: "checkmark.rectangle.stack.fill")
                 .font(.system(size: 58, weight: .light)).foregroundStyle(.teal)
-            Text(reviews == 0 ? "You're caught up" : "Nice work today")
+            Text(reviews == 0 ? String(localized: "You're caught up") : String(localized: "Nice work today"))
                 .font(.title2.bold()).foregroundStyle(QuizTheme.ink)
             if reviews > 0 {
                 Text("\(reviews) reviews · \(cardCount) cards")
@@ -910,7 +910,7 @@ private struct QuizFillBlankCard: View {
                 HStack(spacing: 8) {
                     Image(systemName: wasCorrect == true ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(wasCorrect == true ? QuizTheme.green : LearnAlertStyle.coral)
-                    Text(wasCorrect == true ? "Correct!" : "Answer: \(answer)")
+                    Text(wasCorrect == true ? String(localized: "Correct!") : String(localized: "Answer: \(answer)"))
                         .font(.custom("Poppins-SemiBold", size: 15, relativeTo: .subheadline))
                         .foregroundStyle(wasCorrect == true ? QuizTheme.green : LearnAlertStyle.coral)
                 }
@@ -947,7 +947,7 @@ private struct QuizUtilityControls: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
                     if media.hasContent(hint) {
-                        Button(showingHint ? "HIDE HINT" : "HINT", action: onToggleHint)
+                        Button(showingHint ? String(localized: "HIDE HINT") : String(localized: "HINT"), action: onToggleHint)
                     }
                     Button("SKIP", action: onSkip)
                 }

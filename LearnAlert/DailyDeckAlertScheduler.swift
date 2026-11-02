@@ -145,8 +145,8 @@ enum DailyDeckAlertScheduler {
                request.content.userInfo["ankiDueSelection"] as? Bool == card.cardType.usesSpacedReview,
                request.content.userInfo["sectionId"] as? String == (sectionId?.uuidString ?? "") { continue }
             let content = UNMutableNotificationContent()
-            content.title = "LearnAlert: \(deck.name)"
-            content.body = card.cardType.isReviewOnly ? "Press and hold to review" : "Press and hold to answer"
+            content.title = String(localized: "LearnAlert: \(deck.name)")
+            content.body = card.cardType.isReviewOnly ? String(localized: "Press and hold to review") : String(localized: "Press and hold to answer")
             content.categoryIdentifier = "FLASHCARD_REVEAL"
             let sound = AlertSoundCatalog.resolve(plan.sound)
             content.sound = sound == "Default" ? .default : UNNotificationSound(named: UNNotificationSoundName(sound))

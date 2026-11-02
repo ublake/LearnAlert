@@ -128,10 +128,10 @@ private struct NavigationDock: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private let tabs: [(title: String, symbol: String, outline: String)] = [
-        ("Home", "rectangle.stack.fill", "rectangle.stack"),
-        ("Discover", "books.vertical.fill", "books.vertical"),
-        ("Customize", "slider.horizontal.3", "slider.horizontal.3"),
-        ("Settings", "gearshape.fill", "gearshape")
+        (String(localized: "Home"), "rectangle.stack.fill", "rectangle.stack"),
+        (String(localized: "Discover"), "books.vertical.fill", "books.vertical"),
+        (String(localized: "Customize"), "slider.horizontal.3", "slider.horizontal.3"),
+        (String(localized: "Settings"), "gearshape.fill", "gearshape")
     ]
     private var motion: Animation {
         reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.46, dampingFraction: 0.78)
@@ -319,8 +319,8 @@ private struct NavigationDock: View {
                 .contentShape(Circle())
         }
         .buttonStyle(DockPressStyle())
-        .accessibilityLabel(isExpanded ? "Close new deck options" : "New deck options")
-        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityLabel(isExpanded ? String(localized: "Close new deck options") : String(localized: "New deck options"))
+        .accessibilityValue(isExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
         .accessibilityHint("Create a deck, import with AI, or import an Anki file")
         .accessibilityShowsLargeContentViewer { Label("New deck", systemImage: "plus") }
     }
@@ -440,7 +440,7 @@ struct DuoSystemNavigationModifier: ViewModifier {
             }
     }
 
-    private func destination(_ tab: Int, title: String, symbol: String, selectedSymbol: String) -> some View {
+    private func destination(_ tab: Int, title: LocalizedStringResource, symbol: String, selectedSymbol: String) -> some View {
         let selected = selectedTab == tab
         return Button {
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { selectedTab = tab }
@@ -454,8 +454,8 @@ struct DuoSystemNavigationModifier: ViewModifier {
         }
         .tint(selected ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
         .disabled(homeTutorialStep > 0)
-        .accessibilityLabel(title)
-        .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(selected ? String(localized: "Selected") : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

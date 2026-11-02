@@ -13,12 +13,12 @@ public enum PDFSectionKind: String, Codable, Sendable, CaseIterable {
 
     public var displayTitle: String {
         switch self {
-        case .module: return "Module"
-        case .chapter: return "Chapter"
-        case .section: return "Section"
-        case .frontMatter: return "Front Matter"
-        case .backMatter: return "Back Matter"
-        case .other: return "Topic"
+        case .module: return String(localized: "Module")
+        case .chapter: return String(localized: "Chapter")
+        case .section: return String(localized: "Section")
+        case .frontMatter: return String(localized: "Front Matter")
+        case .backMatter: return String(localized: "Back Matter")
+        case .other: return String(localized: "Topic")
         }
     }
 
@@ -75,16 +75,16 @@ public enum PDFOutlineError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .corruptOrEncrypted:
-            return "The selected PDF couldn't be read or is corrupted."
+            return String(localized: "The selected PDF couldn't be read or is corrupted.")
         case .encrypted:
-            return "This PDF is password-protected or encrypted. Please provide an unlocked PDF."
+            return String(localized: "This PDF is password-protected or encrypted. Please provide an unlocked PDF.")
         case .emptyDocument:
-            return "This PDF contains no pages."
+            return String(localized: "This PDF contains no pages.")
         case .scanWithoutText:
-            return "This scanned PDF contains no readable text layer."
+            return String(localized: "This scanned PDF contains no readable text layer.")
         case .sizeExceeded(let bytes):
             let mb = Double(bytes) / (1024 * 1024)
-            return String(format: "Selected pages are %.1f MB. The maximum upload size is 8 MB. Please select fewer sections.", mb)
+            return String(format: String(localized: "Selected pages are %.1f MB. The maximum upload size is 8 MB. Please select fewer sections."), locale: .current, mb)
         }
     }
 }
@@ -106,6 +106,15 @@ public enum PDFOutlineManager {
         case regex = "Heading Detection"
         case api = "AI Structure Analysis"
         case none = "Manual Selection"
+
+        public var displayTitle: String {
+            switch self {
+            case .outline: String(localized: "Document Bookmarks")
+            case .regex: String(localized: "Heading Detection")
+            case .api: String(localized: "AI Structure Analysis")
+            case .none: String(localized: "Manual Selection")
+            }
+        }
     }
 
     public struct AnalysisResult: @unchecked Sendable {

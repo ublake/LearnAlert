@@ -68,17 +68,17 @@ actor LibraryDataWorker {
         modelContext.autosaveEnabled = false
         let cards = try modelContext.fetchCount(FetchDescriptor<Flashcard>())
         let decks = try modelContext.fetchCount(FetchDescriptor<Deck>())
-        await progress(.init(fraction: 0.1, message: "Removing cards", cards: cards, decks: decks))
+        await progress(.init(fraction: 0.1, message: String(localized: "Removing cards"), cards: cards, decks: decks))
         do {
             // Store-level deletes avoid loading card HTML, media and relationship
             // arrays, as well as thousands of individual observation updates.
             try modelContext.delete(model: Flashcard.self)
-            await progress(.init(fraction: 0.7, message: "Removing folders and decks", cards: cards, decks: decks))
+            await progress(.init(fraction: 0.7, message: String(localized: "Removing folders and decks"), cards: cards, decks: decks))
             try modelContext.delete(model: DeckSection.self)
             try modelContext.delete(model: Deck.self)
-            await progress(.init(fraction: 0.9, message: "Saving your library", cards: cards, decks: decks))
+            await progress(.init(fraction: 0.9, message: String(localized: "Saving your library"), cards: cards, decks: decks))
             try modelContext.save()
-            await progress(.init(fraction: 1, message: "Done", cards: cards, decks: decks))
+            await progress(.init(fraction: 1, message: String(localized: "Done"), cards: cards, decks: decks))
             return .init(cards: cards, decks: decks)
         } catch {
             modelContext.rollback()

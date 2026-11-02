@@ -58,7 +58,7 @@ struct AlertPaceControls: View {
                     Spacer(minLength: 8)
                     Picker("Minimum gap", selection: $settings.minimumSpacingMinutes) {
                         ForEach([60, 90, 120, 180], id: \.self) { minutes in
-                            Text(minutes == 60 ? "1 hour" : minutes % 60 == 0 ? "\(minutes / 60) hours" : "\(minutes) minutes").tag(minutes)
+                            Text(minutes == 60 ? String(localized: "1 hour") : minutes % 60 == 0 ? String(localized: "\(minutes / 60) hours") : String(localized: "\(minutes) minutes")).tag(minutes)
                         }
                     }
                     .pickerStyle(.menu).labelsHidden()

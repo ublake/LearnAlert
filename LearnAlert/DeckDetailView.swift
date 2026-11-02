@@ -159,7 +159,7 @@ struct DeckDetailView: View {
                 if !orderedSections.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        sectionFilterPill(title: "All", tag: "ALL", count: snapshot.cardCount)
+                        sectionFilterPill(title: String(localized: "All"), tag: "ALL", count: snapshot.cardCount)
 
                         ForEach(orderedSections) { section in
                             sectionFilterPill(
@@ -171,7 +171,7 @@ struct DeckDetailView: View {
                         }
 
                         if snapshot.uncategorizedCount > 0 {
-                            sectionFilterPill(title: "Unsorted", tag: "NONE", count: snapshot.uncategorizedCount)
+                            sectionFilterPill(title: String(localized: "Unsorted"), tag: "NONE", count: snapshot.uncategorizedCount)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -194,7 +194,7 @@ struct DeckDetailView: View {
                         Image(systemName: "rectangle.stack.badge.plus")
                             .font(.system(size: 44))
                             .foregroundStyle(LearnAlertStyle.textSecondary.opacity(0.6))
-                        Text(snapshot.cardCount == 0 ? "No cards in this deck yet" : "No cards match your filter")
+                        Text(snapshot.cardCount == 0 ? String(localized: "No cards in this deck yet") : String(localized: "No cards match your filter"))
                             .font(.custom("Poppins-Medium", size: 15))
                             .foregroundStyle(LearnAlertStyle.textSecondary)
                         Spacer()
@@ -232,7 +232,7 @@ struct DeckDetailView: View {
                                         delete(offsets, from: uncategorized)
                                     }
                                 } header: {
-                                    Text("Unsorted")
+                                    Text(String(localized: "Unsorted"))
                                         .font(.custom("Poppins-SemiBold", size: 13))
                                         .foregroundStyle(LearnAlertStyle.textSecondary)
                                 }
@@ -416,7 +416,7 @@ struct DeckDetailView: View {
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled else { return }
-            previewError = "Please try opening it again."; isLoadingPreview = false
+            previewError = String(localized: "Please try opening it again."); isLoadingPreview = false
         }
     }
 
@@ -429,7 +429,7 @@ struct DeckDetailView: View {
             let byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             previewOffset += ids.count
             snapshot = DeckDetailSnapshot(summary: previewSummary, visibleCards: snapshot.filteredCards + ids.compactMap { byID[$0] })
-        } catch { previewError = "The next cards couldn’t load. Please try again." }
+        } catch { previewError = String(localized: "The next cards couldn’t load. Please try again.") }
     }
 
     private func folderSectionHeader(section: DeckSection, count: Int) -> some View {
@@ -519,14 +519,14 @@ struct DeckDetailView: View {
                 DeckCreatureView(stableID: deck.id, appearanceSeed: deck.appearanceSeed, cardCount: snapshot.cardCount,
                                  compactStack: DeckCreatureAppearance.visibleLayerCount(for: snapshot.cardCount) >= 7, colorHex: deck.colorHex)
                     .frame(width: 34, height: 28).accessibilityHidden(true)
-                compactStat("Cards", value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
-                compactStat("Due", value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
-                compactStat("Mastered", value: snapshot.masteredCount, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
+                compactStat(String(localized: "Cards"), value: snapshot.cardCount, icon: "rectangle.stack.fill", color: LearnAlertStyle.deckPrimaryAccent)
+                compactStat(String(localized: "Due"), value: snapshot.dueCount, icon: "clock.badge.exclamationmark", color: snapshot.dueCount > 0 ? .orange : .green)
+                compactStat(String(localized: "Mastered"), value: snapshot.masteredCount, icon: "checkmark.seal.fill", color: LearnAlertStyle.aqua)
             }
             HStack(spacing: 8) {
-                deckAction("Add cards", icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
-                deckAction("Add folder", icon: "folder.badge.plus") { showingCreateCategory = true }
-                deckAction("Study", icon: "play.fill", prominent: true) { showingStudy = true }
+                deckAction(String(localized: "Add cards"), icon: "plus.rectangle.on.rectangle") { showingCreateCard = true }
+                deckAction(String(localized: "Add folder"), icon: "folder.badge.plus") { showingCreateCategory = true }
+                deckAction(String(localized: "Study"), icon: "play.fill", prominent: true) { showingStudy = true }
                     .disabled(snapshot.cardCount == 0)
             }
         }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 10)
@@ -739,7 +739,7 @@ struct CardInteractivePreviewSheet: View {
                             CardMediaMatchingBoard(left: card.matchingLeftItems, right: card.matchingRightItems,
                                 fields: card.fieldMedia, isGraded: matchingGraded) { _ in matchingGraded = true }
                         } else if card.cardType == .anki {
-                            Button(isRevealed ? "Show front" : "Flip/reveal") {
+                            Button(isRevealed ? String(localized: "Show front") : String(localized: "Flip/reveal")) {
                                 withAnimation(.snappy) { isRevealed.toggle() }
                             }.buttonStyle(PrimaryActionButtonStyle())
                         } else if card.cardType != .images {
@@ -857,7 +857,7 @@ private struct DeckTutorialGuideBar: View {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 11, weight: .bold))
-                    Text("Back")
+                    Text("Back side")
                         .font(.custom("Poppins-SemiBold", size: 12))
                 }
                 .foregroundStyle(.white)

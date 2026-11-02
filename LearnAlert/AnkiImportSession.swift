@@ -7,7 +7,7 @@ import AnkiArchive
 final class AnkiImportSession: ObservableObject {
     enum Phase { case chooseFile, converting, review, saving, complete, failed }
     @Published var phase = Phase.chooseFile
-    @Published var progress = AnkiImportProgress(0, "Opening your deck")
+    @Published var progress = AnkiImportProgress(0, String(localized: "Opening your deck"))
     @Published var startedAt = Date()
     @Published var stageStartedAt = Date()
     @Published var recentSamples: [AnkiImportRateSample] = []
@@ -62,7 +62,7 @@ final class AnkiImportSession: ObservableObject {
         deckNames = [:]; renamedDecks = []; hasConfirmedDeckNames = false; updateExisting = false
         startedAt = Date(); stageStartedAt = startedAt; archiveBytes = nil; recentSamples = []
         completedFiles = nil; totalFiles = nil
-        progress = .init(0, "Opening your deck", filename)
+        progress = .init(0, String(localized: "Opening your deck"), filename)
         let scoped = url.startAccessingSecurityScopedResource()
         let relay = AnkiImportProgressRelay { [weak self] value in
             guard let self, self.runID == id, self.phase == .converting else { return }
@@ -89,20 +89,25 @@ final class AnkiImportSession: ObservableObject {
             } catch {
                 Self.removeWorkspace(workspace)
                 guard let self, self.runID == id, !Task.isCancelled else { return }
-                self.error = error.localizedDescription; self.phase = .failed
+                self.error = Self.localizedImportError(error); self.phase = .failed
             }
         }
     }
 
+    private static func localizedImportError(_ error: Error) -> String {
+        guard let importError = error as? AnkiImportError else { return error.localizedDescription }
+        return NSLocalizedString(importError.localizedDescription, comment: "Anki archive import error")
+    }
+
     /// Anki's hierarchy is useful inside Anki, but its leaf is the useful library title here.
-    nonisolated static func suggestedDeckName(_ name: String, fallback: String = "Imported deck") -> String {
+    nonisolated static func suggestedDeckName(_ name: String, fallback: String = String(localized: "Imported deck")) -> String {
         let leaf = name.components(separatedBy: "::")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .last(where: { !$0.isEmpty }) ?? fallback
         let spaced = leaf.replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "(?<=[0-9])(?=[A-Za-z])", with: " ", options: .regularExpression)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        return spaced.isEmpty ? "Imported deck" : spaced
+        return spaced.isEmpty ? String(localized: "Imported deck") : spaced
     }
 
     func setDeckName(_ name: String, for deckID: String) {
@@ -127,7 +132,7 @@ final class AnkiImportSession: ObservableObject {
         // Each extracted media file is prepared once. Keep the collection file
         // outstanding throughout card conversion and the atomic library commit.
         completedFiles = package.mediaCount; totalFiles = package.mediaCount + 1
-        progress = .init(0.01, "Making room for your cards", "Preparing your library")
+        progress = .init(0.01, String(localized: "Making room for your cards"), String(localized: "Preparing your library"))
         // The view acknowledges appearance before any large SwiftData work starts.
     }
 
@@ -154,7 +159,7 @@ final class AnkiImportSession: ObservableObject {
             do {
                 let result = try await savingWorker.value
                 guard let self, self.runID == id, !Task.isCancelled else { Self.removeWorkspace(workspace); return }
-                self.recordProgress(.init(0.995, "Updating your library", "Your cards are saved. Refreshing the library…"))
+                self.recordProgress(.init(0.995, String(localized: "Updating your library"), String(localized: "Your cards are saved. Refreshing the library…")))
                 await Task.yield()
                 // Keep the saving surface up while SwiftData delivers its changes.
                 container.mainContext.processPendingChanges()
@@ -164,13 +169,13 @@ final class AnkiImportSession: ObservableObject {
                 self.releasePackage()
                 Self.removeWorkspace(workspace)
                 let total = request.package.mediaCount + 1
-                self.recordProgress(.init(1, "Your deck is ready", completedFiles: total, totalFiles: total))
+                self.recordProgress(.init(1, String(localized: "Your deck is ready"), completedFiles: total, totalFiles: total))
                 self.phase = .complete
                 if result.added > 0 { InteractionSoundPlayer.shared.play(.importCompleted) }
             } catch {
                 guard let self, self.runID == id, !Task.isCancelled else { return }
                 self.savingWorker = nil
-                self.error = error.localizedDescription; self.phase = .review
+                self.error = Self.localizedImportError(error); self.phase = .review
             }
         }
     }
@@ -262,7 +267,7 @@ actor AnkiLibraryImporter {
               consumeMedia: Bool = false, progress: @Sendable (AnkiImportProgress) -> Void) throws -> AnkiImportResult {
         modelContext.autosaveEnabled = false
         try Task.checkCancellation()
-        progress(.init(0.02, "Checking your library", "Matching previously imported cards"))
+        progress(.init(0.02, String(localized: "Checking your library"), String(localized: "Matching previously imported cards")))
         let library = try modelContext.fetch(FetchDescriptor<Deck>())
         let candidates = Dictionary(grouping: library.filter { $0.sourceAnkiDeckID != nil }, by: { $0.sourceAnkiDeckID! })
         let cardIndices = package.cards.indices.filter { selectedDecks.contains(package.cards[$0].deckID) }
@@ -325,11 +330,11 @@ actor AnkiLibraryImporter {
         guard !changes.isEmpty else {
             if renamedExistingDeck { try modelContext.save(); saved = true }
             else { modelContext.rollback() }
-            progress(.init(0.99, "Already in your library", "\(unchanged.formatted()) cards kept as they are"))
+            progress(.init(0.99, String(localized: "Already in your library"), String(localized: "\(unchanged.formatted()) cards kept as they are")))
             return AnkiImportResult(added: 0, updated: 0, unchanged: unchanged, decks: decks.count)
         }
         try Task.checkCancellation()
-        progress(.init(0.06, "Saving images & audio", completedItems: 0, totalItems: package.mediaCount, unit: "files", processedBytes: 0))
+        progress(.init(0.06, String(localized: "Saving images & audio"), completedItems: 0, totalItems: package.mediaCount, unit: "files", processedBytes: 0))
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         if consumeMedia {
             do {
@@ -354,17 +359,17 @@ actor AnkiLibraryImporter {
                 let now = Date()
                 if now.timeIntervalSince(lastReport) >= 0.1 || index + 1 == files.count {
                     lastReport = now
-                    progress(.init(0.06 + 0.3 * Double(index + 1) / Double(max(1, files.count)), "Saving images & audio", "\(index + 1) of \(files.count)", completedItems: index + 1, totalItems: files.count, unit: "files", processedBytes: copiedBytes))
+                    progress(.init(0.06 + 0.3 * Double(index + 1) / Double(max(1, files.count)), String(localized: "Saving images & audio"), "\(index + 1) of \(files.count)", completedItems: index + 1, totalItems: files.count, unit: "files", processedBytes: copiedBytes))
                 }
             }
         }
         if movedMedia {
             // A directory rename did not transfer these bytes; do not invent a B/s rate.
-            progress(.init(0.37, "Images & audio ready", "\(package.mediaCount.formatted()) media files ready"))
+            progress(.init(0.37, String(localized: "Images & audio ready"), String(localized: "\(package.mediaCount.formatted()) media files ready")))
         } else {
-            progress(.init(0.37, "Saving images & audio", "\(package.mediaCount.formatted()) media files ready"))
+            progress(.init(0.37, String(localized: "Saving images & audio"), String(localized: "\(package.mediaCount.formatted()) media files ready")))
         }
-        progress(.init(0.4, "Adding your cards", completedItems: 0, totalItems: changes.count, unit: "cards"))
+        progress(.init(0.4, String(localized: "Adding your cards"), completedItems: 0, totalItems: changes.count, unit: "cards"))
         var added = 0, updated = 0, replacedMediaFolders = Set<String>(), lastReport = Date.distantPast
         let encoder = JSONEncoder(), decoder = JSONDecoder()
         for (position, index) in changes.enumerated() {
@@ -396,13 +401,13 @@ actor AnkiLibraryImporter {
             let now = Date()
             if now.timeIntervalSince(lastReport) >= 0.1 || position + 1 == changes.count {
                 lastReport = now
-                progress(.init(0.4 + 0.53 * Double(position + 1) / Double(changes.count), "Adding your cards", "\(position + 1) of \(changes.count)", completedItems: position + 1, totalItems: changes.count, unit: "cards"))
+                progress(.init(0.4 + 0.53 * Double(position + 1) / Double(changes.count), String(localized: "Adding your cards"), "\(position + 1) of \(changes.count)", completedItems: position + 1, totalItems: changes.count, unit: "cards"))
             }
         }
-        progress(.init(0.945, "Organizing your decks", "Linking \(changes.count.formatted()) cards"))
+        progress(.init(0.945, String(localized: "Organizing your decks"), String(localized: "Linking \(changes.count.formatted()) cards")))
         for (id, cards) in deckCards { decks[id]?.cards = cards }
         try Task.checkCancellation()
-        progress(.init(0.97, "Saving your library", "Writing cards safely. Larger decks may take a moment."))
+        progress(.init(0.97, String(localized: "Saving your library"), String(localized: "Writing cards safely. Larger decks may take a moment.")))
         try modelContext.save()
         saved = true
         if !replacedMediaFolders.isEmpty {
@@ -412,7 +417,7 @@ actor AnkiLibraryImporter {
                 await cleanup.removeUnreferencedMedia(folders)
             }
         }
-        progress(.init(0.99, "Cards saved", "Refreshing your library"))
+        progress(.init(0.99, String(localized: "Cards saved"), String(localized: "Refreshing your library")))
         return AnkiImportResult(added: added, updated: updated, unchanged: unchanged, decks: decks.count)
     }
 

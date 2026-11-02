@@ -54,7 +54,7 @@ public enum AnkiTemplateRenderer {
     private static func render(type: AnkiNoteType, values: [String], ordinal: Int, deck: String, tags: [String],
                                parseTemplate: (String) throws -> [Node], cssWarnings: Set<String>) throws -> Result {
         guard let template = type.templates[safe: type.isCloze ? 0 : ordinal] else {
-            throw AnkiImportError.invalid("A card references a missing Anki template.")
+            throw AnkiImportError.invalid(String(localized: "A card references a missing Anki template."))
         }
         var fields: [String: String] = [:]
         for (name, value) in zip(type.fields, values) { fields[name] = value }
@@ -112,13 +112,13 @@ public enum AnkiTemplateRenderer {
     private static func contentWarnings(_ content: String) -> Set<String> {
         var warnings = Set<String>()
         if hasMatch(externalExpression, in: content) {
-            warnings.insert("Some cards reference online media or libraries. Only bundled files are available during offline study.")
+            warnings.insert(String(localized: "Some cards reference online media or libraries. Only bundled files are available during offline study."))
         }
         if content.contains("anki.imageOcclusion") || content.contains("anki.setupImageOcclusion") {
-            warnings.insert("This deck uses Anki's image-occlusion runtime. Check the sample before importing.")
+            warnings.insert(String(localized: "This deck uses Anki's image-occlusion runtime. Check the sample before importing."))
         }
         if content.contains("\\(") || content.contains("\\[") || content.contains("[latex]") {
-            warnings.insert("Equations use LearnAlert's offline KaTeX renderer. Anki-specific MathJax macros and full LaTeX documents may need adjustment.")
+            warnings.insert(String(localized: "Equations use LearnAlert's offline KaTeX renderer. Anki-specific MathJax macros and full LaTeX documents may need adjustment."))
         }
         return warnings
     }
@@ -129,7 +129,7 @@ public enum AnkiTemplateRenderer {
         let matches = expression.matches(in: input, range: NSRange(location: 0, length: text.length))
         var index = 0, cursor = 0
         func nodes(until closing: String? = nil, depth: Int = 0) throws -> [Node] {
-            guard depth < 64 else { throw AnkiImportError.invalid("An Anki template is nested too deeply.") }
+            guard depth < 64 else { throw AnkiImportError.invalid(String(localized: "An Anki template is nested too deeply.")) }
             var result: [Node] = []
             while index < matches.count {
                 let match = matches[index]
@@ -137,7 +137,7 @@ public enum AnkiTemplateRenderer {
                 let token = text.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
                 cursor = NSMaxRange(match.range); index += 1
                 if token.hasPrefix("/") {
-                    guard String(token.dropFirst()) == closing else { throw AnkiImportError.invalid("An Anki template contains an unmatched conditional.") }
+                    guard String(token.dropFirst()) == closing else { throw AnkiImportError.invalid(String(localized: "An Anki template contains an unmatched conditional.")) }
                     return result
                 }
                 if token.hasPrefix("#") || token.hasPrefix("^") {
@@ -145,7 +145,7 @@ public enum AnkiTemplateRenderer {
                     result.append(.section(name, token.hasPrefix("^"), try nodes(until: name, depth: depth + 1)))
                 } else if !token.hasPrefix("!") { result.append(.field(token)) }
             }
-            guard closing == nil else { throw AnkiImportError.invalid("An Anki template contains an unfinished conditional.") }
+            guard closing == nil else { throw AnkiImportError.invalid(String(localized: "An Anki template contains an unfinished conditional.")) }
             if cursor < text.length { result.append(.text(text.substring(from: cursor))); cursor = text.length }
             return result
         }
@@ -164,7 +164,7 @@ public enum AnkiTemplateRenderer {
             case .field(let token):
                 let parts = token.components(separatedBy: ":")
                 let name = parts.last ?? token
-                guard var value = fields[name] else { warnings.insert("Unknown template field: \(name)"); return "" }
+                guard var value = fields[name] else { warnings.insert(String(localized: "Unknown template field: \(name)")); return "" }
                 for filter in parts.dropLast().reversed() {
                     switch filter {
                     case "cloze", "cloze-only": value = cloze(value, target: ordinal + 1, answer: answer)
@@ -181,7 +181,7 @@ public enum AnkiTemplateRenderer {
                         if filter.hasPrefix("tts ") {
                             let language = filter.components(separatedBy: " ").first { $0.hasPrefix("lang=") }.map { String($0.dropFirst(5)) } ?? "en-US"
                             value = "<button class=\"anki-sound\" data-speech=\"\(escape(plainText(value)))\" data-language=\"\(escape(language))\">▶ Listen</button>"
-                        } else { warnings.insert("Custom filter ‘\(filter)’ is shown without its Anki add-on transformation.") }
+                        } else { warnings.insert(String(localized: "Custom filter ‘\(filter)’ is shown without its Anki add-on transformation.")) }
                     }
                 }
                 return name == "FrontSide" && answer ? frontSideStart + value + frontSideEnd : value

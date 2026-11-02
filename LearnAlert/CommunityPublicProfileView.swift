@@ -72,7 +72,7 @@ struct CommunityPublicProfileView: View {
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea())
             .foregroundStyle(LearnAlertStyle.textPrimary)
-            .navigationTitle(isOwner ? "Your profile" : "Profile")
+            .navigationTitle(isOwner ? String(localized: "Your profile") : String(localized: "Profile"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
@@ -107,7 +107,7 @@ struct CommunityPublicProfileView: View {
             .sheet(isPresented: $showingMyDecks) { MySharedDecksSheet(libraryDecks: libraryDecks) }
             .sheet(isPresented: $showingBlockedAuthors) { CommunityBlockedAuthorsSheet() }
             .sheet(item: $selectedDeck, onDismiss: { Task { await load() } }) { CommunityProfileDeckPreview(deck: $0) }
-            .confirmationDialog("Block \(profile?.handle ?? "this author")?", isPresented: $confirmingBlock, titleVisibility: .visible) {
+            .confirmationDialog("Block \(profile?.handle ?? String(localized: "this author"))?", isPresented: $confirmingBlock, titleVisibility: .visible) {
                 Button("Block author", role: .destructive) { Task { await block() } }
             } message: { Text("Hides their profile and shared decks. Copies in your library stay.") }
             .interactiveDismissDisabled(blocking || savingPrivacy)
@@ -213,10 +213,10 @@ enum CommunityProfileAge {
     static func label(since timestamp: Int, now: Date = Date(), calendar: Calendar = .current) -> String {
         let date = min(now, Date(timeIntervalSince1970: TimeInterval(timestamp)))
         let age = calendar.dateComponents([.year, .month, .day], from: date, to: now)
-        if let years = age.year, years > 0 { return "\(years) \(years == 1 ? "year" : "years") on LearnAlert" }
-        if let months = age.month, months > 0 { return "\(months) \(months == 1 ? "month" : "months") on LearnAlert" }
-        if let days = age.day, days > 0 { return "\(days) \(days == 1 ? "day" : "days") on LearnAlert" }
-        return "Joined today"
+        if let years = age.year, years > 0 { return String(localized: "\(years) years on LearnAlert") }
+        if let months = age.month, months > 0 { return String(localized: "\(months) months on LearnAlert") }
+        if let days = age.day, days > 0 { return String(localized: "\(days) days on LearnAlert") }
+        return String(localized: "Joined today")
     }
 }
 
@@ -224,15 +224,15 @@ struct CommunityProfileStatsGrid: View {
     let stats: CommunityProfileStats
     var body: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            stat("Created", value: stats.createdDeckCount, icon: "rectangle.stack")
-            stat("Published", value: stats.publishedDeckCount, icon: "square.and.arrow.up")
-            stat("Downloads", value: stats.downloadCount, icon: "arrow.down")
-            stat("Hearts", value: stats.receivedLikeCount, icon: "heart.fill")
+            stat(String(localized: "Created"), value: stats.createdDeckCount, icon: "rectangle.stack")
+            stat(String(localized: "Published"), value: stats.publishedDeckCount, icon: "square.and.arrow.up")
+            stat(String(localized: "Downloads"), value: stats.downloadCount, icon: "arrow.down")
+            stat(String(localized: "Hearts"), value: stats.receivedLikeCount, icon: "heart.fill")
         }
     }
     private func stat(_ title: String, value: Int, icon: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.subheadline.weight(.semibold)).foregroundStyle(title == "Hearts" ? Color.pink : LearnAlertStyle.appAccentForeground)
+            Image(systemName: icon).font(.subheadline.weight(.semibold)).foregroundStyle(icon == "heart.fill" ? Color.pink : LearnAlertStyle.appAccentForeground)
             VStack(alignment: .leading, spacing: 2) {
                 Text(value.formatted()).font(.title3.weight(.bold)).monospacedDigit()
                 Text(title).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)

@@ -68,12 +68,12 @@ class SharedDatabase: ObservableObject {
                 // In-memory fallback: explicit flag to warn the user
                 container = memoryContainer
                 isUsingTemporaryStorage = true
-                storageErrorMessage = "LearnAlert is running in temporary memory mode. Flashcards may not persist between app launches."
+                storageErrorMessage = String(localized: "LearnAlert is running in temporary memory mode. Flashcards may not persist between app launches.")
             } else {
                 // Absolute fallback
                 container = try! ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
                 isUsingTemporaryStorage = true
-                storageErrorMessage = "LearnAlert could not access persistent storage. Changes will only last for this session."
+                storageErrorMessage = String(localized: "LearnAlert could not access persistent storage. Changes will only last for this session.")
             }
         }
     }

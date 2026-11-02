@@ -169,6 +169,22 @@ struct CommunityFeedView: View {
     @State private var refreshLikesOnDismiss = false
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
+    static func categoryTitle(_ category: String) -> String {
+        switch category {
+        case "All": String(localized: "All")
+        case "General": String(localized: "General")
+        case "Medical": String(localized: "Medical")
+        case "Coding": String(localized: "Coding")
+        case "Languages": String(localized: "Languages")
+        case "Law": String(localized: "Law")
+        case "Science": String(localized: "Science")
+        case "Math": String(localized: "Math")
+        case "History": String(localized: "History")
+        case "Exam Prep": String(localized: "Exam Prep")
+        default: category
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !showsTitle {
@@ -202,8 +218,8 @@ struct CommunityFeedView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(searchExpanded ? "Close search" : "Search Discover")
-                        .accessibilityValue(searchExpanded ? "Expanded" : "Collapsed")
+                        .accessibilityLabel(searchExpanded ? String(localized: "Close search") : String(localized: "Search Discover"))
+                        .accessibilityValue(searchExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
                     }
                 }
             }
@@ -228,7 +244,7 @@ struct CommunityFeedView: View {
                 }.frame(maxWidth: .infinity).padding(.vertical, 20)
             } else if store.hasLoaded && store.decks.isEmpty {
                 VStack(spacing: 8) {
-                    Text(store.search.isEmpty && store.category == "All" && store.language == .all ? "No shared decks yet" : "No matching decks").font(.headline)
+                    Text(store.search.isEmpty && store.category == "All" && store.language == .all ? String(localized: "No shared decks yet") : String(localized: "No matching decks")).font(.headline)
                     if !store.search.isEmpty || store.category != "All" || store.language != .all {
                         Button("Clear filters") { store.search = ""; store.category = "All"; store.language = .all }.frame(minHeight: 44)
                     }
@@ -313,7 +329,7 @@ struct CommunityFeedView: View {
             if store.category != "All" {
                 Button { store.category = "All" } label: {
                     HStack(spacing: 4) {
-                        Text("· \(store.category)")
+                        Text("· \(Self.categoryTitle(store.category))")
                         Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
                     }
                     .font(.caption.weight(.medium))
@@ -322,7 +338,7 @@ struct CommunityFeedView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear \(store.category) topic filter")
+                .accessibilityLabel("Clear \(Self.categoryTitle(store.category)) topic filter")
             }
             if store.language != .all {
                 Text("· \(store.language.title)")
@@ -377,7 +393,7 @@ struct CommunityFeedView: View {
     private func isAdded(_ deck: CommunityDeckPayload) -> Bool { libraryDecks.contains { $0.sourceCommunityID == deck.id } }
     @MainActor private func download(_ deck: CommunityDeckPayload) async {
         guard downloadingID == nil, !isAdded(deck) else { return }
-        downloadingID = deck.id; downloadProgress = "Downloading deck…"
+        downloadingID = deck.id; downloadProgress = String(localized: "Downloading deck…")
         defer { downloadingID = nil }
         do {
             let downloaded = try await CommunityDeckTransfer.download(deck, token: session.token) { downloadProgress = $0 }
@@ -385,10 +401,10 @@ struct CommunityFeedView: View {
         } catch { message = error.localizedDescription }
     }
     @MainActor private func report(_ deck: CommunityDeckPayload) async {
-        guard let token = session.token else { message = "Sign in with Apple in Settings before reporting a deck."; return }
+        guard let token = session.token else { message = String(localized: "Sign in with Apple in Settings before reporting a deck."); return }
         do {
             try await CommunityAPI().report(deckID: deck.id, reason: "Reported by a learner for review.", token: token)
-            message = "Your report has been saved for review."
+            message = String(localized: "Your report has been saved for review.")
         } catch { session.handle(error); message = error.localizedDescription }
     }
 }
@@ -461,11 +477,11 @@ struct CommunityDeckCard: View {
     }
 
     private var accessibleCounts: String {
-        var values = ["\(max(0, deck.cardCount)) cards"]
-        if let images = deck.imageCount, images > 0 { values.append("\(images) images") }
-        if let audio = deck.audioCount, audio > 0 { values.append("\(audio) audio files") }
-        values.append("\(max(0, deck.downloadCount)) downloads")
-        values.append("\(max(0, deck.likeCount ?? 0)) likes")
+        var values = [String(localized: "\(max(0, deck.cardCount)) cards")]
+        if let images = deck.imageCount, images > 0 { values.append(String(localized: "\(images) images")) }
+        if let audio = deck.audioCount, audio > 0 { values.append(String(localized: "\(audio) audio files")) }
+        values.append(String(localized: "\(max(0, deck.downloadCount)) downloads"))
+        values.append(String(localized: "\(max(0, deck.likeCount ?? 0)) likes"))
         return values.joined(separator: ", ")
     }
 
@@ -572,7 +588,7 @@ struct CommunityDeckPreviewSheet: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 8) {
                     if isDownloading { ProgressView(progress).font(.caption) }
-                    Button(action: download) { Label(isAdded ? "In your library" : "Add to library", systemImage: isAdded ? "checkmark" : "arrow.down").frame(maxWidth: .infinity, minHeight: 48) }
+                    Button(action: download) { Label(isAdded ? String(localized: "In your library") : String(localized: "Add to library"), systemImage: isAdded ? "checkmark" : "arrow.down").frame(maxWidth: .infinity, minHeight: 48) }
                         .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk).disabled(isAdded || isDownloading)
                 }.padding(16).background(LearnAlertStyle.courseSurface)
             }
@@ -600,9 +616,9 @@ struct CommunityDeckPreviewSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(!session.isSignedIn || !hasLoaded || isSavingLike)
-        .accessibilityLabel(viewerHasLiked ? "Unlike deck" : "Like deck")
+        .accessibilityLabel(viewerHasLiked ? String(localized: "Unlike deck") : String(localized: "Like deck"))
         .accessibilityValue("\(likeCount) likes")
-        .accessibilityHint(session.isSignedIn ? "" : "Sign in with Apple in Settings to like shared decks")
+        .accessibilityHint(session.isSignedIn ? "" : String(localized: "Sign in with Apple in Settings to like shared decks"))
     }
 
     @MainActor private func load() async {
@@ -644,10 +660,10 @@ struct CommunityDeckPreviewSheet: View {
     }
 
     @MainActor private func report() async {
-        guard let token = session.token else { actionMessage = "Sign in with Apple in Settings before reporting a deck."; return }
+        guard let token = session.token else { actionMessage = String(localized: "Sign in with Apple in Settings before reporting a deck."); return }
         do {
             try await CommunityAPI().report(deckID: deck.id, reason: "Reported by a learner for review.", token: token)
-            actionMessage = "Your report has been saved for review."
+            actionMessage = String(localized: "Your report has been saved for review.")
         } catch { session.handle(error); actionMessage = error.localizedDescription }
     }
 }
@@ -710,7 +726,7 @@ private struct CommunityPreviewAudio: View {
                         else { return }
                         try Task.checkCancellation()
                         player = try AVAudioPlayer(data: data); player?.play()
-                    } catch { if !Task.isCancelled { self.error = "Audio could not play." } }
+                    } catch { if !Task.isCancelled { self.error = String(localized: "Audio could not play.") } }
                 }
             } label: { HStack { if isLoading { ProgressView() }; Label("Listen", systemImage: "speaker.wave.2.fill") }.frame(minHeight: 44) }
             .disabled(isLoading).tint(LearnAlertStyle.appAccentForeground)
@@ -846,7 +862,7 @@ struct ShareDeckToCommunitySheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "rectangle.stack.fill").font(.title2).foregroundStyle(selectedDeck.map { Color(hex: $0.colorHex) } ?? LearnAlertStyle.appAccentForeground)
-                                VStack(alignment: .leading, spacing: 3) { Text(selectedDeck?.name ?? "Choose a deck").font(.headline); Text("From your library").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
+                                VStack(alignment: .leading, spacing: 3) { Text(selectedDeck?.name ?? String(localized: "Choose a deck")).font(.headline); Text("From your library").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
                                 Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold))
                             }.foregroundStyle(LearnAlertStyle.textPrimary).padding(16).appCardSurface(cornerRadius: 20)
                         }.disabled(isPublishing)
@@ -863,7 +879,7 @@ struct ShareDeckToCommunitySheet: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack {
                                     Text("Category").font(.subheadline.weight(.medium)); Spacer()
-                                    Picker("Category", selection: $category) { ForEach(listingCategories, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
+                                    Picker("Category", selection: $category) { ForEach(listingCategories, id: \.self) { Text(CommunityFeedView.categoryTitle($0)).tag($0) } }.pickerStyle(.menu)
                                 }
                                 Divider()
                                 Text("Description (required)").font(.subheadline.weight(.medium))
@@ -882,7 +898,7 @@ struct ShareDeckToCommunitySheet: View {
                 }.padding(20).frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary).tint(LearnAlertStyle.appAccentForeground)
-            .navigationTitle(isSubmitted ? "Submitted for review" : "Share a deck").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isSubmitted ? String(localized: "Submitted for review") : String(localized: "Share a deck")).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isPublishing) } }
             .safeAreaInset(edge: .bottom) {
                 if canPublishSelected {
@@ -893,7 +909,7 @@ struct ShareDeckToCommunitySheet: View {
                             Text("Updates make the shared copy private until approved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         }
                         Button { beginPublish() } label: {
-                            Label(isSubmitted ? "Awaiting review" : selectedDeck?.publishedCommunityID == nil ? "Submit for review" : "Submit update for review", systemImage: isSubmitted ? "clock.fill" : "square.and.arrow.up")
+                            Label(isSubmitted ? String(localized: "Awaiting review") : selectedDeck?.publishedCommunityID == nil ? String(localized: "Submit for review") : String(localized: "Submit update for review"), systemImage: isSubmitted ? "clock.fill" : "square.and.arrow.up")
                                 .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
                         }.buttonStyle(.borderedProminent)
                             .tint(readyToSubmit ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface)
@@ -919,7 +935,7 @@ struct ShareDeckToCommunitySheet: View {
             .onChange(of: deckDescription) { _, _ in isSubmitted = false }
             .onChange(of: publisherHandle) { _, _ in isSubmitted = false }
             .sheet(isPresented: $showingProfile) {
-                CommunityProfileSheet(saveTitle: "Save & submit", onSave: {
+                CommunityProfileSheet(saveTitle: String(localized: "Save & submit"), onSave: {
                     showingProfile = false
                     guard requiredFieldsComplete else { return }
                     Task { await publish() }
@@ -951,7 +967,7 @@ struct ShareDeckToCommunitySheet: View {
                 }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(isPublishing)
                 .accessibilityLabel("Accept community sharing rules")
-                .accessibilityValue(acceptedRules ? "Accepted" : "Not accepted")
+                .accessibilityValue(acceptedRules ? String(localized: "Accepted") : String(localized: "Not accepted"))
                 .accessibilityAddTraits(acceptedRules ? .isSelected : [])
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
     }
@@ -1029,9 +1045,9 @@ struct MySharedDecksSheet: View {
                                 Label("Updated by admin", systemImage: "pencil").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             HStack {
-                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canPresentCommunitySharing }) { Button(deck.reviewStatus == "rejected" ? "Edit & resubmit" : "Edit", systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canPresentCommunitySharing }) { Button(deck.reviewStatus == "rejected" ? String(localized: "Edit & resubmit") : String(localized: "Edit"), systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
-                                Button(deck.isRemoved ? "Dismiss notice" : "Remove", systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
+                                Button(deck.isRemoved ? String(localized: "Dismiss notice") : String(localized: "Remove"), systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
                                     if deck.isRemoved { Task { await remove(deck) } } else { removingDeck = deck }
                                 }.frame(minHeight: 44)
                             }.disabled(isRemoving)
@@ -1060,7 +1076,7 @@ struct MySharedDecksSheet: View {
         }
     }
     @MainActor private func load() async {
-        guard let token = session.token else { store.clear(); message = "Sign in with Apple to see your shared decks."; return }
+        guard let token = session.token else { store.clear(); message = String(localized: "Sign in with Apple to see your shared decks."); return }
         message = nil
         await store.load(token: token) { error in
             if session.token == token { session.handle(error) }

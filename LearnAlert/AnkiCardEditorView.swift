@@ -16,7 +16,7 @@ struct AnkiCardEditorView: View {
         NavigationStack {
             VStack(spacing: 16) {
                 Picker("Side", selection: $selection) {
-                    Text("Front").tag(0); Text("Back").tag(1); Text("Style").tag(2)
+                    Text("Front").tag(0); Text("Back side").tag(1); Text("Style").tag(2)
                 }.pickerStyle(.segmented)
                 if preview, let original = card.ankiContent {
                     let content = AnkiCardContent(frontHTML: front, backHTML: back, css: css, mediaFolder: original.mediaFolder,
@@ -31,7 +31,7 @@ struct AnkiCardEditorView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() } }
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { preview.toggle() } label: { Image(systemName: preview ? "chevron.left.forwardslash.chevron.right" : "eye") }.accessibilityLabel(preview ? "Edit HTML" : "Preview")
+                        Button { preview.toggle() } label: { Image(systemName: preview ? "chevron.left.forwardslash.chevron.right" : "eye") }.accessibilityLabel(preview ? String(localized: "Edit HTML") : String(localized: "Preview"))
                         Button("Save") { save() }
                     }
                 }

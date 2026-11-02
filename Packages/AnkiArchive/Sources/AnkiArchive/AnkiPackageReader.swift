@@ -18,25 +18,25 @@ public enum AnkiPackageReader {
         let reporter = AnkiImportProgressReporter(emit: progress)
         let progress: @Sendable (AnkiImportProgress) -> Void = { reporter.report($0) }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= maximumArchiveBytes else { throw AnkiImportError.invalid("Choose an Anki package smaller than 1 GB.") }
+        guard size > 0, size <= maximumArchiveBytes else { throw AnkiImportError.invalid(String(localized: "Choose an Anki package smaller than 1 GB.")) }
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         progress(.init(0.02, "Opening your deck", url.lastPathComponent, archiveBytes: size))
         let archive: Archive
         do { archive = try Archive(url: url, accessMode: .read) }
-        catch { throw AnkiImportError.invalid("This file isn't a readable Anki package. Export the deck as an .apkg file and try again.") }
+        catch { throw AnkiImportError.invalid(String(localized: "This file isn't a readable Anki package. Export the deck as an .apkg file and try again.")) }
         // Archive[path] scans the ZIP directory from the beginning. Looking up every
         // numbered media file that way becomes quadratic on large exports.
         var entries = try AnkiArchiveEntryIndex(archive)
         let version: Int
         if let entry = entries["meta"] {
             version = Int(try AnkiProto(extract(entry, archive: archive, limit: 4_096)).integer(1))
-            guard (1...3).contains(version) else { throw AnkiImportError.invalid("This Anki package uses a newer format. Re-export it with ‘Support older Anki versions’ enabled.") }
+            guard (1...3).contains(version) else { throw AnkiImportError.invalid(String(localized: "This Anki package uses a newer format. Re-export it with ‘Support older Anki versions’ enabled.")) }
         } else { version = entries["collection.anki21"] == nil ? 1 : 2 }
         let modern = version == 3
         let filename = modern ? "collection.anki21b" : version == 2 ? "collection.anki21" : "collection.anki2"
-        guard let collection = entries[filename] else { throw AnkiImportError.invalid("The package is missing its Anki collection database.") }
+        guard let collection = entries[filename] else { throw AnkiImportError.invalid(String(localized: "The package is missing its Anki collection database.")) }
         let mediaMap = try readMediaMap(entries: entries, archive: archive, modern: modern)
-        guard mediaMap.count <= 100_000 else { throw AnkiImportError.invalid("This package contains too many media files.") }
+        guard mediaMap.count <= 100_000 else { throw AnkiImportError.invalid(String(localized: "This package contains too many media files.")) }
         // Resolve noncanonical ZIP names once, then count real source files.
         // The collection remains unfinished until the app's atomic library save.
         try entries.include(Set(mediaMap.map { $0.0 }), from: archive)
@@ -48,9 +48,9 @@ public enum AnkiPackageReader {
         }
         let header = try FileHandle(forReadingFrom: databaseURL)
         defer { try? header.close() }
-        guard try header.read(upToCount: 16) == Data("SQLite format 3\0".utf8) else { throw AnkiImportError.invalid("The Anki collection database is damaged.") }
+        guard try header.read(upToCount: 16) == Data("SQLite format 3\0".utf8) else { throw AnkiImportError.invalid(String(localized: "The Anki collection database is damaged.")) }
         let (cards, deckNames, cardWarnings, skipped) = try readDatabase(databaseURL, progress: progress)
-        guard !cards.isEmpty else { throw AnkiImportError.invalid("No compatible cards were found in this package. It may be empty or use unsupported note types.") }
+        guard !cards.isEmpty else { throw AnkiImportError.invalid(String(localized: "No compatible cards were found in this package. It may be empty or use unsupported note types.")) }
 
         progress(.init(0.48, "Gathering images & audio"))
         let mediaDirectory = workspace.appendingPathComponent("media", isDirectory: true)
@@ -62,8 +62,8 @@ public enum AnkiPackageReader {
         for (index, item) in mediaMap.enumerated() {
             try Task.checkCancellation()
             let (key, name) = item
-            guard isSafeMediaName(name), Int(key) != nil else { throw AnkiImportError.invalid("The Anki package contains an unsafe media filename.") }
-            guard names.insert(name.precomposedStringWithCanonicalMapping).inserted else { throw AnkiImportError.invalid("The Anki package contains duplicate media filenames.") }
+            guard isSafeMediaName(name), Int(key) != nil else { throw AnkiImportError.invalid(String(localized: "The Anki package contains an unsafe media filename.")) }
+            guard names.insert(name.precomposedStringWithCanonicalMapping).inserted else { throw AnkiImportError.invalid(String(localized: "The Anki package contains duplicate media filenames.")) }
             guard let entry = entries[key] else { missingMedia += 1; continue }
             let available = min(maximumMediaBytes, maximumTotalBytes - mediaBytes - databaseBytes)
             let originalExtension = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -92,9 +92,9 @@ public enum AnkiPackageReader {
         var warnings = cardWarnings
         let referenced = try referencedMedia(in: cards)
         let absent = referenced.subtracting(savedNames)
-        if !absent.isEmpty { warnings.insert("\(absent.count) referenced media files weren't included in this export. Re-export with ‘Include Media’ to bring them along.") }
-        if missingMedia > 0 { warnings.insert("\(missingMedia) media files listed by the deck were missing from the package.") }
-        if skipped > 0 { warnings.insert("\(skipped) cards couldn't be converted. Their templates or note types were missing or invalid.") }
+        if !absent.isEmpty { warnings.insert(String(localized: "\(absent.count) referenced media files weren't included in this export. Re-export with ‘Include Media’ to bring them along.")) }
+        if missingMedia > 0 { warnings.insert(String(localized: "\(missingMedia) media files listed by the deck were missing from the package.")) }
+        if skipped > 0 { warnings.insert(String(localized: "\(skipped) cards couldn't be converted. Their templates or note types were missing or invalid.")) }
         var deckCounts: [String: Int] = [:]
         for card in cards { deckCounts[card.deckID, default: 0] += 1 }
         let decks = deckCounts.map { AnkiImportedDeck(id: $0.key, name: deckNames[$0.key] ?? "Imported deck", cardCount: $0.value) }
@@ -115,7 +115,7 @@ public enum AnkiPackageReader {
             }
         }
         guard let map = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            throw AnkiImportError.invalid("The Anki package has an unreadable media index.")
+            throw AnkiImportError.invalid(String(localized: "The Anki package has an unreadable media index."))
         }
         return map.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }.map { ($0.key, $0.value) }
     }
@@ -152,33 +152,33 @@ public enum AnkiPackageReader {
     }
 
     private static func extract(_ entry: Entry, archive: Archive, limit: Int) throws -> Data {
-        guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw AnkiImportError.invalid("An item in this deck exceeds the import size limit.") }
+        guard entry.type == .file, entry.uncompressedSize <= UInt64(limit) else { throw AnkiImportError.invalid(String(localized: "An item in this deck exceeds the import size limit.")) }
         var result = Data()
         let checksum = try archive.extract(entry, bufferSize: 65_536) { chunk in
             try Task.checkCancellation()
-            guard result.count <= limit - chunk.count else { throw AnkiImportError.invalid("An item in this deck expands beyond the import size limit.") }
+            guard result.count <= limit - chunk.count else { throw AnkiImportError.invalid(String(localized: "An item in this deck expands beyond the import size limit.")) }
             result.append(chunk)
         }
-        guard checksum == entry.checksum else { throw AnkiImportError.invalid("The Anki package contains a damaged file. Download or export it again.") }
+        guard checksum == entry.checksum else { throw AnkiImportError.invalid(String(localized: "The Anki package contains a damaged file. Download or export it again.")) }
         return result
     }
 
     /// Stream collection/media bytes to disk. Large decks never hold the database
     /// or entire audio/image archive in RAM alongside their converted cards.
     private static func extractToFile(_ entry: Entry, archive: Archive, to url: URL, compressed: Bool, limit: Int, onBytes: ((Int) -> Void)? = nil) throws -> Int {
-        guard entry.type == .file, entry.uncompressedSize <= UInt64(max(0, limit)) else { throw AnkiImportError.invalid("An item in this deck exceeds the import size limit.") }
+        guard entry.type == .file, entry.uncompressedSize <= UInt64(max(0, limit)) else { throw AnkiImportError.invalid(String(localized: "An item in this deck exceeds the import size limit.")) }
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let file = try FileHandle(forWritingTo: url)
         defer { try? file.close() }
         var written = 0
         var lastReport = Date.distantPast
         func write(_ bytes: UnsafeRawBufferPointer, count: Int) throws {
-            guard count <= limit - written else { throw AnkiImportError.invalid("An item in this deck expands beyond the import size limit.") }
+            guard count <= limit - written else { throw AnkiImportError.invalid(String(localized: "An item in this deck expands beyond the import size limit.")) }
             try file.write(contentsOf: Data(bytes: bytes.baseAddress!, count: count)); written += count
             if Date().timeIntervalSince(lastReport) >= 0.2 { lastReport = Date(); onBytes?(written) }
         }
         let stream = compressed ? ZSTD_createDStream() : nil
-        if compressed && stream == nil { throw AnkiImportError.invalid("There isn't enough memory to open this deck.") }
+        if compressed && stream == nil { throw AnkiImportError.invalid(String(localized: "There isn't enough memory to open this deck.")) }
         defer { if let stream { ZSTD_freeDStream(stream) } }
         if let stream { ZSTD_initDStream(stream); ZSTD_DCtx_setParameter(stream, ZSTD_d_windowLogMax, 27) }
         var remaining = 0, output = [UInt8](repeating: 0, count: 65_536)
@@ -194,11 +194,11 @@ public enum AnkiPackageReader {
                             var target = ZSTD_outBuffer(dst: buffer.baseAddress, size: buffer.count, pos: 0)
                             let position = input.pos
                             let status = ZSTD_decompressStream(stream, &target, &input)
-                            guard ZSTD_isError(status) == 0 else { throw AnkiImportError.invalid("A compressed file in this Anki package is damaged.") }
+                            guard ZSTD_isError(status) == 0 else { throw AnkiImportError.invalid(String(localized: "A compressed file in this Anki package is damaged.")) }
                             remaining = Int(status)
                             if target.pos > 0 { try write(UnsafeRawBufferPointer(buffer), count: target.pos) }
                             if target.pos == 0 && position == input.pos {
-                                guard input.pos == input.size else { throw AnkiImportError.invalid("A compressed file in this Anki package is damaged.") }
+                                guard input.pos == input.size else { throw AnkiImportError.invalid(String(localized: "A compressed file in this Anki package is damaged.")) }
                                 return false
                             }
                             return target.pos == buffer.count
@@ -207,13 +207,13 @@ public enum AnkiPackageReader {
                 }
             } else { try chunk.withUnsafeBytes { try write($0, count: $0.count) } }
         }
-        guard checksum == entry.checksum else { throw AnkiImportError.invalid("The Anki package contains a damaged file.") }
-        guard !compressed || remaining == 0 else { throw AnkiImportError.invalid("A compressed file in this Anki package is incomplete.") }
+        guard checksum == entry.checksum else { throw AnkiImportError.invalid(String(localized: "The Anki package contains a damaged file.")) }
+        guard !compressed || remaining == 0 else { throw AnkiImportError.invalid(String(localized: "A compressed file in this Anki package is incomplete.")) }
         return written
     }
 
     static func decompress(_ input: Data, limit: Int) throws -> Data {
-        guard let stream = ZSTD_createDStream() else { throw AnkiImportError.invalid("There isn't enough memory to open this deck.") }
+        guard let stream = ZSTD_createDStream() else { throw AnkiImportError.invalid(String(localized: "There isn't enough memory to open this deck.")) }
         defer { ZSTD_freeDStream(stream) }
         ZSTD_initDStream(stream)
         // Bound the decoder's window allocation as well as its output.
@@ -228,10 +228,10 @@ public enum AnkiPackageReader {
                 remaining = try buffer.withUnsafeMutableBytes { target -> Int in
                     var output = ZSTD_outBuffer(dst: target.baseAddress, size: target.count, pos: 0)
                     let status = ZSTD_decompressStream(stream, &output, &source)
-                    guard ZSTD_isError(status) == 0 else { throw AnkiImportError.invalid("A compressed file in this Anki package is damaged.") }
-                    guard output.pos <= limit - result.count else { throw AnkiImportError.invalid("An item in this deck expands beyond the import size limit.") }
+                    guard ZSTD_isError(status) == 0 else { throw AnkiImportError.invalid(String(localized: "A compressed file in this Anki package is damaged.")) }
+                    guard output.pos <= limit - result.count else { throw AnkiImportError.invalid(String(localized: "An item in this deck expands beyond the import size limit.")) }
                     result.append(target.bindMemory(to: UInt8.self).baseAddress!, count: output.pos)
-                    if output.pos == 0 && source.pos == previous && status != 0 { throw AnkiImportError.invalid("A compressed file in this Anki package is incomplete.") }
+                    if output.pos == 0 && source.pos == previous && status != 0 { throw AnkiImportError.invalid(String(localized: "A compressed file in this Anki package is incomplete.")) }
                     return Int(status)
                 }
             } while source.pos < source.size || remaining != 0
@@ -242,7 +242,7 @@ public enum AnkiPackageReader {
     private static func readDatabase(_ url: URL, progress: @Sendable (AnkiImportProgress) -> Void) throws -> ([AnkiImportedCard], [String: String], Set<String>, Int) {
         let db = try AnkiSQLite(url: url)
         let count = try db.rows("SELECT count(*) FROM cards").first?.int(0) ?? 0
-        guard count <= maximumCards else { throw AnkiImportError.invalid("This package contains more than 100,000 cards. Export a smaller deck or subdeck.") }
+        guard count <= maximumCards else { throw AnkiImportError.invalid(String(localized: "This package contains more than 100,000 cards. Export a smaller deck or subdeck.")) }
         progress(.init(0.12, "Converting cards", completedItems: 0, totalItems: count, unit: "cards"))
         var types: [String: AnkiNoteType] = [:], decks: [String: String] = [:]
         if try db.hasTable("notetypes") {
@@ -260,7 +260,7 @@ public enum AnkiPackageReader {
         } else {
             guard let row = try db.rows("SELECT models,decks FROM col LIMIT 1").first,
                   let models = try JSONSerialization.jsonObject(with: row.data(0)) as? [String: [String: Any]],
-                  let deckMap = try JSONSerialization.jsonObject(with: row.data(1)) as? [String: [String: Any]] else { throw AnkiImportError.invalid("This package is missing its Anki note types.") }
+                  let deckMap = try JSONSerialization.jsonObject(with: row.data(1)) as? [String: [String: Any]] else { throw AnkiImportError.invalid(String(localized: "This package is missing its Anki note types.")) }
             for (id, model) in models {
                 let fieldList = (model["flds"] as? [[String: Any]] ?? []).sorted { ($0["ord"] as? Int ?? 0) < ($1["ord"] as? Int ?? 0) }
                 let templateList = (model["tmpls"] as? [[String: Any]] ?? []).sorted { ($0["ord"] as? Int ?? 0) < ($1["ord"] as? Int ?? 0) }
@@ -276,7 +276,7 @@ public enum AnkiPackageReader {
         try db.forEach("SELECT c.id,c.ord,CASE WHEN c.odid != 0 THEN c.odid ELSE c.did END,n.guid,n.mid,n.flds,n.tags FROM cards c JOIN notes n ON n.id=c.nid ORDER BY c.id") { row in
             try Task.checkCancellation()
             guard let type = types[row.string(4)] else { skipped += 1; return }
-            guard cards.count + skipped < maximumCards else { throw AnkiImportError.invalid("This package generates too many cards.") }
+            guard cards.count + skipped < maximumCards else { throw AnkiImportError.invalid(String(localized: "This package generates too many cards.")) }
             let ordinal = row.int(1), deckID = row.string(2), guid = row.string(3)
             let name = decks[deckID] ?? "Imported deck"
             let tags = row.string(6).split(separator: " ").map(String.init)
@@ -284,7 +284,7 @@ public enum AnkiPackageReader {
             do { result = try renderer.render(type: type, values: row.string(5).components(separatedBy: "\u{1f}"), ordinal: ordinal, deck: name, tags: tags) }
             catch { skipped += 1; return }
             totalHTML += result.front.utf8.count + result.back.utf8.count + type.css.utf8.count
-            guard totalHTML <= 192 * 1_024 * 1_024 else { throw AnkiImportError.invalid("This deck contains too much card content to import at once. Export a smaller subdeck.") }
+            guard totalHTML <= 192 * 1_024 * 1_024 else { throw AnkiImportError.invalid(String(localized: "This deck contains too much card content to import at once. Export a smaller subdeck.")) }
             warnings.formUnion(result.warnings)
             cards.append(AnkiImportedCard(id: "\(guid):\(ordinal)", noteGUID: guid, deckID: deckID, deckName: name, templateOrdinal: ordinal, noteType: type.name,
                 front: result.front, back: result.back, css: type.css, plainFront: AnkiTemplateRenderer.plainText(result.front), plainBack: AnkiTemplateRenderer.plainText(result.back), tags: tags, warnings: result.warnings, frontSideRanges: result.frontSideRanges))
@@ -306,7 +306,7 @@ private final class AnkiSQLite {
     init(url: URL) throws {
         // APKG contains a standalone snapshot. Immutable mode also opens exports
         // whose SQLite header retains WAL mode without creating journal sidecars.
-        guard sqlite3_open_v2(url.absoluteString + "?immutable=1", &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, nil) == SQLITE_OK else { throw AnkiImportError.invalid("The Anki database couldn't be opened.") }
+        guard sqlite3_open_v2(url.absoluteString + "?immutable=1", &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, nil) == SQLITE_OK else { throw AnkiImportError.invalid(String(localized: "The Anki database couldn't be opened.")) }
         // Modern Anki declares its Unicode name collation in table/index schemas.
         // We never query names for identity or write the source database.
         sqlite3_create_collation(handle, "unicase", SQLITE_UTF8, nil) { _, leftCount, left, rightCount, right in
@@ -321,7 +321,7 @@ private final class AnkiSQLite {
         // Reject virtual tables/views in all tables used by the converter.
         let names = ["col", "cards", "notes", "notetypes", "fields", "templates", "decks"]
         for row in try rows("SELECT name,type,sql FROM sqlite_master") where names.contains(row.string(0)) {
-            guard row.string(1) == "table", !row.string(2).uppercased().contains("VIRTUAL TABLE") else { throw AnkiImportError.invalid("The package uses an unsupported database structure.") }
+            guard row.string(1) == "table", !row.string(2).uppercased().contains("VIRTUAL TABLE") else { throw AnkiImportError.invalid(String(localized: "The package uses an unsupported database structure.")) }
         }
     }
     deinit { sqlite3_close(handle) }
@@ -330,21 +330,21 @@ private final class AnkiSQLite {
         var result: [Row] = [], bytes = 0
         try forEach(sql) { row in
             bytes += row.values.reduce(0) { $0 + $1.count }
-            guard bytes < 32 * 1_024 * 1_024, result.count < 100_000 else { throw AnkiImportError.invalid("This package contains too much note-type metadata.") }
+            guard bytes < 32 * 1_024 * 1_024, result.count < 100_000 else { throw AnkiImportError.invalid(String(localized: "This package contains too much note-type metadata.")) }
             result.append(row)
         }
         return result
     }
     func forEach(_ sql: String, body: (Row) throws -> Void) throws {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw AnkiImportError.invalid("This Anki database schema isn't supported.") }
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw AnkiImportError.invalid(String(localized: "This Anki database schema isn't supported.")) }
         defer { sqlite3_finalize(statement) }
         while true {
             try Task.checkCancellation()
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { return }
             if status == SQLITE_INTERRUPT { try Task.checkCancellation() }
-            guard status == SQLITE_ROW else { throw AnkiImportError.invalid("The Anki database contains damaged or oversized card data.") }
+            guard status == SQLITE_ROW else { throw AnkiImportError.invalid(String(localized: "The Anki database contains damaged or oversized card data.")) }
             let values = (0..<sqlite3_column_count(statement)).map { column -> Data in
                 if sqlite3_column_type(statement, column) == SQLITE_BLOB {
                     let count = Int(sqlite3_column_bytes(statement, column))
@@ -372,7 +372,7 @@ struct AnkiArchiveEntryIndex {
         for entry in archive {
             try Task.checkCancellation()
             count += 1
-            guard count <= 150_000 else { throw AnkiImportError.invalid("This package contains too many files.") }
+            guard count <= 150_000 else { throw AnkiImportError.invalid(String(localized: "This package contains too many files.")) }
             let path = entry.path
             guard metadata.contains(path) || (path.utf8.count <= 20 && Int(path) != nil) else { continue }
             if entries[path] == nil { entries[path] = entry }

@@ -65,8 +65,8 @@ struct AnkiStudySettingsView: View {
                         }
                     }
                     Text(option == .tapToFlip
-                        ? "Tap the card to turn it over. Only one side stays visible."
-                        : "Use the reveal button to show the answer beneath the front.")
+                        ? String(localized: "Tap the card to turn it over. Only one side stays visible.")
+                        : String(localized: "Use the reveal button to show the answer beneath the front."))
                         .font(.footnote)
                         .foregroundStyle(LearnAlertStyle.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

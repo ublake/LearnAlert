@@ -374,7 +374,7 @@ struct NotificationCanvasView: View {
         return nil
     }
 
-    private func previewStat(_ title: String, value: Int, icon: String) -> some View {
+    private func previewStat(_ title: LocalizedStringKey, value: Int, icon: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.caption.bold())

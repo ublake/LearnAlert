@@ -58,14 +58,14 @@ struct AIConsentSheet: View {
                             VStack(spacing: 12) {
                                 consentFeatureRow(
                                     icon: "lock.shield.fill",
-                                    title: "Privacy & Protection",
-                                    detail: "Your notes, documents, or photos are securely processed to build flashcards. We do not sell your personal data."
+                                    title: String(localized: "Privacy & Protection"),
+                                    detail: String(localized: "Your notes, documents, or photos are securely processed to build flashcards. We do not sell your personal data.")
                                 )
 
                                 consentFeatureRow(
                                     icon: "exclamationmark.triangle.fill",
-                                    title: "Content Guidelines",
-                                    detail: "Please do not submit sensitive personal, private, or confidential information."
+                                    title: String(localized: "Content Guidelines"),
+                                    detail: String(localized: "Please do not submit sensitive personal, private, or confidential information.")
                                 )
                             }
                             .padding(14)

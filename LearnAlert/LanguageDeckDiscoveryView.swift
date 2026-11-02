@@ -14,6 +14,21 @@ struct LanguageDeckDiscoveryView: View {
     init(course: CourseDefinition) { originalCourse = course }
 
     private var course: CourseDefinition { catalog.course(for: originalCourse.id) ?? originalCourse }
+    private var languageTitle: String {
+        switch course.language.lowercased() {
+        case "spanish": String(localized: "Spanish")
+        case "korean": String(localized: "Korean")
+        case "english": String(localized: "English")
+        case "french": String(localized: "French")
+        case "german": String(localized: "German")
+        case "italian": String(localized: "Italian")
+        case "portuguese": String(localized: "Portuguese")
+        case "japanese": String(localized: "Japanese")
+        case "chinese": String(localized: "Chinese")
+        case "arabic": String(localized: "Arabic")
+        default: course.language
+        }
+    }
     private var topics: [LanguageDeckProjection.Topic] { LanguageDeckProjection.topics(course) }
     private var recommended: [LanguageDeckProjection.Topic] { Array(topics.prefix(4)) }
 
@@ -32,10 +47,10 @@ struct LanguageDeckDiscoveryView: View {
             guard !members.isEmpty else { continue }
             assigned.formUnion(members.map(\.id))
             let title = unit.title.replacingOccurrences(of: #"^(?:Unit|Level)\s+\d+\s*[:·.—-]*\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
-            groups.append(TopicGroup(id: unit.id, title: title.localizedCaseInsensitiveContains("start here") ? "Introduction & basics" : title, topics: members))
+            groups.append(TopicGroup(id: unit.id, title: title.localizedCaseInsensitiveContains("start here") ? String(localized: "Introduction & basics") : title, topics: members))
         }
         let remaining = topics.filter { !assigned.contains($0.id) }
-        if !remaining.isEmpty { groups.append(TopicGroup(id: "more", title: "More decks", topics: remaining)) }
+        if !remaining.isEmpty { groups.append(TopicGroup(id: "more", title: String(localized: "More decks"), topics: remaining)) }
         return groups
     }
 
@@ -46,10 +61,10 @@ struct LanguageDeckDiscoveryView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     header
                     if topics.isEmpty {
-                        ContentUnavailableView("No decks available", systemImage: "rectangle.stack", description: Text("Check back for new \(course.language) decks."))
+                        ContentUnavailableView("No decks available", systemImage: "rectangle.stack", description: Text("Check back for new \(languageTitle) decks."))
                             .padding(.horizontal, 20)
                     } else {
-                        deckRow(title: "Recommended decks", members: recommended, cardWidth: cardWidth)
+                        deckRow(title: String(localized: "Recommended decks"), members: recommended, cardWidth: cardWidth)
                         if !moreGroups.isEmpty {
                             Text("More to explore")
                                 .font(StudyStudioStyle.title(23))
@@ -69,25 +84,25 @@ struct LanguageDeckDiscoveryView: View {
             }
         }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
-        .navigationTitle(course.language)
+        .navigationTitle(languageTitle)
         .navigationBarTitleDisplayMode(.inline)
         .tint(LearnAlertStyle.appAccentForeground)
         .alert("Added to Library", isPresented: Binding(get: { addedDeckName != nil }, set: { if !$0 { addedDeckName = nil } })) {
             Button("Done", role: .cancel) { }
         } message: {
-            Text("\(addedDeckName ?? "This deck") is ready to study in your library.")
+            Text("\(addedDeckName ?? String(localized: "This deck")) is ready to study in your library.")
         }
         .alert("Deck couldn’t be added", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text(failure ?? "Please try again.")
+            Text(failure ?? String(localized: "Please try again."))
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(course.language).font(StudyStudioStyle.title(34))
+                Text(languageTitle).font(StudyStudioStyle.title(34))
                 Text(course.flagEmoji).font(.system(size: 31)).accessibilityHidden(true)
             }
             .foregroundStyle(LearnAlertStyle.textPrimary)
@@ -134,7 +149,7 @@ struct LanguageDeckDiscoveryView: View {
             HapticFeedback.success()
             addedDeckName = topic.title
         } catch {
-            failure = "This deck couldn’t be saved. Please try again."
+            failure = String(localized: "This deck couldn’t be saved. Please try again.")
         }
     }
 }

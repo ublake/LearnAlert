@@ -67,10 +67,10 @@ enum CommunityDeckSort: String, CaseIterable {
     case popular, likes, recent, oldest
     var title: String {
         switch self {
-        case .popular: "Downloads"
-        case .likes: "Likes"
-        case .recent: "Newest first"
-        case .oldest: "Oldest first"
+        case .popular: String(localized: "Downloads")
+        case .likes: String(localized: "Likes")
+        case .recent: String(localized: "Newest first")
+        case .oldest: String(localized: "Oldest first")
         }
     }
 }
@@ -91,17 +91,17 @@ enum CommunityDeckLanguage: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .all: "All languages"
-        case .english: "English"
-        case .spanish: "Spanish"
-        case .french: "French"
-        case .german: "German"
-        case .italian: "Italian"
-        case .portuguese: "Portuguese"
-        case .korean: "Korean"
-        case .japanese: "Japanese"
-        case .chinese: "Chinese"
-        case .arabic: "Arabic"
+        case .all: String(localized: "All languages")
+        case .english: String(localized: "English")
+        case .spanish: String(localized: "Spanish")
+        case .french: String(localized: "French")
+        case .german: String(localized: "German")
+        case .italian: String(localized: "Italian")
+        case .portuguese: String(localized: "Portuguese")
+        case .korean: String(localized: "Korean")
+        case .japanese: String(localized: "Japanese")
+        case .chinese: String(localized: "Chinese")
+        case .arabic: String(localized: "Arabic")
         }
     }
 }
@@ -140,11 +140,11 @@ extension Deck {
     /// runs in sharingRestriction immediately before an actual publish request.
     func provenanceSharingRestriction(allowAnkiUploads: Bool) -> String? {
         if !allowAnkiUploads && isAnkiImport {
-            return "Uploading decks imported from Anki are not supported yet"
+            return String(localized: "Uploading decks imported from Anki are not supported yet")
         }
-        if sourceCommunityID != nil { return "Downloaded shared decks can’t be republished. Share a deck you created." }
+        if sourceCommunityID != nil { return String(localized: "Downloaded shared decks can’t be republished. Share a deck you created.") }
         if sourcePremadeID != nil || deckType == "Course" || ["managedLanguage", "languageTopic"].contains(sourceKind ?? "") {
-            return "Built-in decks can’t be published as shared decks."
+            return String(localized: "Built-in decks can’t be published as shared decks.")
         }
         return nil
     }
@@ -153,7 +153,7 @@ extension Deck {
         if let reason = provenanceSharingRestriction(allowAnkiUploads: allowAnkiUploads) { return reason }
         let orderedCards = cards
         if !allowAnkiUploads && orderedCards.contains(where: { $0.sourceAnkiCardID != nil || $0.cardType == .anki }) {
-            return "Uploading decks imported from Anki are not supported yet"
+            return String(localized: "Uploading decks imported from Anki are not supported yet")
         }
         func key(_ question: String, _ answer: String, _ left: [String], _ right: [String]) -> [String] {
             func normalized(_ text: String) -> String { text.precomposedStringWithCompatibilityMapping.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ") }
@@ -164,7 +164,7 @@ extension Deck {
         // by sourcePremadeID above; this synchronous fallback uses bundled content.
         if PremadeDeckCatalog.bundledDecks.contains(where: { premade in
             !premade.cards.isEmpty && Set(premade.cards.map { key($0.question, $0.correctAnswer, $0.matchingLeftItems, $0.matchingRightItems) }).isSubset(of: local)
-        }) { return "Built-in decks can’t be published as shared decks." }
+        }) { return String(localized: "Built-in decks can’t be published as shared decks.") }
         return nil
     }
 
@@ -176,7 +176,100 @@ struct CommunityAPIError: LocalizedError {
     let status: Int
     let message: String
     var code: String? = nil
-    var errorDescription: String? { message }
+    var errorDescription: String? { Self.localizedMessage(message) }
+
+    /// Server protocol values stay stable. Translate only known service messages;
+    /// any admin-authored detail is displayed in its original language.
+    static func localizedMessage(_ message: String) -> String {
+        switch message {
+        case "A shared deck can contain up to 100 MB of media and 1,000 attachments.": String(localized: "A shared deck can contain up to 100 MB of media and 1,000 attachments.")
+        case "Accept the sharing rules before uploading or submitting a deck.": String(localized: "Accept the sharing rules before uploading or submitting a deck.")
+        case "Add a description of 1–2000 characters before sharing.": String(localized: "Add a description of 1–2000 characters before sharing.")
+        case "Add text, an image or audio to the answer.": String(localized: "Add text, an image or audio to the answer.")
+        case "Add text, an image or audio to the question.": String(localized: "Add text, an image or audio to the question.")
+        case "Anki decks support up to 1,000 attachments.": String(localized: "Anki decks support up to 1,000 attachments.")
+        case "Anki templates require the Anki card type.": String(localized: "Anki templates require the Anki card type.")
+        case "Apple sign-in is temporarily unavailable.": String(localized: "Apple sign-in is temporarily unavailable.")
+        case "Attachment field does not belong to this card type.": String(localized: "Attachment field does not belong to this card type.")
+        case "Attachment not found.": String(localized: "Attachment not found.")
+        case "Author not found.": String(localized: "Author not found.")
+        case "Card IDs must be unique.": String(localized: "Card IDs must be unique.")
+        case "Choice blanks need a ___ in the sentence.": String(localized: "Choice blanks need a ___ in the sentence.")
+        case "Choose a creator name of up to 80 characters.": String(localized: "Choose a creator name of up to 80 characters.")
+        case "Choose a profile change.": String(localized: "Choose a profile change.")
+        case "Choose a supported language filter.": String(localized: "Choose a supported language filter.")
+        case "Choose a username.": String(localized: "Choose a username.")
+        case "Choose a valid character.": String(localized: "Choose a valid character.")
+        case "Choose a valid community author.": String(localized: "Choose a valid community author.")
+        case "Choose a valid developer option.": String(localized: "Choose a valid developer option.")
+        case "Choose a valid profile privacy setting.": String(localized: "Choose a valid profile privacy setting.")
+        case "Choose a valid skin tone.": String(localized: "Choose a valid skin tone.")
+        case "Conflicting media references.": String(localized: "Conflicting media references.")
+        case "Couldn’t choose a username just now. Please try again.": String(localized: "Couldn’t choose a username just now. Please try again.")
+        case "Custom publishing names require developer access.": String(localized: "Custom publishing names require developer access.")
+        case "Deck not found.": String(localized: "Deck not found.")
+        case "Developer access is required.": String(localized: "Developer access is required.")
+        case "Drag to Answer needs 2–30 text, image or audio tokens in the correct order, without a correct-choice index or matching pairs.": String(localized: "Drag to Answer needs 2–30 text, image or audio tokens in the correct order, without a correct-choice index or matching pairs.")
+        case "Endpoint not found.": String(localized: "Endpoint not found.")
+        case "Every attachment must be uploaded to this deck before publishing.": String(localized: "Every attachment must be uploaded to this deck before publishing.")
+        case "Finish your username and character in Settings before sending a heart.": String(localized: "Finish your username and character in Settings before sending a heart.")
+        case "Image cards need a front image, an optional back image, and no question, answer, hint, choices, matching pairs, or audio.": String(localized: "Image cards need a front image, an optional back image, and no question, answer, hint, choices, matching pairs, or audio.")
+        case "Invalid Anki media folder.": String(localized: "Invalid Anki media folder.")
+        case "Invalid Anki media name.": String(localized: "Invalid Anki media name.")
+        case "Invalid Anki media.": String(localized: "Invalid Anki media.")
+        case "Invalid Anki template.": String(localized: "Invalid Anki template.")
+        case "Invalid answer images.": String(localized: "Invalid answer images.")
+        case "Invalid card type.": String(localized: "Invalid card type.")
+        case "Invalid card.": String(localized: "Invalid card.")
+        case "Invalid deck color.": String(localized: "Invalid deck color.")
+        case "Invalid deck.": String(localized: "Invalid deck.")
+        case "Invalid deletion request.": String(localized: "Invalid deletion request.")
+        case "Invalid field attachments.": String(localized: "Invalid field attachments.")
+        case "Invalid media reference.": String(localized: "Invalid media reference.")
+        case "Invalid media type.": String(localized: "Invalid media type.")
+        case "Invalid sign-in request.": String(localized: "Invalid sign-in request.")
+        case "Matching cards need at least two complete text, image or audio pairs.": String(localized: "Matching cards need at least two complete text, image or audio pairs.")
+        case "Media uploads are not configured yet.": String(localized: "Media uploads are not configured yet.")
+        case "Missing Anki media reference.": String(localized: "Missing Anki media reference.")
+        case "Please give a reason for reporting this deck.": String(localized: "Please give a reason for reporting this deck.")
+        case "Please sign in with Apple again.": String(localized: "Please sign in with Apple again.")
+        case "Please sign in with Apple to continue.": String(localized: "Please sign in with Apple to continue.")
+        case "Profile not found.": String(localized: "Profile not found.")
+        case "Publish between 1 and 500 cards per deck.": String(localized: "Publish between 1 and 500 cards per deck.")
+        case "Quiz cards need 2–4 text, image or audio choices and a correct choice index.": String(localized: "Quiz cards need 2–4 text, image or audio choices and a correct choice index.")
+        case "Reauthenticate with Apple before deleting.": String(localized: "Reauthenticate with Apple before deleting.")
+        case "Request body must be valid JSON.": String(localized: "Request body must be valid JSON.")
+        case "Share a deck you created. Built-in and downloaded community decks can’t be republished.": String(localized: "Share a deck you created. Built-in and downloaded community decks can’t be republished.")
+        case "Sign in with Apple again to authorize account deletion.": String(localized: "Sign in with Apple again to authorize account deletion.")
+        case "That username is taken. Try another one.": String(localized: "That username is taken. Try another one.")
+        case "The community library is not configured yet.": String(localized: "The community library is not configured yet.")
+        case "The file does not match its image or audio format.": String(localized: "The file does not match its image or audio format.")
+        case "The upload is empty.": String(localized: "The upload is empty.")
+        case "These Anki templates are too large to share. Split the deck into smaller decks.": String(localized: "These Anki templates are too large to share. Split the deck into smaller decks.")
+        case "These community profiles cannot interact while a block is active.": String(localized: "These community profiles cannot interact while a block is active.")
+        case "This community account is banned. Contact contact@learnalertapp.com to appeal.": String(localized: "This community account is banned. Contact contact@learnalertapp.com to appeal.")
+        case "This community account is suspended. Contact contact@learnalertapp.com for help.": String(localized: "This community account is suspended. Contact contact@learnalertapp.com for help.")
+        case "This community account was removed.": String(localized: "This community account was removed.")
+        case "This community content is unavailable.": String(localized: "This community content is unavailable.")
+        case "This deck changed. Refresh before deleting it.": String(localized: "This deck changed. Refresh before deleting it.")
+        case "This deck has reached its upload capacity. Remove unused attachments or try again after temporary uploads are cleared.": String(localized: "This deck has reached its upload capacity. Remove unused attachments or try again after temporary uploads are cleared.")
+        case "This deck was removed while publishing.": String(localized: "This deck was removed while publishing.")
+        case "This deck was removed while uploading.": String(localized: "This deck was removed while uploading.")
+        case "This matches an existing community deck. Downloaded decks can’t be republished.": String(localized: "This matches an existing community deck. Downloaded decks can’t be republished.")
+        case "This upload is too large.": String(localized: "This upload is too large.")
+        case "Uploading decks imported from Anki are not supported yet": String(localized: "Uploading decks imported from Anki are not supported yet")
+        case "Use 3–24 letters, numbers or underscores, starting with a letter.": String(localized: "Use 3–24 letters, numbers or underscores, starting with a letter.")
+        case "Use JPEG/PNG images or MP3/M4A/WAV audio.": String(localized: "Use JPEG/PNG images or MP3/M4A/WAV audio.")
+        case "Use correctOptionIndex for media-only or duplicate answer text.": String(localized: "Use correctOptionIndex for media-only or duplicate answer text.")
+        case "Use the Apple account associated with this community profile.": String(localized: "Use the Apple account associated with this community profile.")
+        case "You can have 50 shared decks and create up to 20 per day.": String(localized: "You can have 50 shared decks and create up to 20 per day.")
+        case "You cannot block your own profile.": String(localized: "You cannot block your own profile.")
+        case "You cannot heart your own deck.": String(localized: "You cannot heart your own deck.")
+        case "Your block list is full. Unblock an author first.": String(localized: "Your block list is full. Unblock an author first.")
+        case "Your username is permanent. You can still change your character.": String(localized: "Your username is permanent. You can still change your character.")
+        default: message
+        }
+    }
 }
 
 struct CommunityAPI {
@@ -313,7 +406,7 @@ struct CommunityAPI {
 
     func upload(_ data: Data, contentType: String, deckID: String, token: String, acceptedRules: Bool = false) async throws -> String {
         guard acceptedRules else {
-            throw CommunityAPIError(status: 400, message: "Accept the sharing rules before uploading.", code: "COMMUNITY_RULES_REQUIRED")
+            throw CommunityAPIError(status: 400, message: String(localized: "Accept the sharing rules before uploading."), code: "COMMUNITY_RULES_REQUIRED")
         }
         var request = URLRequest(url: endpoint("decks/\(deckID)/media"))
         request.httpMethod = "POST"
@@ -378,7 +471,7 @@ struct CommunityAPI {
     func media(id: String, maximumBytes: Int, token: String? = nil) async throws -> Data {
         let (data, response) = try await session.data(for: viewerRequest(endpoint("media/\(id)"), token: token))
         try validate(data, response: response)
-        guard data.count <= maximumBytes else { throw CommunityAPIError(status: 413, message: "This attachment is too large.") }
+        guard data.count <= maximumBytes else { throw CommunityAPIError(status: 413, message: String(localized: "This attachment is too large.")) }
         return data
     }
 
@@ -411,7 +504,7 @@ struct CommunityAPI {
             struct Envelope: Decodable { struct Failure: Decodable { let message: String; let code: String? }; let error: Failure }
             let failure = try? JSONDecoder().decode(Envelope.self, from: data)
             let message = failure?.error.message
-                ?? "Shared decks are unavailable. Please try again."
+                ?? String(localized: "Shared decks are unavailable. Please try again.")
             throw CommunityAPIError(status: http.statusCode, message: message, code: failure?.error.code)
         }
     }
@@ -481,10 +574,10 @@ final class CommunitySession: ObservableObject {
                 var item = keychainQuery
                 for (key, value) in update { item[key] = value }
                 guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
-                    throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
+                    throw CommunityAPIError(status: 500, message: String(localized: "Your profile could not be saved securely. Please try again."))
                 }
             } else if status != errSecSuccess {
-                throw CommunityAPIError(status: 500, message: "Your profile could not be saved securely. Please try again.")
+                throw CommunityAPIError(status: 500, message: String(localized: "Your profile could not be saved securely. Please try again."))
             }
         }
         credentials = result
@@ -533,11 +626,11 @@ final class CommunitySession: ObservableObject {
 
     func appleCredentialRevoked() {
         signOut()
-        errorMessage = "Apple access changed. Sign in again to use your community account."
+        errorMessage = String(localized: "Apple access changed. Sign in again to use your community account.")
     }
 
     func saveProfile(username: String, avatar: CommunityAvatar) async throws {
-        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple to save your profile.") }
+        guard let token else { throw CommunityAPIError(status: 401, message: String(localized: "Sign in with Apple to save your profile.")) }
         do {
             let profile = try await api.saveProfile(username: username, avatar: avatar, token: token)
             guard var result = credentials, self.token == token else { throw CancellationError() }
@@ -549,7 +642,7 @@ final class CommunitySession: ObservableObject {
     }
 
     func saveProfilePrivacy(hideStatsPublicly: Bool) async throws {
-        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in with Apple to update your profile.") }
+        guard let token else { throw CommunityAPIError(status: 401, message: String(localized: "Sign in with Apple to update your profile.")) }
         do {
             let profile = try await api.saveProfilePrivacy(hideStatsPublicly: hideStatsPublicly, token: token)
             guard var result = credentials, self.token == token else { throw CancellationError() }
@@ -562,7 +655,7 @@ final class CommunitySession: ObservableObject {
     }
 
     func saveDeveloperOptions(allowAnkiUploads: Bool) async throws {
-        guard let token else { throw CommunityAPIError(status: 401, message: "Sign in to change developer options.") }
+        guard let token else { throw CommunityAPIError(status: 401, message: String(localized: "Sign in to change developer options.")) }
         let profile = try await api.saveDeveloperOptions(allowAnkiUploads: allowAnkiUploads, token: token)
         guard var result = credentials, self.token == token else { throw CancellationError() }
         result.profile = profile
@@ -625,11 +718,11 @@ enum CommunityDeckTransfer {
                         api: CommunityAPI? = nil,
                         progress: @escaping (String) -> Void) async throws -> String {
         guard acceptedRules else {
-            throw CommunityAPIError(status: 400, message: "Accept the sharing rules before uploading.", code: "COMMUNITY_RULES_REQUIRED")
+            throw CommunityAPIError(status: 400, message: String(localized: "Accept the sharing rules before uploading."), code: "COMMUNITY_RULES_REQUIRED")
         }
         let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !description.isEmpty, description.utf16.count <= 2000 else {
-            throw CommunityAPIError(status: 400, message: "Add a description between 1 and 2,000 characters.", code: "COMMUNITY_DESCRIPTION_REQUIRED")
+            throw CommunityAPIError(status: 400, message: String(localized: "Add a description between 1 and 2,000 characters."), code: "COMMUNITY_DESCRIPTION_REQUIRED")
         }
         let api = api ?? CommunityAPI()
         if let reason = deck.sharingRestriction(allowAnkiUploads: false) {
@@ -637,10 +730,10 @@ enum CommunityDeckTransfer {
         }
         let profile = publisherHandle?.isEmpty == false ? try await api.profile(token: token) : nil
         if publisherHandle?.isEmpty == false && profile?.isDeveloper != true {
-            throw CommunityAPIError(status: 403, message: "Custom publishing names require developer access.")
+            throw CommunityAPIError(status: 403, message: String(localized: "Custom publishing names require developer access."))
         }
         guard !deck.cards.isEmpty, deck.cards.count <= 500 else {
-            throw CommunityAPIError(status: 400, message: "Publish between 1 and 500 cards per deck.")
+            throw CommunityAPIError(status: 400, message: String(localized: "Publish between 1 and 500 cards per deck."))
         }
         let metadata = CommunityAPI.Metadata(name: deck.name, description: description, categoryTag: category,
                                              colorHex: deck.colorHex, deckType: deck.deckType, acceptedRules: acceptedRules)
@@ -652,9 +745,9 @@ enum CommunityDeckTransfer {
             let key = "image:\(name)"
             if !seen.contains(key) {
                 guard let image = CardImageStore.loadImage(named: name), let data = image.jpegData(compressionQuality: 0.82) else {
-                    throw CommunityAPIError(status: 400, message: "A card image is missing. Reattach it before publishing.")
+                    throw CommunityAPIError(status: 400, message: String(localized: "A card image is missing. Reattach it before publishing."))
                 }
-                guard data.count <= 10 * 1024 * 1024 else { throw CommunityAPIError(status: 413, message: "Each image must be under 10 MB.") }
+                guard data.count <= 10 * 1024 * 1024 else { throw CommunityAPIError(status: 413, message: String(localized: "Each image must be under 10 MB.")) }
                 uploads.append(Upload(key: key, data: data, contentType: "image/jpeg"))
                 seen.insert(key)
             }
@@ -665,7 +758,7 @@ enum CommunityDeckTransfer {
             let key = "audio:\(name)"
             if !seen.contains(key) {
                 let data = try Data(contentsOf: CardAudioStore.url(named: name))
-                guard data.count <= CardAudioStore.maximumBytes else { throw CommunityAPIError(status: 413, message: "Each audio clip must be under 20 MB.") }
+                guard data.count <= CardAudioStore.maximumBytes else { throw CommunityAPIError(status: 413, message: String(localized: "Each audio clip must be under 20 MB.")) }
                 uploads.append(Upload(key: key, data: data, contentType: try CardAudioStore.contentType(for: name)))
                 seen.insert(key)
             }
@@ -678,21 +771,21 @@ enum CommunityDeckTransfer {
             if let content = card.ankiContent {
                 templateBytes += content.frontHTML.utf8.count + content.backHTML.utf8.count + content.css.utf8.count
                 guard templateBytes <= 1024 * 1024 else {
-                    throw CommunityAPIError(status: 413, message: "These Anki templates are too large to share. Split the deck into smaller decks.")
+                    throw CommunityAPIError(status: 413, message: String(localized: "These Anki templates are too large to share. Split the deck into smaller decks."))
                 }
             }
             if let content = card.ankiContent, ankiMedia[content.mediaFolder] == nil {
-                guard let directory = content.mediaURL else { throw CommunityAPIError(status: 400, message: "Anki media is unavailable. Re-import the deck.") }
+                guard let directory = content.mediaURL else { throw CommunityAPIError(status: 400, message: String(localized: "Anki media is unavailable. Re-import the deck.")) }
                 let index = AnkiCardContent.mediaIndex(in: directory)
                 var media: [String: String] = [:]
                 let names = index.isEmpty ? try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { !$0.hasPrefix(".") } : Array(index.keys)
                 for name in names {
                     guard let url = AnkiCardContent.safeMediaURL(name: name, directory: directory, index: index),
                           let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 20 * 1024 * 1024 else {
-                        throw CommunityAPIError(status: 400, message: "An Anki attachment is missing or exceeds 20 MB.")
+                        throw CommunityAPIError(status: 400, message: String(localized: "An Anki attachment is missing or exceeds 20 MB."))
                     }
                     guard uploads.count < 1000, uploads.reduce(0, { $0 + $1.data.count }) + size <= 100 * 1024 * 1024 else {
-                        throw CommunityAPIError(status: 413, message: "A shared deck supports up to 100 MB of media and 1,000 attachments.")
+                        throw CommunityAPIError(status: 413, message: String(localized: "A shared deck supports up to 100 MB of media and 1,000 attachments."))
                     }
                     let key = "anki:\(content.mediaFolder):\(name)"
                     uploads.append(Upload(key: key, data: try Data(contentsOf: url), contentType: "application/octet-stream"))
@@ -712,9 +805,9 @@ enum CommunityDeckTransfer {
                 answerImageID: fields["answer"]?.imageID, fieldMedia: fields, correctOptionIndex: card.resolvedCorrectOptionIndex, ankiContent: card.ankiContent))
         }
         guard uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
-            throw CommunityAPIError(status: 413, message: "A shared deck can contain up to 100 MB of images and audio.")
+            throw CommunityAPIError(status: 413, message: String(localized: "A shared deck can contain up to 100 MB of images and audio."))
         }
-        progress("Preparing your deck…")
+        progress(String(localized: "Preparing your deck…"))
         let existingID: String?
         if let previousID = deck.publishedCommunityID {
             // A device library can outlive an Apple account change or a public removal.
@@ -729,7 +822,7 @@ enum CommunityDeckTransfer {
             var remoteIDs: [String: String] = [:]
             for (index, upload) in uploads.enumerated() {
                 try Task.checkCancellation()
-                progress("Uploading attachment \(index + 1) of \(uploads.count)…")
+                progress(String(localized: "Uploading attachment \(index + 1) of \(uploads.count)…"))
                 remoteIDs[upload.key] = try await api.upload(upload.data, contentType: upload.contentType, deckID: id, token: token, acceptedRules: acceptedRules)
             }
             for index in cards.indices {
@@ -740,7 +833,7 @@ enum CommunityDeckTransfer {
                 cards[index].fieldMedia = cards[index].fieldMedia?.mapValues { .init(imageID: $0.imageID.flatMap { remoteIDs[$0] }, audioID: $0.audioID.flatMap { remoteIDs[$0] }) }
 
             }
-            progress("Submitting for review…")
+            progress(String(localized: "Submitting for review…"))
             let remoteAnkiMedia = ankiMedia.mapValues { $0.compactMapValues { remoteIDs[$0] } }
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
                 colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards, origin: deck.isAnkiImport ? "anki" : "personal",
@@ -767,7 +860,7 @@ enum CommunityDeckTransfer {
             if let name = images[id] { return name }
             let data = try await api.media(id: id, maximumBytes: 10 * 1024 * 1024, token: token)
             guard let image = UIImage(data: data), let name = CardImageStore.saveImage(image) else {
-                throw CommunityAPIError(status: 400, message: "A deck image could not be downloaded.")
+                throw CommunityAPIError(status: 400, message: String(localized: "A deck image could not be downloaded."))
             }
             images[id] = name
             savedFiles.append(CardImageStore.imagesDirectoryURL.appendingPathComponent(name))
@@ -805,7 +898,7 @@ enum CommunityDeckTransfer {
             var imported: [PremadeCard] = []
             for (index, card) in cards.enumerated() {
                 try Task.checkCancellation()
-                progress("Downloading card \(index + 1) of \(cards.count)…")
+                progress(String(localized: "Downloading card \(index + 1) of \(cards.count)…"))
                 let prompt = try await imageName(card.promptImageID)
                 let answer = try await imageName(card.answerImageID)
                 var options: [String] = []

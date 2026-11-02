@@ -23,14 +23,14 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .vocabulary: "Vocabulary"
-        case .multipleChoice: "Quiz Style"
-        case .tapReveal: "Tap to Reveal"
-        case .matching: "Match Pairs"
-        case .fillBlank: "Fill in the Blank"
-        case .dragAnswer: "Drag to Answer"
-        case .images: "Images"
-        case .anki: "Anki"
+        case .vocabulary: String(localized: "Vocabulary")
+        case .multipleChoice: String(localized: "Quiz Style")
+        case .tapReveal: String(localized: "Tap to Reveal")
+        case .matching: String(localized: "Match Pairs")
+        case .fillBlank: String(localized: "Fill in the Blank")
+        case .dragAnswer: String(localized: "Drag to Answer")
+        case .images: String(localized: "Images")
+        case .anki: String(localized: "Anki")
         }
     }
     var icon: String {
@@ -48,14 +48,14 @@ enum FlashcardType: String, Codable, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .multipleChoice: "Practice with 4 options and immediate feedback"
-        case .tapReveal: "Front-and-back flip with self assessment"
-        case .vocabulary: "Word, pronunciation, and dictionary definition"
-        case .fillBlank: "Fill a sentence by typing or choosing an answer"
-        case .dragAnswer: "Tap or drag shuffled tiles into the right order"
-        case .matching: "Connect paired terms and definitions"
-        case .images: "Review one picture or reveal an image on the back"
-        case .anki: "Imported Anki templates, formatting, and media"
+        case .multipleChoice: String(localized: "Practice with 4 options and immediate feedback")
+        case .tapReveal: String(localized: "Front-and-back flip with self assessment")
+        case .vocabulary: String(localized: "Word, pronunciation, and dictionary definition")
+        case .fillBlank: String(localized: "Fill a sentence by typing or choosing an answer")
+        case .dragAnswer: String(localized: "Tap or drag shuffled tiles into the right order")
+        case .matching: String(localized: "Connect paired terms and definitions")
+        case .images: String(localized: "Review one picture or reveal an image on the back")
+        case .anki: String(localized: "Imported Anki templates, formatting, and media")
         }
     }
 
@@ -141,6 +141,20 @@ class Deck {
 
     /// Counts do not need study order or faults for each card's orderIndex.
     var cardCount: Int { storedCards?.count ?? 0 }
+
+    /// Display copy is translated independently of the persisted deck kind.
+    var localizedDeckType: String {
+        switch deckType {
+        case "Quiz", "Quiz Style": String(localized: "Quiz")
+        case "Vocabulary": String(localized: "Vocabulary")
+        case "True / False", "True/False": String(localized: "True / False")
+        case "Mixed": String(localized: "Mixed")
+        case "Images": String(localized: "Images")
+        case "Anki": "Anki"
+        default: deckType
+        }
+    }
+
 
     /// Home uses one unordered traversal instead of sorting the entire deck for
     /// each count, progress label, progress color, and streak label.
@@ -649,11 +663,11 @@ struct AlertSoundOption: Identifiable, Hashable {
     let name: String
 
     static let allSounds: [AlertSoundOption] = [
-        AlertSoundOption(id: AlertSoundCatalog.systemDefault, name: "System default")
+        AlertSoundOption(id: AlertSoundCatalog.systemDefault, name: String(localized: "System default"))
     ] + AlertSoundCatalog.ringtones.map { AlertSoundOption(id: $0.filename, name: $0.title) }
 
     static func displayName(for id: String) -> String {
-        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? "Cloud drops"
+        allSounds.first { $0.id == AlertSoundCatalog.resolve(id) }?.name ?? String(localized: "Cloud drops")
     }
 }
 
@@ -789,23 +803,23 @@ public enum NotificationTheme: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .defaultTheme: "Luminous"
-        case .midnight: "Midnight OLED"
-        case .aurora: "Emerald Aurora"
-        case .sunset: "Sunset Glow"
-        case .slate: "Minimal Slate"
-        case .light: "Pure Light"
+        case .defaultTheme: String(localized: "Luminous")
+        case .midnight: String(localized: "Midnight OLED")
+        case .aurora: String(localized: "Emerald Aurora")
+        case .sunset: String(localized: "Sunset Glow")
+        case .slate: String(localized: "Minimal Slate")
+        case .light: String(localized: "Pure Light")
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .defaultTheme: "Cosmic indigo & radiant ambient orbs"
-        case .midnight: "True deep black with midnight accents"
-        case .aurora: "Electric emerald & mint aura"
-        case .sunset: "Warm twilight plum & coral glow"
-        case .slate: "Understated frosted titanium"
-        case .light: "Clean alabaster light surface"
+        case .defaultTheme: String(localized: "Cosmic indigo & radiant ambient orbs")
+        case .midnight: String(localized: "True deep black with midnight accents")
+        case .aurora: String(localized: "Electric emerald & mint aura")
+        case .sunset: String(localized: "Warm twilight plum & coral glow")
+        case .slate: String(localized: "Understated frosted titanium")
+        case .light: String(localized: "Clean alabaster light surface")
         }
     }
 
@@ -896,15 +910,15 @@ public enum NotificationLayoutMode: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .automatic: "Automatic"
-        case .compact: "Compact"
+        case .automatic: String(localized: "Automatic")
+        case .compact: String(localized: "Compact")
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .automatic: "Adaptive standard layout with spacious padding"
-        case .compact: "Reduced padding for fast, focused study"
+        case .automatic: String(localized: "Adaptive standard layout with spacious padding")
+        case .compact: String(localized: "Reduced padding for fast, focused study")
         }
     }
 }

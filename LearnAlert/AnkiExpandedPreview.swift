@@ -72,7 +72,7 @@ struct AnkiExpandedPreview: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("Front").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
             side(controller.front, back: false)
-            Text("Back").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
+            Text("Back side").font(.caption2).foregroundStyle(LearnAlertStyle.textSecondary)
             side(controller.back, back: true)
         }
         .task(id: Request(content: content, configuration: configuration)) {
