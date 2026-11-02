@@ -840,11 +840,11 @@ struct ShareDeckToCommunitySheet: View {
             URL(string: "https://learnalertapp.com/\(self == .terms ? "terms" : "privacy-policy")")!
         }
     }
-    private var availableDecks: [Deck] { libraryDecks.filter(\.canPresentCommunitySharing) }
-    private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
+    private var availableDecks: [Deck] { libraryDecks.filter { $0.canPresentCommunitySharing(allowAnkiUploads: session.canUploadAnki) } }
+    private var selectedDeck: Deck? { libraryDecks.first { $0.id == selectedDeckID } }
     private var canPublishSelected: Bool {
         guard let deck = selectedDeck else { return false }
-        return deck.provenanceSharingRestriction(allowAnkiUploads: false) == nil
+        return deck.canPresentCommunitySharing(allowAnkiUploads: session.canUploadAnki)
     }
     private var listingCategories: [String] { CommunityFeedView.categories.filter { $0 != "All" } }
     private var trimmedDescription: String { deckDescription.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -863,7 +863,7 @@ struct ShareDeckToCommunitySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if availableDecks.isEmpty {
+                    if availableDecks.isEmpty && selectedDeck == nil {
                         ContentUnavailableView("Create a deck first", systemImage: "rectangle.stack", description: Text("Share a deck you created. Built-in and downloaded shared decks can’t be republished."))
                     } else {
                         Menu {
@@ -874,9 +874,9 @@ struct ShareDeckToCommunitySheet: View {
                                 VStack(alignment: .leading, spacing: 3) { Text(selectedDeck?.name ?? AppLocalization.string("Choose a deck")).font(.headline); Text("From your library").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
                                 Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold))
                             }.foregroundStyle(LearnAlertStyle.textPrimary).padding(16).appCardSurface(cornerRadius: 20)
-                        }.disabled(isPublishing)
+                        }.disabled(isPublishing || availableDecks.isEmpty)
                         if let deck = selectedDeck {
-                            if let reason = deck.provenanceSharingRestriction(allowAnkiUploads: false) {
+                            if let reason = deck.provenanceSharingRestriction(allowAnkiUploads: session.canUploadAnki) {
                                 Text(reason).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             if session.isDeveloper {
@@ -966,6 +966,11 @@ struct ShareDeckToCommunitySheet: View {
             .interactiveDismissDisabled(isPublishing)
             .task(id: selectedDeckID) {
                 await session.refreshProfile()
+                if selectedDeckID == nil, let initialDeckID,
+                   availableDecks.contains(where: { $0.id == initialDeckID }) {
+                    selectedDeckID = initialDeckID
+                    return
+                }
                 let selectedID = selectedDeckID
                 if session.isDeveloper, let id = selectedDeck?.publishedCommunityID, let token = session.token,
                    let owned = try? await CommunityAPI().myDecks(token: token),
@@ -983,6 +988,9 @@ struct ShareDeckToCommunitySheet: View {
             .onChange(of: selectedDeckID) { _, _ in loadMetadata() }
             .onChange(of: session.isSignedIn) { _, isSignedIn in
                 if !isSignedIn { dismiss() }
+            }
+            .onChange(of: session.isDeveloper) { _, isDeveloper in
+                if !isDeveloper { publisherHandle = "" }
             }
             .onChange(of: category) { _, _ in isSubmitted = false }
             .onChange(of: deckDescription) { _, text in
@@ -1058,7 +1066,15 @@ struct ShareDeckToCommunitySheet: View {
             deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = trimmedDescription
             try context.save(); isSubmitted = true; HapticFeedback.success()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
-        } catch { session.handle(error); publishError = error.localizedDescription }
+        } catch {
+            if session.token == token {
+                session.handle(error)
+                if let apiError = error as? CommunityAPIError, apiError.status == 403 {
+                    await session.refreshProfile()
+                }
+            }
+            publishError = error.localizedDescription
+        }
     }
 }
 
@@ -1111,7 +1127,7 @@ struct MySharedDecksSheet: View {
                                 Label("Updated by admin", systemImage: "pencil").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
                             HStack {
-                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canPresentCommunitySharing }) { Button(deck.reviewStatus == "rejected" ? AppLocalization.string("Edit & resubmit") : AppLocalization.string("Edit"), systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
+                                if !deck.isRemoved, let local = libraryDecks.first(where: { $0.publishedCommunityID == deck.id && $0.canPresentCommunitySharing(allowAnkiUploads: session.canUploadAnki) }) { Button(deck.reviewStatus == "rejected" ? AppLocalization.string("Edit & resubmit") : AppLocalization.string("Edit"), systemImage: "pencil") { editingDeck = local }.frame(minHeight: 44) }
                                 Spacer()
                                 Button(deck.isRemoved ? AppLocalization.string("Dismiss notice") : AppLocalization.string("Remove"), systemImage: deck.isRemoved ? "xmark" : "trash", role: deck.isRemoved ? nil : .destructive) {
                                     if deck.isRemoved { Task { await remove(deck) } } else { removingDeck = deck }

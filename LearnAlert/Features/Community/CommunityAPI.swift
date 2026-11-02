@@ -139,12 +139,12 @@ extension Deck {
     /// Cheap menu/form gates use provenance only. Legacy content matching still
     /// runs in sharingRestriction immediately before an actual publish request.
     func provenanceSharingRestriction(allowAnkiUploads: Bool) -> String? {
-        if !allowAnkiUploads && isAnkiImport {
-            return AppLocalization.string("Uploading decks imported from Anki are not supported yet")
-        }
         if sourceCommunityID != nil { return AppLocalization.string("Downloaded shared decks can’t be republished. Share a deck you created.") }
         if sourcePremadeID != nil || deckType == "Course" || ["managedLanguage", "languageTopic"].contains(sourceKind ?? "") {
             return AppLocalization.string("Built-in decks can’t be published as shared decks.")
+        }
+        if !allowAnkiUploads && isAnkiImport {
+            return AppLocalization.string("Uploading decks imported from Anki are not supported yet")
         }
         return nil
     }
@@ -168,8 +168,14 @@ extension Deck {
         return nil
     }
 
-    var canShareToCommunity: Bool { communitySharingRestriction == nil }
-    var canPresentCommunitySharing: Bool { provenanceSharingRestriction(allowAnkiUploads: false) == nil }
+    func canShareToCommunity(allowAnkiUploads: Bool) -> Bool {
+        sharingRestriction(allowAnkiUploads: allowAnkiUploads) == nil
+    }
+    func canPresentCommunitySharing(allowAnkiUploads: Bool) -> Bool {
+        provenanceSharingRestriction(allowAnkiUploads: allowAnkiUploads) == nil
+    }
+    var canShareToCommunity: Bool { canShareToCommunity(allowAnkiUploads: false) }
+    var canPresentCommunitySharing: Bool { canPresentCommunitySharing(allowAnkiUploads: false) }
 }
 
 nonisolated struct CommunityAPIError: LocalizedError {
@@ -527,6 +533,8 @@ final class CommunitySession: ObservableObject {
     private let credentialStorage: CommunityCredentialStorage?
     private let api: CommunityAPI
     private let credentialState: (String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
+    private var profileRevision = 0
+    private var profileRefreshSequence = 0
 
     var isSignedIn: Bool { credentials.map { $0.expiresAt > Int(Date().timeIntervalSince1970) } ?? false }
     var handle: String { credentials?.handle ?? "" }
@@ -581,6 +589,7 @@ final class CommunitySession: ObservableObject {
             }
         }
         credentials = result
+        profileRevision += 1
     }
 
     @discardableResult
@@ -596,14 +605,24 @@ final class CommunitySession: ObservableObject {
         } catch { errorMessage = error.localizedDescription; return false }
     }
 
-    func refreshProfile() async {
-        guard let token else { return }
+    @discardableResult
+    func refreshProfile() async -> Bool {
+        guard let token else { return false }
+        profileRefreshSequence += 1
+        let sequence = profileRefreshSequence
+        let revision = profileRevision
         do {
             let profile = try await api.profile(token: token)
-            guard var result = credentials, self.token == token else { return }
+            guard var result = credentials, self.token == token, !Task.isCancelled,
+                  sequence == profileRefreshSequence, revision == profileRevision else { return false }
             result.profile = profile; result.handle = profile.handle
             try persist(result)
-        } catch { if self.token == token { handle(error) } }
+            errorMessage = nil
+            return true
+        } catch {
+            if self.token == token, !Task.isCancelled, sequence == profileRefreshSequence { handle(error) }
+            return false
+        }
     }
 
     func validateAppleCredential() async {
@@ -656,13 +675,39 @@ final class CommunitySession: ObservableObject {
 
     func saveDeveloperOptions(allowAnkiUploads: Bool) async throws {
         guard let token else { throw CommunityAPIError(status: 401, message: AppLocalization.string("Sign in to change developer options.")) }
-        let profile = try await api.saveDeveloperOptions(allowAnkiUploads: allowAnkiUploads, token: token)
-        guard var result = credentials, self.token == token else { throw CancellationError() }
-        result.profile = profile
-        try persist(result)
+        guard isDeveloper else { throw CommunityAPIError(status: 403, message: AppLocalization.string("Developer access is required.")) }
+        // An earlier profile read must not overwrite the saved preference.
+        profileRefreshSequence += 1
+        let sequence = profileRefreshSequence
+        let revision = profileRevision
+        do {
+            let profile = try await api.saveDeveloperOptions(allowAnkiUploads: allowAnkiUploads, token: token)
+            guard var result = credentials, self.token == token, !Task.isCancelled else { throw CancellationError() }
+            // A newer owner profile may already contain an admin revocation.
+            // Re-read after this write instead of restoring its older response.
+            if sequence != profileRefreshSequence || revision != profileRevision {
+                let refreshed = await refreshProfile()
+                guard self.token == token, !Task.isCancelled else { throw CancellationError() }
+                guard refreshed else {
+                    throw CommunityAPIError(status: 503, message: AppLocalization.string("Couldn’t refresh access. Try again."))
+                }
+                return
+            }
+            result.profile = profile; result.handle = profile.handle
+            try persist(result)
+            errorMessage = nil
+        } catch {
+            if self.token == token, !Task.isCancelled {
+                handle(error)
+                if (error as? CommunityAPIError)?.status == 403 { await refreshProfile() }
+            }
+            throw error
+        }
     }
 
     func signOut() {
+        profileRefreshSequence += 1
+        profileRevision += 1
         if let credentialStorage { credentialStorage.delete() } else { SecItemDelete(keychainQuery as CFDictionary) }
         credentials = nil
         errorMessage = nil
@@ -725,11 +770,21 @@ enum CommunityDeckTransfer {
             throw CommunityAPIError(status: 400, message: AppLocalization.string("Add a description between 1 and 2,000 characters."), code: "COMMUNITY_DESCRIPTION_REQUIRED")
         }
         let api = api ?? CommunityAPI()
-        if let reason = deck.sharingRestriction(allowAnkiUploads: false) {
+        // A developer capability never overrides source ownership. Reject known
+        // and legacy built-in copies before fetching privileges or uploading bytes.
+        if let reason = deck.sharingRestriction(allowAnkiUploads: true) {
             throw CommunityAPIError(status: 403, message: reason)
         }
-        let profile = publisherHandle?.isEmpty == false ? try await api.profile(token: token) : nil
-        if publisherHandle?.isEmpty == false && profile?.isDeveloper != true {
+        let requestedPublisherHandle = publisherHandle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPublisherHandle = requestedPublisherHandle?.isEmpty == false ? requestedPublisherHandle : nil
+        let isAnkiImport = deck.isAnkiImport
+        // Re-read owner-only server permissions for privileged operations. Normal
+        // native publishing remains available without this extra profile request.
+        let profile = isAnkiImport || normalizedPublisherHandle != nil ? try await api.profile(token: token) : nil
+        if isAnkiImport, profile?.isDeveloper != true || profile?.allowAnkiUploads != true {
+            throw CommunityAPIError(status: 403, message: AppLocalization.string("Uploading decks imported from Anki are not supported yet"))
+        }
+        if normalizedPublisherHandle != nil && profile?.isDeveloper != true {
             throw CommunityAPIError(status: 403, message: AppLocalization.string("Custom publishing names require developer access."))
         }
         guard !deck.cards.isEmpty, deck.cards.count <= 500 else {
@@ -804,8 +859,8 @@ enum CommunityDeckTransfer {
                 optionImageIDs: card.options.indices.map { fields["option:\($0)"]?.imageID }, promptAudioID: fields["prompt"]?.audioID,
                 answerImageID: fields["answer"]?.imageID, fieldMedia: fields, correctOptionIndex: card.resolvedCorrectOptionIndex, ankiContent: card.ankiContent))
         }
-        guard uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
-            throw CommunityAPIError(status: 413, message: AppLocalization.string("A shared deck can contain up to 100 MB of images and audio."))
+        guard uploads.count <= 1000, uploads.reduce(0, { $0 + $1.data.count }) <= 100 * 1024 * 1024 else {
+            throw CommunityAPIError(status: 413, message: AppLocalization.string("A shared deck supports up to 100 MB of media and 1,000 attachments."))
         }
         progress(AppLocalization.string("Preparing your deck…"))
         let existingID: String?
@@ -836,8 +891,8 @@ enum CommunityDeckTransfer {
             progress(AppLocalization.string("Submitting for review…"))
             let remoteAnkiMedia = ankiMedia.mapValues { $0.compactMapValues { remoteIDs[$0] } }
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
-                colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards, origin: deck.isAnkiImport ? "anki" : "personal",
-                publisherHandle: publisherHandle, ankiMedia: remoteAnkiMedia.isEmpty ? nil : remoteAnkiMedia,
+                colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards, origin: isAnkiImport ? "anki" : "personal",
+                publisherHandle: normalizedPublisherHandle, ankiMedia: remoteAnkiMedia.isEmpty ? nil : remoteAnkiMedia,
                 acceptedRules: acceptedRules), deckID: id, token: token)
             return id
         } catch {

@@ -69,6 +69,7 @@ struct DeckDetailView: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var practiceActivity = PracticeStudyActivity.shared
+    @ObservedObject private var communitySession = CommunitySession.shared
     @AppStorage("homeTutorialStep") private var homeTutorialStep: Int = 0
     @AppStorage("tutorialDeckId") private var tutorialDeckId = ""
 
@@ -318,7 +319,7 @@ struct DeckDetailView: View {
 
                         Divider()
 
-                        if deck.canPresentCommunitySharing {
+                        if deck.canPresentCommunitySharing(allowAnkiUploads: communitySession.canUploadAnki) {
                             Button { showingCommunityShare = true } label: {
                                 Label("Share to Community", systemImage: "square.and.arrow.up")
                             }

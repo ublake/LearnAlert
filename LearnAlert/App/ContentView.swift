@@ -2583,6 +2583,10 @@ struct AppSettingsView: View {
 
                 SettingsSupportGroup()
 
+                if communitySession.isDeveloper {
+                    DeveloperSettingsSection()
+                }
+
                 Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }
             .padding(.top, 22)
@@ -2597,7 +2601,10 @@ struct AppSettingsView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
-            Task { await refreshPermissionStatus() }
+            Task {
+                await refreshPermissionStatus()
+                await communitySession.refreshProfile()
+            }
         }
         .onChange(of: alertSound) { _, newValue in
             previewAlertSound(named: newValue)
@@ -2642,13 +2649,28 @@ private struct SystemCheckItem: Identifiable, Sendable {
     let state: State
 }
 
-private struct SystemCheckView: View {
+struct SystemCheckView: View {
     @Environment(\.dismiss) private var dismiss
-    @Query private var decks: [Deck]
+    @Environment(\.modelContext) private var modelContext
+    @ObservedObject private var communitySession = CommunitySession.shared
     @State private var items: [SystemCheckItem] = []
     @State private var isRunning = true
 
     var body: some View {
+        Group {
+            if communitySession.isDeveloper { checksContent }
+            else { Color.clear }
+        }
+        .task(id: communitySession.isDeveloper) {
+            guard communitySession.isDeveloper else { revokeAccess(); return }
+            await runChecks()
+        }
+        .onChange(of: communitySession.isDeveloper) { _, isDeveloper in
+            if !isDeveloper { revokeAccess() }
+        }
+    }
+
+    private var checksContent: some View {
         NavigationStack {
             ZStack {
                 CoursezyBackground()
@@ -2703,18 +2725,21 @@ private struct SystemCheckView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .task { await runChecks() }
         }
     }
 
     @MainActor
     private func runChecks() async {
+        guard communitySession.isDeveloper else { revokeAccess(); return }
         isRunning = true
+        defer { isRunning = false }
         items = []
 
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
+        guard communitySession.isDeveloper, !Task.isCancelled else { return }
         let requests = await center.pendingNotificationRequests()
+        guard communitySession.isDeveloper, !Task.isCancelled else { return }
         let authorizationText: String
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral: authorizationText = AppLocalization.string("Notifications are allowed")
@@ -2734,20 +2759,31 @@ private struct SystemCheckView: View {
             state: requests.isEmpty ? .warning : .good
         ))
 
-        let cardCount = decks.reduce(0) { $0 + $1.cardCount }
-        let reviewedCount = decks.flatMap(\.cards).filter { $0.reviewCount > 0 }.count
-        items.append(SystemCheckItem(
-            title: AppLocalization.string("Local library"),
-            detail: AppLocalization.string("\(decks.count) decks · \(cardCount) cards · \(reviewedCount) cards studied"),
-            state: decks.isEmpty ? .warning : .good
-        ))
+        do {
+            let deckCount = try modelContext.fetchCount(FetchDescriptor<Deck>())
+            let cardCount = try modelContext.fetchCount(FetchDescriptor<Flashcard>())
+            let reviewedCount = try modelContext.fetchCount(FetchDescriptor<Flashcard>(
+                predicate: #Predicate<Flashcard> { $0.reviewCount > 0 }))
+            items.append(SystemCheckItem(
+                title: AppLocalization.string("Local library"),
+                detail: AppLocalization.string("\(deckCount) decks · \(cardCount) cards · \(reviewedCount) cards studied"),
+                state: deckCount == 0 ? .warning : .good
+            ))
+        } catch {
+            items.append(SystemCheckItem(title: AppLocalization.string("Local library"),
+                detail: AppLocalization.string("Library counts unavailable"), state: .unavailable))
+        }
+        let temporaryStorage = SharedDatabase.shared.isUsingTemporaryStorage
         items.append(SystemCheckItem(
             title: AppLocalization.string("Storage & Sync"),
-            detail: AppLocalization.string("SwiftData local database with background iCloud sync"),
-            state: .good
+            detail: temporaryStorage
+                ? AppLocalization.string("Temporary memory storage; changes may not survive closing the app.")
+                : AppLocalization.string("Persistent local storage is available. iCloud sync completion is not verified here."),
+            state: temporaryStorage ? .warning : .good
         ))
 
         let endpointResults = await checkAPIEndpoints()
+        guard communitySession.isDeveloper, !Task.isCancelled else { return }
         let reachableCount = endpointResults.filter(\.reachable).count
         items.append(SystemCheckItem(
             title: AppLocalization.string("LearnAlert API"),
@@ -2768,10 +2804,17 @@ private struct SystemCheckView: View {
             detail: AppLocalization.string("LearnAlert \(version) · iOS \(UIDevice.current.systemVersion) · \(ProcessInfo.processInfo.isLowPowerModeEnabled ? AppLocalization.string("Low Power Mode on") : AppLocalization.string("Low Power Mode off"))"),
             state: .good
         ))
+    }
+
+    @MainActor
+    private func revokeAccess() {
+        items = []
         isRunning = false
+        dismiss()
     }
 
     private func checkAPIEndpoints() async -> [(name: String, detail: String, reachable: Bool)] {
+        guard communitySession.isDeveloper, !Task.isCancelled else { return [] }
         let endpoints = [
             (AppLocalization.string("API host"), ""),
             (AppLocalization.string("Generate deck endpoint"), "v1/decks/generate"),
@@ -2794,7 +2837,7 @@ private struct SystemCheckView: View {
                         let reachable = (200..<500).contains(status)
                         return (index, endpoint.0, AppLocalization.string("HTTP \(status) · host responded"), reachable)
                     } catch {
-                        return (index, endpoint.0, error.localizedDescription, false)
+                        return (index, endpoint.0, AppLocalization.string("Could not reach the API host"), false)
                     }
                 }
             }
