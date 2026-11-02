@@ -69,6 +69,14 @@ enum LearnAlertStyle {
         light: UIColor(red: 0.08, green: 0.16, blue: 0.30, alpha: 0.10),
         dark: UIColor(white: 0, alpha: 0.12)
     )
+    static let homeShadowBlue = Color.adaptive(
+        light: UIColor(red: 0.22, green: 0.40, blue: 0.56, alpha: 0.24),
+        dark: UIColor(red: 0.66, green: 0.83, blue: 0.97, alpha: 0.24)
+    )
+    static let homeShadowViolet = Color.adaptive(
+        light: UIColor(red: 0.36, green: 0.44, blue: 0.88, alpha: 0.17),
+        dark: UIColor(red: 0.48, green: 0.49, blue: 0.84, alpha: 0.16)
+    )
     static let courseLavender = Color.adaptive(light: UIColor(red: 0.925, green: 0.914, blue: 0.985, alpha: 1), dark: UIColor(red: 0.25, green: 0.23, blue: 0.43, alpha: 1))
     static let glassTint = Color.adaptive(light: UIColor(white: 1, alpha: 0.30), dark: UIColor(white: 1, alpha: 0.10))
     // Fields previously faded this color again; preserve that weight only in dark mode.
@@ -151,8 +159,8 @@ extension View {
         background {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(LinearGradient(colors: [
-                    LearnAlertStyle.appAccentForeground.opacity(0.18),
-                    LearnAlertStyle.periwinkle.opacity(0.12)
+                    LearnAlertStyle.homeShadowBlue,
+                    LearnAlertStyle.homeShadowViolet
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .blur(radius: 3)
                 .offset(y: 2)
