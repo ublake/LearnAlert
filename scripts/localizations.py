@@ -6,7 +6,7 @@ in Localizable.xcstrings; this tool preserves existing translations and old keys
 """
 import argparse, collections, json, pathlib, re, sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-CATALOG = ROOT / 'LearnAlert/Localizable.xcstrings'
+CATALOG = ROOT / 'LearnAlert/Resources/Localization/Localizable.xcstrings'
 LANGUAGES = ('es', 'pt-BR', 'fr', 'de', 'ja', 'ko')
 TOKEN = re.compile(r'%(?:(\d+)\$)?(?:[-+#0 ]*\d*(?:\.\d+)?)(lld|llu|ld|lu|d|u|f|g|@|s)|%%')
 

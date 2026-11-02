@@ -47,6 +47,10 @@ For command-line simulator builds that exercise Sign in with Apple, keep `CODE_S
 
 TikTok advertising measurement is disabled by default. Its integration code is retained, but disabled builds exclude the SDK and tracking permission prompt. `pod install` builds this default configuration. To intentionally enable it later, run `LEARNALERT_ENABLE_TIKTOK=1 pod install`, then rebuild; this also updates the tracking privacy declarations. To disable it again, run `LEARNALERT_ENABLE_TIKTOK=0 pod install` and rebuild.
 
+## Project organization
+
+App code is grouped into `App`, `Core`, `UI`, and `Features` folders, with tests grouped by feature. See [Project structure](docs/project-structure.md) for the folder map and shared notification-extension file rules.
+
 ## Privacy
 
 AI features process submitted content through LearnAlert's backend and third-party AI services. Review the privacy policy before submitting personal or sensitive material. AI-generated cards can contain mistakes; check them against your source material.

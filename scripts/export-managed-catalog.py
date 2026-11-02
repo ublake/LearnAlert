@@ -17,13 +17,13 @@ output.parent.mkdir(parents=True, exist_ok=True)
 base = Path(__file__).resolve().parents[1] / "LearnAlert"
 chunks=['import Foundation\nimport SwiftUI\nimport CoreGraphics\n']
 for file in ['CourseModels.swift','CourseActivity.swift','CourseCurriculum.swift','CourseCurriculum+Korean.swift','CourseCurriculum+ExpandedKorean.swift','CourseCurriculum+Practice.swift','CourseCurriculum+FoundationWorkshop.swift']:
- s=(base/file).read_text();s='\n'.join(x for x in s.splitlines() if not x.startswith('import '));chunks.append(s)
+ s=(base/'Features/Languages'/file).read_text();s='\n'.join(x for x in s.splitlines() if not x.startswith('import '));chunks.append(s)
 chunks.append((base/'CourseSectionGuide.swift').read_text().split('struct CourseGuideSheet:')[0].replace('import SwiftUI',''))
-chunks.append((base/'Models.swift').read_text().split('@Model')[0].replace('import SwiftData',''))
-chunks.append((base/'CardFieldMedia.swift').read_text().split('enum CardChoiceIdentity')[0].replace('import SwiftUI',''))
+chunks.append((base/'Core/Models.swift').read_text().split('@Model')[0].replace('import SwiftData',''))
+chunks.append((base/'Features/Cards/CardFieldMedia.swift').read_text().split('enum CardChoiceIdentity')[0].replace('import SwiftUI',''))
 # Use the actual portable Anki value definition; exclude only its SwiftData cleanup.
-chunks.append((base/'AnkiCardContent.swift').read_text().split('nonisolated enum AnkiMediaCleanup')[0].replace('import SwiftData',''))
-chunks.append((base/'ManagedCatalog.swift').read_text().split('// The manifest')[0].replace('import Foundation','').replace('import Combine',''))
+chunks.append((base/'Features/Anki/AnkiCardContent.swift').read_text().split('nonisolated enum AnkiMediaCleanup')[0].replace('import SwiftData',''))
+chunks.append((base/'Core/Catalog/ManagedCatalog.swift').read_text().split('// The manifest')[0].replace('import Foundation','').replace('import Combine',''))
 chunks.append('''
 // Export does not play or resolve runtime audio. Keep these service boundaries
 // deterministic so schema export never initializes an audio device/synthesizer.
