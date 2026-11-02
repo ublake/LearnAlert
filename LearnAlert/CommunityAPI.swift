@@ -204,6 +204,7 @@ struct CommunityAPI {
         let categoryTag: String
         let colorHex: String
         let deckType: String
+        var acceptedRules = false
     }
     struct PublishBody: Encodable {
         let name: String
@@ -215,6 +216,7 @@ struct CommunityAPI {
         var origin = "personal"
         var publisherHandle: String? = nil
         var ankiMedia: [String: [String: String]]? = nil
+        var acceptedRules = false
     }
 
     struct AppleReauthentication: Encodable {
@@ -309,12 +311,16 @@ struct CommunityAPI {
         return result.id
     }
 
-    func upload(_ data: Data, contentType: String, deckID: String, token: String) async throws -> String {
+    func upload(_ data: Data, contentType: String, deckID: String, token: String, acceptedRules: Bool = false) async throws -> String {
+        guard acceptedRules else {
+            throw CommunityAPIError(status: 400, message: "Accept the sharing rules before uploading.", code: "COMMUNITY_RULES_REQUIRED")
+        }
         var request = URLRequest(url: endpoint("decks/\(deckID)/media"))
         request.httpMethod = "POST"
         request.timeoutInterval = 180
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("true", forHTTPHeaderField: "X-Community-Rules-Accepted")
         let (responseData, response) = try await session.upload(for: request, from: data)
         try validate(responseData, response: response)
         return try JSONDecoder().decode(IDResult.self, from: responseData).id
@@ -615,8 +621,16 @@ enum CommunityDeckTransfer {
     }
 
     static func publish(deck: Deck, category: String, description: String, token: String, publisherHandle: String? = nil,
+                        acceptedRules: Bool = false,
                         api: CommunityAPI? = nil,
                         progress: @escaping (String) -> Void) async throws -> String {
+        guard acceptedRules else {
+            throw CommunityAPIError(status: 400, message: "Accept the sharing rules before uploading.", code: "COMMUNITY_RULES_REQUIRED")
+        }
+        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty, description.utf16.count <= 2000 else {
+            throw CommunityAPIError(status: 400, message: "Add a description between 1 and 2,000 characters.", code: "COMMUNITY_DESCRIPTION_REQUIRED")
+        }
         let api = api ?? CommunityAPI()
         if let reason = deck.sharingRestriction(allowAnkiUploads: false) {
             throw CommunityAPIError(status: 403, message: reason)
@@ -629,7 +643,7 @@ enum CommunityDeckTransfer {
             throw CommunityAPIError(status: 400, message: "Publish between 1 and 500 cards per deck.")
         }
         let metadata = CommunityAPI.Metadata(name: deck.name, description: description, categoryTag: category,
-                                             colorHex: deck.colorHex, deckType: deck.deckType)
+                                             colorHex: deck.colorHex, deckType: deck.deckType, acceptedRules: acceptedRules)
         // Capture the deck before suspension, and verify all local media before creating a draft.
         var uploads: [Upload] = []
         var seen = Set<String>()
@@ -716,7 +730,7 @@ enum CommunityDeckTransfer {
             for (index, upload) in uploads.enumerated() {
                 try Task.checkCancellation()
                 progress("Uploading attachment \(index + 1) of \(uploads.count)…")
-                remoteIDs[upload.key] = try await api.upload(upload.data, contentType: upload.contentType, deckID: id, token: token)
+                remoteIDs[upload.key] = try await api.upload(upload.data, contentType: upload.contentType, deckID: id, token: token, acceptedRules: acceptedRules)
             }
             for index in cards.indices {
                 cards[index].promptImageID = cards[index].promptImageID.flatMap { remoteIDs[$0] }
@@ -730,7 +744,8 @@ enum CommunityDeckTransfer {
             let remoteAnkiMedia = ankiMedia.mapValues { $0.compactMapValues { remoteIDs[$0] } }
             try await api.publish(.init(name: metadata.name, description: metadata.description, categoryTag: metadata.categoryTag,
                 colorHex: metadata.colorHex, deckType: metadata.deckType, cards: cards, origin: deck.isAnkiImport ? "anki" : "personal",
-                publisherHandle: publisherHandle, ankiMedia: remoteAnkiMedia.isEmpty ? nil : remoteAnkiMedia), deckID: id, token: token)
+                publisherHandle: publisherHandle, ankiMedia: remoteAnkiMedia.isEmpty ? nil : remoteAnkiMedia,
+                acceptedRules: acceptedRules), deckID: id, token: token)
             return id
         } catch {
             if existingID == nil { try? await api.remove(deckID: id, token: token) }

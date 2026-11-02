@@ -1164,7 +1164,6 @@ private struct HomeAlertSetupCard: View {
             }
             .padding(16)
             .appCardSurface(cornerRadius: 20, shadow: false)
-            .tightGradientShadow(cornerRadius: 20)
             .overlay {
                 if isTutorialScheduleHighlighted {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1641,7 +1640,6 @@ private struct HomeStudyCard: View {
             }
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .tightGradientShadow(cornerRadius: 20)
             .background {
                 if isTutorialHighlighted {
                     Color.clear.tutorialCoachTarget(.firstDeck)

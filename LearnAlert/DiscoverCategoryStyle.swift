@@ -49,7 +49,11 @@ private enum DiscoverCategoryChoice: Identifiable {
         guard case .language(let language) = self else { return nil }
         return language.discoverFlagAsset
     }
-    static var languages: [Self] { CommunityDeckLanguage.allCases.filter { $0 != .all }.map(Self.language) }
+    static var languages: [Self] {
+        let order: [CommunityDeckLanguage] = [.english, .spanish, .korean, .french, .german,
+                                              .italian, .portuguese, .japanese, .chinese, .arabic]
+        return order.map(Self.language)
+    }
     static var topics: [Self] { CommunityFeedView.categories.filter { $0 != "All" }.map(Self.topic) }
 }
 
@@ -57,7 +61,7 @@ private extension CommunityDeckLanguage {
     var discoverFlagAsset: String? {
         switch self {
         case .all: nil
-        case .english: "FlagUnitedKingdom"
+        case .english: "FlagUnitedStates"
         case .spanish: "FlagSpain"
         case .french: "FlagFrance"
         case .german: "FlagGermany"

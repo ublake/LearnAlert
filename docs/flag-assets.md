@@ -15,3 +15,7 @@ Additional original rectangular PNGs downloaded October 28, 2026. Their source p
 - FlagPortugal: [source page](https://flagdownload.com/flag-of-portugal/) · [PNG](https://flagdownload.com/wp-content/uploads/Flag_of_Portugal-512x341.png)
 - FlagChina: [source page](https://flagdownload.com/flag-of-peoples-republic-of-china/) · [PNG](https://flagdownload.com/wp-content/uploads/Flag_of_Peoples_Republic_of_China-512x341.png)
 - FlagSaudiArabia: [source page](https://flagdownload.com/flag-of-saudi-arabia/) · [PNG](https://flagdownload.com/wp-content/uploads/Flag_of_Saudi_Arabia-512x341.png)
+
+Discover's English flag was changed to the United States on November 2, 2026.
+
+- FlagUnitedStates: [source and public-domain designation](https://commons.wikimedia.org/wiki/File:Flag_of_the_United_States.svg) · [PNG](https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a4/Flag_of_the_United_States.svg/960px-Flag_of_the_United_States.svg.png). Flat rectangular rendering, 960 × 506 pixels; no shaped border or emoji treatment. The UK asset remains for the retained language-rail implementation.

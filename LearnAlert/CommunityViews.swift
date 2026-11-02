@@ -172,7 +172,20 @@ struct CommunityFeedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !showsTitle {
-                DiscoverCategoryBrowser(style: .pocketMenus, category: $store.category, language: $store.language)
+                HStack(alignment: .top, spacing: 8) {
+                    DiscoverCategoryBrowser(style: .pocketMenus, category: $store.category, language: $store.language)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(action: onShare) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(LearnAlertStyle.appAccentForeground)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Upload a deck")
+                    .accessibilityHint("Submit a deck to Shared decks for review")
+                }
             }
             HStack(spacing: 8) {
                 if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }
@@ -800,8 +813,8 @@ struct ShareDeckToCommunitySheet: View {
     @State private var isSubmitted = false
     @State private var publishError: String?
     @State private var showingProfile = false
-    @State private var showingPreview = false
     @State private var publisherHandle = ""
+    @State private var acceptedRules = false
     private var availableDecks: [Deck] { libraryDecks.filter(\.canPresentCommunitySharing) }
     private var selectedDeck: Deck? { availableDecks.first { $0.id == selectedDeckID } }
     private var canPublishSelected: Bool {
@@ -809,6 +822,17 @@ struct ShareDeckToCommunitySheet: View {
         return deck.provenanceSharingRestriction(allowAnkiUploads: false) == nil
     }
     private var listingCategories: [String] { CommunityFeedView.categories.filter { $0 != "All" } }
+    private var trimmedDescription: String { deckDescription.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var requiredFieldsComplete: Bool {
+        guard let deck = selectedDeck, canPublishSelected,
+              (1...500).contains(deck.cardCount),
+              !deck.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, deck.name.utf16.count <= 120,
+              !category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, category.utf16.count <= 60,
+              !trimmedDescription.isEmpty, trimmedDescription.utf16.count <= 2000,
+              acceptedRules else { return false }
+        return !session.isDeveloper || publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).utf16.count <= 80
+    }
+    private var canSubmit: Bool { requiredFieldsComplete && !isPublishing && !isSubmitted }
 
     var body: some View {
         NavigationStack {
@@ -827,7 +851,6 @@ struct ShareDeckToCommunitySheet: View {
                             }.foregroundStyle(LearnAlertStyle.textPrimary).padding(16).appCardSurface(cornerRadius: 20)
                         }.disabled(isPublishing)
                         if let deck = selectedDeck {
-                            listingPreview(deck)
                             if let reason = deck.provenanceSharingRestriction(allowAnkiUploads: false) {
                                 Text(reason).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
                             }
@@ -843,10 +866,16 @@ struct ShareDeckToCommunitySheet: View {
                                     Picker("Category", selection: $category) { ForEach(listingCategories, id: \.self) { Text($0).tag($0) } }.pickerStyle(.menu)
                                 }
                                 Divider()
-                                TextField("A short description", text: $deckDescription, axis: .vertical).lineLimit(2...4)
+                                Text("Description (required)").font(.subheadline.weight(.medium))
+                                TextField("What will people learn?", text: $deckDescription, axis: .vertical).lineLimit(2...4)
                                     .font(.body).textInputAutocapitalization(.sentences)
+                                if trimmedDescription.utf16.count > 2000 {
+                                    Text("Keep the description to 2,000 characters or fewer.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed)
+                                }
                             }.padding(16).appCardSurface(cornerRadius: 20).disabled(isPublishing)
-                            if deck.cards.count > 500 { Text("Share up to 500 cards in one deck.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
+                            sharingRules
+                            if deck.cardCount == 0 { Text("Add at least one card before sharing.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary) }
+                            else if deck.cardCount > 500 { Text("Share up to 500 cards in one deck.").font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed) }
                         }
                     }
                     if let error = publishError { Text(error).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
@@ -857,17 +886,19 @@ struct ShareDeckToCommunitySheet: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(isPublishing) } }
             .safeAreaInset(edge: .bottom) {
                 if canPublishSelected {
+                    let readyToSubmit = canSubmit
                     VStack(spacing: 10) {
                         if isPublishing { ProgressView(progress).font(.caption) }
                         if selectedDeck?.publishedCommunityID != nil && !isSubmitted {
                             Text("Updates make the shared copy private until approved.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         }
-                        Text("Review can take up to 3 days. Cards and media stay private until approved. Study history stays private.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary).multilineTextAlignment(.center)
                         Button { beginPublish() } label: {
                             Label(isSubmitted ? "Awaiting review" : selectedDeck?.publishedCommunityID == nil ? "Submit for review" : "Submit update for review", systemImage: isSubmitted ? "clock.fill" : "square.and.arrow.up")
                                 .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 48)
-                        }.buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk)
-                            .disabled(isPublishing || isSubmitted || selectedDeck?.cards.isEmpty == true || (selectedDeck?.cards.count ?? 0) > 500)
+                        }.buttonStyle(.borderedProminent)
+                            .tint(readyToSubmit ? LearnAlertStyle.appAccent : LearnAlertStyle.insetSurface)
+                            .foregroundStyle(readyToSubmit ? LearnAlertStyle.appAccentInk : LearnAlertStyle.textSecondary)
+                            .disabled(!readyToSubmit)
                     }.padding(16).background(LearnAlertStyle.courseSurface)
                 }
             }
@@ -888,69 +919,64 @@ struct ShareDeckToCommunitySheet: View {
             .onChange(of: deckDescription) { _, _ in isSubmitted = false }
             .onChange(of: publisherHandle) { _, _ in isSubmitted = false }
             .sheet(isPresented: $showingProfile) {
-                CommunityProfileSheet(saveTitle: "Save & submit", onSave: { showingProfile = false; Task { await publish() } })
+                CommunityProfileSheet(saveTitle: "Save & submit", onSave: {
+                    showingProfile = false
+                    guard requiredFieldsComplete else { return }
+                    Task { await publish() }
+                })
             }
-            .sheet(isPresented: $showingPreview) { if let deck = selectedDeck { LocalCommunityPreviewSheet(deck: deck) } }
         }
     }
 
-    private func listingPreview(_ deck: Deck) -> some View {
-        let images = deck.cards.reduce(0) { $0 + $1.fieldMedia.values.filter { $0.image != nil }.count }
-        let audio = deck.cards.reduce(0) { $0 + $1.fieldMedia.values.filter { $0.audio != nil }.count }
+    private var sharingRules: some View {
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                if session.isSignedIn && session.profile.isComplete { CommunityAvatarView(avatar: session.profile.avatar).frame(width: 32, height: 32) }
-                Text(session.isDeveloper && !publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? publisherHandle : session.isSignedIn ? session.handle : "Your shared deck preview").font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
+            HStack {
+                Text("Sharing rules").font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                Link("Terms", destination: URL(string: "https://learnalertapp.com/terms")!)
+                Link("Privacy", destination: URL(string: "https://learnalertapp.com/privacy-policy")!)
             }
-            Text(deck.name).font(.title3.weight(.semibold))
-            if !deckDescription.isEmpty { Text(deckDescription).font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary) }
-            HStack(spacing: 12) {
-                Label("\(deck.cards.count)", systemImage: "rectangle.stack")
-                if images > 0 { Label("\(images)", systemImage: "photo") }
-                if audio > 0 { Label("\(audio)", systemImage: "speaker.wave.2") }
-            }.font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
-            Button { showingPreview = true } label: { Label("Preview cards", systemImage: "eye").font(.subheadline.weight(.medium)).frame(minHeight: 44) }
+            .font(.caption)
+            Text("Share original content or content you have permission to publish. No harmful, misleading, or private information.")
+                .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+            Text("Review can take up to 3 days, and admins may edit or remove submissions. Approved decks become public and downloadable; saved copies can remain after removal. Approval doesn’t guarantee accuracy. Your study history stays private.")
+                .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+            Button { acceptedRules.toggle() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: acceptedRules ? "checkmark.square.fill" : "square")
+                        .font(.title3).foregroundStyle(acceptedRules ? LearnAlertStyle.appAccentForeground : LearnAlertStyle.textSecondary)
+                    Text("I accept these sharing rules").font(.subheadline.weight(.medium))
+                        .foregroundStyle(LearnAlertStyle.textPrimary)
+                    Spacer(minLength: 0)
+                }.frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(isPublishing)
+                .accessibilityLabel("Accept community sharing rules")
+                .accessibilityValue(acceptedRules ? "Accepted" : "Not accepted")
+                .accessibilityAddTraits(acceptedRules ? .isSelected : [])
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading).appCardSurface(cornerRadius: 20)
     }
     private func loadMetadata() {
         category = selectedDeck?.communityCategory ?? "General"; deckDescription = selectedDeck?.communityDescription ?? ""
-        isSubmitted = false; publishError = nil; publisherHandle = ""
+        isSubmitted = false; publishError = nil; publisherHandle = ""; acceptedRules = false
     }
     private func beginPublish() {
+        guard canSubmit else { return }
         if !session.isSignedIn || session.needsProfileSetup { showingProfile = true }
         else { Task { await publish() } }
     }
     @MainActor private func publish() async {
-        guard let deck = selectedDeck, let token = session.token, !isPublishing else { return }
+        guard requiredFieldsComplete, let deck = selectedDeck, let token = session.token,
+              !isPublishing, !isSubmitted else { return }
         isPublishing = true; publishError = nil
         defer { isPublishing = false }
         do {
-            let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: deckDescription, token: token,
-                publisherHandle: session.isDeveloper ? publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines) : nil) { progress = $0 }
-            deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = deckDescription
+            let id = try await CommunityDeckTransfer.publish(deck: deck, category: category, description: trimmedDescription, token: token,
+                publisherHandle: session.isDeveloper ? publisherHandle.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+                acceptedRules: acceptedRules) { progress = $0 }
+            deck.publishedCommunityID = id; deck.communityCategory = category; deck.communityDescription = trimmedDescription
             try context.save(); isSubmitted = true; HapticFeedback.success()
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
         } catch { session.handle(error); publishError = error.localizedDescription }
-    }
-}
-
-private struct LocalCommunityPreviewSheet: View {
-    let deck: Deck
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    ForEach(Array(deck.cards.sorted { $0.orderIndex < $1.orderIndex }.prefix(5))) { card in
-                        CommunitySampleCardView(card: CommunityCardPayload(id: card.id.uuidString, question: card.question, correctAnswer: card.correctAnswer,
-                            options: card.options, hint: card.hint, cardType: card.cardType.rawValue, matchingLeftItems: card.matchingLeftItems,
-                            matchingRightItems: card.matchingRightItems, sectionName: card.section?.name ?? "", optionImageIDs: []), localCard: card)
-                    }
-                }.padding(20)
-            }.background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
-                .navigationTitle("Card preview").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
     }
 }
 

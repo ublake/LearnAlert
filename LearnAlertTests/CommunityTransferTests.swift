@@ -111,7 +111,7 @@ struct CommunityTransferTests {
             let detail = CommunityDeckPayload(id: draftID, name: deck.name, description: "", authorHandle: "@tester", categoryTag: "General", colorHex: "#A9D7F5", deckType: "Mixed", cardCount: 3, downloadCount: 0, publishedAt: nil, cards: published)
             return (200, try json(["deck": JSONSerialization.jsonObject(with: JSONEncoder().encode(detail))]))
         }
-        _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "test", acceptedRules: true, api: api()) { _ in }
         #expect(mediaBytes.count == 2)
         let summary = CommunityDeckPayload(id: draftID, name: deck.name, description: "", authorHandle: "@tester", categoryTag: "General", colorHex: "#A9D7F5", deckType: "Mixed", cardCount: 3, downloadCount: 0, publishedAt: nil, cards: nil)
         downloaded = try await CommunityDeckTransfer.download(summary, api: api()) { _ in }.cards
@@ -146,7 +146,7 @@ struct CommunityTransferTests {
             #expect(cards[0]["promptAudioID"] == nil || cards[0]["promptAudioID"] is NSNull)
             return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
         }
-        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "test", acceptedRules: true, api: api()) { _ in }
         #expect(id == draftID)
     }
 
@@ -197,7 +197,7 @@ struct CommunityTransferTests {
             }
             return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
         }
-        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "test", acceptedRules: true, api: api()) { _ in }
         #expect(id == draftID)
         #expect(uploads == 2)
     }
@@ -330,7 +330,7 @@ struct CommunityTransferTests {
             published = try JSONSerialization.jsonObject(with: requestBody(request)) as? [String: Any]
             return (202, try json(["id": draftID, "success": true, "reviewStatus": "pending"]))
         }
-        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "Science", description: "With media", token: "test", api: api()) { _ in }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "Science", description: "With media", token: "test", acceptedRules: true, api: api()) { _ in }
         #expect(id == draftID)
         #expect(uploadedTypes == ["image/jpeg", "audio/wav"])
         #expect(published?["sourceText"] == nil)
@@ -438,7 +438,7 @@ struct CommunityTransferTests {
             return (200, try json(["id": newID, "success": true]))
         }
         defer { CommunityTestProtocol.response = nil }
-        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "new-account", api: api()) { _ in }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "new-account", acceptedRules: true, api: api()) { _ in }
         #expect(id == newID)
         #expect(paths == ["/v1/community/account/decks", "/v1/community/decks/drafts", "/v1/community/decks/\(newID)"])
         #expect(deck.publishedCommunityID == previousID)
@@ -463,7 +463,7 @@ struct CommunityTransferTests {
             return (202, try json(["id": newID, "success": true]))
         }
         defer { CommunityTestProtocol.response = nil }
-        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "owner", api: api()) { _ in }
+        let id = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "owner", acceptedRules: true, api: api()) { _ in }
         #expect(id == newID)
     }
 
@@ -493,7 +493,7 @@ struct CommunityTransferTests {
             deck.cards = [Flashcard(question: "Q", correctAnswer: "A", cardType: .tapReveal)]
             #expect(!deck.canShareToCommunity)
             do {
-                _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "", token: "test", api: api()) { _ in }
+                _ = try await CommunityDeckTransfer.publish(deck: deck, category: "General", description: "A shared study deck.", token: "test", acceptedRules: true, api: api()) { _ in }
                 Issue.record("A restricted deck was published")
             } catch let error as CommunityAPIError { #expect(error.status == 403) }
         }
@@ -797,7 +797,7 @@ struct CommunityTransferTests {
             #expect((body["ankiMedia"] as? [String:[String:String]])?[folder]?["tone.wav"] == mediaID)
             return (202, try json(["id":id]))
         }
-        #expect(try await CommunityDeckTransfer.publish(deck: deck, category: "Languages", description: "", token: "test", publisherHandle: "Fun author", api: api()) { _ in } == id)
+        #expect(try await CommunityDeckTransfer.publish(deck: deck, category: "Languages", description: "A shared study deck.", token: "test", publisherHandle: "Fun author", acceptedRules: true, api: api()) { _ in } == id)
         #expect(uploaded)
         let summary = CommunityDeckPayload(id: id, name: deck.name, description: "", authorHandle: "Fun author", categoryTag: "Languages", colorHex: "#123456", deckType: "Anki", cardCount: 1, downloadCount: 0, publishedAt: nil)
         var detail = summary
