@@ -167,13 +167,12 @@ struct CommunityFeedView: View {
     @State private var downloadProgress = ""
     @State private var message: String?
     @State private var refreshLikesOnDismiss = false
-    @AppStorage(DiscoverCategoryStyle.storageKey) private var categoryStyleRaw = DiscoverCategoryStyle.none.rawValue
     static let categories = ["All", "General", "Medical", "Coding", "Languages", "Law", "Science", "Math", "History", "Exam Prep"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !showsTitle, let categoryStyle = DiscoverCategoryStyle(rawValue: categoryStyleRaw), categoryStyle != .none {
-                DiscoverCategoryBrowser(style: categoryStyle, category: $store.category, language: $store.language)
+            if !showsTitle {
+                DiscoverCategoryBrowser(style: .pocketMenus, category: $store.category, language: $store.language)
             }
             HStack(spacing: 8) {
                 if showsTitle { Text("Shared decks").font(.title3.weight(.semibold)) }

@@ -1163,7 +1163,8 @@ private struct HomeAlertSetupCard: View {
                 }
             }
             .padding(16)
-            .appCardSurface(cornerRadius: 20)
+            .appCardSurface(cornerRadius: 20, shadow: false)
+            .tightGradientShadow(cornerRadius: 20)
             .overlay {
                 if isTutorialScheduleHighlighted {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -1640,7 +1641,7 @@ private struct HomeStudyCard: View {
             }
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+            .tightGradientShadow(cornerRadius: 20)
             .background {
                 if isTutorialHighlighted {
                     Color.clear.tutorialCoachTarget(.firstDeck)
@@ -1734,7 +1735,7 @@ private struct HomeStudyCard: View {
         .simultaneousGesture(TapGesture().onEnded { if !isScheduleRevealed { onTapped?() } })
         .accessibilityLabel("Open \(deck.name), \(cardCount) cards")
         .accessibilityValue("\(studyMetadata.map { "\($0.dueCount) cards due" } ?? (metadataUnavailable ? "Due count unavailable" : "Loading due count")). \(lastStudiedLabel(at: .now))")
-        .appCardSurface()
+        .appCardSurface(shadow: false)
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(isTutorialHighlighted ? LearnAlertStyle.appAccent : Color.clear,
@@ -2626,8 +2627,6 @@ struct AppSettingsView: View {
                 )
 
                 SettingsSupportGroup()
-
-                SettingsPreviewGroup()
 
                 Spacer().frame(height: usesNativeStudyNavigation ? 24 : 120)
             }

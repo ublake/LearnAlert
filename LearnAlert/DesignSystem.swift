@@ -140,11 +140,25 @@ struct EditorialSurface: ViewModifier {
 }
 
 extension View {
-    func appCardSurface(cornerRadius: CGFloat = 20) -> some View {
+    func appCardSurface(cornerRadius: CGFloat = 20, shadow: Bool = true) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         return background(LearnAlertStyle.courseSurface, in: shape)
             .overlay(shape.strokeBorder(LearnAlertStyle.cardBorder, lineWidth: 1))
-            .shadow(color: LearnAlertStyle.cardShadow, radius: 10, y: 4)
+            .shadow(color: shadow ? LearnAlertStyle.cardShadow : .clear, radius: shadow ? 10 : 0, y: shadow ? 4 : 0)
+    }
+
+    func tightGradientShadow(cornerRadius: CGFloat = 20) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(LinearGradient(colors: [
+                    LearnAlertStyle.appAccentForeground.opacity(0.18),
+                    LearnAlertStyle.periwinkle.opacity(0.12)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .blur(radius: 3)
+                .offset(y: 2)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     func lightModeOutline(cornerRadius: CGFloat = 14, opacity: Double = 1) -> some View {
