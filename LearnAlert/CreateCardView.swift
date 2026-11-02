@@ -127,11 +127,11 @@ struct CreateCardView: View {
                     Text("Swipe left on \(hasChoiceAnswers ? "answer choices" : "fields") to add images or audio files.")
                         .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                     VStack(alignment: .leading, spacing: 8) {
-                        Button { withAnimation(.snappy) { hintEnabled.toggle() } } label: {
-                            Label("Hint", systemImage: hintEnabled ? "checkmark.square.fill" : "square")
-                                .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                        }.buttonStyle(.plain).foregroundStyle(hintEnabled ? LearnAlertStyle.indigo : LearnAlertStyle.textSecondary)
-                            .accessibilityValue(hintEnabled ? "On" : "Off")
+                        Toggle("Hint (optional)", isOn: $hintEnabled.animation(.snappy))
+                            .toggleStyle(.switch)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(LearnAlertStyle.textSecondary)
+                            .tint(LearnAlertStyle.indigo)
                         if hintEnabled { mediaField("hint", title: "", placeholder: "A small clue…", text: $hint) }
                     }.padding(.horizontal, 12).padding(.vertical, 6).editorSurface()
                 }
@@ -158,18 +158,18 @@ struct CreateCardView: View {
             if selectedType == .fillBlank {
                 Button { if !question.contains("___") { question += question.isEmpty ? "___" : " ___" } } label: { Label("Insert blank", systemImage: "plus.square.dashed").font(.caption) }.frame(maxWidth: .infinity, alignment: .trailing)
             }
-            mediaField("prompt", title: selectedType == .vocabulary ? "TERM" : selectedType == .fillBlank ? "SENTENCE" : "FRONT", placeholder: selectedType == .fillBlank ? "Sentence with a ___ blank" : "Text, image or audio", text: $question)
+            mediaField("prompt", title: "", placeholder: selectedType == .vocabulary ? "Term" : selectedType == .fillBlank ? "Sentence with a ___ blank" : "Front", text: $question, minimumHeight: 56)
             if selectedType == .fillBlank {
                 Toggle("Answer choices", isOn: $blankUsesChoices.animation(.snappy))
                     .font(.subheadline).accessibilityHint("Choose an answer to place it into the sentence instead of typing.")
             }
             if selectedType == .fillBlank && blankUsesChoices { answerChoicesEditor }
-            else { mediaField("answer", title: selectedType == .vocabulary ? "DEFINITION" : "ANSWER", placeholder: "Text, image or audio", text: $answer) }
+            else { mediaField("answer", title: "", placeholder: selectedType == .vocabulary ? "Definition" : "Answer", text: $answer, minimumHeight: 56) }
         }.padding(12).editorSurface()
     }
     private var multipleChoiceEditor: some View {
         VStack(spacing: 12) {
-            mediaField("prompt", title: "QUESTION", placeholder: "Text, image or audio", text: $question)
+            mediaField("prompt", title: "", placeholder: "Question", text: $question, minimumHeight: 56)
             answerChoicesEditor
         }.padding(12).editorSurface()
     }
@@ -194,7 +194,7 @@ struct CreateCardView: View {
     }
     private var matchingEditor: some View {
         VStack(spacing: 12) {
-            mediaField("prompt", title: "PROMPT", placeholder: "Match the pairs (optional)", text: $question)
+            mediaField("prompt", title: "", placeholder: "Match the pairs (optional)", text: $question, minimumHeight: 56)
             HStack { Text("PAIRS").font(.caption.weight(.semibold)); Spacer(); Picker("Pairs", selection: $visiblePairCount) { ForEach(2...20, id: \.self) { Text("\($0)").tag($0) } }.pickerStyle(.menu) }
             ForEach(0..<visiblePairCount, id: \.self) { index in
                 HStack(alignment: .top, spacing: 8) {
@@ -219,9 +219,10 @@ struct CreateCardView: View {
             onPhoto: { loadImage($0, key: key) }, onAudio: {}, onRemoveImage: { images[key] = nil; fields[key]?.image = nil }, onRemoveAudio: {},
             onCrop: { if let image = images[key] ?? CardImageStore.loadImage(named: fields[key]?.image) { pendingImageCrop = .init(image: image, key: key) } })
     }
-    private func mediaField(_ key: String, title: String, placeholder: String, text: Binding<String>) -> some View {
+    private func mediaField(_ key: String, title: String, placeholder: String, text: Binding<String>, minimumHeight: CGFloat = 44) -> some View {
         CardEditorMediaField(title: title, placeholder: placeholder, text: text,
             image: images[key] ?? CardImageStore.loadImage(named: fields[key]?.image), audio: fields[key]?.audio,
+            minimumHeight: minimumHeight,
             onPhoto: { loadImage($0, key: key) }, onAudio: { audioTarget = key; showingAudioImporter = true },
             onRemoveImage: { images[key] = nil; fields[key]?.image = nil }, onRemoveAudio: { fields[key]?.audio = nil },
             onCrop: { if let image = images[key] ?? CardImageStore.loadImage(named: fields[key]?.image) { pendingImageCrop = .init(image: image, key: key) } })
@@ -317,15 +318,18 @@ private struct CardEditorMediaField: View {
     let image: UIImage?
     let audio: String?
     var imageOnly = false
+    var minimumHeight: CGFloat = 44
     let onPhoto: (PhotosPickerItem) -> Void
     let onAudio: () -> Void
     let onRemoveImage: () -> Void
     let onRemoveAudio: () -> Void
     let onCrop: () -> Void
     @State private var photo: PhotosPickerItem?
-    @State private var open = false
-    @GestureState private var drag: CGFloat = 0
+    @State private var revealOffset: CGFloat = 0
+    @State private var dragOrigin: CGFloat?
+    @GestureState private var isDragging = false
     private let reveal: CGFloat = 100
+    private var attachmentsOpen: Bool { revealOffset <= -reveal + 1 && dragOrigin == nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !title.isEmpty { Text(title).font(.caption.weight(.semibold)).foregroundStyle(LearnAlertStyle.textSecondary) }
@@ -334,21 +338,20 @@ private struct CardEditorMediaField: View {
             } else {
                 ZStack(alignment: .trailing) {
                     HStack(spacing: 4) { photoButton; Button(action: onAudio) { Image(systemName: "waveform.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Attach audio") }
-                        .foregroundStyle(LearnAlertStyle.indigo).frame(width: reveal).opacity(open || drag < -8 ? 1 : 0)
-                        .accessibilityHidden(!open)
+                        .foregroundStyle(LearnAlertStyle.indigo).frame(width: reveal)
+                        .opacity(min(1, max(0, -revealOffset / reveal)))
+                        .allowsHitTesting(attachmentsOpen)
+                        .accessibilityHidden(!attachmentsOpen)
                     TextField(placeholder, text: $text, axis: .vertical).lineLimit(1...3)
                         .font(.subheadline).padding(.horizontal, 12).padding(.vertical, 11)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: minimumHeight, alignment: .leading)
                         .background(LearnAlertStyle.courseCanvas, in: RoundedRectangle(cornerRadius: 10))
                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(LearnAlertStyle.hairline, lineWidth: 1))
-                        .offset(x: max(-reveal, min(0, (open ? -reveal : 0) + drag)))
-                        .simultaneousGesture(DragGesture(minimumDistance: 18).updating($drag) { value, state, _ in
-                            if abs(value.translation.width) > abs(value.translation.height) * 1.4 { state = value.translation.width }
-                        }.onEnded { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { open = value.translation.width < -25 || (open && value.translation.width < 25) }
-                        })
-                        .accessibilityAction(named: "Show attachments") { withAnimation(.snappy) { open = true } }
+                        .offset(x: revealOffset)
+                        .simultaneousGesture(attachmentDrag)
+                        .accessibilityLabel(title.isEmpty ? placeholder : title)
+                        .accessibilityAction(named: "Show attachments") { setAttachmentsOpen(true) }
+                        .accessibilityAction(named: "Hide attachments") { setAttachmentsOpen(false) }
                 }.clipped()
             }
             if let image {
@@ -362,7 +365,44 @@ private struct CardEditorMediaField: View {
                 HStack { CardAudioPlaybackButton(name: audio).font(.caption); Spacer(minLength: 0); Button(action: onRemoveAudio) { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("Remove audio") }.buttonStyle(.plain)
             }
         }
-        .onChange(of: photo) { _, item in if let item { onPhoto(item); photo = nil; withAnimation(.snappy) { open = false } } }
+        .onChange(of: photo) { _, item in if let item { onPhoto(item); photo = nil; setAttachmentsOpen(false) } }
+        .task(id: isDragging) {
+            guard !isDragging else { return }
+            // Give onEnded the first chance to settle. A cancelled drag has no
+            // onEnded callback, so restore its starting position instead.
+            await Task.yield()
+            guard !Task.isCancelled, let origin = dragOrigin else { return }
+            dragOrigin = nil
+            setAttachmentsOpen(origin <= -reveal / 2)
+        }
+        .onDisappear { dragOrigin = nil; revealOffset = 0 }
+    }
+    private var attachmentDrag: some Gesture {
+        DragGesture(minimumDistance: 18)
+            .updating($isDragging) { _, active, _ in active = true }
+            .onChanged { value in
+                // Once claimed, keep the same horizontal drag even if the
+                // finger drifts vertically; ordinary vertical scrolling stays free.
+                if dragOrigin == nil {
+                    guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                    dragOrigin = revealOffset
+                }
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    revealOffset = max(-reveal, min(0, (dragOrigin ?? 0) + value.translation.width))
+                }
+            }
+            .onEnded { value in
+                guard let origin = dragOrigin else { return }
+                dragOrigin = nil
+                setAttachmentsOpen(origin + value.predictedEndTranslation.width <= -reveal / 2)
+            }
+    }
+    private func setAttachmentsOpen(_ open: Bool) {
+        withAnimation(.spring(response: 0.26, dampingFraction: 1)) {
+            revealOffset = open ? -reveal : 0
+        }
     }
     private var photoButton: some View {
         PhotosPicker(selection: $photo, matching: .images) {
