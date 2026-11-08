@@ -13,4 +13,19 @@ DerivedData/
 Pods/
 build/
 side-repos/
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/impeccable/
+.agents/skills/impeccable/scripts/bin/
+
+# Impeccable: keep shared context, ignore local/runtime output.
+**/.impeccable/config.local.json
+**/.impeccable/hook.cache.json
+**/.impeccable/hook.pending.json
+**/.impeccable/*.png
+**/.impeccable/review/
+**/.impeccable/questions/
+**/.impeccable/mocks/
+**/.impeccable/live/
+**/.impeccable/critique/snapshots/

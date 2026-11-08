@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-08T01:09:23-05:00",
+  "title": "Design System: LearnAlert",
+  "extensions": {},
+  "components": [],
+  "narrative": {
+    "overview": "Existing native SwiftUI design extracted from source. Preserve the owner's approved identity; native components are documented in DESIGN.md rather than represented as browser HTML.",
+    "keyCharacteristics": [
+      "Compact",
+      "Adaptive light and dark surfaces",
+      "Translucent baby blue",
+      "Playful deck artwork"
+    ],
+    "dos": [
+      "Preserve the current design",
+      "Improve concrete usability gaps",
+      "Keep study mechanics unchanged"
+    ],
+    "donts": [
+      "No unrequested redesign",
+      "No new Home card shadows",
+      "No browser detector for SwiftUI"
+    ]
+  }
+}
