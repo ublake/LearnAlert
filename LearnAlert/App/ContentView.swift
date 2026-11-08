@@ -310,17 +310,22 @@ struct HomeLibraryView: View {
         var id: String { switch self { case .deck(let deck): "deck:\(deck.id.uuidString)" } }
     }
 
+    private func matchesSearch(_ deck: Deck) -> Bool {
+        searchText.isEmpty || deck.name.localizedCaseInsensitiveContains(searchText)
+    }
+
     private var pinnedItems: [HomeLibraryItem] {
         libraryPreferences.pinnedItemIds.compactMap { itemId in
             guard itemId.hasPrefix("deck:"),
-                  let deck = ordinaryDecks.first(where: { "deck:" + $0.id.uuidString == itemId }) else { return nil }
+                  let deck = ordinaryDecks.first(where: { "deck:" + $0.id.uuidString == itemId }),
+                  matchesSearch(deck) else { return nil }
             return .deck(deck)
         }
     }
 
     private var unpinnedDecks: [Deck] {
         let list = ordinaryDecks.filter { !libraryPreferences.isDeckPinned(deckId: $0.id) }
-        var result = searchText.isEmpty ? list : list.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        var result = list.filter(matchesSearch)
 
         if homeTutorialStep > 0, let tutDeck = activeTutorialDeck {
             if let index = result.firstIndex(where: { $0.id == tutDeck.id }) {
@@ -350,10 +355,10 @@ struct HomeLibraryView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Storage Notice")
                     .font(.custom("Poppins-SemiBold", size: 13))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LearnAlertStyle.textPrimary)
                 Text(sharedDB.storageErrorMessage ?? AppLocalization.string("Running in temporary memory mode. Flashcards may not persist between app restarts."))
                     .font(.custom("Poppins-Regular", size: 11))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(LearnAlertStyle.textPrimary.opacity(0.85))
             }
         }
         .padding(12)
@@ -926,7 +931,7 @@ private struct EmptyLibraryCard: View {
                         Label("Create a deck", systemImage: "plus")
                             .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .subheadline))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 40)
+                            .frame(minHeight: 44)
                     }
                     .foregroundStyle(LearnAlertStyle.appAccentInk)
                     .background(LearnAlertStyle.appAccent)
@@ -936,7 +941,7 @@ private struct EmptyLibraryCard: View {
                         Label("Discover", systemImage: "books.vertical.fill")
                             .font(.custom("Poppins-SemiBold", size: 13, relativeTo: .subheadline))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 40)
+                            .frame(minHeight: 44)
                     }
                     .foregroundStyle(LearnAlertStyle.textPrimary)
                     .background(Color.primary.opacity(0.06))
@@ -1162,8 +1167,13 @@ private struct HomeAlertSetupCard: View {
     let showSettings: () -> Void
     let showDeckRequirement: () -> Void
     let schedule: (HomeAlertTarget) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulseScheduleButton = false
     @State private var librarySaveRevision = 0
+
+    private var shouldPulseScheduleButton: Bool {
+        homeTutorialStep == 3 && isTutorialScheduleHighlighted && !reduceMotion
+    }
 
     private func selectedTarget(from schedulableDecks: [Deck]) -> HomeAlertTarget? {
         if let deck = schedulableDecks.first(where: { $0.id.uuidString == targetDeckId }) {
@@ -1177,10 +1187,10 @@ private struct HomeAlertSetupCard: View {
             Group {
                 if engine.isActive {
                     activeContent
-                        .transition(.asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
+                        .transition(reduceMotion ? .opacity : .asymmetric(insertion: .scale(scale: 0.96).combined(with: .opacity), removal: .opacity))
                 } else {
                     setupContent
-                        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
+                        .transition(reduceMotion ? .opacity : .asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity), removal: .opacity))
                 }
             }
             .padding(16)
@@ -1197,20 +1207,15 @@ private struct HomeAlertSetupCard: View {
                     .padding(16)
             }
         }
-        .animation(.spring(response: 0.48, dampingFraction: 0.84), value: engine.isActive)
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.48, dampingFraction: 0.84), value: engine.isActive)
         .onAppear {
-            if homeTutorialStep == 3 {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    pulseScheduleButton = true
-                }
-            }
+            pulseScheduleButton = shouldPulseScheduleButton
         }
-        .onChange(of: homeTutorialStep) { _, newStep in
-            if newStep == 3 {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    pulseScheduleButton = true
-                }
-            }
+        .onChange(of: shouldPulseScheduleButton) { _, shouldPulse in
+            pulseScheduleButton = shouldPulse
+        }
+        .onDisappear {
+            pulseScheduleButton = false
         }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in
             // Counts no longer observe every card relationship. Explicit saves
@@ -1274,7 +1279,8 @@ private struct HomeAlertSetupCard: View {
                         .shadow(color: isTutorialScheduleHighlighted ? LearnAlertStyle.appAccent.opacity(0.85) : Color.clear, radius: 8)
                 )
                 .lightModeOutline(cornerRadius: 12, opacity: selectedTarget == nil ? 0.65 : 1)
-                .scaleEffect(isTutorialScheduleHighlighted && pulseScheduleButton ? 1.025 : 1.0)
+                .scaleEffect(!reduceMotion && isTutorialScheduleHighlighted && pulseScheduleButton ? 1.025 : 1.0)
+                .animation(shouldPulseScheduleButton ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : nil, value: pulseScheduleButton)
                 .disabled(selectedTarget == nil || isScheduling)
                 .tutorialCoachTarget(.homeSchedule)
 
@@ -2898,6 +2904,8 @@ private struct QuickScheduleTipPopup: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 26, height: 26)
                     .background(Color.white.opacity(0.16), in: Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss quick switch tip")

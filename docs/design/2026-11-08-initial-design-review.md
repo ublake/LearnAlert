@@ -51,3 +51,9 @@ Use Impeccable to fix the four source-backed Home/accessibility findings in the 
 ```
 
 For visual experimentation later, review one named screen at a time using current simulator captures. Screenshots and real-device behavior may change these recommendations; the owner does not need to accept generic aesthetic preferences.
+
+## Implementation follow-up — 2026-11-08
+
+The owner authorized the four concrete fixes while preserving the design. They are now implemented: shared search matching for pinned/unpinned decks, content-driven 44pt minimum control targets, adaptive storage-warning ink, and Reduce Motion-aware tutorial transitions/pulse lifecycle. The optional navigation-label and shared-row layout experiments remain proposals.
+
+Validation: the Debug app and notification extension built successfully with Xcode 27.1 for the iPhone 18 Pro simulator, and the new app was installed and launched without resetting its data. Independent source review found no actionable regressions. The existing project/localization working-tree changes were preserved. Unit and interaction tests were not run; the owner will test the installed build.

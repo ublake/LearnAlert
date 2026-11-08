@@ -547,7 +547,7 @@ struct CommunityDeckPreviewSheet: View {
                                 Button { authorProfile = AuthorTarget(id: authorID) } label: {
                                     Text(visibleDeck.authorHandle).underline()
                                         .font(.subheadline).foregroundStyle(LearnAlertStyle.textSecondary)
-                                        .frame(minHeight: 32, alignment: .leading)
+                                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
