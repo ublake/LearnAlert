@@ -1355,7 +1355,6 @@ private struct HomeAlertSetupCard: View {
             }
             .font(.subheadline.weight(.semibold))
 
-            UpcomingAlertsTimeline(scheduledDates: engine.scheduledDates, deckID: engine.activeDeckId?.uuidString)
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 let progress = NotificationLearningBudget.today(now: timeline.date)
                 HStack(spacing: 6) {
@@ -2581,10 +2580,13 @@ struct AppSettingsView: View {
                 SettingsProfileCard()
 
                 SettingsPreferencesGroup(
-                    alertSound: Binding(get: { AlertSoundCatalog.resolve(alertSound) }, set: { alertSound = $0 }),
-                    availableSounds: availableSounds,
                     appearanceMode: $appearanceMode,
                     deckCreaturesHaveFaces: $deckCreaturesHaveFaces
+                )
+
+                SettingsSoundsGroup(
+                    alertSound: Binding(get: { AlertSoundCatalog.resolve(alertSound) }, set: { alertSound = $0 }),
+                    availableSounds: availableSounds
                 )
 
                 SettingsSupportGroup()

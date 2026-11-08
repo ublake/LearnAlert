@@ -60,10 +60,10 @@ Common surfaces use continuous rounded rectangles: default app cards 20pt, edito
 
 ## Components
 
-- `HomeAlertSetupCard`: selected deck, scheduling controls, and active timeline; preserve Edit/Stop and all scheduling policy.
+- `HomeAlertSetupCard`: selected deck, scheduling controls, and daily question count; preserve Edit/Stop and all scheduling policy. The owner removed the alert timeline from this Home card.
 - `HomeStudyCard` / `DeckCreatureView`: deck identity and compact library affordances; no new decorative statistics by default.
 - `BottomNavigationBar` / `NavigationDock`: existing four destinations, selected state, creation menu, accessibility behavior, and adaptive layouts.
-- `SettingsPreferencesGroup` / `SettingsGroupedRow`: active grouped preferences, native menus/toggles, semantic text, accessible stacking, account tools, and role-gated developer section. Do not mistake older unused Settings structs for the active screen.
+- `SettingsPreferencesGroup` / `SettingsSoundsGroup` / `SettingsGroupedRow`: grouped preferences and a separate Sound category for Alert Sound and App sound effects, native menus/toggles, semantic text, accessible stacking, account tools, and role-gated developer section. Do not mistake older unused Settings structs for the active screen.
 - `CommunityDeckCard`: compact title plus relevant count icons; preserve search/filter/paging behavior and conditional media counts.
 - `CommunityDeckPreviewSheet`: detailed media preview, creator/profile link, appreciation, and embedded add-to-library action.
 - `NotificationDesignTheme`: six existing theme choices; keep theme styling separate from card-solving mechanics.

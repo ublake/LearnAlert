@@ -331,14 +331,10 @@ struct SettingsVersionRow: View {
 
 struct SettingsPreferencesGroup: View {
     @ObservedObject private var languageSettings = AppLanguageSettings.shared
-    @Binding var alertSound: String
-    var availableSounds: [AlertSoundOption] = AlertSoundOption.allSounds
     @Binding var appearanceMode: String
     @Binding var deckCreaturesHaveFaces: Bool
     @AppStorage(AnkiStudyPresentation.storageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
     private var ankiPresentationRaw = AnkiStudyPresentation.revealBelow.rawValue
-    @AppStorage(InteractionSoundConfiguration.effectsStorageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
-    private var soundEffectsEnabled = true
     @State private var showingAnkiSettings = false
 
     var body: some View {
@@ -390,9 +386,29 @@ struct SettingsPreferencesGroup: View {
                 }
                 .accessibilityLabel("Anki Settings")
                 .accessibilityValue((AnkiStudyPresentation(rawValue: ankiPresentationRaw) ?? .revealBelow).title)
+            }
+            .buttonStyle(.plain)
+            .settingsGlassSurface(cornerRadius: 20)
+        }
+        .padding(.horizontal, 20)
+        .sheet(isPresented: $showingAnkiSettings) { AnkiStudySettingsView() }
+    }
+}
 
-                Divider().overlay(LearnAlertStyle.cardBorder).padding(.leading, 64)
+struct SettingsSoundsGroup: View {
+    @Binding var alertSound: String
+    var availableSounds: [AlertSoundOption] = AlertSoundOption.allSounds
+    @AppStorage(InteractionSoundConfiguration.effectsStorageKey, store: UserDefaults(suiteName: "group.com.learnalert.shared"))
+    private var soundEffectsEnabled = true
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sound")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(LearnAlertStyle.textSecondary)
+                .padding(.leading, 4)
+
+            VStack(spacing: 0) {
                 Menu {
                     Picker("Alert Sound", selection: $alertSound) {
                         ForEach(availableSounds) { sound in
@@ -428,7 +444,6 @@ struct SettingsPreferencesGroup: View {
             .settingsGlassSurface(cornerRadius: 20)
         }
         .padding(.horizontal, 20)
-        .sheet(isPresented: $showingAnkiSettings) { AnkiStudySettingsView() }
     }
 }
 
