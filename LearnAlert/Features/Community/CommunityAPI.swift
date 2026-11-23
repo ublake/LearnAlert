@@ -183,6 +183,9 @@ nonisolated struct CommunityAPIError: LocalizedError {
     let message: String
     var code: String? = nil
     var errorDescription: String? { Self.localizedMessage(message) }
+    var isUsernameValidationError: Bool {
+        code == "COMMUNITY_USERNAME_INVALID" || code == "COMMUNITY_USERNAME_INAPPROPRIATE"
+    }
 
     /// Server protocol values stay stable. Translate only known service messages;
     /// any admin-authored detail is displayed in its original language.
@@ -248,6 +251,8 @@ nonisolated struct CommunityAPIError: LocalizedError {
         case "Share a deck you created. Built-in and downloaded community decks can’t be republished.": AppLocalization.string("Share a deck you created. Built-in and downloaded community decks can’t be republished.")
         case "Sign in with Apple again to authorize account deletion.": AppLocalization.string("Sign in with Apple again to authorize account deletion.")
         case "That username is taken. Try another one.": AppLocalization.string("That username is taken. Try another one.")
+        case "That username isn’t allowed. Choose another one.": AppLocalization.string("That username isn’t allowed. Choose another one.")
+        case "That creator name isn’t allowed. Choose another one.": AppLocalization.string("That creator name isn’t allowed. Choose another one.")
         case "The community library is not configured yet.": AppLocalization.string("The community library is not configured yet.")
         case "The file does not match its image or audio format.": AppLocalization.string("The file does not match its image or audio format.")
         case "The upload is empty.": AppLocalization.string("The upload is empty.")
@@ -265,6 +270,8 @@ nonisolated struct CommunityAPIError: LocalizedError {
         case "This upload is too large.": AppLocalization.string("This upload is too large.")
         case "Uploading decks imported from Anki are not supported yet": AppLocalization.string("Uploading decks imported from Anki are not supported yet")
         case "Use 3–24 letters, numbers or underscores, starting with a letter.": AppLocalization.string("Use 3–24 letters, numbers or underscores, starting with a letter.")
+        case "Use 3–24 characters. Start with a letter and use only letters, numbers, underscores, or hyphens.": AppLocalization.string("Use 3–24 characters. Start with a letter and use only letters, numbers, underscores, or hyphens.")
+        case "Use a creator name of up to 80 characters with letters, numbers, spaces, or common name punctuation.": AppLocalization.string("Use a creator name of up to 80 characters with letters, numbers, spaces, or common name punctuation.")
         case "Use JPEG/PNG images or MP3/M4A/WAV audio.": AppLocalization.string("Use JPEG/PNG images or MP3/M4A/WAV audio.")
         case "Use correctOptionIndex for media-only or duplicate answer text.": AppLocalization.string("Use correctOptionIndex for media-only or duplicate answer text.")
         case "Use the Apple account associated with this community profile.": AppLocalization.string("Use the Apple account associated with this community profile.")
@@ -296,6 +303,15 @@ struct CommunityAPI {
     }
     struct IDResult: Decodable { let id: String }
     struct SuccessResult: Decodable { let success: Bool }
+    struct AccountDeletionResult: Decodable {
+        let success: Bool
+        let appleRevocation: String?
+        let deletedDeckIDs: [String]?
+
+        var needsManualAppleRevocation: Bool {
+            appleRevocation == "manual_required" || appleRevocation == "not_configured"
+        }
+    }
     struct DeckResult: Decodable { let deck: CommunityDeckPayload }
     struct Metadata: Encodable {
         let name: String
@@ -320,7 +336,7 @@ struct CommunityAPI {
 
     struct AppleReauthentication: Encodable {
         let identityToken: String
-        let authorizationCode: String
+        let authorizationCode: String?
         let nonce: String
     }
 
@@ -436,15 +452,18 @@ struct CommunityAPI {
         let _: SuccessResult = try await decoded(request)
     }
 
-    func deleteAccount(token: String, reauthentication: AppleReauthentication? = nil) async throws {
+    func deleteAccount(token: String, reauthentication: AppleReauthentication? = nil,
+                       allowManualRevocation: Bool = false) async throws -> AccountDeletionResult {
         var request = URLRequest(url: endpoint("account"))
         request.httpMethod = "DELETE"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let reauthentication {
             request.httpBody = try JSONEncoder().encode(reauthentication)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        } else if allowManualRevocation {
+            request.httpBody = try JSONEncoder().encode(["allowManualRevocation": true])
         }
-        let _: SuccessResult = try await decoded(request)
+        if request.httpBody != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        return try await decoded(request)
     }
 
     func blockedUsers(token: String) async throws -> [CommunityBlockedUser] {
@@ -657,7 +676,12 @@ final class CommunitySession: ObservableObject {
             try persist(result)
             errorMessage = nil
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
-        } catch { if self.token == token { handle(error) }; throw error }
+        } catch let error as CommunityAPIError where error.isUsernameValidationError {
+            throw error
+        } catch {
+            if self.token == token { handle(error) }
+            throw error
+        }
     }
 
     func saveProfilePrivacy(hideStatsPublicly: Bool) async throws {
@@ -775,8 +799,7 @@ enum CommunityDeckTransfer {
         if let reason = deck.sharingRestriction(allowAnkiUploads: true) {
             throw CommunityAPIError(status: 403, message: reason)
         }
-        let requestedPublisherHandle = publisherHandle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedPublisherHandle = requestedPublisherHandle?.isEmpty == false ? requestedPublisherHandle : nil
+        let normalizedPublisherHandle = publisherHandle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let isAnkiImport = deck.isAnkiImport
         // Re-read owner-only server permissions for privileged operations. Normal
         // native publishing remains available without this extra profile request.

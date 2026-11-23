@@ -1,7 +1,5 @@
 import Foundation
 import PDFKit
-import Vision
-import UIKit
 
 public enum PDFSectionKind: String, Codable, Sendable, CaseIterable {
     case module
@@ -89,29 +87,17 @@ public enum PDFOutlineError: LocalizedError, Sendable {
     }
 }
 
-public struct OutlinePageSnippet: Codable, Sendable {
-    public let index: Int
-    public let snippet: String
-
-    public init(index: Int, snippet: String) {
-        self.index = index
-        self.snippet = snippet
-    }
-}
-
 public enum PDFOutlineManager {
 
     public enum DetectionMethod: String, Sendable {
         case outline = "Document Bookmarks"
         case regex = "Heading Detection"
-        case api = "AI Structure Analysis"
         case none = "Manual Selection"
 
         public var displayTitle: String {
             switch self {
             case .outline: AppLocalization.string("Document Bookmarks")
             case .regex: AppLocalization.string("Heading Detection")
-            case .api: AppLocalization.string("AI Structure Analysis")
             case .none: AppLocalization.string("Manual Selection")
             }
         }
@@ -123,11 +109,8 @@ public enum PDFOutlineManager {
         public let method: DetectionMethod
     }
 
-    /// Analyzes a PDF off the main thread using Steps 1, 2, and 3.
-    public static func analyzePDF(
-        url: URL,
-        sourceName: String
-    ) async throws -> AnalysisResult {
+    /// Finds sections on device before the learner chooses pages to send.
+    public static func analyzePDF(url: URL) throws -> AnalysisResult {
         // PDFDocument(url:) returns nil for encrypted or corrupt PDFs.
         guard let doc = PDFDocument(url: url) else {
             throw PDFOutlineError.corruptOrEncrypted
@@ -150,12 +133,6 @@ public enum PDFOutlineManager {
         let regexSections = extractFromRegex(doc: doc)
         if regexSections.count >= 2 {
             return AnalysisResult(document: doc, sections: regexSections, method: .regex)
-        }
-
-        // STEP 3 — API fallback (cheap, only if 1 and 2 both fail)
-        let apiSections = await extractFromAPI(doc: doc, sourceName: sourceName)
-        if apiSections.count >= 2 {
-            return AnalysisResult(document: doc, sections: apiSections, method: .api)
         }
 
         return AnalysisResult(document: doc, sections: [], method: .none)
@@ -387,180 +364,6 @@ public enum PDFOutlineManager {
         return sanitizeAndChainSections(sections, totalPageCount: doc.pageCount)
     }
 
-    // MARK: - STEP 3: API Fallback
-
-    private static func extractFromAPI(doc: PDFDocument, sourceName: String) async -> [PDFSectionItem] {
-        let snippets = extractSnippets(doc: doc)
-        guard !snippets.isEmpty else { return [] }
-
-        let endpoint = URL(string: "https://api.learnalertapp.com/v1/sources/outline")!
-        var request = URLRequest(url: endpoint, timeoutInterval: 45)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let key = LearnAlertAPI.apiKey {
-            request.setValue(key, forHTTPHeaderField: "X-API-Key")
-        }
-
-        struct OutlinePayload: Encodable {
-            let sourceName: String
-            let pages: [OutlinePageSnippet]
-        }
-
-        let payload = OutlinePayload(sourceName: sourceName, pages: snippets)
-        guard let httpBody = try? JSONEncoder().encode(payload) else { return [] }
-        request.httpBody = httpBody
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                return []
-            }
-
-            struct APIOutlineResponse: Decodable {
-                struct APISection: Decodable {
-                    let title: String
-                    let kind: String?
-                    let startPage: Int
-                    let endPage: Int
-                    let pageCount: Int?
-                    let summary: String?
-                }
-                let sections: [APISection]?
-            }
-
-            guard let decoded = try? JSONDecoder().decode(APIOutlineResponse.self, from: data),
-                  let apiSections = decoded.sections, !apiSections.isEmpty else {
-                return []
-            }
-
-            // Determine if the API returned 0-based or 1-based page indices
-            // If any index is 0, or if the first starts at 0, it is 0-based!
-            let isZeroBased = apiSections.contains { $0.startPage == 0 || $0.endPage == 0 }
-
-            var results: [PDFSectionItem] = []
-            for s in apiSections {
-                let start: Int
-                let end: Int
-                if isZeroBased {
-                    start = max(0, s.startPage)
-                    end = min(doc.pageCount - 1, max(start, s.endPage))
-                } else {
-                    start = max(0, s.startPage - 1)
-                    end = min(doc.pageCount - 1, max(start, s.endPage - 1))
-                }
-
-                let normalizedKind = (s.kind ?? "").lowercased().replacingOccurrences(of: "-", with: "_")
-                let kind: PDFSectionKind
-                if normalizedKind == "frontmatter" || normalizedKind == "front_matter" || normalizedKind == "cover" || normalizedKind == "toc" {
-                    kind = .frontMatter
-                } else if normalizedKind == "backmatter" || normalizedKind == "back_matter" || normalizedKind == "appendix" {
-                    kind = .backMatter
-                } else {
-                    kind = PDFSectionKind(rawValue: normalizedKind) ?? classifyKind(title: s.title)
-                }
-                let contentless = isRangeContentless(doc: doc, start: start, end: end)
-
-                results.append(
-                    PDFSectionItem(
-                        title: s.title,
-                        kind: kind,
-                        startPageIndex: start,
-                        endPageIndex: end,
-                        summary: s.summary,
-                        isContentless: contentless
-                    )
-                )
-            }
-            return sanitizeAndChainSections(results, totalPageCount: doc.pageCount)
-        } catch {
-            return []
-        }
-    }
-
-    private static func extractSnippets(doc: PDFDocument) -> [OutlinePageSnippet] {
-        var snippets: [OutlinePageSnippet] = []
-        var hasAnyText = false
-
-        for i in 0..<doc.pageCount {
-            guard let page = doc.page(at: i) else {
-                snippets.append(OutlinePageSnippet(index: i, snippet: ""))
-                continue
-            }
-            let raw = page.string ?? ""
-            let collapsed = raw.components(separatedBy: .whitespacesAndNewlines)
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-            let snippet = String(collapsed.prefix(240))
-            if !snippet.isEmpty { hasAnyText = true }
-            snippets.append(OutlinePageSnippet(index: i, snippet: snippet))
-        }
-
-        // If every snippet comes back empty, the PDF is a scan with no text layer. Run OCR with Vision on first few pages
-        if !hasAnyText && doc.pageCount > 0 {
-            let maxOcrPages = min(doc.pageCount, 12)
-            var ocrSnippets: [OutlinePageSnippet] = []
-            var foundOcrText = false
-
-            for i in 0..<maxOcrPages {
-                if let page = doc.page(at: i) {
-                    let recognized = autoreleasepool {
-                        runVisionOCR(page: page)
-                    }
-                    let collapsed = recognized.components(separatedBy: .whitespacesAndNewlines)
-                        .filter { !$0.isEmpty }
-                        .joined(separator: " ")
-                    let snippet = String(collapsed.prefix(240))
-                    if !snippet.isEmpty { foundOcrText = true }
-                    ocrSnippets.append(OutlinePageSnippet(index: i, snippet: snippet))
-                }
-            }
-
-            if foundOcrText {
-                return ocrSnippets
-            }
-        }
-
-        return snippets
-    }
-
-    private static func runVisionOCR(page: PDFPage) -> String {
-        let pageRect = page.bounds(for: .mediaBox)
-        guard pageRect.width > 0, pageRect.height > 0 else { return "" }
-
-        // Keep dimensions moderate to avoid massive memory allocations
-        let targetWidth: CGFloat = min(pageRect.width, 600)
-        let scale = targetWidth / pageRect.width
-        let size = CGSize(width: targetWidth, height: pageRect.height * scale)
-
-        return autoreleasepool {
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1.0
-            format.opaque = true
-            let renderer = UIGraphicsImageRenderer(size: size, format: format)
-            let image = renderer.image { ctx in
-                UIColor.white.set()
-                ctx.fill(CGRect(origin: .zero, size: size))
-                ctx.cgContext.scaleBy(x: scale, y: scale)
-                ctx.cgContext.translateBy(x: 0, y: pageRect.size.height)
-                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-                page.draw(with: .mediaBox, to: ctx.cgContext)
-            }
-
-            guard let cgImage = image.cgImage else { return "" }
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .fast
-            request.usesLanguageCorrection = false
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try? handler.perform([request])
-
-            let lines = request.results?.compactMap {
-                $0.topCandidates(1).first?.string
-            } ?? []
-            return lines.joined(separator: " ")
-        }
-    }
-
     // MARK: - Classification Helper
 
     public static func classifyKind(title: String) -> PDFSectionKind {
@@ -603,7 +406,7 @@ public enum PDFOutlineManager {
         return .other
     }
 
-    // MARK: - STEP 5: Create Subset Document
+    // MARK: - Create Subset Document
 
     /// Builds a PDF document containing only the selected page indices and returns its data representation.
     /// Throws if corrupted or if size exceeds 8 MB.

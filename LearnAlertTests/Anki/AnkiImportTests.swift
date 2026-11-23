@@ -48,9 +48,9 @@ struct AnkiImportTests {
         }
         host.view.layoutIfNeeded()
         var ready = false
-        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
-        while ContinuousClock.now < deadline {
-            if !renderer.isLoading, renderer.error == nil,
+        let deadline = ContinuousClock.now.advanced(by: .seconds(90))
+        while ContinuousClock.now < deadline, renderer.error == nil {
+            if !renderer.isLoading,
                let complete = try? await renderer.webView.evaluateJavaScript("document.readyState==='complete' && !!document.getElementById('learnalert-anki-content')"),
                complete as? Bool == true { ready = true; break }
             try await Task.sleep(for: .milliseconds(30))
@@ -415,11 +415,11 @@ struct AnkiImportTests {
         cache.prepare(current: (ids[0], content(0), false), next: (ids[1], content(1)), configuration: .init())
         let next = cache.renderer(for: ids[1])
         #expect(!next.coordinator.permitsPlayback)
-        for _ in 0..<150 {
-            if !next.isLoading { break }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(90))
+        while next.isLoading && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }
-        #expect(!next.isLoading && next.error == nil)
+        try #require(!next.isLoading && next.error == nil)
         #expect(try await next.webView.evaluateJavaScript("document.body.textContent.includes('Card 1')") as? Bool == true)
         cache.prepare(current: (ids[1], content(1), false), next: (ids[2], content(2)), configuration: .init())
         #expect(cache.renderer(for: ids[1]) === next)

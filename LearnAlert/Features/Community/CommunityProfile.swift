@@ -377,6 +377,8 @@ struct CommunityProfileSheet: View {
     @Query private var libraryDecks: [Deck]
     @ObservedObject private var session = CommunitySession.shared
     @State private var username = ""
+    @State private var usernameError: String?
+    @FocusState private var usernameFocused: Bool
     @State private var avatar = CommunityAvatar()
     @State private var loadedDraft = false
     @State private var isSaving = false
@@ -403,6 +405,8 @@ struct CommunityProfileSheet: View {
                                 Text("@").foregroundStyle(LearnAlertStyle.textSecondary)
                                 TextField("your_username", text: $username)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .focused($usernameFocused)
+                                    .onChange(of: username) { usernameError = nil }
                                     .disabled(session.profile.isComplete || isSaving || deletingAccount)
                                     .foregroundStyle(session.profile.isComplete ? LearnAlertStyle.textSecondary : LearnAlertStyle.textPrimary)
                                 if session.profile.isComplete {
@@ -411,7 +415,13 @@ struct CommunityProfileSheet: View {
                                 }
                             }
                             .font(.body.weight(.medium)).padding(16).background(LearnAlertStyle.insetSurface, in: RoundedRectangle(cornerRadius: 14))
-                            Text(session.profile.isComplete ? AppLocalization.string("Your username is permanent.") : AppLocalization.string("3–24 letters, numbers or underscores. Permanent once saved.")).font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            if let usernameError {
+                                Text(usernameError).font(.caption).foregroundStyle(LearnAlertStyle.destructiveRed)
+                            } else if !session.profile.isComplete {
+                                Text("Use 3–24 characters, starting with a letter. Letters from any language and digits are allowed. Use single hyphens or underscores between parts.")
+                                    .font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
+                            }
+                            Text("Your username is permanent.").font(.caption).foregroundStyle(LearnAlertStyle.textSecondary)
                         }
                         VStack(spacing: 0) {
                             skinTonePicker
@@ -427,7 +437,7 @@ struct CommunityProfileSheet: View {
                             HStack { if isSaving { ProgressView() }; Text(saveTitle) }.frame(maxWidth: .infinity, minHeight: 50)
                         }
                         .buttonStyle(.borderedProminent).tint(LearnAlertStyle.appAccent).foregroundStyle(LearnAlertStyle.appAccentInk)
-                        .disabled(isSaving || session.isRestricted || username.trimmingCharacters(in: .whitespaces).count < 3)
+                        .disabled(isSaving || session.isRestricted || (!session.profile.isComplete && username.trimmingCharacters(in: .whitespaces).count < 3))
                     } else {
                         Text("Make yourself at home.").font(.title2.weight(.semibold))
                         CommunitySignInButton {
@@ -462,8 +472,9 @@ struct CommunityProfileSheet: View {
             .sheet(isPresented: $showingMyDecks) { MySharedDecksSheet(libraryDecks: libraryDecks) }
             .sheet(isPresented: $showingBlockedUsers) { CommunityBlockedAuthorsSheet() }
             .sheet(isPresented: $showingDeletionSignIn) {
-                CommunityAccountDeletionSheet { reauthentication, userID in
-                    try await deleteAccount(reauthentication: reauthentication, appleUserID: userID)
+                CommunityAccountDeletionSheet(onDelete: deleteAccount) {
+                    showingDeletionSignIn = false
+                    dismiss()
                 }
             }
             .task {
@@ -554,86 +565,138 @@ struct CommunityProfileSheet: View {
     }
 
     @MainActor private func save() async {
-        isSaving = true; message = nil
-        defer { isSaving = false }
+        isSaving = true
+        message = nil
+        usernameError = nil
+        defer {
+            isSaving = false
+            if usernameError != nil { usernameFocused = true }
+        }
         do {
             try await session.saveProfile(username: username, avatar: avatar)
             onSave?(); dismiss()
-        } catch { message = error.localizedDescription }
+        } catch let error as CommunityAPIError where error.isUsernameValidationError {
+            usernameError = error.localizedDescription
+        } catch {
+            message = error.localizedDescription
+        }
     }
 
-    @MainActor private func deleteAccount(reauthentication: CommunityAPI.AppleReauthentication, appleUserID: String) async throws {
-        guard let token = session.token else { return }
-        if let expectedID = session.credentials?.appleUserID, expectedID != appleUserID {
+    @MainActor private func deleteAccount(reauthentication: CommunityAPI.AppleReauthentication?, appleUserID: String?) async throws -> Bool {
+        guard let token = session.token else {
+            throw CommunityAPIError(status: 401, message: AppLocalization.string("Sign in with Apple to delete your community account."))
+        }
+        if let appleUserID, let expectedID = session.credentials?.appleUserID, expectedID != appleUserID {
             throw CommunityAPIError(status: 403, message: AppLocalization.string("Use the Apple account you signed in with to delete this community account."))
         }
         deletingAccount = true; message = nil
         defer { deletingAccount = false }
         do {
-            let mine = try await CommunityAPI().myDecks(token: token)
-            try await CommunityAPI().deleteAccount(token: token, reauthentication: reauthentication)
-            guard session.completeAccountDeletion(token: token) else { return }
-            let ids = Set(mine.decks.map(\.id))
+            let result = try await CommunityAPI().deleteAccount(token: token, reauthentication: reauthentication,
+                                                                allowManualRevocation: reauthentication == nil)
+            let ids = Set(result.deletedDeckIDs ?? [])
             for deck in libraryDecks where deck.publishedCommunityID.map({ ids.contains($0) }) == true { deck.publishedCommunityID = nil }
             try? context.save()
-            showingDeletionSignIn = false
-            dismiss()
+            session.completeAccountDeletion(token: token)
             NotificationCenter.default.post(name: .communityLibraryChanged, object: nil)
-        } catch { session.handle(error); throw error }
+            return result.needsManualAppleRevocation
+        } catch {
+            if session.token == token { session.handle(error) }
+            throw error
+        }
     }
 }
 
 private struct CommunityAccountDeletionSheet: View {
-    let onAuthorize: (CommunityAPI.AppleReauthentication, String) async throws -> Void
+    let onDelete: (CommunityAPI.AppleReauthentication?, String?) async throws -> Bool
+    let onDone: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var nonce = ""
     @State private var isWorking = false
     @State private var errorMessage: String?
+    @State private var offersManualDeletion = false
+    @State private var showManualRevocationInstructions = false
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Confirm with Apple").font(.title2.weight(.semibold))
-                Text("Use the same Apple account to finish deleting your community profile and submissions. Your personal library stays on this device.")
-                    .font(.body).foregroundStyle(LearnAlertStyle.textSecondary)
-                SignInWithAppleButton(.continue) { request in
-                    nonce = CommunitySession.makeNonce()
-                    request.nonce = CommunitySession.hashedNonce(nonce)
-                    errorMessage = nil
-                } onCompletion: { result in
-                    switch result {
-                    case .success(let authorization):
-                        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                              let identityData = credential.identityToken,
-                              let identity = String(data: identityData, encoding: .utf8),
-                              let codeData = credential.authorizationCode,
-                              let code = String(data: codeData, encoding: .utf8) else {
-                            errorMessage = AppLocalization.string("Apple did not provide confirmation. Please try again.")
-                            return
+                if showManualRevocationInstructions {
+                    Text("Community account deleted").font(.title2.weight(.semibold))
+                    Text("To stop using Sign in with Apple for LearnAlert, open your Apple Account settings, choose Sign in with Apple, and remove LearnAlert.")
+                        .foregroundStyle(LearnAlertStyle.textSecondary)
+                    Link("Apple’s Sign in with Apple instructions", destination: URL(string: "https://support.apple.com/102571")!)
+                } else {
+                    Text("Confirm with Apple").font(.title2.weight(.semibold))
+                    Text("Use the same Apple account to finish deleting your community profile and submissions. Your personal library stays on this device.")
+                        .font(.body).foregroundStyle(LearnAlertStyle.textSecondary)
+                    SignInWithAppleButton(.continue) { request in
+                        nonce = CommunitySession.makeNonce()
+                        request.nonce = CommunitySession.hashedNonce(nonce)
+                        errorMessage = nil
+                        offersManualDeletion = false
+                    } onCompletion: { result in
+                        switch result {
+                        case .success(let authorization):
+                            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                                  let identityData = credential.identityToken,
+                                  let identity = String(data: identityData, encoding: .utf8) else {
+                                errorMessage = AppLocalization.string("Apple did not provide confirmation. Please try again.")
+                                offersManualDeletion = true
+                                return
+                            }
+                            let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+                            let confirmation = CommunityAPI.AppleReauthentication(identityToken: identity, authorizationCode: code, nonce: nonce)
+                            startDeletion(reauthentication: confirmation, appleUserID: credential.user)
+                        case .failure(let error):
+                            if (error as? ASAuthorizationError)?.code != .canceled {
+                                errorMessage = AppLocalization.string("Apple confirmation could not finish. Please try again.")
+                                offersManualDeletion = true
+                            }
                         }
-                        let confirmation = CommunityAPI.AppleReauthentication(identityToken: identity, authorizationCode: code, nonce: nonce)
-                        isWorking = true
-                        Task {
-                            defer { isWorking = false }
-                            do { try await onAuthorize(confirmation, credential.user) }
-                            catch { errorMessage = error.localizedDescription }
-                        }
-                    case .failure(let error):
-                        if (error as? ASAuthorizationError)?.code != .canceled { errorMessage = AppLocalization.string("Apple confirmation could not finish. Please try again.") }
                     }
+                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                    .frame(height: 48).disabled(isWorking)
+                    if offersManualDeletion {
+                        Button("Delete account and manage Apple access manually", role: .destructive) {
+                            startDeletion(reauthentication: nil, appleUserID: nil)
+                        }
+                        .disabled(isWorking)
+                    }
+                    if isWorking { ProgressView("Deleting your community account…") }
+                    if let errorMessage { Text(errorMessage).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
                 }
-                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                .frame(height: 48).disabled(isWorking)
-                if isWorking { ProgressView("Deleting your community account…") }
-                if let errorMessage { Text(errorMessage).font(.subheadline).foregroundStyle(LearnAlertStyle.destructiveRed) }
                 Spacer()
             }
             .padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
             .background(LearnAlertStyle.courseCanvas.ignoresSafeArea()).foregroundStyle(LearnAlertStyle.textPrimary)
             .navigationTitle("Delete account").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isWorking) } }
+            .toolbar {
+                if showManualRevocationInstructions {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done", action: onDone) }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(isWorking) }
+                }
+            }
             .interactiveDismissDisabled(isWorking)
+        }
+    }
+
+    private func startDeletion(reauthentication: CommunityAPI.AppleReauthentication?, appleUserID: String?) {
+        guard !isWorking else { return }
+        isWorking = true
+        errorMessage = nil
+        Task {
+            defer { isWorking = false }
+            do {
+                if try await onDelete(reauthentication, appleUserID) {
+                    showManualRevocationInstructions = true
+                } else {
+                    onDone()
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }

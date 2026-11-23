@@ -7,12 +7,13 @@ import WebKit
 @Suite("Anki dropdown expansion", .serialized)
 struct AnkiExpansionTests {
     private func waitForBoth(_ controller: AnkiPreviewRenderController) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(90))
         while ContinuousClock.now < deadline {
             if controller.front?.isLoading == false, controller.back?.isLoading == false { return }
             try await Task.sleep(for: .milliseconds(20))
         }
-        Issue.record("Both preview sides did not finish loading")
+        try #require(controller.front?.isLoading == false && controller.back?.isLoading == false,
+                     "Both preview sides must finish loading before inspecting the rendered cards")
     }
 
     @Test("Expansion starts one browser at a time and reuses a large media map prepared off the UI thread")

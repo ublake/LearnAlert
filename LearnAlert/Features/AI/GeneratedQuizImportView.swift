@@ -720,9 +720,7 @@ struct GeneratedQuizImportView: View {
             return
         }
 
-        ensureConsent {
-            self.executeImportDocument(url)
-        }
+        executeImportDocument(url)
     }
 
     private func executeImportDocument(_ url: URL) {
@@ -753,10 +751,7 @@ struct GeneratedQuizImportView: View {
                     try data.write(to: tempURL)
 
                     do {
-                        let analysis = try await PDFOutlineManager.analyzePDF(
-                            url: tempURL,
-                            sourceName: (url.lastPathComponent as NSString).deletingPathExtension
-                        )
+                        let analysis = try PDFOutlineManager.analyzePDF(url: tempURL)
                         if analysis.document.pageCount <= 1 {
                             pendingUpload = PendingSourceUpload(
                                 data: data,
@@ -817,9 +812,7 @@ struct GeneratedQuizImportView: View {
             return
         }
 
-        ensureConsent {
-            self.executeImportPhotos(photos)
-        }
+        executeImportPhotos(photos)
     }
 
     private func executeImportPhotos(_ photos: [PhotosPickerItem]) {

@@ -56,23 +56,41 @@ struct LanguageQuestionTextTests {
         }
     }
 
-    @Test("Published collections simplify copy without changing any card identity, answer or attachment")
+    @Test("New topic decks use concise prompts and later catalog revisions preserve local edits")
     func authoredCollection() throws {
         let original = CourseLessonCard(id: "reply", question: "Someone asks “¿Cómo se llama usted?” Choose the relevant reply.",
             options: ["Me llamo Elena.", "Estoy en casa."], correctAnswer: "Me llamo Elena.", hint: "A name", promptAudioName: "recording.mp3", correctOptionIndex: 0)
         let lesson = CourseLesson(id: "names", lessonNumber: 1, title: "Names", subtitle: "", cards: [original])
         let unit = CourseUnit(id: "unit", unitNumber: 1, title: "Unit", subtitle: "", colorHex: "#123456", badgeIcon: "book", lessons: [lesson])
         let course = CourseDefinition(id: "copy-fixture", title: "Spanish", language: "Spanish", flagEmoji: "🇪🇸", levelTag: "", colorHex: "#123456", summary: "", estimatedHours: 0, outcomes: [], units: [unit], presentation: "deck_collection")
-        let clean = try #require(LanguageDeckProjection.topics(course).first?.cards.first)
-        var expected = original; expected.question = "¿Cómo se llama usted?"
-        #expect(clean == expected && course.units[0].lessons[0].cards[0] == original)
+        let topic = try #require(LanguageDeckProjection.topics(course).first)
+        var expected = original
+        expected.question = "¿Cómo se llama usted?"
+        #expect(topic.cards == [expected])
+        #expect(course.units[0].lessons[0].cards[0] == original)
         let container = try ModelContainer(for: Deck.self, DeckSection.self, Flashcard.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
-        let before = try LanguageTopicStore.open(course: course, topic: .init(id: lesson.id, title: lesson.title, cards: [original]), context: container.mainContext)
-        let card = try #require(before.cards.first); card.reviewCount = 7; card.masteryScore = 2
+        let context = container.mainContext
+        let before = try LanguageTopicStore.open(course: course, topic: topic, context: context)
+        let card = try #require(before.cards.first)
         let id = card.id
-        let after = try LanguageTopicStore.open(course: course, topic: LanguageDeckProjection.topics(course)[0], context: container.mainContext)
-        #expect(after.id == before.id && after.cards[0].id == id)
-        #expect(after.cards[0].question == expected.question && after.cards[0].reviewCount == 7 && after.cards[0].masteryScore == 2)
+        #expect(card.sourceCourseCardID == original.id)
+        #expect(card.question == expected.question && card.correctAnswer == original.correctAnswer)
+        #expect(card.fieldMedia == original.resolvedFieldMedia)
+
+        card.question = "My own wording"
+        card.reviewCount = 7
+        card.masteryScore = 2
+        try context.save()
+
+        var revised = expected
+        revised.question = "What is your name?"
+        let revision = LanguageDeckProjection.Topic(id: topic.id, title: topic.title, cards: [revised])
+        let after = try LanguageTopicStore.open(course: course, topic: revision, context: context)
+        let reopenedCard = try #require(after.cards.first)
+        #expect(after.id == before.id && reopenedCard.id == id)
+        #expect(reopenedCard.question == "My own wording")
+        #expect(reopenedCard.correctAnswer == original.correctAnswer && reopenedCard.fieldMedia == original.resolvedFieldMedia)
+        #expect(reopenedCard.reviewCount == 7 && reopenedCard.masteryScore == 2)
     }
 }

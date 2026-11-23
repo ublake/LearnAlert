@@ -105,7 +105,8 @@ struct DeckSchedulingTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(DeckAlertSettings.defaults(in: defaults).stopCondition == "Until I say so")
-        #expect(DeckAlertSettings.defaults(in: defaults).paceMode == .automatic)
+        #expect(DeckAlertSettings.defaults(in: defaults).paceMode == .custom)
+        #expect(DeckAlertSettings.defaults(in: defaults).dailyCount == 20)
         defaults.set("Until Day Ends", forKey: "stopCondition")
         defaults.set(5, forKey: "volumeSelectionIndex")
         defaults.set(1, forKey: "customVolume")
@@ -114,7 +115,7 @@ struct DeckSchedulingTests {
         #expect(migrated.stopCondition == "Until Day Ends" && migrated.dailyCount == 1 && migrated.startHour == 9 && migrated.paceMode == .custom)
     }
 
-    @Test("Custom mode stays selected when its number matches a preset and survives relaunch")
+    @Test("Explicit daily counts and a single-alert time survive relaunch")
     func customPaceIsExplicit() throws {
         var settings = DeckAlertSettings()
         settings.paceMode = .custom
@@ -127,10 +128,10 @@ struct DeckSchedulingTests {
         settings.dailyCount = 1
         settings.useSpecificTime = true
         #expect(settings.isCustomDaily && settings.dailyHour == 17)
-        settings.paceMode = .automatic
+        settings.dailyCount = 5
         #expect(!settings.isCustomDaily && settings.dailyHour == 10)
         #expect(settings.resolvedDailyCount(automaticCount: 5) == 5)
-        settings.paceMode = .custom
+        settings.dailyCount = 1
         #expect(settings.isCustomDaily && settings.dailyCount == 1 && settings.dailyHour == 17)
     }
 
@@ -142,24 +143,19 @@ struct DeckSchedulingTests {
         #expect(settings.dailyHour == 17)
     }
 
-    @Test("Automatic uses the course target or a manageable deck batch, bounded to the alert budget")
+    @Test("Legacy automatic schedules migrate to an explicit limit and the engine uses the saved count")
     func automaticPace() throws {
-        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 4) == 4)
-        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100) == 10)
-        #expect(DeckAlertSettings.automaticDailyCount(cardCount: nil) == 10)
-        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100, courseTarget: 7) == 7)
-        #expect(DeckAlertSettings.automaticDailyCount(cardCount: 100, courseTarget: 100) == 50)
-        var settings = DeckAlertSettings()
-        #expect(settings.resolvedDailyCount(automaticCount: 7) == 7)
-        settings.dailyCount = 20
-        #expect(settings.resolvedDailyCount(automaticCount: 7) == 7)
+        let data = Data(#"{"paceMode":"automatic","dailyCount":7,"startHour":9}"#.utf8)
+        let settings = try JSONDecoder().decode(DeckAlertSettings.self, from: data)
+        #expect(settings.paceMode == .custom && settings.startHour == 9)
+        #expect(settings.resolvedDailyCount(automaticCount: 7) == 20)
         let engine = StudyEngine(restoreSavedSession: false)
         let deck = Deck(name: "Automatic")
         let cards = (0..<4).map { Flashcard(question: "Q\($0)", options: ["A"], correctAnswer: "A") }
         deck.cards = cards
         deck.alertSettings = settings
         engine.selectSettings(for: deck)
-        #expect(engine.activeVolume == 4)
+        #expect(engine.activeVolume == 20)
         engine.settings.paceMode = .custom
         engine.settings.dailyCount = 10
         #expect(engine.activeVolume == 10 && engine.settings.paceMode == .custom)
@@ -199,7 +195,7 @@ struct DeckSchedulingTests {
         func date(_ day: Int, _ hour: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour))! }
         let ids = [UUID(), UUID(), UUID()]
         let plan = DailyDeckAlertPlan(deckId: UUID(), sectionId: nil, cardIds: ids,
-            anchor: date(15, 17), hour: 17, minute: 0, expiresAt: nil)
+            anchor: date(15, 17), hour: 17, minute: 0, expiresAt: nil, singleTimeQuestionsPerAlert: 1)
         let slots = plan.slots(now: date(15, 12), calendar: calendar)
         #expect(slots.count == 60 && Set(slots.map(\.date)).count == 60)
         #expect(slots.first?.date == date(15, 17))

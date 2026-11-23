@@ -118,23 +118,23 @@ struct DeckModelTests {
 @Suite("Sound Options & Configuration Tests")
 struct AlertSoundOptionTests {
 
-    @Test("Default and custom sounds exist in allSounds")
+    @Test("The system option and all selectable ringtones are available")
     func allSoundsCompleteness() {
         let soundIds = AlertSoundOption.allSounds.map(\.id)
-        #expect(soundIds.contains("Default"))
-        #expect(soundIds.contains("alert1.wav"))
-        #expect(soundIds.contains("alert2.wav"))
-        #expect(soundIds.contains("alert3.wav"))
-        #expect(soundIds.contains("alert4.wav"))
-        #expect(soundIds.contains("alert5.wav"))
+        #expect(soundIds.first == "Default")
+        #expect(soundIds.count == 11 && Set(soundIds).count == 11)
+        #expect(soundIds.contains("la_ring_tiny_comet.wav"))
+        for filename in soundIds.dropFirst() {
+            #expect(Bundle.main.url(forResource: filename, withExtension: nil) != nil)
+        }
     }
 
-    @Test("displayName returns custom name or fallback")
+    @Test("Legacy ringtones resolve to their replacements and unknown values use Comet")
     func displayNameResolution() {
-        #expect(AlertSoundOption.displayName(for: "Default") == "Default")
-        #expect(AlertSoundOption.displayName(for: "alert1.wav") == "Level-up")
-        #expect(AlertSoundOption.displayName(for: "alert2.wav") == "Pulse")
-        #expect(AlertSoundOption.displayName(for: "custom_sound.wav") == "custom_sound")
+        #expect(AlertSoundOption.displayName(for: "Default") == AppLocalization.string("System default"))
+        #expect(AlertSoundOption.displayName(for: "alert1.wav") == AppLocalization.string("Beam"))
+        #expect(AlertSoundOption.displayName(for: "alert2.wav") == AppLocalization.string("Orbit"))
+        #expect(AlertSoundOption.displayName(for: "custom_sound.wav") == AppLocalization.string("Comet"))
     }
 }
 
@@ -605,8 +605,7 @@ struct CourseCurriculumTests {
 
     @Test("Lesson progress tracking unlocks subsequent lessons accurately")
     func lessonProgressionUnlocking() {
-        guard let spanish = CourseCurriculumCatalog.course(for: "spanish-course"),
-              let unit = spanish.units.first,
+        guard let unit = CourseCurriculumCatalog.spanishCourse.units.first,
               unit.lessons.count >= 2 else {
             Issue.record("Spanish course curriculum missing unit/lessons")
             return

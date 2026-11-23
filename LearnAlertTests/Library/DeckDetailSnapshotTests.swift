@@ -72,12 +72,14 @@ struct DeckDetailSnapshotTests {
         }
         let anki = Deck(name: "Imported")
         anki.sourceKind = "anki"
-        #expect(anki.canPresentCommunitySharing)
+        #expect(!anki.canPresentCommunitySharing)
+        #expect(anki.canPresentCommunitySharing(allowAnkiUploads: true))
         #expect(anki.provenanceSharingRestriction(allowAnkiUploads: false) == "Uploading decks imported from Anki are not supported yet")
         #expect(anki.provenanceSharingRestriction(allowAnkiUploads: true) == nil)
         let legacyAnki = Deck(name: "Old import")
         legacyAnki.cards = [Flashcard(question: "Old Anki card", cardType: .anki)]
-        #expect(legacyAnki.canPresentCommunitySharing)
+        #expect(!legacyAnki.canPresentCommunitySharing)
+        #expect(legacyAnki.canPresentCommunitySharing(allowAnkiUploads: true))
         #expect(legacyAnki.sharingRestriction(allowAnkiUploads: false) != nil)
     }
 
@@ -92,6 +94,6 @@ struct DeckDetailSnapshotTests {
         deck.cards.append(Flashcard(question: "Extra original question", correctAnswer: "Extra answer"))
         #expect(deck.canPresentCommunitySharing)
         #expect(!deck.canShareToCommunity)
-        #expect(deck.sharingRestriction(allowAnkiUploads: true) == "Built-in decks can’t be published to the community.")
+        #expect(deck.sharingRestriction(allowAnkiUploads: true) == AppLocalization.string("Built-in decks can’t be published as shared decks."))
     }
 }

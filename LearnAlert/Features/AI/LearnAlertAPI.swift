@@ -440,6 +440,7 @@ private struct DeckResponse: Decodable {
 }
 
 enum LearnAlertAPIError: LocalizedError {
+    case consentRequired
     case emptyStudyMaterial
     case invalidMaximumCards
     case unauthorized(diagnostic: AIDiagnosticReport? = nil)
@@ -450,6 +451,8 @@ enum LearnAlertAPIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .consentRequired:
+            AppLocalization.string("Allow AI data sharing before sending a request.")
         case .emptyStudyMaterial:
             AppLocalization.string("Add notes or select a file before generating a deck.")
         case .invalidMaximumCards:
@@ -729,6 +732,7 @@ struct LearnAlertAPI: Sendable {
     }
 
     private func perform(_ inputRequest: URLRequest) async throws -> GeneratedDeckResult {
+        guard AIConsentManager.hasConsented else { throw LearnAlertAPIError.consentRequired }
         var request = inputRequest
         if let key = Self.apiKey {
             request.setValue(key, forHTTPHeaderField: "X-API-Key")

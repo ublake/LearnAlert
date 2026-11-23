@@ -51,6 +51,24 @@ TikTok advertising measurement is disabled by default. Its integration code is r
 
 App code is grouped into `App`, `Core`, `UI`, and `Features` folders, with tests grouped by feature. See [Project structure](docs/project-structure.md) for the folder map and shared notification-extension file rules.
 
+## App Store release preflight
+
+Run from the repository root when preparing an App Store build.
+
+```sh
+bash scripts/app-store-preflight.sh
+```
+
+The script fetches the pinned App Store Compliance Playbook v2.5.1 from GitHub and scans a temporary copy of the current checkout. Findings use paths relative to the checkout. Local developer tooling and generated build output are excluded. The guard returns `2` for critical findings. Use Python 3 to enable the deadline report and manual readiness checks. [App Store Compliance Playbook](https://github.com/mjmirza/app-store-compliance/tree/v2.5.1)
+
+Before submitting the candidate build, verify the following in App Store Connect or on a provisioned device.
+
+- Confirm that a reviewer can access signed-in Community features against the live backend. Add tap paths for expanded study notifications, Community, and AI features to the review notes. Verify the screenshots and age rating against the candidate build. [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) · [Age rating](https://developer.apple.com/help/app-store-connect/manage-app-information/set-an-app-age-rating/)
+- Compare App Privacy answers with the candidate build, backend data handling, and bundled SDKs. Include community content and AI uploads in that comparison. [App Privacy Details](https://developer.apple.com/app-store/app-privacy-details/)
+- Verify the in-app account-deletion flow on a provisioned device using a designated test account. [Apple’s account deletion guidance](https://developer.apple.com/help/app-review/guideline-reference/5-1-1-account-deletion)
+
+To include manual results in the guard report, copy the upstream template to `.app-review-readiness.json` in the repository root. Record results for the current version and build only. Store reviewer credentials in App Store Connect. [Readiness template](https://github.com/mjmirza/app-store-compliance/blob/v2.5.1/templates/app-review-readiness.json)
+
 ## Privacy
 
 AI features process submitted content through LearnAlert's backend and third-party AI services. Review the privacy policy before submitting personal or sensitive material. AI-generated cards can contain mistakes; check them against your source material.

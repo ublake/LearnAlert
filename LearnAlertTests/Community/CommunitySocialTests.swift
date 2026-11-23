@@ -39,6 +39,38 @@ struct CommunitySocialTests {
         return data
     }
 
+    @Test("Account deletion uses one authorized request and returns local cleanup and revocation information")
+    func accountDeletionResult() async throws {
+        var requests = 0
+        SocialTestProtocol.response = { request in
+            requests += 1
+            #expect(request.url?.path == "/v1/community/account" && request.httpMethod == "DELETE")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer owner")
+            let payload = try #require(JSONSerialization.jsonObject(with: body(request)) as? [String: String])
+            #expect(payload == ["identityToken": "signed-identity", "nonce": "challenge"])
+            return try json(["success": true, "appleRevocation": "manual_required", "deletedDeckIDs": ["shared-deck"]])
+        }
+        defer { SocialTestProtocol.response = nil }
+        let confirmation = CommunityAPI.AppleReauthentication(identityToken: "signed-identity", authorizationCode: nil, nonce: "challenge")
+        let result = try await api().deleteAccount(token: "owner", reauthentication: confirmation)
+        #expect(result.needsManualAppleRevocation)
+        #expect(result.deletedDeckIDs == ["shared-deck"])
+        #expect(requests == 1)
+    }
+
+    @Test("Manual Apple revocation is requested explicitly")
+    func manualAccountDeletion() async throws {
+        SocialTestProtocol.response = { request in
+            #expect(request.httpMethod == "DELETE")
+            let payload = try #require(JSONSerialization.jsonObject(with: body(request)) as? [String: Bool])
+            #expect(payload == ["allowManualRevocation": true])
+            return try json(["success": true, "appleRevocation": "pending"])
+        }
+        defer { SocialTestProtocol.response = nil }
+        let result = try await api().deleteAccount(token: "owner", allowManualRevocation: true)
+        #expect(!result.needsManualAppleRevocation && result.deletedDeckIDs == nil)
+    }
+
     @Test("Public profiles retain joined date while hidden statistics stay absent")
     func privateProfile() async throws {
         SocialTestProtocol.response = { request in

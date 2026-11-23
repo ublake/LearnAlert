@@ -56,8 +56,9 @@ struct PremadeDecksView: View {
             .frame(maxWidth: .infinity)
         }
         .refreshable {
-            await managedCatalog.refresh(force: true)
+            async let catalogRefresh: Void = managedCatalog.refresh(force: true)
             await communityFeed.load()
+            await catalogRefresh
         }
         .background(StudyStudioStyle.canvas.ignoresSafeArea())
         .tint(StudyStudioStyle.violet)

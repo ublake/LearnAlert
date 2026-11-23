@@ -24,6 +24,7 @@ This is a skill-only installation: automatic hooks and browser live editing are 
 - Open `LearnAlert.xcworkspace`, not the standalone project. Preserve existing CocoaPods configuration.
 - When app code changes, build/install to the requested simulator and let the owner do interaction testing unless they request otherwise. Do not execute tests merely because a skill recommends them.
 - UI refinement must preserve card solving, scheduling and daily limits, separate study histories, notification handoff, persistence, and account/moderation permissions.
+- For App Store release prep, run `bash scripts/app-store-preflight.sh` and follow the manual review checks in the README for the candidate build.
 - Leave unrelated working-tree changes alone. Do not submit App Store review or deploy unrelated services.
 
 Setup/provenance and examples: `docs/design/impeccable-setup.md`.
